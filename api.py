@@ -4,6 +4,7 @@ import re
 import uuid
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -13,6 +14,16 @@ import scraper
 
 app = FastAPI()
 db.init_schema()
+
+# Allows the app to be reached through a Cloudflare Quick Tunnel (random *.trycloudflare.com
+# per run) in addition to local dev - matters if the frontend/API are ever hit cross-origin
+# rather than through Vite's same-origin proxy.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"https://.*\.trycloudflare\.com",
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ponytail: matches any all-caps 2-15 letter word as a candidate NSE symbol (NSE symbols are
 # always uppercase). No validation against a real symbol list - relies on the live scrape

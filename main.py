@@ -15,13 +15,16 @@ def scan(skill_names, limit, model):
 
     count = 0
     for t in tickers:
-        news = scraper.get_news(t["symbol"])
-        financials = scraper.get_financials(t["symbol"])
-        markdown = llm.build_markdown(t["symbol"], financials, news, model=model)
-        embedding = llm.embed(markdown)
-        db.insert_scraped_item(t["symbol"], markdown, embedding)
-        print(f"analyzed {t['symbol']}")
-        count += 1
+        try:
+            news = scraper.get_news(t["symbol"])
+            financials = scraper.get_financials(t["symbol"])
+            markdown = llm.build_markdown(t["symbol"], financials, news, model=model)
+            embedding = llm.embed(markdown)
+            db.insert_scraped_item(t["symbol"], markdown, embedding)
+            print(f"analyzed {t['symbol']}")
+            count += 1
+        except Exception as e:
+            print(f"skipped {t['symbol']}: {e}")
     return count
 
 

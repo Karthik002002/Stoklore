@@ -15,5 +15,8 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:8010',
     },
+    // Vite blocks unrecognized Host headers by default (DNS-rebinding protection) - allow
+    // Cloudflare Quick Tunnel hosts (random *.trycloudflare.com per run) through.
+    allowedHosts: ['.trycloudflare.com'],
   },
 })

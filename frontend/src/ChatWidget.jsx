@@ -56,6 +56,21 @@ function slashCommands(symbol) {
   ]
 }
 
+function TypingIndicator() {
+  return (
+    <div className="flex items-center gap-2">
+      <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+        <BotIcon className="size-4" />
+      </div>
+      <div className="flex items-center gap-1 rounded-full bg-muted px-4 py-3">
+        <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.3s]" />
+        <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.15s]" />
+        <span className="size-1.5 animate-bounce rounded-full bg-muted-foreground/60" />
+      </div>
+    </div>
+  )
+}
+
 function ChatThread({ chatId, initialMessages, onTitle, onDone, symbol, model }) {
   const { messages, sendMessage, status } = useChat({
     id: chatId,
@@ -98,6 +113,7 @@ function ChatThread({ chatId, initialMessages, onTitle, onDone, symbol, model })
               </MessageContent>
             </Message>
           ))}
+          {status === 'submitted' && <TypingIndicator />}
         </ConversationContent>
         <ConversationScrollButton />
       </Conversation>

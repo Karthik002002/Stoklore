@@ -1,0 +1,12 @@
+.venv
+__pycache__/
+*.pyc
+
+# stale one-off artifact from before the dashboard was replaced by the React app
+dashboard.html
+
+*.log
+.DS_Store
+
+frontend/node_modules
+frontend/dist

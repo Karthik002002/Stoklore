@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { compact, fmt, inr } from '@/lib/format'
 import DeleteStockButton from './DeleteStockButton'
+import StockChart from './StockChart'
 
 const STAT_FIELDS = [
   ['Market Cap', 'marketCap', (v) => `₹${compact(v)}`],
@@ -87,6 +88,11 @@ export default function StockDetail() {
             </div>
           ))}
         </div>
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-medium text-muted-foreground">Price chart</h2>
+        <StockChart symbol={symbol} />
       </section>
 
       <section>

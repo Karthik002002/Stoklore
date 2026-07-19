@@ -93,6 +93,13 @@ def stock_detail(symbol: str):
     return {"quote": quote, "news": news, "reports": db.list_items_for_symbol(symbol)}
 
 
+@app.get("/api/stocks/{symbol}/chart")
+def stock_chart(symbol: str, range: str = "1mo"):
+    if range not in scraper.CHART_RANGES:
+        raise HTTPException(status_code=400, detail=f"range must be one of {list(scraper.CHART_RANGES)}")
+    return scraper.get_chart(symbol.upper(), range)
+
+
 @app.get("/api/reports")
 def reports(limit: int = 20):
     return db.list_recent_items(limit)

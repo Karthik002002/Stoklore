@@ -75,6 +75,39 @@ def get_quote(symbol):
     return {k: info.get(k) for k in QUOTE_FIELDS}
 
 
+# UI range -> (yahoo period, bar interval)
+CHART_RANGES = {
+    "1d": ("1d", "5m"),
+    "5d": ("5d", "15m"),
+    "1mo": ("1mo", "1d"),
+    "6mo": ("6mo", "1d"),
+    "ytd": ("ytd", "1d"),
+    "1y": ("1y", "1d"),
+    "5y": ("5y", "1wk"),
+    "max": ("max", "1mo"),
+}
+
+
+def get_chart(symbol, range_key):
+    """OHLCV bars for the chart, via yfinance (wraps Yahoo's v8/finance/chart endpoint)."""
+    period, interval = CHART_RANGES[range_key]
+    df = yf.Ticker(f"{symbol}.NS").history(period=period, interval=interval)
+    bars = [
+        {
+            # lightweight-charts displays UTC; pre-shift to IST so intraday bars show market-local time
+            "time": int(ts.timestamp()) + int(ts.utcoffset().total_seconds()),
+            "open": round(row["Open"], 2),
+            "high": round(row["High"], 2),
+            "low": round(row["Low"], 2),
+            "close": round(row["Close"], 2),
+            "volume": int(row["Volume"]),
+        }
+        for ts, row in df.iterrows()
+        if row[["Open", "High", "Low", "Close"]].notna().all()
+    ]
+    return {"bars": bars, "interval": interval}
+
+
 def get_history(symbol, start, end):
     """Summarizes OHLCV price history between two YYYY-MM-DD dates. Returns None if no data."""
     df = yf.Ticker(f"{symbol}.NS").history(start=start, end=end)

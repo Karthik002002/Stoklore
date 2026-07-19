@@ -33,6 +33,23 @@ def build_markdown(symbol, financials, news):
     return _post("/api/generate", {"model": MODEL, "prompt": prompt, "stream": False})["response"].strip()
 
 
+def build_history_markdown(symbol, history):
+    """Asks the LLM to summarize a scraped price-history window as a Markdown report."""
+    prompt = (
+        f"Stock {symbol}, price history from {history['start']} to {history['end']} "
+        f"({history['tradingDays']} trading days).\n"
+        f"Open: ₹{history['open']:.2f}, Close: ₹{history['close']:.2f}, "
+        f"High: ₹{history['high']:.2f}, Low: ₹{history['low']:.2f}, "
+        f"Change over period: {history['changePercent']:.2f}%, "
+        f"Average daily volume: {history['avgVolume']:,}.\n\n"
+        "Write a short Markdown report: a '## SYMBOL (start to end)' heading, a bullet "
+        "list of the stats given, and a 2-3 sentence factual take on the price action over "
+        "this window. This is an NSE India stock - use ₹ for currency, never $. No "
+        "investment advice. Return only Markdown, no preamble."
+    )
+    return _post("/api/generate", {"model": MODEL, "prompt": prompt, "stream": False})["response"].strip()
+
+
 NO_CONTEXT_REPLY = (
     "I don't have any stored or live-scraped report matching that. Mention an NSE "
     "ticker (e.g. TCS, INFY, RELIANCE) and I'll scrape it live, or run a scan first."

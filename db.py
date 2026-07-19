@@ -91,6 +91,12 @@ def delete_item(item_id):
         conn.execute("DELETE FROM scraped_items WHERE id = %s", (item_id,))
 
 
+def delete_symbol(symbol):
+    """Deletes every scraped/analyzed report for a symbol - removes it from the tracked list entirely."""
+    with connect() as conn:
+        conn.execute("DELETE FROM scraped_items WHERE symbol = %s", (symbol,))
+
+
 def similarity_search(query_embedding, limit=5):
     with connect() as conn:
         return conn.execute(

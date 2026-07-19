@@ -75,6 +75,24 @@ def get_quote(symbol):
     return {k: info.get(k) for k in QUOTE_FIELDS}
 
 
+def get_history(symbol, start, end):
+    """Summarizes OHLCV price history between two YYYY-MM-DD dates. Returns None if no data."""
+    df = yf.Ticker(f"{symbol}.NS").history(start=start, end=end)
+    if df.empty:
+        return None
+    return {
+        "start": start,
+        "end": end,
+        "tradingDays": len(df),
+        "open": float(df["Open"].iloc[0]),
+        "close": float(df["Close"].iloc[-1]),
+        "high": float(df["High"].max()),
+        "low": float(df["Low"].min()),
+        "changePercent": float((df["Close"].iloc[-1] - df["Open"].iloc[0]) / df["Open"].iloc[0] * 100),
+        "avgVolume": int(df["Volume"].mean()),
+    }
+
+
 def get_financials(symbol):
     """Returns dict of key financial stats for an NSE symbol. marketCap is INR (NSE), formatted with ₹."""
     info = yf.Ticker(f"{symbol}.NS").info

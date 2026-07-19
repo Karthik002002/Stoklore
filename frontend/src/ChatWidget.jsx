@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useChat } from '@ai-sdk/react'
+import { useParams } from '@tanstack/react-router'
 import { DefaultChatTransport } from 'ai'
 import { toast } from 'sonner'
-import { BotIcon, HistoryIcon, MessageCircleIcon, SquarePenIcon, XIcon } from 'lucide-react'
+import { BotIcon, CalendarClockIcon, HistoryIcon, MessageCircleIcon, SquarePenIcon, XIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -28,7 +29,25 @@ import {
 const newId = () => crypto.randomUUID()
 const textOf = (m) => m.parts.filter((p) => p.type === 'text').map((p) => p.text).join('')
 
-function ChatThread({ chatId, initialMessages, onTitle, onDone }) {
+const todayIso = () => new Date().toISOString().slice(0, 10)
+const monthAgoIso = () => {
+  const d = new Date()
+  d.setMonth(d.getMonth() - 1)
+  return d.toISOString().slice(0, 10)
+}
+
+function slashCommands(symbol) {
+  const sym = symbol || 'SYMBOL'
+  return [
+    {
+      name: '/history',
+      description: 'Scrape price history for a date range',
+      template: `/history ${sym} ${monthAgoIso()} ${todayIso()}`,
+    },
+  ]
+}
+
+function ChatThread({ chatId, initialMessages, onTitle, onDone, symbol }) {
   const { messages, sendMessage, status } = useChat({
     id: chatId,
     messages: initialMessages,
@@ -39,6 +58,19 @@ function ChatThread({ chatId, initialMessages, onTitle, onDone }) {
     onFinish: ({ message }) => onDone(textOf(message)),
   })
 
+  const [input, setInput] = useState('')
+  const textareaRef = useRef(null)
+  const commands = slashCommands(symbol)
+  const showSlashMenu = input === '/'
+
+  const applyCommand = (template) => {
+    setInput(template)
+    if (textareaRef.current) {
+      textareaRef.current.value = template
+      textareaRef.current.focus()
+    }
+  }
+
   return (
     <>
       <Conversation className="flex-1">
@@ -47,7 +79,7 @@ function ChatThread({ chatId, initialMessages, onTitle, onDone }) {
             <ConversationEmptyState
               icon={<BotIcon className="size-8" />}
               title="NSE research assistant"
-              description="Ask about a tracked stock, or mention any NSE ticker to scrape it live."
+              description="Ask about a tracked stock, mention any NSE ticker to scrape it live, or type / for commands."
             />
           )}
           {messages.map((m) => (
@@ -60,13 +92,39 @@ function ChatThread({ chatId, initialMessages, onTitle, onDone }) {
         </ConversationContent>
         <ConversationScrollButton />
       </Conversation>
-      <div className="border-t p-3">
+      <div className="relative border-t p-3">
+        {showSlashMenu && (
+          <div className="absolute inset-x-3 bottom-full mb-2 overflow-hidden rounded-lg border bg-popover shadow-lg">
+            {commands.map((cmd) => (
+              <button
+                key={cmd.name}
+                type="button"
+                className="flex w-full items-start gap-2.5 px-3 py-2 text-left hover:bg-accent"
+                onClick={() => applyCommand(cmd.template)}
+              >
+                <CalendarClockIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                <span>
+                  <span className="block font-medium">{cmd.name}</span>
+                  <span className="block text-xs text-muted-foreground">{cmd.description}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
         <PromptInput
           className="grid grid-cols-[1fr_auto] items-end gap-2"
-          onSubmit={({ text }) => text?.trim() && sendMessage({ text })}
+          onSubmit={({ text }) => {
+            if (!text?.trim()) return
+            sendMessage({ text })
+            setInput('')
+          }}
         >
           <PromptInputBody>
-            <PromptInputTextarea placeholder="Ask about a stock…" />
+            <PromptInputTextarea
+              ref={textareaRef}
+              placeholder="Ask about a stock, or type / for commands…"
+              onChange={(e) => setInput(e.target.value)}
+            />
           </PromptInputBody>
           <PromptInputFooter>
             <PromptInputSubmit status={status} />
@@ -78,6 +136,7 @@ function ChatThread({ chatId, initialMessages, onTitle, onDone }) {
 }
 
 export default function ChatWidget() {
+  const { symbol } = useParams({ strict: false })
   const [open, setOpen] = useState(false)
   const openRef = useRef(open)
   openRef.current = open
@@ -159,6 +218,7 @@ export default function ChatWidget() {
           initialMessages={initialMessages}
           onTitle={onTitle}
           onDone={onDone}
+          symbol={symbol}
         />
       </div>
 

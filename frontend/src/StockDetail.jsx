@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react'
+import { useNavigate, useParams } from '@tanstack/react-router'
 import { Streamdown } from 'streamdown'
 import { ArrowLeftIcon, ExternalLinkIcon, Trash2Icon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { compact, fmt, inr } from '@/lib/format'
+import DeleteStockButton from './DeleteStockButton'
 
 const STAT_FIELDS = [
   ['Market Cap', 'marketCap', (v) => `₹${compact(v)}`],
@@ -21,7 +23,10 @@ const STAT_FIELDS = [
   ['Avg Volume', 'averageVolume', compact],
 ]
 
-export default function StockDetail({ symbol, onBack }) {
+export default function StockDetail() {
+  const { symbol } = useParams({ from: '/stock/$symbol' })
+  const navigate = useNavigate()
+  const onBack = () => navigate({ to: '/' })
   const [data, setData] = useState(null)
 
   useEffect(() => {
@@ -47,9 +52,12 @@ export default function StockDetail({ symbol, onBack }) {
 
   return (
     <div className="space-y-8">
-      <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2 text-muted-foreground">
-        <ArrowLeftIcon className="size-4" /> All stocks
-      </Button>
+      <div className="flex items-center justify-between">
+        <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2 text-muted-foreground">
+          <ArrowLeftIcon className="size-4" /> All stocks
+        </Button>
+        <DeleteStockButton symbol={symbol} onDeleted={onBack} className="text-muted-foreground" />
+      </div>
 
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>

@@ -3,7 +3,7 @@ import json
 import re
 import uuid
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -18,10 +18,19 @@ app = FastAPI()
 # coming back empty for junk input. Swap for a real symbol-list lookup if false positives bite.
 TICKER_PATTERN = re.compile(r"\b[A-Z]{2,15}\b")
 
+HISTORY_COMMAND = re.compile(
+    r"^/history\s+(\S+)\s+(\d{4}-\d{2}-\d{2})\s+(\d{4}-\d{2}-\d{2})\s*$", re.IGNORECASE
+)
+HISTORY_USAGE = "Usage: `/history SYMBOL YYYY-MM-DD YYYY-MM-DD` — e.g. `/history TCS 2026-01-01 2026-03-01`"
+
 
 class ChatRequest(BaseModel):
     sessionId: str
     messages: list[dict]
+
+
+class AddStockRequest(BaseModel):
+    symbol: str
 
 
 def _text(message):
@@ -41,6 +50,22 @@ def _live_scrape(symbol):
     markdown = llm.build_markdown(symbol, financials, news)
     db.insert_scraped_item(symbol, markdown, llm.embed(markdown))
     return markdown
+
+
+@app.post("/api/stocks")
+def add_stock(req: AddStockRequest):
+    """Manually add a stock by symbol and scrape it live, same path the chat uses on-demand."""
+    symbol = req.symbol.strip().upper()
+    markdown = _live_scrape(symbol)
+    if markdown is None:
+        raise HTTPException(status_code=404, detail=f"No data found for '{symbol}' on NSE")
+    return {"symbol": symbol, "content_markdown": markdown}
+
+
+@app.delete("/api/stocks/{symbol}")
+def delete_stock(symbol: str):
+    db.delete_symbol(symbol.upper())
+    return {"ok": True}
 
 
 @app.get("/api/stocks")
@@ -92,6 +117,22 @@ def messages(session_id: str):
     ]
 
 
+def _history_reply(user_text):
+    """Handles the /history SYMBOL FROM TO slash command. Returns a reply string, or None if not that command."""
+    if not user_text.strip().lower().startswith("/history"):
+        return None
+    match = HISTORY_COMMAND.match(user_text.strip())
+    if not match:
+        return HISTORY_USAGE
+    symbol, start, end = match.group(1).upper(), match.group(2), match.group(3)
+    history = scraper.get_history(symbol, start, end)
+    if history is None:
+        return f"No price data found for '{symbol}' between {start} and {end}."
+    markdown = llm.build_history_markdown(symbol, history)
+    db.insert_scraped_item(symbol, markdown, llm.embed(markdown))
+    return markdown
+
+
 @app.post("/api/chat")
 def post_chat(req: ChatRequest):
     is_new = len(req.messages) == 1
@@ -99,17 +140,19 @@ def post_chat(req: ChatRequest):
 
     user_text = _text(req.messages[-1])
 
-    live_reports = list(filter(None, (
-        _live_scrape(symbol) for symbol in dict.fromkeys(TICKER_PATTERN.findall(user_text))
-    )))
+    reply = _history_reply(user_text)
+    if reply is None:
+        live_reports = list(filter(None, (
+            _live_scrape(symbol) for symbol in dict.fromkeys(TICKER_PATTERN.findall(user_text))
+        )))
 
-    query_embedding = llm.embed(user_text)
-    matches = db.similarity_search(query_embedding, limit=5)
-    stored = [m["content_markdown"] for m in matches if m["content_markdown"] not in live_reports]
-    context = "\n\n---\n\n".join(live_reports + stored) or None
+        query_embedding = llm.embed(user_text)
+        matches = db.similarity_search(query_embedding, limit=5)
+        stored = [m["content_markdown"] for m in matches if m["content_markdown"] not in live_reports]
+        context = "\n\n---\n\n".join(live_reports + stored) or None
 
-    history = [{"role": m["role"], "content": _text(m)} for m in req.messages]
-    reply = llm.chat(history, context)
+        history = [{"role": m["role"], "content": _text(m)} for m in req.messages]
+        reply = llm.chat(history, context)
 
     db.add_message(req.sessionId, "user", user_text)
     db.add_message(req.sessionId, "assistant", reply)

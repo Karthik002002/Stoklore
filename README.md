@@ -32,9 +32,12 @@ via Postgres/pgvector. No cloud APIs, no API keys.
 ## Running it
 
 ```bash
+ollama serve   # start Ollama first (if it isn't already running)
+
 ./run.sh   # starts Postgres, runs a scan, serves API (:8010) + frontend (:5180)
 ./kill.sh  # stops everything
 ```
+
 
 Requires Postgres (`postgresql@17` + `pgvector`) and Ollama with `llama3.1`
 and `nomic-embed-text` pulled — `run.sh` checks Ollama is running and fails

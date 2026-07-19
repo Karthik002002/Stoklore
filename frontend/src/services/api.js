@@ -4,3 +4,16 @@ async function json(res) {
 }
 
 export const getStockChart = (symbol, range) => fetch(`/api/stocks/${symbol}/chart?range=${range}`).then(json)
+
+export const getStockFinancials = (symbol) => fetch(`/api/stocks/${symbol}/financials`).then(json)
+
+export const getModels = () => fetch('/api/models').then(json)
+
+export const getActiveModel = () => fetch('/api/settings/active-model').then(json)
+
+export const setActiveModel = (model) =>
+  fetch('/api/settings/active-model', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model }),
+  }).then(json)

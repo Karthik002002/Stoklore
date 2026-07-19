@@ -8,6 +8,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { compact, fmt, inr } from '@/lib/format'
 import DeleteStockButton from './DeleteStockButton'
 import StockChart from './StockChart'
+import StockFinancials from './StockFinancials'
 
 const STAT_FIELDS = [
   ['Market Cap', 'marketCap', (v) => `₹${compact(v)}`],
@@ -96,6 +97,12 @@ export default function StockDetail() {
       </section>
 
       <section>
+        <h2 className="mb-3 text-sm font-medium text-muted-foreground">Financials (quarterly)</h2>
+        <StockFinancials symbol={symbol} />
+      </section>
+
+
+      <section>
         <h2 className="mb-3 text-sm font-medium text-muted-foreground">Latest events</h2>
         {news.length === 0 && <p className="text-sm text-muted-foreground">No recent news.</p>}
         <ul className="space-y-2">
@@ -111,6 +118,11 @@ export default function StockDetail() {
                 <ExternalLinkIcon className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
               </a>
               {n.summary && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{n.summary}</p>}
+              {n.published_at && (
+                <time className="mt-2 block text-xs text-muted-foreground">
+                  {new Date(n.published_at).toLocaleString()}
+                </time>
+              )}
             </li>
           ))}
         </ul>

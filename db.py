@@ -1,5 +1,6 @@
 """Postgres + pgvector storage for scraped reports and chat history."""
 import os
+from datetime import datetime, timedelta, timezone
 
 import psycopg
 from psycopg.rows import dict_row
@@ -20,7 +21,14 @@ CREATE TABLE IF NOT EXISTS scraped_items (
 CREATE TABLE IF NOT EXISTS chat_sessions (
   id TEXT PRIMARY KEY,
   title TEXT,
+  model TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS model TEXT;
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS chat_messages (
@@ -30,6 +38,17 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   content TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS stock_news (
+  id SERIAL PRIMARY KEY,
+  symbol TEXT NOT NULL,
+  title TEXT NOT NULL,
+  summary TEXT,
+  url TEXT NOT NULL,
+  published_at TIMESTAMPTZ,
+  scraped_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS stock_news_symbol_idx ON stock_news (symbol);
 """
 
 
@@ -106,6 +125,63 @@ def similarity_search(query_embedding, limit=5):
         ).fetchall()
 
 
+def get_cached_news(symbol, max_age_hours=24):
+    """Returns cached news for symbol if scraped within max_age_hours, else None (caller should re-scrape)."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT title, summary, url, published_at, scraped_at FROM stock_news "
+            "WHERE symbol = %s ORDER BY published_at DESC NULLS LAST",
+            (symbol,),
+        ).fetchall()
+    if not rows:
+        return None
+    newest_scrape = max(r["scraped_at"] for r in rows)
+    if newest_scrape < datetime.now(timezone.utc) - timedelta(hours=max_age_hours):
+        return None
+    return rows
+
+
+def save_news(symbol, items):
+    """Replaces the cached news for a symbol wholesale with a freshly scraped list."""
+    with connect() as conn:
+        conn.execute("DELETE FROM stock_news WHERE symbol = %s", (symbol,))
+        for item in items:
+            conn.execute(
+                "INSERT INTO stock_news (symbol, title, summary, url, published_at) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (symbol, item["title"], item["summary"], item["url"], item.get("published_at")),
+            )
+
+
+DEFAULT_MODEL = "ollama/llama3.1"
+
+
+def get_active_model():
+    with connect() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key = 'active_model'").fetchone()
+    return row["value"] if row else DEFAULT_MODEL
+
+
+def set_active_model(model):
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('active_model', %s) "
+            "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            (model,),
+        )
+
+
+def set_session_model(session_id, model):
+    with connect() as conn:
+        conn.execute("UPDATE chat_sessions SET model = %s WHERE id = %s", (model, session_id))
+
+
+def get_session_model(session_id):
+    with connect() as conn:
+        row = conn.execute("SELECT model FROM chat_sessions WHERE id = %s", (session_id,)).fetchone()
+    return row["model"] if row else None
+
+
 def ensure_session(session_id):
     """Client generates the id (crypto.randomUUID()); insert it on first use."""
     with connect() as conn:
@@ -123,7 +199,7 @@ def set_session_title(session_id, title):
 def list_sessions():
     with connect() as conn:
         return conn.execute(
-            "SELECT id, title, created_at FROM chat_sessions ORDER BY created_at DESC"
+            "SELECT id, title, model, created_at FROM chat_sessions ORDER BY created_at DESC"
         ).fetchall()
 
 

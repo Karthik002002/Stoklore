@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useChat } from '@ai-sdk/react'
+import { useQuery } from '@tanstack/react-query'
 import { useParams } from '@tanstack/react-router'
 import { DefaultChatTransport } from 'ai'
 import { toast } from 'sonner'
@@ -11,6 +12,14 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { getActiveModel, getModels } from '@/services/api'
 import {
   Conversation,
   ConversationContent,
@@ -47,7 +56,7 @@ function slashCommands(symbol) {
   ]
 }
 
-function ChatThread({ chatId, initialMessages, onTitle, onDone, symbol }) {
+function ChatThread({ chatId, initialMessages, onTitle, onDone, symbol, model }) {
   const { messages, sendMessage, status } = useChat({
     id: chatId,
     messages: initialMessages,
@@ -115,7 +124,7 @@ function ChatThread({ chatId, initialMessages, onTitle, onDone, symbol }) {
           className="grid grid-cols-[1fr_auto] items-end gap-2"
           onSubmit={({ text }) => {
             if (!text?.trim()) return
-            sendMessage({ text })
+            sendMessage({ text }, model ? { body: { model } } : undefined)
             setInput('')
           }}
         >
@@ -144,6 +153,11 @@ export default function ChatWidget() {
   const [sessions, setSessions] = useState([])
   const [chatId, setChatId] = useState(newId)
   const [initialMessages, setInitialMessages] = useState([])
+  const [model, setModel] = useState(null)
+
+  const { data: models } = useQuery({ queryKey: ['models'], queryFn: getModels })
+  const { data: active } = useQuery({ queryKey: ['activeModel'], queryFn: getActiveModel })
+  const effectiveModel = model ?? active?.model ?? null
 
   const loadSessions = useCallback(() => {
     fetch('/api/chat/sessions').then((r) => r.json()).then(setSessions)
@@ -151,14 +165,16 @@ export default function ChatWidget() {
 
   useEffect(() => { loadSessions() }, [loadSessions])
 
-  const openSession = async (id) => {
-    const msgs = await fetch(`/api/chat/sessions/${id}/messages`).then((r) => r.json())
+  const openSession = async (session) => {
+    const msgs = await fetch(`/api/chat/sessions/${session.id}/messages`).then((r) => r.json())
     setInitialMessages(msgs)
-    setChatId(id)
+    setModel(session.model ?? null)
+    setChatId(session.id)
   }
 
   const startNew = () => {
     setInitialMessages([])
+    setModel(null)
     setChatId(newId())
   }
 
@@ -198,7 +214,7 @@ export default function ChatWidget() {
                   <DropdownMenuItem disabled>No past chats</DropdownMenuItem>
                 )}
                 {sessions.map((s) => (
-                  <DropdownMenuItem key={s.id} onClick={() => openSession(s.id)}>
+                  <DropdownMenuItem key={s.id} onClick={() => openSession(s)}>
                     <span className="truncate">{s.title || 'Untitled'}</span>
                   </DropdownMenuItem>
                 ))}
@@ -212,6 +228,20 @@ export default function ChatWidget() {
             </Button>
           </div>
         </header>
+        <div className="border-b px-3 py-1.5">
+          <Select value={effectiveModel ?? ''} onValueChange={(m) => m && setModel(m)}>
+            <SelectTrigger size="sm" className="w-full border-none shadow-none">
+              <SelectValue placeholder="Model…" />
+            </SelectTrigger>
+            <SelectContent className="max-h-72">
+              {(models ?? []).map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <ChatThread
           key={chatId}
           chatId={chatId}
@@ -219,6 +249,7 @@ export default function ChatWidget() {
           onTitle={onTitle}
           onDone={onDone}
           symbol={symbol}
+          model={effectiveModel}
         />
       </div>
 

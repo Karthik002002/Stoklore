@@ -1,24 +1,79 @@
-"""Talks to a local Ollama server for embeddings, report generation, and chat (stdlib only)."""
+"""Talks to a local Ollama server (default) or OmniRoute (multi-provider) for chat/generation.
+Embeddings always stay on local Ollama - see embed() for why.
+"""
 import json
+import urllib.error
 import urllib.request
 
 OLLAMA_BASE = "http://localhost:11434"
-MODEL = "llama3.1"
+OMNIROUTE_BASE = "http://localhost:20128/v1"
 EMBED_MODEL = "nomic-embed-text"
+DEFAULT_MODEL = "ollama/llama3.1"
 
 
-def _post(path, body):
+def _post(base, path, body, timeout=120):
     data = json.dumps(body).encode()
-    req = urllib.request.Request(f"{OLLAMA_BASE}{path}", data=data, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=120) as resp:
+    req = urllib.request.Request(f"{base}{path}", data=data, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.load(resp)
 
 
 def embed(text):
-    return _post("/api/embed", {"model": EMBED_MODEL, "input": text})["embeddings"][0]
+    """Always local Ollama - scraped_items.embedding is a fixed VECTOR(768) column, so the
+    embedding model can't be swapped without breaking every existing row + similarity search."""
+    return _post(OLLAMA_BASE, "/api/embed", {"model": EMBED_MODEL, "input": text})["embeddings"][0]
 
 
-def build_markdown(symbol, financials, news):
+def _omniroute_chat(messages, model):
+    try:
+        resp = _post(OMNIROUTE_BASE, "/chat/completions", {"model": model, "messages": messages, "stream": False})
+    except urllib.error.HTTPError as e:
+        # OmniRoute is up but the upstream call failed (e.g. free-tier pool exhausted) - surface its message
+        try:
+            detail = json.load(e)["error"]["message"]
+        except Exception:
+            detail = f"HTTP {e.code}"
+        raise RuntimeError(f"'{model}' request failed via OmniRoute: {detail}") from e
+    except (urllib.error.URLError, ConnectionRefusedError) as e:
+        raise RuntimeError(f"'{model}' is unavailable - is `omniroute serve` running?") from e
+    return resp["choices"][0]["message"]["content"].strip()
+
+
+def _generate(prompt, model):
+    """Single-prompt completion, routed to Ollama's /api/generate or OmniRoute's chat/completions."""
+    if model.startswith("ollama/"):
+        ollama_model = model.removeprefix("ollama/")
+        return _post(OLLAMA_BASE, "/api/generate", {"model": ollama_model, "prompt": prompt, "stream": False})[
+            "response"
+        ].strip()
+    return _omniroute_chat([{"role": "user", "content": prompt}], model)
+
+
+def _chat(messages, model):
+    """Multi-turn chat, routed to Ollama's /api/chat or OmniRoute's chat/completions."""
+    if model.startswith("ollama/"):
+        ollama_model = model.removeprefix("ollama/")
+        return _post(OLLAMA_BASE, "/api/chat", {"model": ollama_model, "messages": messages, "stream": False})[
+            "message"
+        ]["content"].strip()
+    return _omniroute_chat(messages, model)
+
+
+def get_models():
+    """Live OmniRoute catalog plus the always-available local Ollama model. Degrades to just
+    Ollama if OmniRoute isn't running, rather than erroring."""
+    models = [{"id": DEFAULT_MODEL, "label": "Llama 3.1 (local)"}]
+    try:
+        req = urllib.request.Request(f"{OMNIROUTE_BASE}/models")
+        with urllib.request.urlopen(req, timeout=5) as r:
+            data = json.load(r)
+        models += [{"id": m["id"], "label": m["id"]} for m in data.get("data", [])]
+    except (urllib.error.URLError, ConnectionRefusedError):
+        pass
+    return models
+
+
+def build_markdown(symbol, financials, news, model=DEFAULT_MODEL):
     """Asks the LLM to return a full Markdown report, stored and rendered verbatim."""
     headlines = "\n".join(f"- {n['title']}: {n['summary']}" for n in news) or "No recent news."
     prompt = (
@@ -30,10 +85,10 @@ def build_markdown(symbol, financials, news):
         "India stock - use ₹ for any currency figures, never $. No investment "
         "advice. Return only Markdown, no preamble."
     )
-    return _post("/api/generate", {"model": MODEL, "prompt": prompt, "stream": False})["response"].strip()
+    return _generate(prompt, model)
 
 
-def build_history_markdown(symbol, history):
+def build_history_markdown(symbol, history, model=DEFAULT_MODEL):
     """Asks the LLM to summarize a scraped price-history window as a Markdown report."""
     prompt = (
         f"Stock {symbol}, price history from {history['start']} to {history['end']} "
@@ -47,7 +102,7 @@ def build_history_markdown(symbol, history):
         "this window. This is an NSE India stock - use ₹ for currency, never $. No "
         "investment advice. Return only Markdown, no preamble."
     )
-    return _post("/api/generate", {"model": MODEL, "prompt": prompt, "stream": False})["response"].strip()
+    return _generate(prompt, model)
 
 
 NO_CONTEXT_REPLY = (
@@ -56,7 +111,7 @@ NO_CONTEXT_REPLY = (
 )
 
 
-def chat(history, context):
+def chat(history, context, model=DEFAULT_MODEL):
     """history: list of {role, content}. context: retrieved Markdown snippets for RAG, or None if nothing matched."""
     if context is None:
         return NO_CONTEXT_REPLY
@@ -68,9 +123,9 @@ def chat(history, context):
         "guessing.\n\n" + context
     )
     messages = [{"role": "system", "content": system}] + history
-    return _post("/api/chat", {"model": MODEL, "messages": messages, "stream": False})["message"]["content"].strip()
+    return _chat(messages, model)
 
 
-def auto_title(first_message):
+def auto_title(first_message, model=DEFAULT_MODEL):
     prompt = f'Reply with only a 4-6 word title for a chat that starts with: "{first_message}"'
-    return _post("/api/generate", {"model": MODEL, "prompt": prompt, "stream": False})["response"].strip().strip('"')
+    return _generate(prompt, model).strip('"')

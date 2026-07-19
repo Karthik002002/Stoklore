@@ -1,6 +1,7 @@
 import { Link, Outlet } from '@tanstack/react-router'
 import { Toaster } from 'sonner'
 import ChatWidget from './ChatWidget'
+import Settings from './Settings'
 import ThemeToggle from './ThemeToggle'
 
 function App() {
@@ -14,7 +15,8 @@ function App() {
           <span className="text-sm text-muted-foreground">
             live movers · AI reports · local llama
           </span>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            <Settings />
             <ThemeToggle />
           </div>
         </div>

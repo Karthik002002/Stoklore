@@ -12,6 +12,7 @@ import llm
 import scraper
 
 app = FastAPI()
+db.init_schema()
 
 # ponytail: matches any all-caps 2-15 letter word as a candidate NSE symbol (NSE symbols are
 # always uppercase). No validation against a real symbol list - relies on the live scrape
@@ -27,10 +28,15 @@ HISTORY_USAGE = "Usage: `/history SYMBOL YYYY-MM-DD YYYY-MM-DD` — e.g. `/histo
 class ChatRequest(BaseModel):
     sessionId: str
     messages: list[dict]
+    model: str | None = None
 
 
 class AddStockRequest(BaseModel):
     symbol: str
+
+
+class ActiveModelRequest(BaseModel):
+    model: str
 
 
 def _text(message):
@@ -41,22 +47,38 @@ def _sse(obj):
     return f"data: {json.dumps(obj)}\n\n"
 
 
-def _live_scrape(symbol):
+def _live_scrape(symbol, model):
     """Scrapes+analyzes a symbol on demand from the user's prompt and caches it like a normal scan."""
     news = scraper.get_news(symbol)
     financials = scraper.get_financials(symbol)
     if not news and not financials.get("sector"):
         return None
-    markdown = llm.build_markdown(symbol, financials, news)
+    markdown = llm.build_markdown(symbol, financials, news, model=model)
     db.insert_scraped_item(symbol, markdown, llm.embed(markdown))
     return markdown
+
+
+@app.get("/api/models")
+def models():
+    return llm.get_models()
+
+
+@app.get("/api/settings/active-model")
+def get_active_model():
+    return {"model": db.get_active_model()}
+
+
+@app.put("/api/settings/active-model")
+def set_active_model(req: ActiveModelRequest):
+    db.set_active_model(req.model)
+    return {"model": req.model}
 
 
 @app.post("/api/stocks")
 def add_stock(req: AddStockRequest):
     """Manually add a stock by symbol and scrape it live, same path the chat uses on-demand."""
     symbol = req.symbol.strip().upper()
-    markdown = _live_scrape(symbol)
+    markdown = _live_scrape(symbol, db.get_active_model())
     if markdown is None:
         raise HTTPException(status_code=404, detail=f"No data found for '{symbol}' on NSE")
     return {"symbol": symbol, "content_markdown": markdown}
@@ -80,17 +102,34 @@ def stocks():
     return rows
 
 
+def _cached_news(symbol):
+    """Serves news from Postgres if scraped within the last day, otherwise re-scrapes and refreshes it."""
+    cached = db.get_cached_news(symbol)
+    if cached is not None:
+        return cached
+    try:
+        fresh = scraper.get_news(symbol)
+    except Exception:
+        fresh = []
+    db.save_news(symbol, fresh)
+    return fresh
+
+
 @app.get("/api/stocks/{symbol}")
 def stock_detail(symbol: str):
     try:
         quote = scraper.get_quote(symbol)
     except Exception:
         quote = {}
-    try:
-        news = scraper.get_news(symbol)
-    except Exception:
-        news = []
-    return {"quote": quote, "news": news, "reports": db.list_items_for_symbol(symbol)}
+    return {"quote": quote, "news": _cached_news(symbol), "reports": db.list_items_for_symbol(symbol)}
+
+
+@app.get("/api/stocks/{symbol}/financials")
+def stock_financials(symbol: str):
+    statements = scraper.get_financial_statements(symbol.upper())
+    if statements is None:
+        raise HTTPException(status_code=404, detail=f"No financial statements found for '{symbol}'")
+    return statements
 
 
 @app.get("/api/stocks/{symbol}/chart")
@@ -124,7 +163,7 @@ def messages(session_id: str):
     ]
 
 
-def _history_reply(user_text):
+def _history_reply(user_text, model):
     """Handles the /history SYMBOL FROM TO slash command. Returns a reply string, or None if not that command."""
     if not user_text.strip().lower().startswith("/history"):
         return None
@@ -135,7 +174,7 @@ def _history_reply(user_text):
     history = scraper.get_history(symbol, start, end)
     if history is None:
         return f"No price data found for '{symbol}' between {start} and {end}."
-    markdown = llm.build_history_markdown(symbol, history)
+    markdown = llm.build_history_markdown(symbol, history, model=model)
     db.insert_scraped_item(symbol, markdown, llm.embed(markdown))
     return markdown
 
@@ -144,22 +183,29 @@ def _history_reply(user_text):
 def post_chat(req: ChatRequest):
     is_new = len(req.messages) == 1
     db.ensure_session(req.sessionId)
+    if req.model:
+        db.set_session_model(req.sessionId, req.model)
+    model = db.get_session_model(req.sessionId) or db.get_active_model()
 
     user_text = _text(req.messages[-1])
 
-    reply = _history_reply(user_text)
-    if reply is None:
-        live_reports = list(filter(None, (
-            _live_scrape(symbol) for symbol in dict.fromkeys(TICKER_PATTERN.findall(user_text))
-        )))
+    try:
+        reply = _history_reply(user_text, model)
+        if reply is None:
+            live_reports = list(filter(None, (
+                _live_scrape(symbol, model) for symbol in dict.fromkeys(TICKER_PATTERN.findall(user_text))
+            )))
 
-        query_embedding = llm.embed(user_text)
-        matches = db.similarity_search(query_embedding, limit=5)
-        stored = [m["content_markdown"] for m in matches if m["content_markdown"] not in live_reports]
-        context = "\n\n---\n\n".join(live_reports + stored) or None
+            query_embedding = llm.embed(user_text)
+            matches = db.similarity_search(query_embedding, limit=5)
+            stored = [m["content_markdown"] for m in matches if m["content_markdown"] not in live_reports]
+            context = "\n\n---\n\n".join(live_reports + stored) or None
 
-        history = [{"role": m["role"], "content": _text(m)} for m in req.messages]
-        reply = llm.chat(history, context)
+            history = [{"role": m["role"], "content": _text(m)} for m in req.messages]
+            reply = llm.chat(history, context, model=model)
+    except RuntimeError as e:
+        # model-call failure (OmniRoute down / upstream exhausted) - show it in the chat, not a 500
+        reply = f"⚠️ {e}"
 
     db.add_message(req.sessionId, "user", user_text)
     db.add_message(req.sessionId, "assistant", reply)
@@ -171,7 +217,10 @@ def post_chat(req: ChatRequest):
         yield _sse({"type": "text-delta", "id": text_id, "delta": reply})
         yield _sse({"type": "text-end", "id": text_id})
         if is_new:
-            title = llm.auto_title(user_text)
+            try:
+                title = llm.auto_title(user_text, model=model)
+            except RuntimeError:
+                title = user_text[:40]
             db.set_session_title(req.sessionId, title)
             yield _sse({"type": "data-title", "data": {"title": title}})
         yield _sse({"type": "finish"})

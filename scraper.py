@@ -1,4 +1,6 @@
 """Fetches NSE India movers (nseindia.com) plus news/financials (Yahoo Finance via yfinance)."""
+from datetime import datetime
+
 import requests
 import yfinance as yf
 
@@ -40,15 +42,17 @@ def get_movers(count=25):
     return list(movers.values())[:count]
 
 
-def get_news(symbol, limit=5):
-    """Returns list of {title, summary, url} for an NSE symbol's recent news."""
+def get_news(symbol, limit=10):
+    """Returns list of {title, summary, url, published_at} for an NSE symbol's recent news."""
     items = []
     for item in yf.Ticker(f"{symbol}.NS").news[:limit]:
         c = item.get("content", {})
+        pub_date = c.get("pubDate")
         items.append({
             "title": c.get("title", ""),
             "summary": c.get("summary", ""),
             "url": (c.get("canonicalUrl") or {}).get("url", ""),
+            "published_at": datetime.fromisoformat(pub_date) if pub_date else None,
         })
     return items
 
@@ -124,6 +128,28 @@ def get_history(symbol, start, end):
         "changePercent": float((df["Close"].iloc[-1] - df["Open"].iloc[0]) / df["Open"].iloc[0] * 100),
         "avgVolume": int(df["Volume"].mean()),
     }
+
+
+def get_financial_statements(symbol):
+    """Quarterly + TTM income statement as a table: oldest-to-newest columns, Yahoo's row order."""
+    ticker = yf.Ticker(f"{symbol}.NS")
+    quarterly = ticker.quarterly_income_stmt
+    if quarterly.empty:
+        return None
+    ttm = ticker.ttm_income_stmt
+
+    # yfinance returns newest-column-first and roughly bottom-up rows vs. Yahoo's page - flip both.
+    quarterly = quarterly.iloc[::-1, ::-1]
+    periods = [c.strftime("%Y-%m-%d") for c in quarterly.columns]
+
+    rows = []
+    for label in quarterly.index:
+        values = [None if v != v else float(v) for v in quarterly.loc[label]]
+        ttm_val = ttm.loc[label].iloc[0] if ttm is not None and label in ttm.index else None
+        values.append(None if ttm_val is None or ttm_val != ttm_val else float(ttm_val))
+        rows.append({"label": label, "values": values})
+
+    return {"periods": periods + ["TTM"], "rows": rows}
 
 
 def get_financials(symbol):

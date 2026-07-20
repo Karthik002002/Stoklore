@@ -53,6 +53,11 @@ function slashCommands(symbol) {
       description: 'Scrape price history for a date range',
       template: `/history ${sym} ${monthAgoIso()} ${todayIso()}`,
     },
+    {
+      name: '/sentiment',
+      description: 'Analyze a news/blog URL: related stocks + sentiment',
+      template: '/sentiment ',
+    },
   ]
 }
 

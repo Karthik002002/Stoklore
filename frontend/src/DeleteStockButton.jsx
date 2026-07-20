@@ -17,7 +17,8 @@ import {
 export default function DeleteStockButton({ symbol, onDeleted, className, stopPropagation }) {
   const [open, setOpen] = useState(false)
 
-  const confirmDelete = async () => {
+  const confirmDelete = async (e) => {
+    if (stopPropagation) e.stopPropagation()
     await fetch(`/api/stocks/${symbol}`, { method: 'DELETE' })
     toast.success(`${symbol} and its reports deleted`)
     onDeleted()

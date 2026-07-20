@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 
 import requests
 import yfinance as yf
+from bs4 import BeautifulSoup
 
 NSE_BASE = "https://www.nseindia.com"
 NSE_HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
@@ -40,6 +41,19 @@ def get_movers(count=25):
         movers[row["symbol"]]["avgVolume"] = row.get("week1AvgVolume", 0) or 1
 
     return list(movers.values())[:count]
+
+
+def scrape_article(url):
+    """Fetches an arbitrary news/blog URL and returns its title + best-effort body text."""
+    resp = requests.get(url, headers=NSE_HEADERS, timeout=15)
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, "html.parser")
+    for tag in soup(["script", "style", "nav", "header", "footer", "aside", "form"]):
+        tag.decompose()
+    h1 = soup.find("h1")
+    title = h1.get_text(strip=True) if h1 else (soup.title.get_text(strip=True) if soup.title else url)
+    text = " ".join(p.get_text(" ", strip=True) for p in soup.find_all("p"))
+    return {"title": title, "text": text}
 
 
 def get_news(symbol, limit=10):
@@ -176,6 +190,53 @@ def get_financial_statements(symbol):
         rows.append({"label": label, "values": values})
 
     return {"periods": periods + ["TTM"], "rows": rows}
+
+
+def get_daily_bars(symbol, start=None):
+    """Daily OHLCV bars for symbol as plain dicts, via yfinance. start=None fetches a full 1y
+    backfill; start='YYYY-MM-DD' fetches only bars from that date forward (incremental gap-fill)."""
+    ticker = yf.Ticker(f"{symbol}.NS")
+    df = ticker.history(period="1y", interval="1d") if start is None else ticker.history(start=start, interval="1d")
+    return [
+        {
+            "date": ts.date().isoformat(),
+            "open": round(row["Open"], 2), "high": round(row["High"], 2),
+            "low": round(row["Low"], 2), "close": round(row["Close"], 2),
+            "volume": int(row["Volume"]),
+        }
+        for ts, row in df.iterrows()
+        if row[["Open", "High", "Low", "Close"]].notna().all()
+    ]
+
+
+def get_corporate_actions(symbol, since_days=30):
+    """Returns list of {action_type, date, detail} for a symbol's recent dividends/splits and
+    upcoming earnings dates. action_type is 'dividend' | 'split' | 'earnings'.
+    Verified against yfinance 1.5.1: .actions is a DataFrame with a tz-aware date index and
+    'Dividends'/'Stock Splits' columns; .calendar is a dict with an 'Earnings Date' date list
+    (used instead of get_earnings_dates(), which needs the lxml package)."""
+    ticker = yf.Ticker(f"{symbol}.NS")
+    events = []
+
+    actions = ticker.actions
+    if not actions.empty:
+        cutoff = datetime.now(actions.index.tz) - timedelta(days=since_days)
+        for ts, row in actions[actions.index >= cutoff].iterrows():
+            if row.get("Dividends"):
+                events.append({"action_type": "dividend", "date": ts.date().isoformat(),
+                               "detail": f"Dividend of ₹{row['Dividends']:g} per share"})
+            if row.get("Stock Splits"):
+                events.append({"action_type": "split", "date": ts.date().isoformat(),
+                               "detail": f"Stock split {row['Stock Splits']:g}:1"})
+
+    try:
+        for d in (ticker.calendar or {}).get("Earnings Date", []):
+            events.append({"action_type": "earnings", "date": d.isoformat(),
+                           "detail": f"Earnings scheduled for {d.isoformat()}"})
+    except Exception:
+        pass  # no calendar data for this symbol - fine, skip earnings events
+
+    return events
 
 
 def get_financials(symbol):

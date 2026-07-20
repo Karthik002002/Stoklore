@@ -24,6 +24,13 @@ def embed(text):
     return _post(OLLAMA_BASE, "/api/embed", {"model": EMBED_MODEL, "input": text})["embeddings"][0]
 
 
+def _ollama_post(path, body):
+    try:
+        return _post(OLLAMA_BASE, path, body)
+    except (urllib.error.URLError, ConnectionRefusedError) as e:
+        raise RuntimeError("Ollama is unavailable - is `ollama serve` running?") from e
+
+
 def _omniroute_chat(messages, model):
     try:
         resp = _post(OMNIROUTE_BASE, "/chat/completions", {"model": model, "messages": messages, "stream": False})
@@ -43,7 +50,7 @@ def _generate(prompt, model):
     """Single-prompt completion, routed to Ollama's /api/generate or OmniRoute's chat/completions."""
     if model.startswith("ollama/"):
         ollama_model = model.removeprefix("ollama/")
-        return _post(OLLAMA_BASE, "/api/generate", {"model": ollama_model, "prompt": prompt, "stream": False})[
+        return _ollama_post("/api/generate", {"model": ollama_model, "prompt": prompt, "stream": False})[
             "response"
         ].strip()
     return _omniroute_chat([{"role": "user", "content": prompt}], model)
@@ -53,7 +60,7 @@ def _chat(messages, model):
     """Multi-turn chat, routed to Ollama's /api/chat or OmniRoute's chat/completions."""
     if model.startswith("ollama/"):
         ollama_model = model.removeprefix("ollama/")
-        return _post(OLLAMA_BASE, "/api/chat", {"model": ollama_model, "messages": messages, "stream": False})[
+        return _ollama_post("/api/chat", {"model": ollama_model, "messages": messages, "stream": False})[
             "message"
         ]["content"].strip()
     return _omniroute_chat(messages, model)
@@ -101,6 +108,36 @@ def build_history_markdown(symbol, history, model=DEFAULT_MODEL):
         "list of the stats given, and a 2-3 sentence factual take on the price action over "
         "this window. This is an NSE India stock - use ₹ for currency, never $. No "
         "investment advice. Return only Markdown, no preamble."
+    )
+    return _generate(prompt, model)
+
+
+def extract_tickers(text, model=DEFAULT_MODEL):
+    """Asks the LLM which NSE-listed companies an article is about. Returns a list of ticker
+    strings (may be empty) - reuses the existing chat model instead of a separate NER model."""
+    prompt = (
+        "Below is a news/blog article. List every company mentioned that is listed on India's "
+        "NSE, as their NSE ticker symbols (e.g. TCS, INFY, RELIANCE). Skip companies that "
+        "aren't NSE-listed or whose ticker you're unsure of. Reply with ONLY a JSON array of "
+        'ticker strings, e.g. ["TCS", "INFY"]. If none, reply [].\n\n'
+        f"Article:\n{text[:4000]}"
+    )
+    reply = _generate(prompt, model)
+    try:
+        tickers = json.loads(reply[reply.index("[") : reply.rindex("]") + 1])
+        return [t.strip().upper() for t in tickers if isinstance(t, str) and t.strip()]
+    except (ValueError, json.JSONDecodeError):
+        return []
+
+
+def explain_sentiment(text, label, model=DEFAULT_MODEL):
+    """Asks the LLM to justify the FinRoBERTa sentiment label with specifics from the article -
+    the classifier itself only outputs a label+score, no rationale."""
+    prompt = (
+        f"A financial sentiment classifier scored the article below as '{label}'. "
+        "In 2-3 sentences, explain why, citing specific facts, numbers, or quotes from the "
+        "article that support that label. Be concrete, not generic. Return only the explanation.\n\n"
+        f"Article:\n{text[:4000]}"
     )
     return _generate(prompt, model)
 

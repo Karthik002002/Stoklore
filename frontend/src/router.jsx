@@ -1,5 +1,6 @@
 import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
 import App from './App'
+import EventsFeed from './EventsFeed'
 import StockDetail from './StockDetail'
 import StocksList from './StocksList'
 
@@ -17,6 +18,12 @@ const stockRoute = createRoute({
   component: StockDetail,
 })
 
-const routeTree = rootRoute.addChildren([indexRoute, stockRoute])
+const eventsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/events',
+  component: EventsFeed,
+})
+
+const routeTree = rootRoute.addChildren([indexRoute, stockRoute, eventsRoute])
 
 export const router = createRouter({ routeTree })

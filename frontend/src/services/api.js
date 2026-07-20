@@ -7,6 +7,9 @@ export const getStockChart = (symbol, range) => fetch(`/api/stocks/${symbol}/cha
 
 export const getStockFinancials = (symbol) => fetch(`/api/stocks/${symbol}/financials`).then(json)
 
+export const getEmaCrossover = (symbol, short, long) =>
+  fetch(`/api/prices/${symbol}/ema-crossover?short=${short}&long=${long}`).then(json)
+
 export const getModels = () => fetch('/api/models').then(json)
 
 export const getActiveModel = () => fetch('/api/settings/active-model').then(json)

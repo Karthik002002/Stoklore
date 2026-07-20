@@ -1,11 +1,27 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AreaSeries, CandlestickSeries, createChart } from 'lightweight-charts'
-import { ChartCandlestickIcon, ChartSplineIcon } from 'lucide-react'
+import { AreaSeries, CandlestickSeries, LineSeries, createChart } from 'lightweight-charts'
+import { ChartCandlestickIcon, ChartSplineIcon, PlusIcon, XIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { compact } from '@/lib/format'
 import { getStockChart } from '@/services/api'
+
+const EMA_COLORS = ['#f59e0b', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6']
+
+function computeEma(bars, period) {
+  if (bars.length < period) return []
+  const k = 2 / (period + 1)
+  const sma = bars.slice(0, period).reduce((sum, b) => sum + b.close, 0) / period
+  const out = [{ time: bars[period - 1].time, value: sma }]
+  let prev = sma
+  for (let i = period; i < bars.length; i++) {
+    prev = bars[i].close * k + prev * (1 - k)
+    out.push({ time: bars[i].time, value: prev })
+  }
+  return out
+}
 
 const RANGES = [
   ['1d', '1D'],
@@ -30,8 +46,10 @@ const COLORS = {
 
 // Estimated tooltip box size, used to flip it to the opposite side near an edge instead of
 // clamping it in place (clamping can leave the box sitting on top of the cursor's data point).
+// Height grows with each active EMA row, so it's computed per-tooltip from EMA_ROW_H.
 const TOOLTIP_W = 176
-const TOOLTIP_H = 158
+const TOOLTIP_H_BASE = 158
+const EMA_ROW_H = 16
 const TOOLTIP_MARGIN = 14
 
 // scraper.py pre-shifts bar times by the IST offset so the chart's (UTC-only) axis labels show
@@ -51,16 +69,41 @@ export default function StockChart({ symbol }) {
   const [range, setRange] = useState('1mo')
   const [type, setType] = useState('line')
   const [tooltip, setTooltip] = useState(null)
+  const [emaEnabled, setEmaEnabled] = useState(() => localStorage.getItem('chart.emaEnabled') === 'true')
+  const [emaPeriods, setEmaPeriods] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('chart.emaPeriods')) ?? [20, 50]
+    } catch {
+      return [20, 50]
+    }
+  })
+  const [newPeriod, setNewPeriod] = useState('')
+
+  useEffect(() => localStorage.setItem('chart.emaEnabled', String(emaEnabled)), [emaEnabled])
+  useEffect(() => localStorage.setItem('chart.emaPeriods', JSON.stringify(emaPeriods)), [emaPeriods])
+
+  const addPeriod = () => {
+    const n = parseInt(newPeriod, 10)
+    if (n > 0 && !emaPeriods.includes(n)) setEmaPeriods((p) => [...p, n].sort((a, b) => a - b))
+    setNewPeriod('')
+  }
+  const removePeriod = (n) => setEmaPeriods((p) => p.filter((x) => x !== n))
 
   const { data, isLoading } = useQuery({
     queryKey: ['stockChart', symbol, range],
     queryFn: () => getStockChart(symbol, range),
   })
 
-  const barsByTime = useMemo(() => new Map(data?.bars?.map((b) => [b.time, b])), [data])
+  // data.bars includes extra warmup bars before visibleFrom so EMAs have enough prior data to
+  // cover the whole visible range - the price series/axis only show visibleBars.
+  const visibleBars = useMemo(
+    () => (data?.visibleFrom ? data.bars.filter((b) => b.time >= data.visibleFrom) : data?.bars ?? []),
+    [data],
+  )
+  const barsByTime = useMemo(() => new Map(visibleBars.map((b) => [b.time, b])), [visibleBars])
 
   useEffect(() => {
-    if (!data?.bars?.length || !containerRef.current) return
+    if (!visibleBars.length || !containerRef.current) return
     setTooltip(null)
 
     const chart = createChart(containerRef.current, {
@@ -88,9 +131,9 @@ export default function StockChart({ symbol }) {
           wickDownColor: COLORS.down,
           borderVisible: false,
         })
-        .setData(data.bars)
+        .setData(visibleBars)
     } else {
-      const rising = data.bars.at(-1).close >= data.bars[0].open
+      const rising = visibleBars.at(-1).close >= visibleBars[0].open
       const color = rising ? COLORS.up : COLORS.down
       chart
         .addSeries(AreaSeries, {
@@ -99,27 +142,56 @@ export default function StockChart({ symbol }) {
           topColor: rising ? 'rgba(34, 197, 94, 0.25)' : 'rgba(239, 68, 68, 0.25)',
           bottomColor: 'rgba(0, 0, 0, 0)',
         })
-        .setData(data.bars.map((b) => ({ time: b.time, value: b.close })))
+        .setData(visibleBars.map((b) => ({ time: b.time, value: b.close })))
     }
+
+    const emaSeries = emaEnabled
+      ? emaPeriods.map((period, i) => {
+          const emaData = computeEma(data.bars, period)
+          const color = EMA_COLORS[i % EMA_COLORS.length]
+          if (emaData.length) {
+            chart
+              .addSeries(LineSeries, {
+                color,
+                lineWidth: 1,
+                crosshairMarkerVisible: false,
+                lastValueVisible: false,
+                priceLineVisible: false,
+              })
+              .setData(emaData)
+          }
+          return { period, color, byTime: new Map(emaData.map((d) => [d.time, d.value])) }
+        })
+      : []
 
     chart.subscribeCrosshairMove((param) => {
       if (!param.point || !param.time || !barsByTime.has(param.time)) {
         setTooltip(null)
         return
       }
-      const { width, height } = containerRef.current.getBoundingClientRect()
+      const emas = emaSeries
+        .map(({ period, color, byTime }) => ({ period, color, value: byTime.get(param.time) }))
+        .filter((e) => e.value !== undefined)
+      const tooltipHeight = TOOLTIP_H_BASE + emas.length * EMA_ROW_H
+      const { width } = containerRef.current.getBoundingClientRect()
       const flipX = param.point.x + TOOLTIP_MARGIN + TOOLTIP_W > width
-      const flipY = param.point.y - TOOLTIP_MARGIN - TOOLTIP_H < 0
+      const flipY = param.point.y - TOOLTIP_MARGIN - tooltipHeight < 0
       setTooltip({
         left: flipX ? param.point.x - TOOLTIP_MARGIN - TOOLTIP_W : param.point.x + TOOLTIP_MARGIN,
-        top: flipY ? param.point.y + TOOLTIP_MARGIN : param.point.y - TOOLTIP_MARGIN - TOOLTIP_H,
+        top: flipY ? param.point.y + TOOLTIP_MARGIN : param.point.y - TOOLTIP_MARGIN - tooltipHeight,
         bar: barsByTime.get(param.time),
+        emas,
       })
     })
 
-    chart.timeScale().fitContent()
+    // Not fitContent(): EMA series can carry warmup points before visibleBars[0], which would
+    // zoom the chart out to include them. Pin the view to just the visible window instead.
+    chart.timeScale().setVisibleRange({
+      from: visibleBars[0].time,
+      to: visibleBars.at(-1).time,
+    })
     return () => chart.remove()
-  }, [data, type, barsByTime])
+  }, [data, visibleBars, type, barsByTime, emaEnabled, emaPeriods])
 
   return (
     <div className="rounded-xl border bg-card p-4">
@@ -137,19 +209,65 @@ export default function StockChart({ symbol }) {
             </Button>
           ))}
         </div>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={type === 'line' ? 'Switch to candles' : 'Switch to line'}
-          onClick={() => setType((t) => (t === 'line' ? 'candles' : 'line'))}
-        >
-          {type === 'line' ? (
-            <ChartCandlestickIcon className="size-4" />
-          ) : (
-            <ChartSplineIcon className="size-4" />
-          )}
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant={emaEnabled ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-7 px-2.5 text-xs"
+            onClick={() => setEmaEnabled((e) => !e)}
+          >
+            EMA
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={type === 'line' ? 'Switch to candles' : 'Switch to line'}
+            onClick={() => setType((t) => (t === 'line' ? 'candles' : 'line'))}
+          >
+            {type === 'line' ? (
+              <ChartCandlestickIcon className="size-4" />
+            ) : (
+              <ChartSplineIcon className="size-4" />
+            )}
+          </Button>
+        </div>
       </div>
+
+      {emaEnabled && (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+          {emaPeriods.map((period, i) => (
+            <span
+              key={period}
+              className="flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
+              style={{ color: EMA_COLORS[i % EMA_COLORS.length] }}
+            >
+              EMA {period}
+              <button
+                type="button"
+                aria-label={`Remove EMA ${period}`}
+                onClick={() => removePeriod(period)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <XIcon className="size-3" />
+              </button>
+            </span>
+          ))}
+          <div className="flex items-center gap-1">
+            <Input
+              type="number"
+              min="1"
+              value={newPeriod}
+              onChange={(e) => setNewPeriod(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && addPeriod()}
+              placeholder="days"
+              className="h-6 w-16 px-1.5 text-xs"
+            />
+            <Button variant="ghost" size="icon-sm" aria-label="Add EMA period" onClick={addPeriod}>
+              <PlusIcon className="size-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="relative h-72">
         <div ref={containerRef} className="absolute inset-0" />
@@ -181,6 +299,21 @@ export default function StockChart({ symbol }) {
               <span className="text-muted-foreground">Volume</span>
               <span className="text-right">{compact(tooltip.bar.volume)}</span>
             </div>
+            {tooltip.emas.length > 0 && (
+              <div className="mt-1.5 space-y-1 border-t pt-1.5">
+                {tooltip.emas.map(({ period, color, value }) => (
+                  <div key={period} className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-1.5" style={{ color }}>
+                      <span className="size-1.5 rounded-full" style={{ backgroundColor: color }} />
+                      EMA {period}
+                    </span>
+                    <span className="tabular-nums" style={{ color }}>
+                      ₹{value.toFixed(2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

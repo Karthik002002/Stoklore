@@ -4,7 +4,7 @@ cd "$(dirname "$0")"
 
 brew services start postgresql@17
 
-curl -s -o /dev/null http://localhost:11434 || { echo "ollama is not running - start it with 'ollama serve'" >&2; exit 1; }
+# curl -s -o /dev/null http://localhost:11434 || { echo "ollama is not running - start it with 'ollama serve'" >&2; exit 1; }
 
 .venv/bin/python main.py --limit 10
 

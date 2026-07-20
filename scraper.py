@@ -1,5 +1,5 @@
 """Fetches NSE India movers (nseindia.com) plus news/financials (Yahoo Finance via yfinance)."""
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import requests
 import yfinance as yf
@@ -91,11 +91,37 @@ CHART_RANGES = {
     "max": ("max", "1mo"),
 }
 
+# How far back each range reaches, in calendar days ("ytd" is handled separately below).
+RANGE_DAYS = {"1d": 1, "5d": 5, "1mo": 30, "6mo": 182, "1y": 365, "5y": 365 * 5}
+
+# Extra calendar days fetched *before* the requested range so indicators (e.g. a 50-day EMA)
+# have enough prior bars to be plotted across the whole visible range instead of only the back
+# half of it. "max" already pulls full history, so it needs no extra warmup.
+WARMUP_DAYS = {"1d": 5, "5d": 25, "1mo": 120, "6mo": 120, "ytd": 120, "1y": 120, "5y": 500}
+
 
 def get_chart(symbol, range_key):
-    """OHLCV bars for the chart, via yfinance (wraps Yahoo's v8/finance/chart endpoint)."""
+    """OHLCV bars for the chart, via yfinance (wraps Yahoo's v8/finance/chart endpoint).
+
+    Returns extra warmup bars before `visibleFrom` so indicators can be computed across the
+    whole visible range; the frontend slices bars >= visibleFrom for the actual price series.
+    """
     period, interval = CHART_RANGES[range_key]
-    df = yf.Ticker(f"{symbol}.NS").history(period=period, interval=interval)
+    ticker = yf.Ticker(f"{symbol}.NS")
+
+    warmup = WARMUP_DAYS.get(range_key)
+    if warmup is None:
+        df = ticker.history(period=period, interval=interval)
+        visible_from = None
+    else:
+        cutoff = (
+            datetime(datetime.now().year, 1, 1)
+            if range_key == "ytd"
+            else datetime.now() - timedelta(days=RANGE_DAYS[range_key])
+        )
+        df = ticker.history(start=cutoff - timedelta(days=warmup), interval=interval)
+        visible_from = int(cutoff.timestamp())
+
     bars = [
         {
             # lightweight-charts displays UTC; pre-shift to IST so intraday bars show market-local time
@@ -109,7 +135,7 @@ def get_chart(symbol, range_key):
         for ts, row in df.iterrows()
         if row[["Open", "High", "Low", "Close"]].notna().all()
     ]
-    return {"bars": bars, "interval": interval}
+    return {"bars": bars, "interval": interval, "visibleFrom": visible_from}
 
 
 def get_history(symbol, start, end):

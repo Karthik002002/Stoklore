@@ -1,5 +1,5 @@
-"""Talks to a local Ollama server (default) or OmniRoute (multi-provider) for chat/generation.
-Embeddings always stay on local Ollama - see embed() for why.
+"""Talks to a local Ollama server (default), OmniRoute (multi-provider), or a LiteLLM proxy for
+chat/generation. Embeddings always stay on local Ollama - see embed() for why.
 """
 import json
 import urllib.error
@@ -10,10 +10,22 @@ OMNIROUTE_BASE = "http://localhost:20128/v1"
 EMBED_MODEL = "nomic-embed-text"
 DEFAULT_MODEL = "ollama/llama3.1"
 
+# Set by api.py at startup (from db.get_litellm_base_url/get_litellm_api_key) and again whenever
+# the user saves new LiteLLM settings - kept as plain module globals rather than an import of db,
+# so this module stays a pure network client with no storage dependency.
+LITELLM_BASE = None
+LITELLM_API_KEY = None
 
-def _post(base, path, body, timeout=120):
+
+def configure_litellm(base_url, api_key=None):
+    global LITELLM_BASE, LITELLM_API_KEY
+    LITELLM_BASE = base_url.rstrip("/") if base_url else None
+    LITELLM_API_KEY = api_key or None
+
+
+def _post(base, path, body, headers=None, timeout=120):
     data = json.dumps(body).encode()
-    req = urllib.request.Request(f"{base}{path}", data=data, headers={"Content-Type": "application/json"})
+    req = urllib.request.Request(f"{base}{path}", data=data, headers={"Content-Type": "application/json", **(headers or {})})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.load(resp)
 
@@ -31,82 +43,147 @@ def _ollama_post(path, body):
         raise RuntimeError("Ollama is unavailable - is `ollama serve` running?") from e
 
 
-def _omniroute_chat(messages, model):
+def _openai_compat_post(base, api_key, body, provider_label, unavailable_hint):
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     try:
-        resp = _post(OMNIROUTE_BASE, "/chat/completions", {"model": model, "messages": messages, "stream": False})
+        return _post(base, "/chat/completions", body, headers=headers)
     except urllib.error.HTTPError as e:
-        # OmniRoute is up but the upstream call failed (e.g. free-tier pool exhausted) - surface its message
         try:
             detail = json.load(e)["error"]["message"]
         except Exception:
             detail = f"HTTP {e.code}"
-        raise RuntimeError(f"'{model}' request failed via OmniRoute: {detail}") from e
+        raise RuntimeError(f"'{body['model']}' request failed via {provider_label}: {detail}") from e
     except (urllib.error.URLError, ConnectionRefusedError) as e:
-        raise RuntimeError(f"'{model}' is unavailable - is `omniroute serve` running?") from e
-    return resp["choices"][0]["message"]["content"].strip()
+        raise RuntimeError(f"{provider_label} is unavailable - {unavailable_hint}") from e
+
+
+def _omniroute_chat(messages, model, tools=None):
+    body = {"model": model, "messages": messages, "stream": False}
+    if tools:
+        body["tools"] = tools
+    resp = _openai_compat_post(OMNIROUTE_BASE, None, body, "OmniRoute", "is `omniroute serve` running?")
+    return resp["choices"][0]["message"]
+
+
+def _litellm_chat(messages, model, tools=None):
+    if not LITELLM_BASE:
+        raise RuntimeError("LiteLLM isn't configured - add its proxy URL in Settings")
+    body = {"model": model, "messages": messages, "stream": False}
+    if tools:
+        body["tools"] = tools
+    resp = _openai_compat_post(LITELLM_BASE, LITELLM_API_KEY, body, "LiteLLM", f"is your proxy running at {LITELLM_BASE}?")
+    return resp["choices"][0]["message"]
 
 
 def _generate(prompt, model):
-    """Single-prompt completion, routed to Ollama's /api/generate or OmniRoute's chat/completions."""
+    """Single-prompt completion, routed to Ollama's /api/generate or an OpenAI-compatible chat call."""
     if model.startswith("ollama/"):
         ollama_model = model.removeprefix("ollama/")
         return _ollama_post("/api/generate", {"model": ollama_model, "prompt": prompt, "stream": False})[
             "response"
         ].strip()
-    return _omniroute_chat([{"role": "user", "content": prompt}], model)
+    if model.startswith("litellm/"):
+        return _litellm_chat([{"role": "user", "content": prompt}], model.removeprefix("litellm/"))["content"].strip()
+    return _omniroute_chat([{"role": "user", "content": prompt}], model)["content"].strip()
 
 
 def _chat(messages, model):
-    """Multi-turn chat, routed to Ollama's /api/chat or OmniRoute's chat/completions."""
+    """Multi-turn chat, routed to Ollama's /api/chat or an OpenAI-compatible chat call."""
     if model.startswith("ollama/"):
         ollama_model = model.removeprefix("ollama/")
         return _ollama_post("/api/chat", {"model": ollama_model, "messages": messages, "stream": False})[
             "message"
         ]["content"].strip()
-    return _omniroute_chat(messages, model)
+    if model.startswith("litellm/"):
+        return _litellm_chat(messages, model.removeprefix("litellm/"))["content"].strip()
+    return _omniroute_chat(messages, model)["content"].strip()
+
+
+# --- Tool-calling agent (native Ollama / OpenAI-compatible tool_calls, no LangChain) -----------
+# Ollama and OpenAI-style APIs (OmniRoute, LiteLLM) shape tool calls slightly differently -
+# arguments arrive pre-parsed from Ollama but as a JSON *string* from OpenAI-compatible servers,
+# and OpenAI-compatible tool results must echo back a matching tool_call_id. Each driver below
+# normalizes its backend to the same (assistant_message_to_append, calls) shape so the loop
+# itself doesn't need to know which backend it's talking to.
+
+class _OllamaDriver:
+    def __init__(self, model):
+        self.model = model.removeprefix("ollama/")
+
+    def call(self, messages, tools):
+        msg = _ollama_post(
+            "/api/chat", {"model": self.model, "messages": messages, "tools": tools, "stream": False}
+        )["message"]
+        calls = [
+            {"id": f"call_{i}", "name": c["function"]["name"], "arguments": c["function"].get("arguments") or {}}
+            for i, c in enumerate(msg.get("tool_calls") or [])
+        ]
+        return msg, calls
+
+    def tool_result_message(self, call_id, result):
+        return {"role": "tool", "content": json.dumps(result, default=str)}
+
+
+class _OpenAICompatDriver:
+    def __init__(self, chat_fn, model):
+        self.chat_fn = chat_fn
+        self.model = model
+
+    def call(self, messages, tools):
+        msg = self.chat_fn(messages, self.model, tools=tools)
+        calls = []
+        for c in msg.get("tool_calls") or []:
+            try:
+                args = json.loads(c["function"].get("arguments") or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            calls.append({"id": c["id"], "name": c["function"]["name"], "arguments": args})
+        return msg, calls
+
+    def tool_result_message(self, call_id, result):
+        return {"role": "tool", "tool_call_id": call_id, "content": json.dumps(result, default=str)}
+
+
+def _driver_for(model):
+    if model.startswith("ollama/"):
+        return _OllamaDriver(model)
+    if model.startswith("litellm/"):
+        return _OpenAICompatDriver(_litellm_chat, model.removeprefix("litellm/"))
+    return _OpenAICompatDriver(_omniroute_chat, model)
 
 
 def run_agent_stream(messages, tools, tool_impls, model, max_rounds=5):
-    """Native Ollama tool-calling agent loop - no LangChain. `tools` is the JSON-schema list
-    Ollama's /api/chat accepts; `tool_impls` maps tool name -> python callable. The model is
-    called repeatedly: each round either returns plain text (done) or tool_calls, which are
-    executed and fed back as role:"tool" messages. Ollama-only - callers route non-ollama
-    models elsewhere. max_rounds caps runaway loops; the 8B model rarely needs more than 2.
+    """Tool-calling agent loop, backend-agnostic via _driver_for. `tools` is an OpenAI/Ollama-
+    style function-schema list; `tool_impls` maps tool name -> python callable. Each round either
+    returns plain text (done) or tool_calls, which are executed and fed back as role:"tool"
+    messages. max_rounds caps runaway loops.
 
     Generator, so callers can surface tool activity live in the UI. Yields, in order:
       ("tool", call_id, name, args)     - before a tool executes
       ("tool_result", call_id, result)  - after it finishes
       ("done", final_text)              - always the last event
     """
-    ollama_model = model.removeprefix("ollama/")
+    driver = _driver_for(model)
     msgs = list(messages)
-    msg = {}
-    call_seq = 0
+    content = ""
     for _ in range(max_rounds):
-        msg = _ollama_post(
-            "/api/chat", {"model": ollama_model, "messages": msgs, "tools": tools, "stream": False}
-        )["message"]
-        calls = msg.get("tool_calls")
+        msg, calls = driver.call(msgs, tools)
+        content = msg.get("content") or ""
         if not calls:
-            yield ("done", msg["content"].strip())
+            yield ("done", content.strip())
             return
         msgs.append(msg)
         for call in calls:
-            name = call["function"]["name"]
-            args = call["function"].get("arguments") or {}
-            call_seq += 1
-            call_id = f"call_{call_seq}"
-            yield ("tool", call_id, name, args)
+            yield ("tool", call["id"], call["name"], call["arguments"])
             try:
-                result = tool_impls[name](**args)
+                result = tool_impls[call["name"]](**call["arguments"])
             except KeyError:
-                result = f"unknown tool '{name}'"
+                result = f"unknown tool '{call['name']}'"
             except Exception as e:
-                result = f"tool '{name}' failed: {e}"
-            yield ("tool_result", call_id, result)
-            msgs.append({"role": "tool", "content": json.dumps(result, default=str)})
-    yield ("done", (msg.get("content") or "").strip()
-           or "I couldn't finish that within the tool-call limit - try a more specific request.")
+                result = f"tool '{call['name']}' failed: {e}"
+            yield ("tool_result", call["id"], result)
+            msgs.append(driver.tool_result_message(call["id"], result))
+    yield ("done", content.strip() or "I couldn't finish that within the tool-call limit - try a more specific request.")
 
 
 def run_agent(messages, tools, tool_impls, model, max_rounds=5):
@@ -117,8 +194,8 @@ def run_agent(messages, tools, tool_impls, model, max_rounds=5):
 
 
 def get_models():
-    """Live OmniRoute catalog plus the always-available local Ollama model. Degrades to just
-    Ollama if OmniRoute isn't running, rather than erroring."""
+    """Local Ollama (always available) + live OmniRoute catalog + live LiteLLM catalog (if
+    configured). Degrades quietly if either proxy isn't reachable, rather than erroring."""
     models = [{"id": DEFAULT_MODEL, "label": "Llama 3.1 (local)"}]
     try:
         req = urllib.request.Request(f"{OMNIROUTE_BASE}/models")
@@ -127,6 +204,15 @@ def get_models():
         models += [{"id": m["id"], "label": m["id"]} for m in data.get("data", [])]
     except (urllib.error.URLError, ConnectionRefusedError):
         pass
+    if LITELLM_BASE:
+        try:
+            headers = {"Authorization": f"Bearer {LITELLM_API_KEY}"} if LITELLM_API_KEY else {}
+            req = urllib.request.Request(f"{LITELLM_BASE}/models", headers=headers)
+            with urllib.request.urlopen(req, timeout=5) as r:
+                data = json.load(r)
+            models += [{"id": f"litellm/{m['id']}", "label": f"{m['id']} (LiteLLM)"} for m in data.get("data", [])]
+        except (urllib.error.URLError, ConnectionRefusedError):
+            pass
     return models
 
 

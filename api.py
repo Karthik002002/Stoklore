@@ -24,6 +24,7 @@ db.init_schema()
 @app.on_event("startup")
 def _startup():
     db.purge_old(days=14)
+    llm.configure_litellm(db.get_litellm_base_url(), db.get_litellm_api_key())
 
 
 # Populated by the background watchlist event scan (POST /api/events/scan) - polled by
@@ -202,6 +203,11 @@ class WatchlistRequest(BaseModel):
     list_name: str
 
 
+class LiteLLMConfigRequest(BaseModel):
+    base_url: str
+    api_key: str | None = None  # None (omitted) leaves the previously-saved key untouched
+
+
 def _text(message):
     return "".join(p.get("text", "") for p in message.get("parts", []) if p.get("type") == "text")
 
@@ -281,6 +287,19 @@ def get_active_model():
 def set_active_model(req: ActiveModelRequest):
     db.set_active_model(req.model)
     return {"model": req.model}
+
+
+@app.get("/api/settings/litellm")
+def get_litellm_config():
+    # never echo the api key back - the UI shows "•••• saved" instead of the real value
+    return {"base_url": db.get_litellm_base_url(), "has_api_key": bool(db.get_litellm_api_key())}
+
+
+@app.put("/api/settings/litellm")
+def set_litellm_config(req: LiteLLMConfigRequest):
+    db.set_litellm_config(req.base_url.rstrip("/"), req.api_key or None)
+    llm.configure_litellm(db.get_litellm_base_url(), db.get_litellm_api_key())
+    return {"ok": True}
 
 
 @app.post("/api/stocks")
@@ -569,9 +588,11 @@ def post_chat(req: ChatRequest):
         reply = _sentiment_reply(user_text, model)
         if reply is None:
             reply = _history_reply(user_text, model)
-        if reply is None and model.startswith("ollama/"):
-            # local llama: tool-calling agent. Deferred into stream() below so each tool call
-            # can be pushed to the UI as it happens, instead of a long silent wait.
+        if reply is None and (model.startswith("ollama/") or model.startswith("litellm/")):
+            # local llama or a LiteLLM-routed model: tool-calling agent. Deferred into stream()
+            # below so each tool call can be pushed to the UI as it happens, instead of a long
+            # silent wait. OmniRoute keeps the original RAG path below (tool support varies
+            # across its many upstream providers).
             use_agent = True
         if reply is None and not use_agent:
             # OmniRoute models: original RAG path (tool schema support varies per provider)

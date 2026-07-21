@@ -467,6 +467,37 @@ def set_active_model(model):
         )
 
 
+def _get_setting(key, default=None):
+    with connect() as conn:
+        row = conn.execute("SELECT value FROM settings WHERE key = %s", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def _set_setting(key, value):
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES (%s, %s) "
+            "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+
+
+def get_litellm_base_url():
+    return _get_setting("litellm_base_url")
+
+
+def get_litellm_api_key():
+    return _get_setting("litellm_api_key")
+
+
+def set_litellm_config(base_url, api_key=None):
+    """api_key=None leaves the stored key untouched - lets the UI update the URL alone
+    without forcing the user to re-paste an already-saved key."""
+    _set_setting("litellm_base_url", base_url)
+    if api_key is not None:
+        _set_setting("litellm_api_key", api_key)
+
+
 def set_session_model(session_id, model):
     with connect() as conn:
         conn.execute("UPDATE chat_sessions SET model = %s WHERE id = %s", (model, session_id))

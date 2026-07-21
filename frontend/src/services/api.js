@@ -31,3 +31,12 @@ export const setActiveModel = (model) =>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model }),
   }).then(json)
+
+export const getLiteLLMConfig = () => fetch('/api/settings/litellm').then(json)
+
+export const setLiteLLMConfig = (baseUrl, apiKey) =>
+  fetch('/api/settings/litellm', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ base_url: baseUrl, api_key: apiKey || null }),
+  }).then(json)

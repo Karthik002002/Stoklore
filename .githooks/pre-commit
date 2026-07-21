@@ -1,0 +1,17 @@
+#!/bin/bash
+# Formats + lints staged frontend files before commit. Installed via:
+#   git config core.hooksPath .githooks
+set -e
+
+staged_js=$(git diff --cached --name-only --diff-filter=ACM -- 'frontend/src/*.js' 'frontend/src/*.jsx')
+[ -z "$staged_js" ] && exit 0
+
+cd frontend
+rel_files=$(echo "$staged_js" | sed 's|^frontend/||')
+
+echo "$rel_files" | xargs npx biome format --write
+echo "$rel_files" | xargs npx oxlint
+
+# re-stage anything biome reformatted
+cd ..
+echo "$staged_js" | xargs git add

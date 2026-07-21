@@ -212,11 +212,13 @@ def get_financial_statements(symbol):
     return {"periods": periods + ["TTM"], "rows": rows}
 
 
-def get_daily_bars(symbol, start=None):
-    """Daily OHLCV bars for symbol as plain dicts, via yfinance. start=None fetches a full 1y
-    backfill; start='YYYY-MM-DD' fetches only bars from that date forward (incremental gap-fill)."""
+def get_daily_bars(symbol, start=None, period="1y"):
+    """Daily OHLCV bars for symbol as plain dicts, via yfinance. start=None fetches a full
+    `period` backfill (default 1y, pass period="max" for a symbol's entire available history);
+    start='YYYY-MM-DD' fetches only bars from that date forward (incremental gap-fill, ignores
+    `period`)."""
     ticker = yf.Ticker(f"{symbol}.NS")
-    df = ticker.history(period="1y", interval="1d") if start is None else ticker.history(start=start, interval="1d")
+    df = ticker.history(period=period, interval="1d") if start is None else ticker.history(start=start, interval="1d")
     return [
         {
             "date": ts.date().isoformat(),

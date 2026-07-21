@@ -119,6 +119,42 @@ def price_ema_crossover(symbol: str, short: int = 20, long: int = 50):
     return signal
 
 
+# Per-symbol max-history collection state, since (unlike the watchlist scans above) this can be
+# triggered independently for any number of symbols at once from their own detail pages.
+_max_collect_state = {}
+
+
+def _run_max_collect(symbol):
+    _max_collect_state[symbol] = {"running": True}
+    try:
+        prices.collect_max_history(symbol)
+    except Exception as e:
+        print(f"max history collection failed for {symbol}: {e}")
+    finally:
+        _max_collect_state[symbol] = {"running": False}
+
+
+@app.post("/api/prices/{symbol}/max/collect")
+def trigger_max_collect(symbol: str):
+    symbol = symbol.upper()
+    if _max_collect_state.get(symbol, {}).get("running"):
+        raise HTTPException(status_code=409, detail=f"Already collecting max history for '{symbol}'")
+    threading.Thread(target=_run_max_collect, args=(symbol,), daemon=True).start()
+    return {"ok": True}
+
+
+@app.get("/api/prices/{symbol}/max/status")
+def max_collect_status(symbol: str):
+    return _max_collect_state.get(symbol.upper(), {"running": False})
+
+
+@app.get("/api/prices/{symbol}/max")
+def max_history(symbol: str):
+    """Full collected history, or an empty list if "Collect max history" was never triggered for
+    this symbol - the frontend hides the max-history section entirely in that case."""
+    return db.list_max_history(symbol.upper())
+
+
 # Allows the app to be reached through a Cloudflare Quick Tunnel (random *.trycloudflare.com
 # per run) in addition to local dev - matters if the frontend/API are ever hit cross-origin
 # rather than through Vite's same-origin proxy.
@@ -427,6 +463,97 @@ def _sentiment_reply(user_text, model):
     )
 
 
+# --- Chat agent (Ollama-native tool calling, no LangChain) ---------------------------------
+# Read-only tools return data directly; the two scan tools start the same background threads
+# the UI buttons use and return immediately - the agent must never block a chat reply on a
+# multi-minute scan.
+
+def _tool_get_price(symbol):
+    return _cached(symbol.upper(), "price", 15, lambda: scraper.get_price(symbol.upper()))
+
+
+def _tool_ema_crossover(symbol, short=20, long=50):
+    signal = prices.ema_crossover(symbol.upper(), int(short), int(long))
+    return signal or "no synced price history for this symbol - run a price sync first"
+
+
+def _tool_list_watchlists():
+    return db.list_watchlist()
+
+
+def _tool_search_reports(query):
+    matches = db.similarity_search(llm.embed(query), limit=3)
+    return [m["content_markdown"] for m in matches] or "no stored reports matched"
+
+
+def _tool_scrape_stock(symbol):
+    markdown = _live_scrape(symbol.upper(), db.get_active_model())
+    return markdown or f"no data found for '{symbol}' on NSE"
+
+
+def _tool_scan_events(list_name=None):
+    if _event_scan_state["running"]:
+        return "an event scan is already running"
+    threading.Thread(target=_run_event_scan, args=(list_name,), daemon=True).start()
+    return "event scan started in the background - results will appear on the Events page shortly"
+
+
+def _tool_sync_prices(list_name=None):
+    if _price_sync_state["running"]:
+        return "a price sync is already running"
+    symbols = db.watchlist_symbols(list_name)
+    threading.Thread(target=_run_price_sync, args=(symbols,), daemon=True).start()
+    return f"price sync started in the background for {len(symbols)} symbols"
+
+
+AGENT_TOOL_IMPLS = {
+    "get_price": _tool_get_price,
+    "get_ema_crossover": _tool_ema_crossover,
+    "list_watchlists": _tool_list_watchlists,
+    "search_reports": _tool_search_reports,
+    "scrape_stock": _tool_scrape_stock,
+    "scan_events": _tool_scan_events,
+    "sync_prices": _tool_sync_prices,
+}
+
+
+def _fn(name, description, properties=None, required=None):
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {"type": "object", "properties": properties or {}, "required": required or []},
+        },
+    }
+
+
+_SYMBOL_PROP = {"symbol": {"type": "string", "description": "NSE ticker symbol, e.g. TCS"}}
+_LIST_PROP = {"list_name": {"type": "string", "description": "watchlist name; omit for all watchlists"}}
+
+AGENT_TOOLS = [
+    _fn("get_price", "Live price and day change % for an NSE stock", _SYMBOL_PROP, ["symbol"]),
+    _fn("get_ema_crossover", "EMA crossover signal (golden/death cross) for a stock from stored history",
+        {**_SYMBOL_PROP, "short": {"type": "integer"}, "long": {"type": "integer"}}, ["symbol"]),
+    _fn("list_watchlists", "All watchlisted stocks and which named list each belongs to"),
+    _fn("search_reports", "Search stored AI research reports semantically",
+        {"query": {"type": "string"}}, ["query"]),
+    _fn("scrape_stock", "Scrape news+financials for an NSE symbol and generate a fresh report",
+        _SYMBOL_PROP, ["symbol"]),
+    _fn("scan_events", "Scan watchlisted stocks for news/price/volume/corporate-action events (background)",
+        _LIST_PROP),
+    _fn("sync_prices", "Sync daily price history for watchlisted stocks (background)", _LIST_PROP),
+]
+
+AGENT_SYSTEM = (
+    "You are a research assistant for NSE India stocks with tools. Use tools to answer - never "
+    "invent prices, tickers, or data. Use scrape_stock when asked about a specific stock's "
+    "news/fundamentals, search_reports for stored research, get_price for quick quotes. Use "
+    "scan_events/sync_prices only when the user asks to scan, sync, or refresh. Keep replies "
+    "short and factual, use ₹ for currency, never $. No investment advice."
+)
+
+
 @app.post("/api/chat")
 def post_chat(req: ChatRequest):
     is_new = len(req.messages) == 1
@@ -437,11 +564,17 @@ def post_chat(req: ChatRequest):
 
     user_text = _text(req.messages[-1])
 
+    use_agent = False
     try:
         reply = _sentiment_reply(user_text, model)
         if reply is None:
             reply = _history_reply(user_text, model)
-        if reply is None:
+        if reply is None and model.startswith("ollama/"):
+            # local llama: tool-calling agent. Deferred into stream() below so each tool call
+            # can be pushed to the UI as it happens, instead of a long silent wait.
+            use_agent = True
+        if reply is None and not use_agent:
+            # OmniRoute models: original RAG path (tool schema support varies per provider)
             live_reports = list(filter(None, (
                 _live_scrape(symbol, model) for symbol in dict.fromkeys(TICKER_PATTERN.findall(user_text))
             )))
@@ -458,13 +591,35 @@ def post_chat(req: ChatRequest):
         reply = f"⚠️ {e}"
 
     db.add_message(req.sessionId, "user", user_text)
-    db.add_message(req.sessionId, "assistant", reply)
+    if not use_agent:
+        db.add_message(req.sessionId, "assistant", reply)
 
     def stream():
         yield _sse({"type": "start", "messageId": str(uuid.uuid4())})
+
+        final_reply = reply
+        if use_agent:
+            history = [{"role": m["role"], "content": _text(m)} for m in req.messages]
+            messages = [{"role": "system", "content": AGENT_SYSTEM}] + history
+            try:
+                for event in llm.run_agent_stream(messages, AGENT_TOOLS, AGENT_TOOL_IMPLS, model):
+                    if event[0] == "tool":
+                        _, call_id, name, args = event
+                        yield _sse({"type": "tool-input-available", "toolCallId": call_id,
+                                    "toolName": name, "input": args})
+                    elif event[0] == "tool_result":
+                        _, call_id, result = event
+                        yield _sse({"type": "tool-output-available", "toolCallId": call_id,
+                                    "output": result})
+                    else:
+                        final_reply = event[1]
+            except RuntimeError as e:
+                final_reply = f"⚠️ {e}"
+            db.add_message(req.sessionId, "assistant", final_reply)
+
         text_id = str(uuid.uuid4())
         yield _sse({"type": "text-start", "id": text_id})
-        yield _sse({"type": "text-delta", "id": text_id, "delta": reply})
+        yield _sse({"type": "text-delta", "id": text_id, "delta": final_reply})
         yield _sse({"type": "text-end", "id": text_id})
         if is_new:
             try:

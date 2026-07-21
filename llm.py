@@ -66,6 +66,56 @@ def _chat(messages, model):
     return _omniroute_chat(messages, model)
 
 
+def run_agent_stream(messages, tools, tool_impls, model, max_rounds=5):
+    """Native Ollama tool-calling agent loop - no LangChain. `tools` is the JSON-schema list
+    Ollama's /api/chat accepts; `tool_impls` maps tool name -> python callable. The model is
+    called repeatedly: each round either returns plain text (done) or tool_calls, which are
+    executed and fed back as role:"tool" messages. Ollama-only - callers route non-ollama
+    models elsewhere. max_rounds caps runaway loops; the 8B model rarely needs more than 2.
+
+    Generator, so callers can surface tool activity live in the UI. Yields, in order:
+      ("tool", call_id, name, args)     - before a tool executes
+      ("tool_result", call_id, result)  - after it finishes
+      ("done", final_text)              - always the last event
+    """
+    ollama_model = model.removeprefix("ollama/")
+    msgs = list(messages)
+    msg = {}
+    call_seq = 0
+    for _ in range(max_rounds):
+        msg = _ollama_post(
+            "/api/chat", {"model": ollama_model, "messages": msgs, "tools": tools, "stream": False}
+        )["message"]
+        calls = msg.get("tool_calls")
+        if not calls:
+            yield ("done", msg["content"].strip())
+            return
+        msgs.append(msg)
+        for call in calls:
+            name = call["function"]["name"]
+            args = call["function"].get("arguments") or {}
+            call_seq += 1
+            call_id = f"call_{call_seq}"
+            yield ("tool", call_id, name, args)
+            try:
+                result = tool_impls[name](**args)
+            except KeyError:
+                result = f"unknown tool '{name}'"
+            except Exception as e:
+                result = f"tool '{name}' failed: {e}"
+            yield ("tool_result", call_id, result)
+            msgs.append({"role": "tool", "content": json.dumps(result, default=str)})
+    yield ("done", (msg.get("content") or "").strip()
+           or "I couldn't finish that within the tool-call limit - try a more specific request.")
+
+
+def run_agent(messages, tools, tool_impls, model, max_rounds=5):
+    """Non-streaming wrapper: drains run_agent_stream and returns just the final text."""
+    for event in run_agent_stream(messages, tools, tool_impls, model, max_rounds):
+        if event[0] == "done":
+            return event[1]
+
+
 def get_models():
     """Live OmniRoute catalog plus the always-available local Ollama model. Degrades to just
     Ollama if OmniRoute isn't running, rather than erroring."""

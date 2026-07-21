@@ -1,17 +1,111 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Streamdown } from 'streamdown'
-import { ArrowLeftIcon, ExternalLinkIcon, Trash2Icon } from 'lucide-react'
+import { ArrowLeftIcon, DatabaseIcon, ExternalLinkIcon, Trash2Icon } from 'lucide-react'
+import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { compact, fmt, inr } from '@/lib/format'
-import { getEmaCrossover } from '@/services/api'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { collectMaxHistory, getEmaCrossover, getMaxHistory, getMaxHistoryStatus } from '@/services/api'
 import DeleteStockButton from './DeleteStockButton'
+import PriceChart from './PriceChart'
 import StockChart from './StockChart'
 import StockFinancials from './StockFinancials'
+
+// Reuses PriceChart (candles/line toggle, EMA overlays, volume pane, tooltip) - same as the
+// range-picker chart above, just fed the full collected history instead of a fetched range.
+function MaxHistoryChart({ rows }) {
+  const data = useMemo(
+    () => ({
+      interval: '1d',
+      visibleFrom: null,
+      bars: rows.map((r) => ({
+        time: Math.floor(new Date(r.date).getTime() / 1000),
+        open: r.open,
+        high: r.high,
+        low: r.low,
+        close: r.close,
+        volume: r.volume,
+      })),
+    }),
+    [rows],
+  )
+
+  return (
+    <PriceChart data={data} isLoading={false} leftControls={null} emptyMessage="No history collected yet." />
+  )
+}
+
+function MaxHistorySection({ symbol }) {
+  const queryClient = useQueryClient()
+  const wasRunning = useRef(false)
+
+  const { data: history } = useQuery({
+    queryKey: ['maxHistory', symbol],
+    queryFn: () => getMaxHistory(symbol),
+  })
+  const { data: status } = useQuery({
+    queryKey: ['maxHistoryStatus', symbol],
+    queryFn: () => getMaxHistoryStatus(symbol),
+    refetchInterval: (query) => (query.state.data?.running ? 1500 : false),
+  })
+
+  useEffect(() => {
+    if (wasRunning.current && !status?.running) {
+      queryClient.invalidateQueries({ queryKey: ['maxHistory', symbol] })
+    }
+    wasRunning.current = !!status?.running
+  }, [status?.running, symbol, queryClient])
+
+  const collect = useMutation({
+    mutationFn: () => collectMaxHistory(symbol),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['maxHistoryStatus', symbol] }),
+    onError: (e) => toast.error(e.message),
+  })
+
+  const alreadyCollected = history?.length > 0
+
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-medium text-muted-foreground">Full price history</h2>
+        <Tooltip>
+          {/* disabled <button>s can swallow hover in some browsers - a wrapping span keeps the
+              tooltip working regardless of the button's disabled state, same trick as App.jsx's
+              TooltipIcon. */}
+          <TooltipTrigger render={<span className="inline-flex" />}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => collect.mutate()}
+              disabled={status?.running || alreadyCollected}
+            >
+              {status?.running ? <Spinner className="size-4" /> : <DatabaseIcon className="size-4" />}
+              Collect max history
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="left">
+            {status?.running
+              ? 'Collecting full history…'
+              : alreadyCollected
+                ? 'Max data is already available'
+                : 'Fetch this stock’s entire price history'}
+          </TooltipContent>
+        </Tooltip>
+      </div>
+      {status?.running && (
+        <p className="mb-3 text-sm text-muted-foreground">
+          Collecting full history from NSE listing… this can take a moment.
+        </p>
+      )}
+      {history?.length > 0 && <MaxHistoryChart rows={history} />}
+    </section>
+  )
+}
 
 const EMA_PRESETS = [
   [20, 50],
@@ -194,6 +288,8 @@ export default function StockDetail() {
         <h2 className="mb-3 text-sm font-medium text-muted-foreground">Price chart</h2>
         <StockChart symbol={symbol} />
       </section>
+
+      <MaxHistorySection symbol={symbol} />
 
       <section>
         <h2 className="mb-3 text-sm font-medium text-muted-foreground">EMA crossover</h2>

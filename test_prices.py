@@ -81,8 +81,28 @@ def test_chart_from_history_respects_coverage():
             conn.execute("DELETE FROM price_history WHERE symbol = %s", (SYMBOL,))
 
 
+def test_collect_max_history_is_separate_from_price_history():
+    db.init_schema()
+
+    def fake_max_bars(symbol, start=None, period="1y"):
+        assert period == "max"  # collect_max_history must request the full range, not the 1y default
+        return [_bar(date(2000, 1, 1) + timedelta(days=i), 100 + i) for i in range(3)]
+
+    scraper.get_daily_bars = fake_max_bars
+    try:
+        assert db.has_max_history(SYMBOL) is False
+        assert prices.collect_max_history(SYMBOL) == 3
+        assert db.has_max_history(SYMBOL) is True
+        assert len(db.list_max_history(SYMBOL)) == 3
+        assert db.list_price_history(SYMBOL) == []  # price_history is untouched by a max collect
+    finally:
+        with db.connect() as conn:
+            conn.execute("DELETE FROM price_history_max WHERE symbol = %s", (SYMBOL,))
+
+
 if __name__ == "__main__":
     test_sync_backfills_then_gap_fills_then_dedups()
     test_ema_crossover_needs_enough_history()
     test_chart_from_history_respects_coverage()
+    test_collect_max_history_is_separate_from_price_history()
     print("all checks passed")

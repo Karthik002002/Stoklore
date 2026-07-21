@@ -38,6 +38,16 @@ def sync_all(symbols, on_progress=None):
     return total_bars
 
 
+def collect_max_history(symbol):
+    """Fetches a symbol's entire available daily history (yfinance period='max') and stores it in
+    price_history_max - separate from the 1y price_history table synced by sync_symbol/sync_all.
+    Explicitly user-triggered per symbol (e.g. a "Collect max history" button), not part of the
+    regular watchlist scan. Returns the number of bars stored."""
+    bars = scraper.get_daily_bars(symbol, period="max")
+    db.insert_max_bars(symbol, bars)
+    return len(bars)
+
+
 def chart_from_history(symbol, range_key):
     """Builds the same {bars, interval, visibleFrom} shape as scraper.get_chart, but from stored
     price_history - only for the daily-bar ranges price_history actually covers (1mo/6mo/ytd/1y).

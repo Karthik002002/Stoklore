@@ -14,6 +14,13 @@ export const getStockFinancials = (symbol) => fetch(`/api/stocks/${symbol}/finan
 export const getEmaCrossover = (symbol, short, long) =>
   fetch(`/api/prices/${symbol}/ema-crossover?short=${short}&long=${long}`).then(json)
 
+export const getMaxHistory = (symbol) => fetch(`/api/prices/${symbol}/max`).then(json)
+
+export const getMaxHistoryStatus = (symbol) => fetch(`/api/prices/${symbol}/max/status`).then(json)
+
+export const collectMaxHistory = (symbol) =>
+  fetch(`/api/prices/${symbol}/max/collect`, { method: 'POST' }).then(json)
+
 export const getModels = () => fetch('/api/models').then(json)
 
 export const getActiveModel = () => fetch('/api/settings/active-model').then(json)

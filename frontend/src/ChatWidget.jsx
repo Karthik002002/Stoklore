@@ -7,11 +7,14 @@ import { toast } from 'sonner'
 import {
   BotIcon,
   CalendarClockIcon,
+  CheckIcon,
   HistoryIcon,
   MessageCircleIcon,
   SquarePenIcon,
+  WrenchIcon,
   XIcon,
 } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -37,6 +40,22 @@ import {
 } from '@/components/ai-elements/prompt-input'
 
 const newId = () => crypto.randomUUID()
+
+// Streamed tool parts arrive typed `tool-${name}` (or `dynamic-tool` when the client has no
+// static tool defs, which is our case - the server owns the tool schemas).
+const toolPartsOf = (m) => m.parts.filter((p) => p.type === 'dynamic-tool' || p.type?.startsWith('tool-'))
+const toolNameOf = (p) => (p.type === 'dynamic-tool' ? p.toolName : p.type.slice('tool-'.length))
+
+function ToolCallChip({ part }) {
+  const done = part.state === 'output-available' || part.state === 'output-error'
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border bg-muted/50 px-2.5 py-1 text-xs text-muted-foreground">
+      <WrenchIcon className="size-3" />
+      {toolNameOf(part)}
+      {done ? <CheckIcon className="size-3 text-up" /> : <Spinner className="size-3" />}
+    </span>
+  )
+}
 const textOf = (m) =>
   m.parts
     .filter((p) => p.type === 'text')
@@ -116,13 +135,23 @@ function ChatThread({ chatId, initialMessages, onTitle, onDone, symbol, model })
               description="Ask about a tracked stock, mention any NSE ticker to scrape it live, or type / for commands."
             />
           )}
-          {messages.map((m) => (
-            <Message from={m.role} key={m.id}>
-              <MessageContent>
-                <MessageResponse>{textOf(m)}</MessageResponse>
-              </MessageContent>
-            </Message>
-          ))}
+          {messages.map((m) => {
+            const toolParts = toolPartsOf(m)
+            return (
+              <Message from={m.role} key={m.id}>
+                <MessageContent>
+                  {toolParts.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {toolParts.map((p, i) => (
+                        <ToolCallChip key={p.toolCallId ?? i} part={p} />
+                      ))}
+                    </div>
+                  )}
+                  <MessageResponse>{textOf(m)}</MessageResponse>
+                </MessageContent>
+              </Message>
+            )
+          })}
           {status === 'submitted' && <TypingIndicator />}
         </ConversationContent>
         <ConversationScrollButton />

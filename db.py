@@ -104,6 +104,23 @@ CREATE TABLE IF NOT EXISTS price_history (
   PRIMARY KEY (symbol, date)
 );
 CREATE INDEX IF NOT EXISTS price_history_symbol_date_idx ON price_history (symbol, date DESC);
+
+-- Full available history (yfinance period='max'), kept in its own table rather than mixed into
+-- price_history - that one is a cheap 1y default window synced for every watchlisted symbol on
+-- every scan; max history is a much bigger, explicitly user-triggered one-off per symbol, and
+-- keeping the tables separate means the default sync never has to reason about "how much history
+-- does this symbol already have" beyond its own 1y window.
+CREATE TABLE IF NOT EXISTS price_history_max (
+  symbol TEXT NOT NULL,
+  date DATE NOT NULL,
+  open REAL NOT NULL,
+  high REAL NOT NULL,
+  low REAL NOT NULL,
+  close REAL NOT NULL,
+  volume BIGINT NOT NULL,
+  PRIMARY KEY (symbol, date)
+);
+CREATE INDEX IF NOT EXISTS price_history_max_symbol_date_idx ON price_history_max (symbol, date DESC);
 """
 
 
@@ -385,6 +402,40 @@ def price_closes(symbol, limit=100):
             (symbol, limit),
         ).fetchall()
     return [r["close"] for r in reversed(rows)]
+
+
+def insert_max_bars(symbol, bars):
+    """Same upsert shape as insert_price_bars, targeting price_history_max instead."""
+    if not bars:
+        return
+    with connect() as conn:
+        conn.cursor().executemany(
+            "INSERT INTO price_history_max (symbol, date, open, high, low, close, volume) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (symbol, date) DO UPDATE SET open = excluded.open, high = excluded.high, "
+            "low = excluded.low, close = excluded.close, volume = excluded.volume",
+            [(symbol, b["date"], b["open"], b["high"], b["low"], b["close"], b["volume"]) for b in bars],
+        )
+
+
+def has_max_history(symbol):
+    """Whether price_history_max has ever been collected for this symbol - the frontend uses
+    this to decide whether to show the max-history section at all."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM price_history_max WHERE symbol = %s LIMIT 1", (symbol,)
+        ).fetchone()
+    return row is not None
+
+
+def list_max_history(symbol):
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT date, open, high, low, close, volume FROM price_history_max "
+            "WHERE symbol = %s ORDER BY date",
+            (symbol,),
+        ).fetchall()
+    return rows
 
 
 def watchlist_symbols(list_name=None):

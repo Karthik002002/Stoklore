@@ -28,12 +28,12 @@ def scan_symbol(symbol):
     change = quote.get("regularMarketChangePercent")
     if change is not None and _movement([{"changePercent": change}]):
         headline = f"{symbol} moved {change:+.1f}% today"
-        if db.insert_event(symbol, "price_move", today, headline, None, None, None, None, None):
+        if db.insert_event(symbol, "price_move", today, headline, None, None, today, None, None):
             inserted += 1
     vol, avg_vol = quote.get("regularMarketVolume"), quote.get("averageVolume")
     if vol and avg_vol and _volume([{"volume": vol, "avgVolume": avg_vol}]):
         headline = f"{symbol} trading at {vol:,} vs {avg_vol:,} average volume"
-        if db.insert_event(symbol, "volume_spike", today, headline, None, None, None, None, None):
+        if db.insert_event(symbol, "volume_spike", today, headline, None, None, today, None, None):
             inserted += 1
 
     for action in scraper.get_corporate_actions(symbol):

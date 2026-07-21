@@ -10,13 +10,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { getActiveModel, getModels, setActiveModel } from '@/services/api'
 
 export default function Settings() {
@@ -41,9 +35,7 @@ export default function Settings() {
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>
-            Default model for scans, reports, and new chats.
-          </DialogDescription>
+          <DialogDescription>Default model for scans, reports, and new chats.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-2">
@@ -72,8 +64,8 @@ export default function Settings() {
           >
             OmniRoute dashboard <ExternalLinkIcon className="size-3" />
           </a>
-          . Models listed here come from its live catalog; only local Llama is available when
-          OmniRoute isn't running.
+          . Models listed here come from its live catalog; only local Llama is available when OmniRoute isn't
+          running.
         </p>
       </DialogContent>
     </Dialog>

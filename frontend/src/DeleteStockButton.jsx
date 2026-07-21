@@ -43,8 +43,7 @@ export default function DeleteStockButton({ symbol, onDeleted, className, stopPr
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {symbol}?</AlertDialogTitle>
           <AlertDialogDescription>
-            This removes {symbol} and every scraped report and analysis stored for it. This
-            can't be undone.
+            This removes {symbol} and every scraped report and analysis stored for it. This can't be undone.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

@@ -56,8 +56,11 @@ def event_scan_status():
 
 
 @app.get("/api/events")
-def events_feed(list_name: str | None = None, symbol: str | None = None, limit: int = 100):
-    return db.list_events(list_name=list_name, symbol=symbol, limit=limit)
+def events_feed(
+    list_name: str | None = None, symbol: str | None = None,
+    from_date: str | None = None, to_date: str | None = None, limit: int = 100,
+):
+    return db.list_events(list_name=list_name, symbol=symbol, from_date=from_date, to_date=to_date, limit=limit)
 
 
 # Populated by the background price-history sync (POST /api/prices/sync) - same manual-trigger +
@@ -292,6 +295,28 @@ def stocks():
         except Exception:
             row.update({"price": None, "changePercent": None})
     return rows
+
+
+@app.get("/api/indices")
+def indices():
+    """NIFTY 50 + SENSEX, same cache-aside pattern as /api/stocks."""
+    result = []
+    for name in scraper.INDEX_SYMBOLS:
+        try:
+            quote = _cached(name, "index-price", 15, lambda n=name: scraper.get_index_price(n))
+        except Exception:
+            quote = {"price": None, "changePercent": None}
+        result.append({"name": name, **quote})
+    return result
+
+
+@app.get("/api/indices/{name}/chart")
+def index_chart(name: str, range: str = "1mo"):
+    if name not in scraper.INDEX_SYMBOLS:
+        raise HTTPException(status_code=404, detail=f"Unknown index '{name}'")
+    if range not in scraper.CHART_RANGES:
+        raise HTTPException(status_code=400, detail=f"range must be one of {list(scraper.CHART_RANGES)}")
+    return _cached(name, f"index-chart:{range}", 15, lambda: scraper.get_index_chart(name, range))
 
 
 def _cached_news(symbol):

@@ -79,12 +79,24 @@ QUOTE_FIELDS = (
 )
 
 
-def get_price(symbol):
-    """Fast live price + day change% for list views."""
-    fi = yf.Ticker(f"{symbol}.NS").fast_info
+INDEX_SYMBOLS = {"NIFTY": "^NSEI", "SENSEX": "^BSESN"}
+
+
+def _fast_quote(ticker):
+    fi = ticker.fast_info
     last, prev = fi.get("lastPrice"), fi.get("previousClose")
     change = (last - prev) / prev * 100 if last and prev else None
     return {"price": last, "changePercent": change}
+
+
+def get_price(symbol):
+    """Fast live price + day change% for list views."""
+    return _fast_quote(yf.Ticker(f"{symbol}.NS"))
+
+
+def get_index_price(name):
+    """Fast live price + day change% for a market index (NIFTY/SENSEX), same shape as get_price."""
+    return _fast_quote(yf.Ticker(INDEX_SYMBOLS[name]))
 
 
 def get_quote(symbol):
@@ -114,14 +126,13 @@ RANGE_DAYS = {"1d": 1, "5d": 5, "1mo": 30, "6mo": 182, "1y": 365, "5y": 365 * 5}
 WARMUP_DAYS = {"1d": 5, "5d": 25, "1mo": 120, "6mo": 120, "ytd": 120, "1y": 120, "5y": 500}
 
 
-def get_chart(symbol, range_key):
+def _chart_bars(ticker, range_key):
     """OHLCV bars for the chart, via yfinance (wraps Yahoo's v8/finance/chart endpoint).
 
     Returns extra warmup bars before `visibleFrom` so indicators can be computed across the
     whole visible range; the frontend slices bars >= visibleFrom for the actual price series.
     """
     period, interval = CHART_RANGES[range_key]
-    ticker = yf.Ticker(f"{symbol}.NS")
 
     warmup = WARMUP_DAYS.get(range_key)
     if warmup is None:
@@ -150,6 +161,15 @@ def get_chart(symbol, range_key):
         if row[["Open", "High", "Low", "Close"]].notna().all()
     ]
     return {"bars": bars, "interval": interval, "visibleFrom": visible_from}
+
+
+def get_chart(symbol, range_key):
+    return _chart_bars(yf.Ticker(f"{symbol}.NS"), range_key)
+
+
+def get_index_chart(name, range_key):
+    """Same shape as get_chart, for a market index (NIFTY/SENSEX)."""
+    return _chart_bars(yf.Ticker(INDEX_SYMBOLS[name]), range_key)
 
 
 def get_history(symbol, start, end):

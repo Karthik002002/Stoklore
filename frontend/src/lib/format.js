@@ -4,4 +4,6 @@ export const fmt = (v, digits = 2) =>
 export const inr = (v) => (v == null ? '—' : `₹${fmt(v)}`)
 
 export const compact = (v) =>
-  v == null ? '—' : new Intl.NumberFormat('en-IN', { notation: 'compact', maximumFractionDigits: 2 }).format(v)
+  v == null
+    ? '—'
+    : new Intl.NumberFormat('en-IN', { notation: 'compact', maximumFractionDigits: 2 }).format(v)

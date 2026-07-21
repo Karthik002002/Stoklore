@@ -60,7 +60,10 @@ function EmaCrossover({ symbol }) {
               variant="ghost"
               size="sm"
               className="h-7 px-2 text-xs"
-              onClick={() => { setShort(s); setLong(l) }}
+              onClick={() => {
+                setShort(s)
+                setLong(l)
+              }}
             >
               {s}/{l}
             </Button>
@@ -88,7 +91,8 @@ function EmaCrossover({ symbol }) {
               const above = pct >= 0
               return (
                 <Badge variant="secondary" className={above ? 'text-up' : 'text-down'}>
-                  {above ? '+' : ''}{fmt(pct)}% {above ? 'above' : 'below'}
+                  {above ? '+' : ''}
+                  {fmt(pct)}% {above ? 'above' : 'below'}
                 </Badge>
               )
             })()
@@ -124,7 +128,9 @@ export default function StockDetail() {
   const [data, setData] = useState(null)
 
   useEffect(() => {
-    fetch(`/api/stocks/${symbol}`).then((r) => r.json()).then(setData)
+    fetch(`/api/stocks/${symbol}`)
+      .then((r) => r.json())
+      .then(setData)
   }, [symbol])
 
   const deleteReport = (id) => {
@@ -165,7 +171,8 @@ export default function StockDetail() {
           <p className="text-3xl font-semibold tabular-nums">{inr(quote.currentPrice)}</p>
           {change != null && (
             <p className={`font-medium tabular-nums ${up ? 'text-up' : 'text-down'}`}>
-              {up ? '+' : ''}{fmt(change)}% today
+              {up ? '+' : ''}
+              {fmt(change)}% today
             </p>
           )}
         </div>
@@ -197,7 +204,6 @@ export default function StockDetail() {
         <h2 className="mb-3 text-sm font-medium text-muted-foreground">Financials (quarterly)</h2>
         <StockFinancials symbol={symbol} />
       </section>
-
 
       <section>
         <h2 className="mb-3 text-sm font-medium text-muted-foreground">Latest events</h2>
@@ -243,7 +249,9 @@ export default function StockDetail() {
 
       <section>
         <h2 className="mb-3 text-sm font-medium text-muted-foreground">AI reports</h2>
-        {reports.length === 0 && <p className="text-sm text-muted-foreground">No stored reports for this stock.</p>}
+        {reports.length === 0 && (
+          <p className="text-sm text-muted-foreground">No stored reports for this stock.</p>
+        )}
         <div className="space-y-4">
           {reports.map((r) => (
             <article key={r.id} className="relative rounded-xl border bg-card p-5">

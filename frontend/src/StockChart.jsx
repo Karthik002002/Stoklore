@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { AreaSeries, CandlestickSeries, LineSeries, createChart } from 'lightweight-charts'
+import { AreaSeries, CandlestickSeries, HistogramSeries, LineSeries, createChart } from 'lightweight-charts'
 import { ChartCandlestickIcon, ChartSplineIcon, PlusIcon, XIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -40,6 +40,8 @@ const RANGES = [
 const COLORS = {
   up: '#22c55e',
   down: '#ef4444',
+  volumeUp: 'rgba(34, 197, 94, 0.5)',
+  volumeDown: 'rgba(239, 68, 68, 0.5)',
   text: '#9ca3af',
   grid: 'rgba(148, 163, 184, 0.15)',
 }
@@ -97,7 +99,7 @@ export default function StockChart({ symbol }) {
   // data.bars includes extra warmup bars before visibleFrom so EMAs have enough prior data to
   // cover the whole visible range - the price series/axis only show visibleBars.
   const visibleBars = useMemo(
-    () => (data?.visibleFrom ? data.bars.filter((b) => b.time >= data.visibleFrom) : data?.bars ?? []),
+    () => (data?.visibleFrom ? data.bars.filter((b) => b.time >= data.visibleFrom) : (data?.bars ?? [])),
     [data],
   )
   const barsByTime = useMemo(() => new Map(visibleBars.map((b) => [b.time, b])), [visibleBars])
@@ -144,6 +146,28 @@ export default function StockChart({ symbol }) {
         })
         .setData(visibleBars.map((b) => ({ time: b.time, value: b.close })))
     }
+
+    // Volume, TradingView-style: its own pane below the price pane, sized to ~1/4 the height.
+    // priceFormat 'custom' is needed, not just 'volume' - the chart-level ₹ priceFormatter
+    // above would otherwise stamp a ₹ in front of volume axis labels too.
+    chart
+      .addSeries(
+        HistogramSeries,
+        {
+          priceFormat: { type: 'custom', formatter: compact, minMove: 1 },
+          priceLineVisible: false,
+        },
+        1,
+      )
+      .setData(
+        visibleBars.map((b) => ({
+          time: b.time,
+          value: b.volume,
+          color: b.close >= b.open ? COLORS.volumeUp : COLORS.volumeDown,
+        })),
+      )
+    chart.panes()[0].setStretchFactor(3)
+    chart.panes()[1].setStretchFactor(1)
 
     const emaSeries = emaEnabled
       ? emaPeriods.map((period, i) => {
@@ -269,7 +293,7 @@ export default function StockChart({ symbol }) {
         </div>
       )}
 
-      <div className="relative h-72">
+      <div className="relative h-96">
         <div ref={containerRef} className="absolute inset-0" />
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center gap-2 text-muted-foreground">
@@ -286,7 +310,9 @@ export default function StockChart({ symbol }) {
             className="pointer-events-none absolute z-10 rounded-lg border bg-popover p-2.5 text-xs text-popover-foreground shadow-lg"
             style={{ left: tooltip.left, top: tooltip.top, width: TOOLTIP_W }}
           >
-            <p className="mb-1.5 font-medium">{formatBarDate(tooltip.bar.time, data.interval.endsWith('m'))}</p>
+            <p className="mb-1.5 font-medium">
+              {formatBarDate(tooltip.bar.time, data.interval.endsWith('m'))}
+            </p>
             <div className="grid grid-cols-2 gap-x-3 gap-y-1 tabular-nums">
               <span className="text-muted-foreground">Open</span>
               <span className="text-right">₹{tooltip.bar.open.toFixed(2)}</span>

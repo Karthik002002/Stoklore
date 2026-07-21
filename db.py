@@ -267,8 +267,11 @@ def insert_event(symbol, event_type, dedup_key, headline, detail, url, event_tim
     return row is not None
 
 
-def list_events(list_name=None, symbol=None, limit=100):
-    """Event feed, newest first. list_name scopes to one watchlist via join; symbol to one stock."""
+def list_events(list_name=None, symbol=None, from_date=None, to_date=None, limit=100):
+    """Event feed, newest first. list_name scopes to one watchlist via join; symbol to one stock;
+    from_date/to_date (inclusive, YYYY-MM-DD) filter on event_time - events with no event_time
+    (shouldn't happen now that every scan path sets one, but defensively) are excluded once a
+    date filter is applied, since they can't be placed in the range."""
     query = (
         "SELECT e.id, e.symbol, e.event_type, e.headline, e.detail, e.url, e.event_time, "
         "e.sentiment_label, e.sentiment_score, e.scraped_at, w.list_name "
@@ -281,6 +284,12 @@ def list_events(list_name=None, symbol=None, limit=100):
     if symbol:
         conditions.append("e.symbol = %s")
         params.append(symbol)
+    if from_date:
+        conditions.append("e.event_time >= %s")
+        params.append(from_date)
+    if to_date:
+        conditions.append("e.event_time < %s::date + interval '1 day'")
+        params.append(to_date)
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
     query += " ORDER BY e.event_time DESC NULLS LAST, e.scraped_at DESC LIMIT %s"

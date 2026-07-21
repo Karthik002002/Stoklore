@@ -5,6 +5,10 @@ async function json(res) {
 
 export const getStockChart = (symbol, range) => fetch(`/api/stocks/${symbol}/chart?range=${range}`).then(json)
 
+export const getIndices = () => fetch('/api/indices').then(json)
+
+export const getIndexChart = (name, range) => fetch(`/api/indices/${name}/chart?range=${range}`).then(json)
+
 export const getStockFinancials = (symbol) => fetch(`/api/stocks/${symbol}/financials`).then(json)
 
 export const getEmaCrossover = (symbol, short, long) =>

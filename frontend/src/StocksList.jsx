@@ -12,16 +12,10 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { fmt, inr } from '@/lib/format'
 import DeleteStockButton from './DeleteStockButton'
+import IndexCard from './IndexCard'
 
 function Change({ value }) {
   if (value == null) return <span className="text-muted-foreground">—</span>
@@ -30,7 +24,8 @@ function Change({ value }) {
   return (
     <span className={`inline-flex items-center gap-1 font-medium ${up ? 'text-up' : 'text-down'}`}>
       <Icon className="size-3.5" />
-      {up ? '+' : ''}{fmt(value)}%
+      {up ? '+' : ''}
+      {fmt(value)}%
     </span>
   )
 }
@@ -145,8 +140,12 @@ export default function StocksList() {
   const navigate = useNavigate()
 
   const load = () => {
-    fetch('/api/stocks').then((r) => r.json()).then(setStocks)
-    fetch('/api/watchlist').then((r) => r.json()).then(setWatchlist)
+    fetch('/api/stocks')
+      .then((r) => r.json())
+      .then(setStocks)
+    fetch('/api/watchlist')
+      .then((r) => r.json())
+      .then(setWatchlist)
   }
 
   useEffect(load, [])
@@ -166,6 +165,11 @@ export default function StocksList() {
           </Button>
           <AddStock onAdded={load} />
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <IndexCard name="NIFTY" />
+        <IndexCard name="SENSEX" />
       </div>
 
       {lists.length > 0 && (
@@ -219,7 +223,9 @@ export default function StocksList() {
                 >
                   <TableCell className="font-semibold">{s.symbol}</TableCell>
                   <TableCell className="text-right tabular-nums">{inr(s.price)}</TableCell>
-                  <TableCell className="text-right tabular-nums"><Change value={s.changePercent} /></TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    <Change value={s.changePercent} />
+                  </TableCell>
                   <TableCell className="text-right text-muted-foreground">{s.report_count}</TableCell>
                   <TableCell className="text-right text-muted-foreground">
                     {new Date(s.last_scraped).toLocaleDateString()}

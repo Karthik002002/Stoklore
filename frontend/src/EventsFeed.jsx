@@ -1,17 +1,22 @@
 import { useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { RadarIcon } from 'lucide-react'
+import { CalendarIcon, RadarIcon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Input } from '@/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
+
+const DATE_PRESETS = [
+  ['Last 1 week', 7],
+  ['Last 1 month', 30],
+  ['Last 3 months', 90],
+  ['Last 6 months', 182],
+]
+
+const toISODate = (d) => d.toISOString().slice(0, 10)
 
 const EVENT_LABELS = {
   news: 'News',
@@ -20,7 +25,14 @@ const EVENT_LABELS = {
   corporate_action: 'Corporate action',
 }
 
-const SENTIMENT_VARIANT = { positive: 'default', negative: 'destructive', neutral: 'secondary' }
+// 'secondary' + text-up/text-down (existing tokens, used elsewhere for gains/losses) instead of
+// a 'success' badge variant - badge.jsx defines one, but no --success CSS var backs it in
+// theme.css, so it rendered with no color at all.
+const SENTIMENT_STYLE = {
+  positive: { variant: 'secondary', className: 'text-up' },
+  negative: { variant: 'secondary', className: 'text-down' },
+  neutral: { variant: 'secondary', className: '' },
+}
 
 export default function EventsFeed() {
   const [eventsList, setEventsList] = useState(null)
@@ -28,29 +40,56 @@ export default function EventsFeed() {
   const [tab, setTab] = useState('All')
   const [scanScope, setScanScope] = useState('All')
   const [scanStatus, setScanStatus] = useState(null)
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+  const [presetsOpen, setPresetsOpen] = useState(false)
 
-  const load = (activeTab = tab) => {
-    const qs = activeTab === 'All' ? '' : `?list_name=${encodeURIComponent(activeTab)}`
-    fetch(`/api/events${qs}`).then((r) => r.json()).then(setEventsList)
-    fetch('/api/watchlist').then((r) => r.json()).then(setWatchlist)
+  const load = () => {
+    const params = new URLSearchParams()
+    if (tab !== 'All') params.set('list_name', tab)
+    if (fromDate) params.set('from_date', fromDate)
+    if (toDate) params.set('to_date', toDate)
+    const qs = params.toString()
+    fetch(`/api/events${qs ? `?${qs}` : ''}`)
+      .then((r) => r.json())
+      .then(setEventsList)
+    fetch('/api/watchlist')
+      .then((r) => r.json())
+      .then(setWatchlist)
   }
 
-  useEffect(() => load(tab), [tab])
+  useEffect(load, [tab, fromDate, toDate])
 
   useEffect(() => {
     const poll = () => {
-      fetch('/api/events/status').then((r) => r.json()).then((s) => {
-        if (s.running) load() // stream new events in as symbols finish
-        setScanStatus((prev) => {
-          if (prev?.running && !s.running) load() // scan just finished - final refresh
-          return s
+      fetch('/api/events/status')
+        .then((r) => r.json())
+        .then((s) => {
+          if (s.running) load() // stream new events in as symbols finish
+          setScanStatus((prev) => {
+            if (prev?.running && !s.running) load() // scan just finished - final refresh
+            return s
+          })
         })
-      })
     }
     poll()
     const id = setInterval(poll, 2000)
     return () => clearInterval(id)
-  }, [tab])
+  }, [tab, fromDate, toDate])
+
+  const applyPreset = (days) => {
+    const to = new Date()
+    const from = new Date()
+    from.setDate(from.getDate() - days)
+    setFromDate(toISODate(from))
+    setToDate(toISODate(to))
+    setPresetsOpen(false)
+  }
+
+  const clearDates = () => {
+    setFromDate('')
+    setToDate('')
+  }
 
   const startScan = async () => {
     const qs = scanScope === 'All' ? '' : `?list_name=${encodeURIComponent(scanScope)}`
@@ -78,7 +117,9 @@ export default function EventsFeed() {
             <SelectContent>
               <SelectItem value="All">All watchlists</SelectItem>
               {lists.map((name) => (
-                <SelectItem key={name} value={name}>{name}</SelectItem>
+                <SelectItem key={name} value={name}>
+                  {name}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -87,6 +128,47 @@ export default function EventsFeed() {
             Scan for events
           </Button>
         </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          type="date"
+          value={fromDate}
+          onChange={(e) => setFromDate(e.target.value)}
+          className="h-8 w-36"
+          aria-label="From date"
+        />
+        <span className="text-sm text-muted-foreground">to</span>
+        <Input
+          type="date"
+          value={toDate}
+          onChange={(e) => setToDate(e.target.value)}
+          className="h-8 w-36"
+          aria-label="To date"
+        />
+        <Popover open={presetsOpen} onOpenChange={setPresetsOpen}>
+          <PopoverTrigger render={<Button variant="outline" size="icon-sm" aria-label="Date presets" />}>
+            <CalendarIcon className="size-4" />
+          </PopoverTrigger>
+          <PopoverContent className="w-48 p-1">
+            {DATE_PRESETS.map(([label, days]) => (
+              <Button
+                key={label}
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start"
+                onClick={() => applyPreset(days)}
+              >
+                {label}
+              </Button>
+            ))}
+          </PopoverContent>
+        </Popover>
+        {(fromDate || toDate) && (
+          <Button variant="ghost" size="icon-sm" aria-label="Clear date filter" onClick={clearDates}>
+            <XIcon className="size-4" />
+          </Button>
+        )}
       </div>
 
       {scanStatus?.running && (
@@ -119,8 +201,7 @@ export default function EventsFeed() {
 
       {eventsList?.length === 0 && (
         <p className="py-24 text-center text-muted-foreground">
-          No events yet — bookmark stocks into a watchlist on the home page, then hit
-          “Scan for events”.
+          No events yet — bookmark stocks into a watchlist on the home page, then hit “Scan for events”.
         </p>
       )}
 
@@ -128,7 +209,9 @@ export default function EventsFeed() {
         <div className="space-y-2">
           {eventsList.map((e) => (
             <div key={e.id} className="flex items-start gap-3 rounded-lg border bg-card px-3 py-2.5 text-sm">
-              <Badge variant="outline" className="mt-0.5 shrink-0">{EVENT_LABELS[e.event_type]}</Badge>
+              <Badge variant="outline" className="mt-0.5 shrink-0">
+                {EVENT_LABELS[e.event_type]}
+              </Badge>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <Link
@@ -140,7 +223,7 @@ export default function EventsFeed() {
                   </Link>
                   {e.list_name && <Badge variant="ghost">{e.list_name}</Badge>}
                   {e.sentiment_label && (
-                    <Badge variant={SENTIMENT_VARIANT[e.sentiment_label] || 'secondary'}>
+                    <Badge {...(SENTIMENT_STYLE[e.sentiment_label] ?? { variant: 'secondary' })}>
                       {e.sentiment_label}
                     </Badge>
                   )}

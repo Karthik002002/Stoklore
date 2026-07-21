@@ -1,12 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Spinner } from '@/components/ui/spinner'
 import { compact } from '@/lib/format'
 import { getStockFinancials } from '@/services/api'
@@ -59,7 +52,9 @@ export default function StockFinancials({ symbol }) {
       <TableBody>
         {data.rows.map((row) => (
           <TableRow key={row.label}>
-            <TableCell className="sticky left-0 z-[1] bg-card whitespace-nowrap font-medium">{row.label}</TableCell>
+            <TableCell className="sticky left-0 z-[1] bg-card whitespace-nowrap font-medium">
+              {row.label}
+            </TableCell>
             {row.values.map((v, i) => (
               <TableCell key={i} className="text-right tabular-nums whitespace-nowrap">
                 <Cell value={v} />

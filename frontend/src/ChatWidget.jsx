@@ -4,7 +4,14 @@ import { useQuery } from '@tanstack/react-query'
 import { useParams } from '@tanstack/react-router'
 import { DefaultChatTransport } from 'ai'
 import { toast } from 'sonner'
-import { BotIcon, CalendarClockIcon, HistoryIcon, MessageCircleIcon, SquarePenIcon, XIcon } from 'lucide-react'
+import {
+  BotIcon,
+  CalendarClockIcon,
+  HistoryIcon,
+  MessageCircleIcon,
+  SquarePenIcon,
+  XIcon,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -12,13 +19,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { getActiveModel, getModels } from '@/services/api'
 import {
   Conversation,
@@ -36,7 +37,11 @@ import {
 } from '@/components/ai-elements/prompt-input'
 
 const newId = () => crypto.randomUUID()
-const textOf = (m) => m.parts.filter((p) => p.type === 'text').map((p) => p.text).join('')
+const textOf = (m) =>
+  m.parts
+    .filter((p) => p.type === 'text')
+    .map((p) => p.text)
+    .join('')
 
 const todayIso = () => new Date().toISOString().slice(0, 10)
 const monthAgoIso = () => {
@@ -165,11 +170,47 @@ function ChatThread({ chatId, initialMessages, onTitle, onDone, symbol, model })
   )
 }
 
+// Default panel size, same as the old fixed h-[34rem] w-[26rem]. Panel is anchored bottom-right
+// (fixed right/bottom), so growing width/height alone naturally expands it toward the top-left -
+// no repositioning needed, just resist the temptation to also track top/left.
+const DEFAULT_SIZE = { width: 416, height: 544 }
+const MIN_SIZE = { width: 288, height: 256 }
+
+function useTopLeftResize(size, setSize) {
+  const dragRef = useRef(null)
+
+  const onPointerDown = (e) => {
+    e.preventDefault()
+    dragRef.current = { startX: e.clientX, startY: e.clientY, startSize: size }
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', onPointerUp)
+  }
+  const onPointerMove = (e) => {
+    const { startX, startY, startSize } = dragRef.current
+    const maxWidth = window.innerWidth - 48
+    const maxHeight = window.innerHeight * 0.85
+    setSize({
+      // dragging the top-left handle left/up should grow the panel, not shrink it
+      width: Math.min(maxWidth, Math.max(MIN_SIZE.width, startSize.width + (startX - e.clientX))),
+      height: Math.min(maxHeight, Math.max(MIN_SIZE.height, startSize.height + (startY - e.clientY))),
+    })
+  }
+  const onPointerUp = () => {
+    window.removeEventListener('pointermove', onPointerMove)
+    window.removeEventListener('pointerup', onPointerUp)
+  }
+
+  return onPointerDown
+}
+
 export default function ChatWidget() {
   const { symbol } = useParams({ strict: false })
   const [open, setOpen] = useState(false)
   const openRef = useRef(open)
   openRef.current = open
+
+  const [size, setSize] = useState(DEFAULT_SIZE)
+  const startResize = useTopLeftResize(size, setSize)
 
   const [sessions, setSessions] = useState([])
   const [chatId, setChatId] = useState(newId)
@@ -181,10 +222,14 @@ export default function ChatWidget() {
   const effectiveModel = model ?? active?.model ?? null
 
   const loadSessions = useCallback(() => {
-    fetch('/api/chat/sessions').then((r) => r.json()).then(setSessions)
+    fetch('/api/chat/sessions')
+      .then((r) => r.json())
+      .then(setSessions)
   }, [])
 
-  useEffect(() => { loadSessions() }, [loadSessions])
+  useEffect(() => {
+    loadSessions()
+  }, [loadSessions])
 
   const openSession = async (session) => {
     const msgs = await fetch(`/api/chat/sessions/${session.id}/messages`).then((r) => r.json())
@@ -218,8 +263,22 @@ export default function ChatWidget() {
   return (
     <>
       <div
-        className={`fixed right-6 bottom-24 z-50 flex h-[34rem] w-[26rem] max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-2xl border bg-background shadow-2xl ${open ? '' : 'hidden'}`}
+        style={{ width: size.width, height: size.height }}
+        className={`fixed right-6 bottom-24 z-50 flex flex-col overflow-hidden rounded-2xl border bg-background shadow-2xl ${open ? '' : 'hidden'}`}
       >
+        <div
+          onPointerDown={startResize}
+          aria-hidden="true"
+          className="absolute top-0 left-0 z-10 size-4 cursor-nwse-resize touch-none rounded-br-lg hover:bg-muted"
+        >
+          <svg viewBox="0 0 16 16" className="size-full p-0.5 text-muted-foreground">
+            <path
+              fill="currentColor"
+              d="M1 1h2v2H1zM5 1h2v2H5zM1 5h2v2H1zM9 1h2v2H9zM5 5h2v2H5zM1 9h2v2H1z"
+            />
+          </svg>
+        </div>
+
         <header className="flex items-center gap-2 border-b px-4 py-2.5">
           <BotIcon className="size-4 text-muted-foreground" />
           <span className="text-sm font-medium">Research chat</span>
@@ -231,9 +290,7 @@ export default function ChatWidget() {
                 <HistoryIcon className="size-4" />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="max-h-72 w-64 overflow-y-auto">
-                {sessions.length === 0 && (
-                  <DropdownMenuItem disabled>No past chats</DropdownMenuItem>
-                )}
+                {sessions.length === 0 && <DropdownMenuItem disabled>No past chats</DropdownMenuItem>}
                 {sessions.map((s) => (
                   <DropdownMenuItem key={s.id} onClick={() => openSession(s)}>
                     <span className="truncate">{s.title || 'Untitled'}</span>

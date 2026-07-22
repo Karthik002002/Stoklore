@@ -394,14 +394,15 @@ def list_price_history(symbol, days=365):
     return list(reversed(rows))  # chronological order
 
 
-def price_closes(symbol, limit=100):
-    """Chronological list of recent closes - the minimal input EMA computation needs."""
+def price_series(symbol, limit=100):
+    """Chronological (date, close) pairs - the minimal input EMA computation needs, with dates
+    so a crossover signal can also report when it happened."""
     with connect() as conn:
         rows = conn.execute(
-            "SELECT close FROM price_history WHERE symbol = %s ORDER BY date DESC LIMIT %s",
+            "SELECT date, close FROM price_history WHERE symbol = %s ORDER BY date DESC LIMIT %s",
             (symbol, limit),
         ).fetchall()
-    return [r["close"] for r in reversed(rows)]
+    return list(reversed(rows))
 
 
 def insert_max_bars(symbol, bars):

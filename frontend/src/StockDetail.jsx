@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
-import { compact, fmt, inr } from '@/lib/format'
+import { compact, fmt, inr, timeAgo } from '@/lib/format'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { collectMaxHistory, getEmaCrossover, getMaxHistory, getMaxHistoryStatus } from '@/services/api'
 import DeleteStockButton from './DeleteStockButton'
@@ -194,6 +194,11 @@ function EmaCrossover({ symbol }) {
           <span className="text-sm text-muted-foreground tabular-nums">
             EMA{short}: {inr(data.shortEma)} · EMA{long}: {inr(data.longEma)}
           </span>
+          {data.lastCrossoverDate && (
+            <span className="text-sm text-muted-foreground">
+              Last crossover: {timeAgo(data.lastCrossoverDate)}
+            </span>
+          )}
         </div>
       )}
     </div>

@@ -55,6 +55,7 @@ def test_ema_crossover_needs_enough_history():
         signal = prices.ema_crossover(SYMBOL, short=20, long=50)
         assert signal is not None
         assert signal["shortEma"] > signal["longEma"]
+        assert signal["lastCrossoverDate"] is not None  # steady rise from day 1 crosses early on
     finally:
         with db.connect() as conn:
             conn.execute("DELETE FROM price_history WHERE symbol = %s", (SYMBOL,))

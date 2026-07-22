@@ -82,25 +82,37 @@ def chart_from_history(symbol, range_key):
 
 
 def ema_crossover(symbol, short=20, long=50):
-    """Returns {crossover: 'bullish'|'bearish'|None, shortEma, longEma} from stored closes -
-    'bullish' = short EMA crossed above long EMA on the latest bar (golden cross), 'bearish' =
-    crossed below (death cross). None (both the dict's crossover field and the return value) if
-    there isn't enough stored history yet - sync_symbol(symbol) first."""
-    closes = db.price_closes(symbol, limit=long + 5)
-    if len(closes) < long + 2:
+    """Returns {crossover: 'bullish'|'bearish'|None, shortEma, longEma, lastCrossoverDate} from
+    stored closes - 'bullish' = short EMA crossed above long EMA on the latest bar (golden
+    cross), 'bearish' = crossed below (death cross). lastCrossoverDate is the most recent date
+    (within the fetched window) either kind of crossover occurred, or None if none did. Returns
+    None if there isn't enough stored history yet - sync_symbol(symbol) first."""
+    rows = db.price_series(symbol, limit=long + 250)
+    if len(rows) < long + 2:
         return None
 
     import pandas as pd
-    series = pd.Series(closes)
+    dates = [r["date"] for r in rows]
+    series = pd.Series([r["close"] for r in rows])
     short_ema = series.ewm(span=short, adjust=False).mean()
     long_ema = series.ewm(span=long, adjust=False).mean()
-    prev_diff = short_ema.iloc[-2] - long_ema.iloc[-2]
-    curr_diff = short_ema.iloc[-1] - long_ema.iloc[-1]
+    diff = short_ema - long_ema
 
     crossover = None
-    if prev_diff <= 0 and curr_diff > 0:
+    if diff.iloc[-2] <= 0 and diff.iloc[-1] > 0:
         crossover = "bullish"
-    elif prev_diff >= 0 and curr_diff < 0:
+    elif diff.iloc[-2] >= 0 and diff.iloc[-1] < 0:
         crossover = "bearish"
 
-    return {"crossover": crossover, "shortEma": round(short_ema.iloc[-1], 2), "longEma": round(long_ema.iloc[-1], 2)}
+    last_crossover_date = None
+    for i in range(len(diff) - 1, 0, -1):
+        if (diff.iloc[i - 1] <= 0 and diff.iloc[i] > 0) or (diff.iloc[i - 1] >= 0 and diff.iloc[i] < 0):
+            last_crossover_date = dates[i]
+            break
+
+    return {
+        "crossover": crossover,
+        "shortEma": round(short_ema.iloc[-1], 2),
+        "longEma": round(long_ema.iloc[-1], 2),
+        "lastCrossoverDate": last_crossover_date.isoformat() if last_crossover_date else None,
+    }

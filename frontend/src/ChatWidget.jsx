@@ -11,7 +11,6 @@ import {
   HistoryIcon,
   MessageCircleIcon,
   SquarePenIcon,
-  Trash2Icon,
   WrenchIcon,
   XIcon,
 } from 'lucide-react'
@@ -82,11 +81,6 @@ function slashCommands(symbol) {
       name: '/sentiment',
       description: 'Analyze a news/blog URL: related stocks + sentiment',
       template: '/sentiment ',
-    },
-    {
-      name: '/confirm',
-      description: 'Approve a scrape/scan/sync the agent asked permission for',
-      template: '/confirm ',
     },
   ]
 }
@@ -279,13 +273,6 @@ export default function ChatWidget() {
     setChatId(newId())
   }
 
-  const deleteSession = async (e, session) => {
-    e.stopPropagation() // don't also trigger the item's onClick (openSession)
-    await fetch(`/api/chat/sessions/${session.id}`, { method: 'DELETE' })
-    setSessions((prev) => prev.filter((s) => s.id !== session.id))
-    if (session.id === chatId) startNew() // its transcript is gone - don't keep viewing it
-  }
-
   const onTitle = (id, title) => {
     setSessions((prev) =>
       prev.some((s) => s.id === id)
@@ -334,20 +321,8 @@ export default function ChatWidget() {
               <DropdownMenuContent align="end" className="max-h-72 w-64 overflow-y-auto">
                 {sessions.length === 0 && <DropdownMenuItem disabled>No past chats</DropdownMenuItem>}
                 {sessions.map((s) => (
-                  <DropdownMenuItem
-                    key={s.id}
-                    onClick={() => openSession(s)}
-                    className="group/session pr-1.5"
-                  >
-                    <span className="min-w-0 flex-1 truncate">{s.title || 'Untitled'}</span>
-                    <button
-                      type="button"
-                      aria-label={`Delete "${s.title || 'Untitled'}"`}
-                      onClick={(e) => deleteSession(e, s)}
-                      className="shrink-0 rounded p-0.5 text-muted-foreground opacity-0 hover:text-destructive group-hover/session:opacity-100"
-                    >
-                      <Trash2Icon className="size-3.5" />
-                    </button>
+                  <DropdownMenuItem key={s.id} onClick={() => openSession(s)}>
+                    <span className="truncate">{s.title || 'Untitled'}</span>
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuContent>

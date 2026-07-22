@@ -10,3 +10,8 @@ dashboard.html
 
 frontend/node_modules
 frontend/dist
+
+# local-only: LiteLLM proxy connection + guardrails config (ports, model list, env var names
+# specific to this machine's setup) - never shared/committed, each dev configures their own
+litellm.config.yaml
+test_guardrails.py

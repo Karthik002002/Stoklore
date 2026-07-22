@@ -531,7 +531,13 @@ def _tool_sync_prices(list_name=None):
     return f"price sync started in the background for {len(symbols)} symbols"
 
 
-AGENT_TOOL_IMPLS = {
+# Tools that cost real time/bandwidth (a live scrape, a background scan/sync over the whole
+# watchlist) never run automatically just because the model decided to call them - they're
+# gated behind an explicit /confirm command the user has to type themselves. Read-only lookups
+# (price, EMA, watchlist listing, stored-report search) run freely.
+CONFIRM_TOOLS = {"scrape_stock", "scan_events", "sync_prices"}
+
+REAL_TOOL_IMPLS = {
     "get_price": _tool_get_price,
     "get_ema_crossover": _tool_ema_crossover,
     "list_watchlists": _tool_list_watchlists,
@@ -540,6 +546,31 @@ AGENT_TOOL_IMPLS = {
     "scan_events": _tool_scan_events,
     "sync_prices": _tool_sync_prices,
 }
+
+
+def _guarded(name, fn):
+    if name not in CONFIRM_TOOLS:
+        return fn
+
+    def wrapped(**kwargs):
+        args_str = " ".join(f"{k}={v}" for k, v in kwargs.items())
+        return {
+            "requires_confirmation": True,
+            "tool": name,
+            "message": (
+                f"This action ({name}) was NOT run - it costs real time/bandwidth, so it needs "
+                f"the user's explicit confirmation. Tell the user exactly what you'd like to do "
+                f"and that they can type `/confirm {name}{' ' + args_str if args_str else ''}` "
+                "to proceed. Do not call this tool again in this turn."
+            ),
+        }
+
+    return wrapped
+
+
+# What the agent actually gets to call - confirm-gated tools return the message above instead of
+# running; /confirm re-invokes REAL_TOOL_IMPLS directly, bypassing the model for that one call.
+AGENT_TOOL_IMPLS = {name: _guarded(name, fn) for name, fn in REAL_TOOL_IMPLS.items()}
 
 
 def _fn(name, description, properties=None, required=None):
@@ -563,20 +594,51 @@ AGENT_TOOLS = [
     _fn("list_watchlists", "All watchlisted stocks and which named list each belongs to"),
     _fn("search_reports", "Search stored AI research reports semantically",
         {"query": {"type": "string"}}, ["query"]),
-    _fn("scrape_stock", "Scrape news+financials for an NSE symbol and generate a fresh report",
-        _SYMBOL_PROP, ["symbol"]),
-    _fn("scan_events", "Scan watchlisted stocks for news/price/volume/corporate-action events (background)",
-        _LIST_PROP),
-    _fn("sync_prices", "Sync daily price history for watchlisted stocks (background)", _LIST_PROP),
+    _fn("scrape_stock", "Scrape news+financials for an NSE symbol and generate a fresh report. "
+        "REQUIRES USER CONFIRMATION - does not run on the first call.", _SYMBOL_PROP, ["symbol"]),
+    _fn("scan_events", "Scan watchlisted stocks for news/price/volume/corporate-action events (background). "
+        "REQUIRES USER CONFIRMATION - does not run on the first call.", _LIST_PROP),
+    _fn("sync_prices", "Sync daily price history for watchlisted stocks (background). "
+        "REQUIRES USER CONFIRMATION - does not run on the first call.", _LIST_PROP),
 ]
 
 AGENT_SYSTEM = (
     "You are a research assistant for NSE India stocks with tools. Use tools to answer - never "
     "invent prices, tickers, or data. Use scrape_stock when asked about a specific stock's "
     "news/fundamentals, search_reports for stored research, get_price for quick quotes. Use "
-    "scan_events/sync_prices only when the user asks to scan, sync, or refresh. Keep replies "
-    "short and factual, use ₹ for currency, never $. No investment advice."
+    "scan_events/sync_prices only when the user asks to scan, sync, or refresh. scrape_stock, "
+    "scan_events, and sync_prices require the user's explicit confirmation and will NOT run on "
+    "the first call - when a tool result says requires_confirmation, relay its message to the "
+    "user verbatim-ish and stop; do not retry the same tool in this turn. Keep replies short "
+    "and factual, use ₹ for currency, never $. No investment advice."
 )
+
+CONFIRM_COMMAND = re.compile(r"^/confirm\s+(\w+)(?:\s+(.*))?$", re.IGNORECASE)
+CONFIRM_USAGE = "Usage: `/confirm <tool> [args]` - e.g. `/confirm scan_events` or `/confirm scrape_stock symbol=TCS`"
+
+
+def _confirm_reply(user_text):
+    """Handles the /confirm <tool> [key=value ...] slash command - the human-in-the-loop gate
+    for CONFIRM_TOOLS. Runs the REAL tool implementation directly (bypassing the guard the agent
+    itself is subject to), so a tool only ever executes here or via the read-only agent path."""
+    if not user_text.strip().lower().startswith("/confirm"):
+        return None
+    match = CONFIRM_COMMAND.match(user_text.strip())
+    if not match:
+        return CONFIRM_USAGE
+    name, arg_str = match.group(1), (match.group(2) or "").strip()
+    if name not in CONFIRM_TOOLS:
+        return f"'{name}' doesn't require confirmation (or isn't a tool) - nothing to do."
+    kwargs = {}
+    for part in arg_str.split():
+        if "=" in part:
+            k, v = part.split("=", 1)
+            kwargs[k] = v
+    try:
+        result = REAL_TOOL_IMPLS[name](**kwargs)
+    except Exception as e:
+        return f"⚠️ `{name}` failed: {e}"
+    return f"✅ Ran `{name}`:\n\n{result if isinstance(result, str) else json.dumps(result, default=str, ensure_ascii=False)}"
 
 
 @app.post("/api/chat")
@@ -591,7 +653,9 @@ def post_chat(req: ChatRequest):
 
     use_agent = False
     try:
-        reply = _sentiment_reply(user_text, model)
+        reply = _confirm_reply(user_text)
+        if reply is None:
+            reply = _sentiment_reply(user_text, model)
         if reply is None:
             reply = _history_reply(user_text, model)
         if reply is None and (model.startswith("ollama/") or model.startswith("litellm/")):

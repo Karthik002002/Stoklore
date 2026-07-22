@@ -203,6 +203,18 @@ class WatchlistRequest(BaseModel):
     list_name: str
 
 
+class WatchlistListRequest(BaseModel):
+    name: str
+
+
+class RenameWatchlistRequest(BaseModel):
+    new_name: str
+
+
+class ReorderWatchlistsRequest(BaseModel):
+    names: list[str]
+
+
 class LiteLLMConfigRequest(BaseModel):
     base_url: str
     api_key: str | None = None  # None (omitted) leaves the previously-saved key untouched
@@ -337,6 +349,43 @@ def set_watchlist(symbol: str, req: WatchlistRequest):
 @app.delete("/api/watchlist/{symbol}")
 def remove_watchlist(symbol: str):
     db.remove_from_watchlist(symbol.upper())
+    return {"ok": True}
+
+
+@app.get("/api/watchlists")
+def watchlist_names():
+    return db.list_watchlist_names()
+
+
+@app.post("/api/watchlists")
+def create_watchlist_list(req: WatchlistListRequest):
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="name can't be empty")
+    db.create_watchlist(name)
+    return {"ok": True}
+
+
+@app.post("/api/watchlists/reorder")
+def reorder_watchlist_list(req: ReorderWatchlistsRequest):
+    db.reorder_watchlists(req.names)
+    return {"ok": True}
+
+
+@app.put("/api/watchlists/{name}")
+def rename_watchlist_list(name: str, req: RenameWatchlistRequest):
+    new_name = req.new_name.strip()
+    if not new_name:
+        raise HTTPException(status_code=422, detail="new_name can't be empty")
+    db.rename_watchlist(name, new_name)
+    return {"ok": True}
+
+
+@app.delete("/api/watchlists/{name}")
+def delete_watchlist_list(name: str):
+    if db.watchlist_symbols(name):
+        raise HTTPException(status_code=400, detail=f"'{name}' still has stocks in it - move or remove them first")
+    db.delete_watchlist(name)
     return {"ok": True}
 
 

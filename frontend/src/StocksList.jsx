@@ -1,8 +1,25 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { PlusIcon, TrendingUpIcon, TrendingDownIcon, BookmarkIcon, CheckIcon, RadarIcon } from 'lucide-react'
+import {
+  PlusIcon,
+  TrendingUpIcon,
+  TrendingDownIcon,
+  BookmarkIcon,
+  CheckIcon,
+  EllipsisVerticalIcon,
+  PencilIcon,
+  RadarIcon,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,6 +30,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { fmt, inr } from '@/lib/format'
 import DeleteStockButton from './DeleteStockButton'
 import IndexCard from './IndexCard'
@@ -133,10 +151,167 @@ function WatchlistButton({ symbol, lists, current, onChange }) {
   )
 }
 
+function CreateWatchlistDialog({ onCreated }) {
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const submit = async (e) => {
+    e.preventDefault()
+    if (!name.trim() || loading) return
+    setLoading(true)
+    try {
+      const res = await fetch('/api/watchlists', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name.trim() }),
+      })
+      if (!res.ok) {
+        const { detail } = await res.json().catch(() => ({}))
+        throw new Error(detail || 'Failed to create watchlist')
+      }
+      toast.success(`${name.trim()} created`)
+      onCreated(name.trim())
+      setName('')
+      setOpen(false)
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger render={<Button variant="ghost" size="icon-sm" aria-label="New watchlist" />}>
+        <PlusIcon className="size-4" />
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>New watchlist</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={submit} className="flex gap-2">
+          <Input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Banking, IT, Long term"
+          />
+          <Button type="submit" disabled={loading}>
+            {loading ? <Spinner className="size-4" /> : 'Create'}
+          </Button>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function WatchlistTabMenu({ name, stockCount, onRenamed, onDeleted }) {
+  const [editOpen, setEditOpen] = useState(false)
+  const [newName, setNewName] = useState(name)
+  const [loading, setLoading] = useState(false)
+
+  const openEdit = () => {
+    setNewName(name)
+    setEditOpen(true)
+  }
+
+  const rename = async (e) => {
+    e.preventDefault()
+    const trimmed = newName.trim()
+    if (!trimmed || trimmed === name || loading) return
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/watchlists/${encodeURIComponent(name)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ new_name: trimmed }),
+      })
+      if (!res.ok) {
+        const { detail } = await res.json().catch(() => ({}))
+        throw new Error(detail || 'Failed to rename watchlist')
+      }
+      toast.success(`Renamed to ${trimmed}`)
+      onRenamed(trimmed)
+      setEditOpen(false)
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const remove = async () => {
+    if (stockCount > 0 || loading) return
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/watchlists/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const { detail } = await res.json().catch(() => ({}))
+        throw new Error(detail || 'Failed to delete watchlist')
+      }
+      toast.success(`${name} deleted`)
+      onDeleted()
+      setEditOpen(false)
+    } catch (err) {
+      toast.error(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={<Button variant="ghost" size="icon-sm" aria-label={`${name} options`} />}
+        >
+          <EllipsisVerticalIcon className="size-3.5" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={openEdit}>
+            <PencilIcon className="size-4" /> Edit
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit watchlist</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={rename} className="flex gap-2">
+            <Input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} />
+            <Button type="submit" disabled={loading || !newName.trim() || newName.trim() === name}>
+              Save
+            </Button>
+          </form>
+          <DialogFooter>
+            <Tooltip>
+              <TooltipTrigger render={<span className="inline-flex" />}>
+                <Button variant="destructive" disabled={stockCount > 0 || loading} onClick={remove}>
+                  Delete
+                </Button>
+              </TooltipTrigger>
+              {stockCount > 0 && (
+                <TooltipContent>
+                  Move or remove its {stockCount} stock{stockCount === 1 ? '' : 's'} to delete this watchlist
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
 export default function StocksList() {
   const [stocks, setStocks] = useState(null)
   const [watchlist, setWatchlist] = useState([])
+  const [listNames, setListNames] = useState([])
   const [tab, setTab] = useState('All')
+  const [dragName, setDragName] = useState(null)
   const navigate = useNavigate()
 
   const load = () => {
@@ -146,14 +321,30 @@ export default function StocksList() {
     fetch('/api/watchlist')
       .then((r) => r.json())
       .then(setWatchlist)
+    fetch('/api/watchlists')
+      .then((r) => r.json())
+      .then(setListNames)
   }
 
   useEffect(load, [])
 
   const listOf = Object.fromEntries(watchlist.map((w) => [w.symbol, w.list_name]))
-  const lists = [...new Set(watchlist.map((w) => w.list_name))].sort()
-  const tabs = ['All', ...lists]
+  const lists = listNames
+  const stockCountOf = (name) => watchlist.filter((w) => w.list_name === name).length
   const visible = tab === 'All' ? stocks : stocks?.filter((s) => listOf[s.symbol] === tab)
+
+  const dropOn = (targetName) => {
+    if (!dragName || dragName === targetName) return
+    const next = [...lists]
+    next.splice(next.indexOf(dragName), 1)
+    next.splice(next.indexOf(targetName), 0, dragName)
+    setListNames(next)
+    fetch('/api/watchlists/reorder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ names: next }),
+    })
+  }
 
   return (
     <div className="space-y-4">
@@ -172,20 +363,51 @@ export default function StocksList() {
         <IndexCard name="SENSEX" />
       </div>
 
-      {lists.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {tabs.map((name) => (
-            <Button
-              key={name}
-              variant={tab === name ? 'secondary' : 'ghost'}
-              size="sm"
-              onClick={() => setTab(name)}
-            >
+      <div className="flex flex-wrap items-center gap-1">
+        {lists.length > 0 && (
+          <Button variant={tab === 'All' ? 'secondary' : 'ghost'} size="sm" onClick={() => setTab('All')}>
+            All
+          </Button>
+        )}
+        {lists.map((name) => (
+          <div
+            key={name}
+            draggable
+            onDragStart={() => setDragName(name)}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault()
+              dropOn(name)
+            }}
+            onDragEnd={() => setDragName(null)}
+            className={`flex cursor-grab items-center rounded-lg transition-opacity active:cursor-grabbing ${
+              dragName === name ? 'opacity-40' : ''
+            }`}
+          >
+            <Button variant={tab === name ? 'secondary' : 'ghost'} size="sm" onClick={() => setTab(name)}>
               {name}
             </Button>
-          ))}
-        </div>
-      )}
+            <WatchlistTabMenu
+              name={name}
+              stockCount={stockCountOf(name)}
+              onRenamed={(newName) => {
+                load()
+                setTab(newName)
+              }}
+              onDeleted={() => {
+                load()
+                setTab('All')
+              }}
+            />
+          </div>
+        ))}
+        <CreateWatchlistDialog
+          onCreated={(name) => {
+            load()
+            setTab(name)
+          }}
+        />
+      </div>
 
       {!stocks && (
         <div className="flex items-center justify-center gap-2 py-24 text-muted-foreground">

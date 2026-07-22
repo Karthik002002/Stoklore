@@ -61,6 +61,28 @@ CREATE TABLE IF NOT EXISTS watchlist (
   added_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Named lists, tracked independently of watchlist rows so an empty list (no stocks yet) still
+-- shows up as a tab, and so tab order (position) is user-controlled via drag-and-drop rather
+-- than always alphabetical. A list_name appearing in `watchlist` but not here (e.g. legacy data)
+-- is still treated as a valid list, just ordered after the registered ones - see
+-- list_watchlist_names.
+CREATE TABLE IF NOT EXISTS watchlists (
+  name TEXT PRIMARY KEY,
+  position INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE watchlists ADD COLUMN IF NOT EXISTS position INTEGER NOT NULL DEFAULT 0;
+
+-- One-time fixup for rows inserted before `position` existed (all defaulted to 0, so order was
+-- ambiguous) - orders them by creation time. Never fires again once positions are distinct.
+DO $$ BEGIN
+  IF (SELECT COUNT(*) FROM watchlists WHERE position = 0) > 1 THEN
+    UPDATE watchlists w SET position = sub.rn
+    FROM (SELECT name, ROW_NUMBER() OVER (ORDER BY created_at) AS rn FROM watchlists) sub
+    WHERE w.name = sub.name;
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS stock_events (
   id SERIAL PRIMARY KEY,
   symbol TEXT NOT NULL,
@@ -255,9 +277,18 @@ def list_watchlist():
         ).fetchall()
 
 
+_NEXT_POSITION_INSERT = (
+    "INSERT INTO watchlists (name, position) "
+    "SELECT %s, COALESCE(MAX(position), 0) + 1 FROM watchlists "
+    "ON CONFLICT (name) DO NOTHING"
+)
+
+
 def set_watchlist(symbol, list_name):
-    """Add to a list, or move between lists - same upsert."""
+    """Add to a list, or move between lists - same upsert. Also registers the list name (appended
+    after the current last tab) so it persists as a tab even if this symbol is later moved out."""
     with connect() as conn:
+        conn.execute(_NEXT_POSITION_INSERT, (list_name,))
         conn.execute(
             "INSERT INTO watchlist (symbol, list_name) VALUES (%s, %s) "
             "ON CONFLICT (symbol) DO UPDATE SET list_name = excluded.list_name",
@@ -268,6 +299,48 @@ def set_watchlist(symbol, list_name):
 def remove_from_watchlist(symbol):
     with connect() as conn:
         conn.execute("DELETE FROM watchlist WHERE symbol = %s", (symbol,))
+
+
+def list_watchlist_names():
+    """All list names in user-chosen (drag-and-drop) order. Auto-registers any list_name still
+    referenced by a watchlist row but never registered (e.g. data from before `watchlists`
+    existed), appending them alphabetically, so every list becomes draggable from here on."""
+    with connect() as conn:
+        orphans = conn.execute(
+            "SELECT DISTINCT list_name FROM watchlist WHERE list_name NOT IN (SELECT name FROM watchlists) "
+            "ORDER BY list_name"
+        ).fetchall()
+        for row in orphans:
+            conn.execute(_NEXT_POSITION_INSERT, (row["list_name"],))
+        rows = conn.execute("SELECT name FROM watchlists ORDER BY position, name").fetchall()
+    return [r["name"] for r in rows]
+
+
+def create_watchlist(name):
+    with connect() as conn:
+        conn.execute(_NEXT_POSITION_INSERT, (name,))
+
+
+def rename_watchlist(old_name, new_name):
+    with connect() as conn:
+        conn.execute("UPDATE watchlist SET list_name = %s WHERE list_name = %s", (new_name, old_name))
+        renamed = conn.execute("UPDATE watchlists SET name = %s WHERE name = %s", (new_name, old_name))
+        if renamed.rowcount == 0:
+            conn.execute(_NEXT_POSITION_INSERT, (new_name,))
+
+
+def delete_watchlist(name):
+    """Deletes a list's own row - caller (API) must confirm it's empty first, since a nonempty
+    list is really just implied by its symbols' list_name and would reappear on the next read."""
+    with connect() as conn:
+        conn.execute("DELETE FROM watchlists WHERE name = %s", (name,))
+
+
+def reorder_watchlists(names):
+    """Sets tab order from a full drag-and-drop-reordered name list - position = index."""
+    with connect() as conn:
+        for i, name in enumerate(names):
+            conn.execute("UPDATE watchlists SET position = %s WHERE name = %s", (i, name))
 
 
 def insert_event(symbol, event_type, dedup_key, headline, detail, url, event_time,

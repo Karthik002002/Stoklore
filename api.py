@@ -437,6 +437,12 @@ def delete_report(item_id: int):
 def sessions():
     return db.list_sessions()
 
+@app.delete("/api/chat/sessions/{session_id}")
+def delete_session(session_id: str):
+    db.delete_session(session_id)
+    return {"ok": True}
+
+
 
 @app.get("/api/chat/sessions/{session_id}/messages")
 def messages(session_id: str):

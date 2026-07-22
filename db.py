@@ -529,6 +529,10 @@ def list_sessions():
             "SELECT id, title, model, created_at FROM chat_sessions ORDER BY created_at DESC"
         ).fetchall()
 
+def delete_session(session_id):
+    """chat_messages has ON DELETE CASCADE on session_id, so this drops the transcript too."""
+    with connect() as conn:
+        conn.execute("DELETE FROM chat_sessions WHERE id = %s", (session_id,))
 
 def add_message(session_id, role, content):
     with connect() as conn:

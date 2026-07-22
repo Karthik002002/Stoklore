@@ -84,6 +84,11 @@ function slashCommands(symbol) {
       template: '/sentiment ',
     },
     {
+      name: '/rule',
+      description: 'Check a watch rule (set up in Settings > Watch rules) against live data',
+      template: `/rule ${sym} `,
+    },
+    {
       name: '/confirm',
       description: 'Approve a scrape/scan/sync the agent asked permission for',
       template: '/confirm ',

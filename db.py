@@ -100,6 +100,36 @@ CREATE TABLE IF NOT EXISTS stock_events (
 CREATE INDEX IF NOT EXISTS stock_events_symbol_idx ON stock_events (symbol);
 CREATE INDEX IF NOT EXISTS stock_events_time_idx ON stock_events (event_time DESC);
 
+-- User-defined "should I act on this" criteria - bridges events/indicators to a decision without
+-- the app itself giving advice: the user writes the bar in plain English (rule_text, e.g. "P/E
+-- under 25 AND no negative events in last 14 days AND EMA20 above EMA50"), the LLM parses it once
+-- into the structured columns below at creation time, and the app just checks whether it's
+-- currently met - see llm.parse_watch_rule and rules.evaluate. Not tied to one stock: a rule is
+-- defined once by name and can be checked against any symbol (or the whole watchlist) at check
+-- time. All parsed criteria are optional (NULL = not checked).
+CREATE TABLE IF NOT EXISTS watch_rules (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  rule_text TEXT NOT NULL DEFAULT '',
+  max_pe REAL,
+  ema_short INTEGER,
+  ema_long INTEGER,
+  no_negative_events_days INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE watch_rules ADD COLUMN IF NOT EXISTS rule_text TEXT NOT NULL DEFAULT '';
+
+-- Migrates rules created before this was made stock-agnostic: drop the old per-symbol column and
+-- its composite unique constraint, then enforce uniqueness on name alone.
+ALTER TABLE watch_rules DROP COLUMN IF EXISTS symbol;
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conrelid = 'watch_rules'::regclass AND contype = 'u'
+  ) THEN
+    ALTER TABLE watch_rules ADD CONSTRAINT watch_rules_name_key UNIQUE (name);
+  END IF;
+END $$;
+
 -- Fetch-once cache for live scraper calls (price/quote/chart/financials) that had no caching at
 -- all before - avoids re-hitting Yahoo/NSE on every page view/poll. TTL-checked at read time,
 -- same pattern as stock_news; cleared wholesale by the "Reload" button (POST /api/cache/clear).
@@ -386,6 +416,38 @@ def list_events(list_name=None, symbol=None, from_date=None, to_date=None, limit
     params.append(limit)
     with connect() as conn:
         return conn.execute(query, params).fetchall()
+
+
+def list_watch_rules():
+    with connect() as conn:
+        return conn.execute("SELECT * FROM watch_rules ORDER BY name").fetchall()
+
+
+def get_watch_rule(name):
+    with connect() as conn:
+        return conn.execute("SELECT * FROM watch_rules WHERE name = %s", (name,)).fetchone()
+
+
+def get_watch_rule_by_id(rule_id):
+    with connect() as conn:
+        return conn.execute("SELECT * FROM watch_rules WHERE id = %s", (rule_id,)).fetchone()
+
+
+def create_watch_rule(name, rule_text, max_pe, ema_short, ema_long, no_negative_events_days):
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO watch_rules (name, rule_text, max_pe, ema_short, ema_long, "
+            "no_negative_events_days) VALUES (%s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (name) DO UPDATE SET rule_text = excluded.rule_text, "
+            "max_pe = excluded.max_pe, ema_short = excluded.ema_short, ema_long = excluded.ema_long, "
+            "no_negative_events_days = excluded.no_negative_events_days",
+            (name, rule_text, max_pe, ema_short, ema_long, no_negative_events_days),
+        )
+
+
+def delete_watch_rule(rule_id):
+    with connect() as conn:
+        conn.execute("DELETE FROM watch_rules WHERE id = %s", (rule_id,))
 
 
 def get_cached(symbol, kind, max_age_minutes):

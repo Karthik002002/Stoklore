@@ -40,3 +40,17 @@ export const setLiteLLMConfig = (baseUrl, apiKey) =>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ base_url: baseUrl, api_key: apiKey || null }),
   }).then(json)
+
+export const getWatchRules = () => fetch('/api/watch-rules').then(json)
+
+export const createWatchRule = (rule) =>
+  fetch('/api/watch-rules', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(rule),
+  }).then(json)
+
+export const deleteWatchRule = (id) => fetch(`/api/watch-rules/${id}`, { method: 'DELETE' }).then(json)
+
+export const checkWatchRule = (id, symbol) =>
+  fetch(`/api/watch-rules/${id}/check${symbol ? `?symbol=${symbol}` : ''}`).then(json)

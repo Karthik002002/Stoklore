@@ -3,6 +3,7 @@ import json
 import re
 import threading
 import uuid
+from datetime import date
 
 import requests
 from fastapi import FastAPI, HTTPException
@@ -14,6 +15,7 @@ import db
 import events
 import llm
 import prices
+import rules
 import scraper
 import sentiment
 
@@ -179,6 +181,10 @@ HISTORY_USAGE = "Usage: `/history SYMBOL YYYY-MM-DD YYYY-MM-DD` — e.g. `/histo
 SENTIMENT_COMMAND = re.compile(r"^/sentiment\s+(\S+)\s*$", re.IGNORECASE)
 SENTIMENT_USAGE = "Usage: `/sentiment URL` — e.g. `/sentiment https://example.com/some-news-article`"
 
+RULE_COMMAND = re.compile(r"^/rule\s+(.+)$", re.IGNORECASE)
+RULE_USAGE = ("Usage: `/rule RULE_NAME [SYMBOL]` — e.g. `/rule buy dip` checks it against your whole "
+              "watchlist, `/rule buy dip MIDHANI` checks just MIDHANI (set up rules in Settings > Watch rules)")
+
 
 class ChatRequest(BaseModel):
     sessionId: str
@@ -218,6 +224,49 @@ class ReorderWatchlistsRequest(BaseModel):
 class LiteLLMConfigRequest(BaseModel):
     base_url: str
     api_key: str | None = None  # None (omitted) leaves the previously-saved key untouched
+
+
+class WatchRuleRequest(BaseModel):
+    name: str
+    text: str
+
+
+@app.get("/api/watch-rules")
+def watch_rules():
+    return db.list_watch_rules()
+
+
+@app.post("/api/watch-rules")
+def create_watch_rule(req: WatchRuleRequest):
+    name = req.name.strip()
+    text = req.text.strip()
+    if not name or not text:
+        raise HTTPException(status_code=422, detail="name and rule text can't be empty")
+    criteria = llm.parse_watch_rule(text, db.get_active_model())
+    if not criteria:
+        raise HTTPException(status_code=422, detail="couldn't recognize any criteria in that rule - "
+                             "try mentioning P/E, an EMA crossover, or recent negative events")
+    db.create_watch_rule(name, text, criteria.get("max_pe"), criteria.get("ema_short"),
+                          criteria.get("ema_long"), criteria.get("no_negative_events_days"))
+    return {"ok": True, "criteria": criteria}
+
+
+@app.delete("/api/watch-rules/{rule_id}")
+def delete_watch_rule(rule_id: int):
+    db.delete_watch_rule(rule_id)
+    return {"ok": True}
+
+
+@app.get("/api/watch-rules/{rule_id}/check")
+def check_watch_rule(rule_id: int, symbol: str | None = None):
+    """A rule isn't tied to one stock - checks it against `symbol` if given, else against every
+    watchlisted stock (a screener: which stocks currently meet this rule)."""
+    rule = db.get_watch_rule_by_id(rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="watch rule not found")
+    if symbol:
+        return {"symbol": symbol.upper(), **rules.evaluate(rule, symbol.upper())}
+    return [{"symbol": s, **rules.evaluate(rule, s)} for s in db.watchlist_symbols()]
 
 
 def _text(message):
@@ -517,6 +566,44 @@ def _history_reply(user_text, model):
     return markdown
 
 
+def _format_rule_check(rule_name, symbol, result):
+    lines = [f"**{rule_name}** ({symbol}) — {'✅ met' if result['passed'] else '❌ not met'}"]
+    for check in result["checks"]:
+        lines.append(f"- {'✅' if check['passed'] else '❌'} {check['label']} — {check['detail']}")
+    return "\n".join(lines)
+
+
+def _format_rule_check_all(rule_name, results):
+    passed = [r for r in results if r["passed"]]
+    lines = [f"**{rule_name}** — met by {len(passed)}/{len(results)} watchlisted stock(s)"]
+    lines += [f"- {'✅' if r['passed'] else '❌'} {r['symbol']}" for r in results]
+    return "\n".join(lines)
+
+
+def _rule_reply(user_text):
+    """Handles the /rule RULE_NAME [SYMBOL] slash command. A rule isn't tied to one stock: with no
+    symbol it's checked against every watchlisted stock (a screener - which ones meet it right
+    now); with a trailing symbol, just that one. Returns a reply string, or None if not that
+    command."""
+    if not user_text.strip().lower().startswith("/rule"):
+        return None
+    match = RULE_COMMAND.match(user_text.strip())
+    if not match:
+        return RULE_USAGE
+    rest = match.group(1).strip()
+    tokens = rest.split()
+    symbol, name = None, rest
+    if len(tokens) > 1 and tokens[-1].upper() in db.watchlist_symbols():
+        symbol, name = tokens[-1].upper(), " ".join(tokens[:-1])
+    rule = db.get_watch_rule(name)
+    if rule is None:
+        return f"No watch rule named '{name}' - set one up in Settings > Watch rules."
+    if symbol:
+        return _format_rule_check(rule["name"], symbol, rules.evaluate(rule, symbol))
+    results = [{"symbol": s, **rules.evaluate(rule, s)} for s in db.watchlist_symbols()]
+    return _format_rule_check_all(rule["name"], results)
+
+
 def _sentiment_reply(user_text, model):
     """Handles the /sentiment URL slash command. Returns a reply string, or None if not that command."""
     if not user_text.strip().lower().startswith("/sentiment"):
@@ -580,6 +667,33 @@ def _tool_sync_prices(list_name=None):
     return f"price sync started in the background for {len(symbols)} symbols"
 
 
+def _tool_web_search(query):
+    return scraper.web_search(query) or "no results found"
+
+
+def _tool_check_watch_rule(name, symbol=None):
+    rule = db.get_watch_rule(name)
+    if rule is None:
+        return f"no watch rule named '{name}' - the user needs to set one up in Settings > Watch rules"
+    if symbol:
+        return _format_rule_check(rule["name"], symbol.upper(), rules.evaluate(rule, symbol.upper()))
+    results = [{"symbol": s, **rules.evaluate(rule, s)} for s in db.watchlist_symbols()]
+    return _format_rule_check_all(rule["name"], results)
+
+
+def _tool_add_stock_event(symbol, headline, detail=None, url=None):
+    """Lets the agent record an event it found via web_search/scrape_stock research, outside the
+    fixed rule-based scan_events pipeline (news/price_move/volume_spike/corporate_action) - shows
+    up on the Events page like any other event, tagged 'research' so its origin is clear."""
+    symbol = symbol.upper()
+    score = sentiment.analyze(f"{headline}. {detail or ''}")
+    today = date.today().isoformat()
+    dedup_key = url or headline
+    inserted = db.insert_event(symbol, "research", dedup_key, headline, detail, url, today,
+                                score["label"], score["score"])
+    return f"event recorded for {symbol}" if inserted else "already recorded (duplicate)"
+
+
 # Tools that cost real time/bandwidth (a live scrape, a background scan/sync over the whole
 # watchlist) never run automatically just because the model decided to call them - they're
 # gated behind an explicit /confirm command the user has to type themselves. Read-only lookups
@@ -594,6 +708,9 @@ REAL_TOOL_IMPLS = {
     "scrape_stock": _tool_scrape_stock,
     "scan_events": _tool_scan_events,
     "sync_prices": _tool_sync_prices,
+    "web_search": _tool_web_search,
+    "add_stock_event": _tool_add_stock_event,
+    "check_watch_rule": _tool_check_watch_rule,
 }
 
 
@@ -649,17 +766,41 @@ AGENT_TOOLS = [
         "REQUIRES USER CONFIRMATION - does not run on the first call.", _LIST_PROP),
     _fn("sync_prices", "Sync daily price history for watchlisted stocks (background). "
         "REQUIRES USER CONFIRMATION - does not run on the first call.", _LIST_PROP),
+    _fn("web_search", "Open-ended web search (DuckDuckGo) for anything not covered by the other "
+        "tools - e.g. researching a stock's recent developments beyond its scraped news.",
+        {"query": {"type": "string"}}, ["query"]),
+    _fn("add_stock_event", "Records one real, dated event you found via web_search/scrape_stock "
+        "research so it shows up on the Events page - only for events you've actually verified, "
+        "never invented ones. Always pass the source url when you have one.",
+        {**_SYMBOL_PROP, "headline": {"type": "string"}, "detail": {"type": "string"},
+         "url": {"type": "string"}}, ["symbol", "headline"]),
+    _fn("check_watch_rule", "Checks a user-defined watch rule (set up in Settings > Watch rules, "
+        "not tied to any one stock) against live data and reports pass/fail per criterion - e.g. "
+        "'is the buy dip rule met for MIDHANI'. Omit symbol to check it against every watchlisted "
+        "stock instead (a screener - which ones currently meet it). Does not give advice, just "
+        "reports whether the user's own criteria currently hold.",
+        {"name": {"type": "string", "description": "the watch rule's name"},
+         "symbol": {"type": "string", "description": "optional - omit to check the whole watchlist"}},
+        ["name"]),
 ]
 
 AGENT_SYSTEM = (
     "You are a research assistant for NSE India stocks with tools. Use tools to answer - never "
     "invent prices, tickers, or data. Use scrape_stock when asked about a specific stock's "
     "news/fundamentals, search_reports for stored research, get_price for quick quotes. Use "
-    "scan_events/sync_prices only when the user asks to scan, sync, or refresh. scrape_stock, "
-    "scan_events, and sync_prices require the user's explicit confirmation and will NOT run on "
-    "the first call - when a tool result says requires_confirmation, relay its message to the "
-    "user verbatim-ish and stop; do not retry the same tool in this turn. Keep replies short "
-    "and factual, use ₹ for currency, never $. No investment advice."
+    "scan_events/sync_prices only when the user asks to scan, sync, or refresh the whole "
+    "watchlist with the rule-based event pipeline. For open-ended research into one stock's "
+    "recent developments, use web_search (and/or scrape_stock) yourself, then call "
+    "add_stock_event for each real, dated event you find so it's recorded on the Events page - "
+    "never call add_stock_event with something you haven't actually found via a tool. If the "
+    "user asks whether it's a good time to buy/sell or wants a recommendation, you cannot give "
+    "one - instead suggest check_watch_rule if they have a watch rule set up (Settings > Watch "
+    "rules), which reports pass/fail against their own criteria without you making the call. "
+    "scrape_stock, scan_events, and sync_prices require the user's explicit confirmation and "
+    "will NOT run on the first call - when a tool result says requires_confirmation, relay its "
+    "message to the user verbatim-ish and stop; do not retry the same tool in this turn. "
+    "web_search, add_stock_event, and check_watch_rule run freely, no confirmation needed. Keep "
+    "replies short and factual, use ₹ for currency, never $. No investment advice."
 )
 
 CONFIRM_COMMAND = re.compile(r"^/confirm\s+(\w+)(?:\s+(.*))?$", re.IGNORECASE)
@@ -703,6 +844,8 @@ def post_chat(req: ChatRequest):
     use_agent = False
     try:
         reply = _confirm_reply(user_text)
+        if reply is None:
+            reply = _rule_reply(user_text)
         if reply is None:
             reply = _sentiment_reply(user_text, model)
         if reply is None:

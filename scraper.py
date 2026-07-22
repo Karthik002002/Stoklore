@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import requests
 import yfinance as yf
 from bs4 import BeautifulSoup
+from ddgs import DDGS
 
 NSE_BASE = "https://www.nseindia.com"
 NSE_HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
@@ -54,6 +55,15 @@ def scrape_article(url):
     title = h1.get_text(strip=True) if h1 else (soup.title.get_text(strip=True) if soup.title else url)
     text = " ".join(p.get_text(" ", strip=True) for p in soup.find_all("p"))
     return {"title": title, "text": text}
+
+
+def web_search(query, limit=5):
+    """General-purpose web search (DuckDuckGo via the ddgs library, no API key needed) - lets the
+    LLM agent research something not covered by the NSE/Yahoo Finance scrapers above, e.g. an
+    open-ended "what's going on with this stock" investigation. Returns [{title, url, snippet}]."""
+    with DDGS() as ddgs:
+        results = ddgs.text(query, max_results=limit)
+    return [{"title": r["title"], "url": r["href"], "snippet": r["body"]} for r in results]
 
 
 def get_news(symbol, limit=10):

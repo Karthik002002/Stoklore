@@ -303,6 +303,34 @@ def extract_tickers(text, model=DEFAULT_MODEL):
         return []
 
 
+WATCH_RULE_FIELDS = ("max_pe", "ema_short", "ema_long", "no_negative_events_days")
+
+
+def parse_watch_rule(text, model=DEFAULT_MODEL):
+    """Parses a plain-English watch-rule prompt (e.g. "P/E under 25 AND no negative-sentiment
+    event in last 14 days AND EMA20 above EMA50") into the structured criteria rules.evaluate
+    checks. Returns a dict with only the fields the text actually specified - unmentioned
+    criteria are omitted (not checked), never guessed."""
+    prompt = (
+        "Parse the investment watch-rule criteria below into JSON with these optional fields:\n"
+        "- max_pe (number): the P/E ratio must stay under this\n"
+        "- ema_short, ema_long (integers, always together): short EMA period must be ABOVE the "
+        "long EMA period's value, e.g. \"EMA20 above EMA50\" -> ema_short=20, ema_long=50\n"
+        "- no_negative_events_days (integer): no negative-sentiment news/events in this many "
+        "past days, e.g. \"no negative events in the last 14 days\" -> 14\n"
+        "Only include a field if the text actually mentions that criterion. Reply with ONLY the "
+        'JSON object, e.g. {"max_pe": 25, "ema_short": 20, "ema_long": 50, '
+        '"no_negative_events_days": 14}. If nothing recognizable, reply {}.\n\n'
+        f"Criteria: {text[:1000]}"
+    )
+    reply = _generate(prompt, model)
+    try:
+        parsed = json.loads(reply[reply.index("{") : reply.rindex("}") + 1])
+    except (ValueError, json.JSONDecodeError):
+        return {}
+    return {k: parsed[k] for k in WATCH_RULE_FIELDS if k in parsed and parsed[k] is not None}
+
+
 def explain_sentiment(text, label, model=DEFAULT_MODEL):
     """Asks the LLM to justify the FinRoBERTa sentiment label with specifics from the article -
     the classifier itself only outputs a label+score, no rationale."""

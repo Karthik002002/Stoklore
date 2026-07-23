@@ -1,4 +1,6 @@
 """Fetches NSE India movers (nseindia.com) plus news/financials (Yahoo Finance via yfinance)."""
+import html
+import json
 from datetime import datetime, timedelta
 
 import requests
@@ -44,11 +46,34 @@ def get_movers(count=25):
     return list(movers.values())[:count]
 
 
+def _jsonld_article_body(soup):
+    """Many news CMSes (this includes Economic Times/ETEnergyworld) embed the full plain-text
+    article in a schema.org NewsArticle/Article JSON-LD block for SEO - the visible page itself
+    may not put the article body in <p> tags at all, so a naive <p> scrape there just picks up
+    nav/comment-policy boilerplate instead. Returns (title, text) or None if no block has one."""
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(script.string or "")
+        except (json.JSONDecodeError, TypeError):
+            continue
+        for node in data if isinstance(data, list) else [data]:
+            for n in node.get("@graph", [node]) if isinstance(node, dict) else [node]:
+                if isinstance(n, dict) and n.get("articleBody"):
+                    return n.get("headline"), html.unescape(n["articleBody"])
+    return None
+
+
 def scrape_article(url):
     """Fetches an arbitrary news/blog URL and returns its title + best-effort body text."""
     resp = requests.get(url, headers=NSE_HEADERS, timeout=15)
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
+
+    jsonld = _jsonld_article_body(soup)
+    if jsonld:
+        headline, text = jsonld
+        return {"title": headline or (soup.title.get_text(strip=True) if soup.title else url), "text": text}
+
     for tag in soup(["script", "style", "nav", "header", "footer", "aside", "form"]):
         tag.decompose()
     h1 = soup.find("h1")
@@ -57,7 +82,7 @@ def scrape_article(url):
     return {"title": title, "text": text}
 
 
-def web_search(query, limit=5):
+def web_search(query, limit=10):
     """General-purpose web search (DuckDuckGo via the ddgs library, no API key needed) - lets the
     LLM agent research something not covered by the NSE/Yahoo Finance scrapers above, e.g. an
     open-ended "what's going on with this stock" investigation. Returns [{title, url, snippet}]."""

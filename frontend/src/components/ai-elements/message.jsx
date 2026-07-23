@@ -1,15 +1,64 @@
 'use client'
 import { Button } from '@/components/ui/button'
 import { ButtonGroup, ButtonGroupText } from '@/components/ui/button-group'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { cjk } from '@streamdown/cjk'
 import { code } from '@streamdown/code'
 import { math } from '@streamdown/math'
 import { mermaid } from '@streamdown/mermaid'
-import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
+import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, CopyIcon, ExternalLinkIcon } from 'lucide-react'
 import { createContext, memo, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { Streamdown } from 'streamdown'
+
+// Streamdown's own link-safety confirmation (its default before navigating to any link in
+// rendered markdown) is a manually-built overlay with no way to restyle from the outside - this
+// swaps it for our own Dialog, matching this app's UI instead of the library's.
+function LinkSafetyModal({ url, isOpen, onClose, onConfirm }) {
+  const [copied, setCopied] = useState(false)
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // clipboard access denied - nothing to fall back to, just leave "Copy link" as-is
+    }
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-[400px] sm:max-w-[400px]">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ExternalLinkIcon className="size-5" />
+            Open external link?
+          </DialogTitle>
+          <DialogDescription>You're about to visit an external website.</DialogDescription>
+        </DialogHeader>
+        <p className="max-h-32 overflow-y-auto rounded-md bg-muted p-3 font-mono text-sm break-all">{url}</p>
+        <div className="flex gap-2">
+          <Button variant="outline" className="flex-1" onClick={copyLink}>
+            {copied ? <CheckIcon className="size-3.5" /> : <CopyIcon className="size-3.5" />}
+            {copied ? 'Copied' : 'Copy link'}
+          </Button>
+          <Button
+            className="flex-1"
+            onClick={() => {
+              onConfirm()
+              onClose()
+            }}
+          >
+            <ExternalLinkIcon className="size-3.5" />
+            Open link
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
 export const Message = ({ className, from, ...props }) => (
   <div
@@ -215,12 +264,14 @@ export const MessageBranchPage = ({ className, ...props }) => {
 }
 
 const streamdownPlugins = { cjk, code, math, mermaid }
+const linkSafety = { enabled: true, renderModal: (props) => <LinkSafetyModal {...props} /> }
 
 export const MessageResponse = memo(
   ({ className, ...props }) => (
     <Streamdown
       className={cn('size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0', className)}
       plugins={streamdownPlugins}
+      linkSafety={linkSafety}
       {...props}
     />
   ),

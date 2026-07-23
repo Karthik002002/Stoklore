@@ -10,7 +10,7 @@ brew services start postgresql@17
 # api.py) so the server and frontend come up immediately instead of blocking here.
 
 trap 'kill $(jobs -p) 2>/dev/null' EXIT
-.venv/bin/uvicorn api:app --port 8010 &
+.venv/bin/uvicorn api:app --port 8010 --reload &
 (cd frontend && npm run dev -- --port 5180) &
 wait
 

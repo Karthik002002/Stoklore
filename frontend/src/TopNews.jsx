@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatDateTime } from '@/lib/format'
+import EventActionsMenu from './EventActionsMenu'
 
 function NewsCard({ n }) {
   const open = () => window.open(n.url, '_blank', 'noopener,noreferrer')
@@ -19,11 +20,12 @@ function NewsCard({ n }) {
             tabIndex={0}
             onClick={open}
             onKeyDown={(e) => e.key === 'Enter' && open()}
-            className="flex h-[150px] cursor-pointer flex-col rounded-xl border bg-card p-4 transition-colors hover:border-primary/40"
+            className="relative flex h-[150px] cursor-pointer flex-col rounded-xl border bg-card p-4 transition-colors hover:border-primary/40"
           />
         }
       >
-        <p className="line-clamp-3 font-medium">{n.title}</p>
+        <EventActionsMenu url={n.url} label={n.title} className="absolute top-2 right-2" />
+        <p className="line-clamp-3 pr-6 font-medium">{n.title}</p>
         {n.summary && <p className="mt-1.5 line-clamp-4 text-sm text-muted-foreground">{n.summary}</p>}
         {(n.source || n.published_at) && (
           <p className="mt-2 text-xs text-muted-foreground">

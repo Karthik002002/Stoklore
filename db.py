@@ -250,6 +250,16 @@ def list_symbols():
         ).fetchall()
 
 
+def search_symbols(query="", limit=30):
+    """Distinct scraped symbols matching a case-insensitive substring, most recent first."""
+    with connect() as conn:
+        return conn.execute(
+            "SELECT symbol, max(scraped_at) AS last_scraped FROM scraped_items "
+            "WHERE symbol ILIKE %s GROUP BY symbol ORDER BY last_scraped DESC LIMIT %s",
+            (f"%{query}%", limit),
+        ).fetchall()
+
+
 def list_items_for_symbol(symbol):
     with connect() as conn:
         return conn.execute(
@@ -752,6 +762,14 @@ def delete_session(session_id):
     """chat_messages has ON DELETE CASCADE on session_id, so this drops the transcript too."""
     with connect() as conn:
         conn.execute("DELETE FROM chat_sessions WHERE id = %s", (session_id,))
+
+
+def clear_messages(session_id):
+    """Wipes a session's transcript (the /clear command) but keeps the session row itself - same
+    chatId, title, and model, just an empty history."""
+    with connect() as conn:
+        conn.execute("DELETE FROM chat_messages WHERE session_id = %s", (session_id,))
+
 
 def add_message(session_id, role, content):
     with connect() as conn:

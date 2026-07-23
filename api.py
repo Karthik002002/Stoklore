@@ -260,6 +260,10 @@ class AddStockRequest(BaseModel):
     symbol: str
 
 
+class ScrapeRequest(BaseModel):
+    url: str
+
+
 class ActiveModelRequest(BaseModel):
     model: str
 
@@ -339,6 +343,44 @@ def check_watch_rule(rule_id: int, symbol: str | None = None):
 
 def _text(message):
     return "".join(p.get("text", "") for p in message.get("parts", []) if p.get("type") == "text")
+
+
+# Replayed tool output only needs to be recognizable to the model, not full-precision - a
+# scrape_stock call returns a whole markdown report, and a few of those replayed on every later
+# turn would blow past context limits fast. A fresh call within the same turn (llm.py's
+# run_agent_stream) still gets the untruncated result; this cap is history-replay only.
+_HISTORY_TOOL_OUTPUT_CHARS = 1500
+# How many of the most recent messages get replayed to the model each turn - a sliding window so
+# a long session's token cost stays bounded instead of growing every single turn.
+MAX_HISTORY_MESSAGES = 20
+
+
+def _history_text(message):
+    """Renders one client message as plain text for the LLM's conversation history - text plus
+    a rendering of any tool calls/results, not just the final reply. Without this, a completed
+    tool call's actual data (e.g. web_search hits) vanishes from context on the next turn and
+    the model re-runs the same tool instead of building on what it already found. Tool output is
+    wrapped the same DATA-not-instructions way a live result is (llm._wrap_tool_result), so
+    replayed results carry the same injection guard as a fresh call."""
+    segments = []
+    for p in message.get("parts", []):
+        ptype = p.get("type", "")
+        if ptype == "text" and p.get("text"):
+            segments.append(p["text"])
+        elif (ptype == "dynamic-tool" or ptype.startswith("tool-")) and p.get("state") == "output-available":
+            name = p.get("toolName") or ptype.removeprefix("tool-")
+            output = p.get("output")
+            text = output if isinstance(output, str) else json.dumps(output, default=str, ensure_ascii=False)
+            if len(text) > _HISTORY_TOOL_OUTPUT_CHARS:
+                text = text[:_HISTORY_TOOL_OUTPUT_CHARS] + "…(truncated)"
+            segments.append(llm._wrap_tool_result(name, text))
+    return "\n\n".join(segments)
+
+
+def _windowed_history(messages):
+    """Last MAX_HISTORY_MESSAGES messages, rendered for the model - a sliding window so a long
+    session doesn't send unbounded, ever-growing history on every turn."""
+    return [{"role": m["role"], "content": _history_text(m)} for m in messages[-MAX_HISTORY_MESSAGES:]]
 
 
 def _sse(obj):
@@ -443,6 +485,19 @@ def set_cogencis_config(req: CogencisConfigRequest):
     return {"ok": True}
 
 
+SCRAPE_OUTPUT_FILE = "scraped.json"
+
+
+@app.post("/api/scrape")
+def scrape_url(req: ScrapeRequest):
+    """Scrapes an arbitrary URL's HTML (requests + BeautifulSoup, via scraper.scrape_article)
+    and writes {url, title, text} to one JSON file, overwritten each call."""
+    data = {"url": req.url, **scraper.scrape_article(req.url)}
+    with open(SCRAPE_OUTPUT_FILE, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+    return data
+
+
 @app.post("/api/stocks")
 def add_stock(req: AddStockRequest):
     """Manually add a stock by symbol and scrape it live, same path the chat uses on-demand."""
@@ -528,6 +583,12 @@ def stocks():
         except Exception:
             row.update({"price": None, "changePercent": None})
     return rows
+
+
+@app.get("/api/stocks/search")
+def search_stocks(q: str = "", limit: int = 30):
+    """Symbol search for the chat @ tag menu - every scraped symbol, not just watchlisted ones."""
+    return db.search_symbols(q, min(limit, 30))
 
 
 @app.get("/api/indices")
@@ -653,6 +714,12 @@ def messages(session_id: str):
     ]
 
 
+@app.delete("/api/chat/sessions/{session_id}/messages")
+def clear_session_messages(session_id: str):
+    db.clear_messages(session_id)
+    return {"ok": True}
+
+
 def _history_reply(user_text, model):
     """Handles the /history SYMBOL FROM TO slash command. Returns a reply string, or None if not that command."""
     if not user_text.strip().lower().startswith("/history"):
@@ -736,6 +803,12 @@ def _tool_get_price(symbol):
     return _cached(symbol.upper(), "price", 15, lambda: scraper.get_price(symbol.upper()))
 
 
+def _tool_get_movers(count=25):
+    """Live NSE gainers/losers/volume-gainers, straight from NSE's own API - not a web search,
+    so the model gets real {symbol, changePercent, volume, avgVolume} rows to answer with."""
+    return _cached("market", f"movers-{count}", 15, lambda: scraper.get_movers(int(count)))
+
+
 def _tool_ema_crossover(symbol, short=20, long=50):
     signal = prices.ema_crossover(symbol.upper(), int(short), int(long))
     return signal or "no synced price history for this symbol - run a price sync first"
@@ -743,6 +816,22 @@ def _tool_ema_crossover(symbol, short=20, long=50):
 
 def _tool_list_watchlists():
     return db.list_watchlist()
+
+
+def _tool_scrape_url(url):
+    """Fetches a URL and returns its title+text for the model to analyze in this reply - nothing
+    is written to a file or the DB, unlike POST /api/scrape. Only lives in this turn's context."""
+    try:
+        return scraper.scrape_article(url)
+    except requests.RequestException as e:
+        return f"couldn't fetch that URL: {e}"
+
+
+def _tool_list_chat_sessions():
+    """Titles of past chat sessions (from the History dropdown) - answers 'what have I asked
+    about before' questions, which the model otherwise has no way to see beyond this session."""
+    return [{"title": s["title"] or "Untitled", "date": s["created_at"].date().isoformat()}
+            for s in db.list_sessions()]
 
 
 def _tool_search_reports(query):
@@ -797,16 +886,18 @@ def _tool_add_stock_event(symbol, headline, detail=None, url=None):
     return f"event recorded for {symbol}" if inserted else "already recorded (duplicate)"
 
 
-# Tools that cost real time/bandwidth (a live scrape, a background scan/sync over the whole
-# watchlist) never run automatically just because the model decided to call them - they're
-# gated behind an explicit /confirm command the user has to type themselves. Read-only lookups
-# (price, EMA, watchlist listing, stored-report search) run freely.
-CONFIRM_TOOLS = {"scrape_stock", "scan_events", "sync_prices"}
+# scrape_stock adds a new stock (a live scrape + report generation) - gated behind an explicit
+# /confirm command the user has to type themselves (or the UI's Confirm button). Everything else,
+# including background scans/syncs over the whole watchlist, runs freely.
+CONFIRM_TOOLS = {"scrape_stock"}
 
 REAL_TOOL_IMPLS = {
     "get_price": _tool_get_price,
+    "get_movers": _tool_get_movers,
     "get_ema_crossover": _tool_ema_crossover,
     "list_watchlists": _tool_list_watchlists,
+    "scrape_url": _tool_scrape_url,
+    "list_chat_sessions": _tool_list_chat_sessions,
     "search_reports": _tool_search_reports,
     "scrape_stock": _tool_scrape_stock,
     "scan_events": _tool_scan_events,
@@ -822,15 +913,15 @@ def _guarded(name, fn):
         return fn
 
     def wrapped(**kwargs):
-        args_str = " ".join(f"{k}={v}" for k, v in kwargs.items())
         return {
             "requires_confirmation": True,
             "tool": name,
+            "args": kwargs,
             "message": (
                 f"This action ({name}) was NOT run - it costs real time/bandwidth, so it needs "
-                f"the user's explicit confirmation. Tell the user exactly what you'd like to do "
-                f"and that they can type `/confirm {name}{' ' + args_str if args_str else ''}` "
-                "to proceed. Do not call this tool again in this turn."
+                f"the user's explicit confirmation first. Tell the user what you'd like to do; "
+                "a Confirm/Cancel prompt will be shown to them. Do not call this tool again in "
+                "this turn."
             ),
         }
 
@@ -858,17 +949,29 @@ _LIST_PROP = {"list_name": {"type": "string", "description": "watchlist name; om
 
 AGENT_TOOLS = [
     _fn("get_price", "Live price and day change % for an NSE stock", _SYMBOL_PROP, ["symbol"]),
+    _fn("get_movers", "Live NSE market movers straight from NSE's own gainers/losers/volume-gainers "
+        "API - real {symbol, changePercent, volume, avgVolume} rows, not search-engine links. Use "
+        "this (not web_search) whenever asked for top gainers/losers/volume movers/most active "
+        "stocks in the NSE market.", {"count": {"type": "integer", "description": "how many rows, default 25"}}),
     _fn("get_ema_crossover", "EMA crossover signal (golden/death cross) for a stock from stored history",
         {**_SYMBOL_PROP, "short": {"type": "integer"}, "long": {"type": "integer"}}, ["symbol"]),
     _fn("list_watchlists", "All watchlisted stocks and which named list each belongs to"),
+    _fn("scrape_url", "Fetches a web page (news article, blog post, press release) and returns "
+        "its title and text for you to analyze in your reply. Call this whenever the user "
+        "pastes/mentions a URL or @-tags one, or references 'this article'/'this link'. The "
+        "content is used only for this reply - it is not saved anywhere.",
+        {"url": {"type": "string", "description": "the URL to fetch"}}, ["url"]),
+    _fn("list_chat_sessions", "Titles and dates of the user's past chat sessions (different "
+        "conversations, shown in the History dropdown) - use this when asked what they've "
+        "previously chatted about. This does NOT include this session's own messages, which "
+        "are already in your conversation history above."),
     _fn("search_reports", "Search stored AI research reports semantically",
         {"query": {"type": "string"}}, ["query"]),
     _fn("scrape_stock", "Scrape news+financials for an NSE symbol and generate a fresh report. "
         "REQUIRES USER CONFIRMATION - does not run on the first call.", _SYMBOL_PROP, ["symbol"]),
-    _fn("scan_events", "Scan watchlisted stocks for news/price/volume/corporate-action events (background). "
-        "REQUIRES USER CONFIRMATION - does not run on the first call.", _LIST_PROP),
-    _fn("sync_prices", "Sync daily price history for watchlisted stocks (background). "
-        "REQUIRES USER CONFIRMATION - does not run on the first call.", _LIST_PROP),
+    _fn("scan_events", "Scan watchlisted stocks for news/price/volume/corporate-action events (background).",
+        _LIST_PROP),
+    _fn("sync_prices", "Sync daily price history for watchlisted stocks (background).", _LIST_PROP),
     _fn("web_search", "Open-ended web search (DuckDuckGo) for anything not covered by the other "
         "tools - e.g. researching a stock's recent developments beyond its scraped news.",
         {"query": {"type": "string"}}, ["query"]),
@@ -890,7 +993,12 @@ AGENT_TOOLS = [
 AGENT_SYSTEM = (
     "You are a research assistant for NSE India stocks with tools. Use tools to answer - never "
     "invent prices, tickers, or data. Use scrape_stock when asked about a specific stock's "
-    "news/fundamentals, search_reports for stored research, get_price for quick quotes. Use "
+    "news/fundamentals, search_reports for stored research, get_price for quick quotes, "
+    "get_movers for top gainers/losers/volume movers/most active NSE stocks - never use "
+    "web_search for that, it only returns links and snippets, not the actual numbers. Whenever "
+    "the user's message contains, pastes, or @-tags a URL, or refers to 'this article'/'this "
+    "link', call scrape_url on it and analyze the returned content directly in your reply - "
+    "don't just describe the link, and don't tell the user you can't access URLs. Use "
     "scan_events/sync_prices only when the user asks to scan, sync, or refresh the whole "
     "watchlist with the rule-based event pipeline. For open-ended research into one stock's "
     "recent developments, use web_search (and/or scrape_stock) yourself, then call "
@@ -899,39 +1007,40 @@ AGENT_SYSTEM = (
     "user asks whether it's a good time to buy/sell or wants a recommendation, you cannot give "
     "one - instead suggest check_watch_rule if they have a watch rule set up (Settings > Watch "
     "rules), which reports pass/fail against their own criteria without you making the call. "
-    "scrape_stock, scan_events, and sync_prices require the user's explicit confirmation and "
-    "will NOT run on the first call - when a tool result says requires_confirmation, relay its "
-    "message to the user verbatim-ish and stop; do not retry the same tool in this turn. "
-    "web_search, add_stock_event, and check_watch_rule run freely, no confirmation needed. Keep "
-    "replies short and factual, use ₹ for currency, never $. No investment advice."
+    "scrape_stock adds a new stock and requires the user's explicit confirmation - it will NOT "
+    "run on the first call; when a tool result says requires_confirmation, relay its message to "
+    "the user verbatim-ish and stop, do not retry it in this turn. Every other tool "
+    "(get_movers, scan_events, sync_prices, web_search, scrape_url, get_price, get_ema_crossover, "
+    "list_watchlists, list_chat_sessions, search_reports, add_stock_event, check_watch_rule) runs "
+    "freely - call them immediately, never ask the user for permission or say you're about to before calling one of "
+    "these. A completed tool call's result is already in your conversation history on later "
+    "turns - reuse it instead of re-calling the same tool for a follow-up question about the same "
+    "data. Keep replies short and factual, use ₹ for currency, never $. No investment advice."
 )
 
 CONFIRM_COMMAND = re.compile(r"^/confirm\s+(\w+)(?:\s+(.*))?$", re.IGNORECASE)
 CONFIRM_USAGE = "Usage: `/confirm <tool> [args]` - e.g. `/confirm scan_events` or `/confirm scrape_stock symbol=TCS`"
 
 
-def _confirm_reply(user_text):
-    """Handles the /confirm <tool> [key=value ...] slash command - the human-in-the-loop gate
-    for CONFIRM_TOOLS. Runs the REAL tool implementation directly (bypassing the guard the agent
-    itself is subject to), so a tool only ever executes here or via the read-only agent path."""
+def _parse_confirm(user_text):
+    """Parses the /confirm <tool> [key=value ...] slash command - the human-in-the-loop gate for
+    CONFIRM_TOOLS, sent either by the user typing it or by the UI's Confirm button. Returns
+    (tool_name, kwargs) to run, or None if user_text isn't a /confirm command. Raises ValueError
+    (usage/lookup errors) for a malformed or unknown command - caller turns that into a reply."""
     if not user_text.strip().lower().startswith("/confirm"):
         return None
     match = CONFIRM_COMMAND.match(user_text.strip())
     if not match:
-        return CONFIRM_USAGE
+        raise ValueError(CONFIRM_USAGE)
     name, arg_str = match.group(1), (match.group(2) or "").strip()
     if name not in CONFIRM_TOOLS:
-        return f"'{name}' doesn't require confirmation (or isn't a tool) - nothing to do."
+        raise ValueError(f"'{name}' doesn't require confirmation (or isn't a tool) - nothing to do.")
     kwargs = {}
     for part in arg_str.split():
         if "=" in part:
             k, v = part.split("=", 1)
             kwargs[k] = v
-    try:
-        result = REAL_TOOL_IMPLS[name](**kwargs)
-    except Exception as e:
-        return f"⚠️ `{name}` failed: {e}"
-    return f"✅ Ran `{name}`:\n\n{result if isinstance(result, str) else json.dumps(result, default=str, ensure_ascii=False)}"
+    return name, kwargs
 
 
 @app.post("/api/chat")
@@ -945,21 +1054,26 @@ def post_chat(req: ChatRequest):
     user_text = _text(req.messages[-1])
 
     use_agent = False
+    reply = None
     try:
-        reply = _confirm_reply(user_text)
-        if reply is None:
+        confirm_call = _parse_confirm(user_text)
+    except ValueError as e:
+        confirm_call = None
+        reply = str(e)
+    try:
+        if reply is None and confirm_call is None:
             reply = _rule_reply(user_text)
-        if reply is None:
+        if reply is None and confirm_call is None:
             reply = _sentiment_reply(user_text, model)
-        if reply is None:
+        if reply is None and confirm_call is None:
             reply = _history_reply(user_text, model)
-        if reply is None and (model.startswith("ollama/") or model.startswith("litellm/")):
+        if reply is None and confirm_call is None and (model.startswith("ollama/") or model.startswith("litellm/")):
             # local llama or a LiteLLM-routed model: tool-calling agent. Deferred into stream()
             # below so each tool call can be pushed to the UI as it happens, instead of a long
             # silent wait. OmniRoute keeps the original RAG path below (tool support varies
             # across its many upstream providers).
             use_agent = True
-        if reply is None and not use_agent:
+        if reply is None and confirm_call is None and not use_agent:
             # OmniRoute models: original RAG path (tool schema support varies per provider)
             live_reports = list(filter(None, (
                 _live_scrape(symbol, model) for symbol in dict.fromkeys(TICKER_PATTERN.findall(user_text))
@@ -970,22 +1084,35 @@ def post_chat(req: ChatRequest):
             stored = [m["content_markdown"] for m in matches if m["content_markdown"] not in live_reports]
             context = "\n\n---\n\n".join(live_reports + stored) or None
 
-            history = [{"role": m["role"], "content": _text(m)} for m in req.messages]
+            history = _windowed_history(req.messages)
             reply = llm.chat(history, context, model=model)
     except RuntimeError as e:
         # model-call failure (OmniRoute down / upstream exhausted) - show it in the chat, not a 500
         reply = f"⚠️ {e}"
 
     db.add_message(req.sessionId, "user", user_text)
-    if not use_agent:
+    if not use_agent and confirm_call is None:
         db.add_message(req.sessionId, "assistant", reply)
 
     def stream():
         yield _sse({"type": "start", "messageId": str(uuid.uuid4())})
 
         final_reply = reply
+        if confirm_call:
+            name, kwargs = confirm_call
+            call_id = str(uuid.uuid4())
+            yield _sse({"type": "tool-input-available", "toolCallId": call_id,
+                        "toolName": name, "input": kwargs})
+            try:
+                result = REAL_TOOL_IMPLS[name](**kwargs)
+                final_reply = f"Ran `{name}`."
+            except Exception as e:
+                result = {"error": str(e)}
+                final_reply = f"⚠️ `{name}` failed: {e}"
+            yield _sse({"type": "tool-output-available", "toolCallId": call_id, "output": result})
+            db.add_message(req.sessionId, "assistant", final_reply)
         if use_agent:
-            history = [{"role": m["role"], "content": _text(m)} for m in req.messages]
+            history = _windowed_history(req.messages)
             messages = [{"role": "system", "content": AGENT_SYSTEM}] + history
             try:
                 for event in llm.run_agent_stream(messages, AGENT_TOOLS, AGENT_TOOL_IMPLS, model):

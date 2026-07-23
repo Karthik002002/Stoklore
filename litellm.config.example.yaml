@@ -1,0 +1,77 @@
+# Example LiteLLM proxy config for this app's Settings > LiteLLM tab.
+#
+# This file is tracked in git as a template - litellm.config.yaml (no ".example") is where you
+# actually configure things, and it's gitignored since it's per-developer/per-machine (API keys
+# via env var names, ports, model choices).
+#
+# Setup:
+#   1. Copy this file:  cp litellm.config.example.yaml litellm.config.yaml
+#   2. Edit litellm.config.yaml - fill in the model(s) you want under model_list (see below).
+#   3. Export the env vars your model_list references, e.g.:
+#        export OPENAI_API_KEY=sk-...
+#        export LITELLM_MASTER_KEY=sk-...   # any string you choose - only needed if you keep
+#                                            # general_settings.master_key below
+#   4. Run it:
+#        .venv/bin/litellm --config litellm.config.yaml --port 4000
+#   5. In this app's Settings > LiteLLM tab, set:
+#        Proxy URL: http://localhost:4000
+#        API key:   the same value as LITELLM_MASTER_KEY above (leave blank if you removed
+#                   master_key in step 2)
+#   6. Reload the app - the chat's model dropdown should now list every model this proxy exposes.
+
+model_list:
+  # Single named model - the app's dropdown shows exactly this one entry ("gpt-4o-mini").
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: openai/gpt-4o-mini       # <provider>/<model id> - LiteLLM's own naming, not OpenAI's
+      api_key: os.environ/OPENAI_API_KEY
+
+  # Wildcard alternative - expands into every model your key can see (gpt-4o, gpt-4o-mini,
+  # gpt-4.1, etc.), no need to list them one by one. Requires check_provider_endpoint: true
+  # below, or it stays a single literal model named "openai/*" instead of actually expanding.
+  # Swap this in for the entry above if you want the full catalog rather than one pinned model:
+  #
+  # - model_name: openai/*
+  #   litellm_params:
+  #     model: openai/*
+  #     api_key: os.environ/OPENAI_API_KEY
+
+  # Add more providers the same way - one model_list entry each, any provider LiteLLM supports
+  # (https://docs.litellm.ai/docs/providers). Each needs its own API key env var.
+  # - model_name: claude-haiku
+  #   litellm_params:
+  #     model: anthropic/claude-haiku-4-5
+  #     api_key: os.environ/ANTHROPIC_API_KEY
+
+general_settings:
+  # Requires every request (including this app's) to send `Authorization: Bearer <this value>`.
+  # Remove this whole key to run the proxy with no auth - fine for local-only use, never for
+  # anything reachable off your machine.
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+litellm_settings:
+  # Only needed if you use the openai/* wildcard above - forces LiteLLM to fetch the live model
+  # list from the provider's own /models endpoint instead of treating "openai/*" as one literal
+  # model id. Harmless to leave on even with a single named model.
+  check_provider_endpoint: true
+
+# Proxy-level guardrails (PII masking, content moderation, etc.), applied to every request
+# through this proxy regardless of which model is used - a second layer beneath this app's own
+# tool-call confirmation gate and prompt-injection wrapping (see llm.py).
+#
+# IMPORTANT: this must be a TOP-LEVEL `guardrails:` key, a sibling of model_list above - NOT
+# nested under litellm_settings. A top-level guardrails: key routes to LiteLLM's current (v2)
+# loader, which expects the exact shape below; litellm_settings.guardrails instead routes to an
+# old legacy format (a list of single-key dicts) and will crash trying to parse this shape as
+# that one. Docs: https://docs.litellm.ai/docs/proxy/guardrails
+#
+# Example (needs `pip install presidio-analyzer presidio-anonymizer`, or point
+# presidio_analyzer_api_base/presidio_anonymizer_api_base at a hosted instance instead):
+#
+# guardrails:
+#   - guardrail_name: "pii-mask"
+#     litellm_params:
+#       guardrail: presidio       # masks emails/phones/card numbers/etc in the user's message
+#       mode: "pre_call"          # runs before the request reaches any model
+#     guardrail_info:
+#       description: "Masks PII in the user's message before it reaches any model."

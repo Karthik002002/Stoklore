@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { formatDate } from '@/lib/format'
+import EventActionsMenu from './EventActionsMenu'
 
 const DATE_PRESETS = [
   ['Last 1 week', 7],
@@ -229,20 +230,13 @@ export default function EventsFeed() {
                     </Badge>
                   )}
                 </div>
-                <p className="mt-0.5">
-                  {e.url ? (
-                    <a href={e.url} target="_blank" rel="noreferrer" className="hover:underline">
-                      {e.headline}
-                    </a>
-                  ) : (
-                    e.headline
-                  )}
-                </p>
+                <p className="mt-0.5">{e.headline}</p>
                 {e.detail && <p className="mt-0.5 text-muted-foreground">{e.detail}</p>}
               </div>
               <span className="shrink-0 text-muted-foreground">
                 {e.event_time ? formatDate(e.event_time) : ''}
               </span>
+              <EventActionsMenu url={e.url} label={e.headline} className="shrink-0" />
             </div>
           ))}
         </div>

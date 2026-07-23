@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Streamdown } from 'streamdown'
-import { ArrowLeftIcon, DatabaseIcon, ExternalLinkIcon, Trash2Icon } from 'lucide-react'
+import { ArrowLeftIcon, DatabaseIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,7 @@ import { compact, fmt, formatDateTime, inr, timeAgo } from '@/lib/format'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { collectMaxHistory, getEmaCrossover, getMaxHistory, getMaxHistoryStatus } from '@/services/api'
 import DeleteStockButton from './DeleteStockButton'
+import EventActionsMenu from './EventActionsMenu'
 import PriceChart from './PriceChart'
 import StockChart from './StockChart'
 import StockFinancials from './StockFinancials'
@@ -315,29 +316,24 @@ export default function StockDetail() {
           {news.map((n, i) => (
             <li key={i} className="rounded-xl border bg-card p-4">
               <div className="flex items-start justify-between gap-2">
-                <a
-                  href={n.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-start gap-1.5 font-medium hover:underline"
-                >
-                  {n.title}
-                  <ExternalLinkIcon className="mt-1 size-3.5 shrink-0 text-muted-foreground" />
-                </a>
-                {n.sentiment_label && (
-                  <Badge
-                    variant="secondary"
-                    className={
-                      n.sentiment_label.toLowerCase() === 'positive'
-                        ? 'shrink-0 bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
-                        : n.sentiment_label.toLowerCase() === 'negative'
-                          ? 'shrink-0 bg-red-500/15 text-red-600 dark:text-red-400'
-                          : 'shrink-0 text-muted-foreground'
-                    }
-                  >
-                    {n.sentiment_label}
-                  </Badge>
-                )}
+                <span className="font-medium">{n.title}</span>
+                <div className="flex shrink-0 items-center gap-1">
+                  {n.sentiment_label && (
+                    <Badge
+                      variant="secondary"
+                      className={
+                        n.sentiment_label.toLowerCase() === 'positive'
+                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                          : n.sentiment_label.toLowerCase() === 'negative'
+                            ? 'bg-red-500/15 text-red-600 dark:text-red-400'
+                            : 'text-muted-foreground'
+                      }
+                    >
+                      {n.sentiment_label}
+                    </Badge>
+                  )}
+                  <EventActionsMenu url={n.url} label={n.title} />
+                </div>
               </div>
               {n.summary && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{n.summary}</p>}
               {(n.source || n.published_at || n.origin) && (

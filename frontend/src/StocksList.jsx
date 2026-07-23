@@ -31,7 +31,7 @@ import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { fmt, inr } from '@/lib/format'
+import { fmt, formatDate, inr } from '@/lib/format'
 import DeleteStockButton from './DeleteStockButton'
 import IndexCard from './IndexCard'
 
@@ -450,7 +450,7 @@ export default function StocksList() {
                   </TableCell>
                   <TableCell className="text-right text-muted-foreground">{s.report_count}</TableCell>
                   <TableCell className="text-right text-muted-foreground">
-                    {new Date(s.last_scraped).toLocaleDateString()}
+                    {formatDate(s.last_scraped)}
                   </TableCell>
                   <TableCell>
                     <WatchlistButton

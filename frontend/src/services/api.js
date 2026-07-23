@@ -41,6 +41,15 @@ export const setLiteLLMConfig = (baseUrl, apiKey) =>
     body: JSON.stringify({ base_url: baseUrl, api_key: apiKey || null }),
   }).then(json)
 
+export const getCogencisConfig = () => fetch('/api/settings/cogencis').then(json)
+
+export const setCogencisToken = (token) =>
+  fetch('/api/settings/cogencis', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token }),
+  }).then(json)
+
 export const getWatchRules = () => fetch('/api/watch-rules').then(json)
 
 export const createWatchRule = (rule) =>

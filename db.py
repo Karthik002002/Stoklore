@@ -49,11 +49,41 @@ CREATE TABLE IF NOT EXISTS stock_news (
   published_at TIMESTAMPTZ,
   sentiment_label TEXT,
   sentiment_score REAL,
+  source TEXT,
+  origin TEXT,
   scraped_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS stock_news_symbol_idx ON stock_news (symbol);
 ALTER TABLE stock_news ADD COLUMN IF NOT EXISTS sentiment_label TEXT;
 ALTER TABLE stock_news ADD COLUMN IF NOT EXISTS sentiment_score REAL;
+ALTER TABLE stock_news ADD COLUMN IF NOT EXISTS source TEXT;
+ALTER TABLE stock_news ADD COLUMN IF NOT EXISTS origin TEXT;
+
+-- Cogencis's general "what's moving" feed (not scoped to one stock) - refetched wholesale at
+-- most once a day (see api.py's top-news endpoint), independent of any single symbol's cache.
+-- isins is the raw Cogencis field (comma-separated "ISIN TICKER.BS TICKER.NS" groups) kept as-is
+-- so which watchlisted stocks a story affects can be recomputed at read time as the watchlist
+-- changes, rather than baked in at scrape time.
+CREATE TABLE IF NOT EXISTS top_news (
+  id SERIAL PRIMARY KEY,
+  title TEXT NOT NULL,
+  summary TEXT,
+  url TEXT NOT NULL UNIQUE,
+  published_at TIMESTAMPTZ,
+  source TEXT,
+  isins TEXT,
+  scraped_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS top_news_time_idx ON top_news (published_at DESC);
+
+-- Permanent symbol->ISIN cache - an ISIN never changes for a listed security, so unlike the news
+-- caches above this has no TTL; avoids a live yfinance call for every symbol on every top-news
+-- page load.
+CREATE TABLE IF NOT EXISTS symbol_isin (
+  symbol TEXT PRIMARY KEY,
+  isin TEXT NOT NULL
+);
+ALTER TABLE stock_news ADD COLUMN IF NOT EXISTS origin TEXT;
 
 CREATE TABLE IF NOT EXISTS watchlist (
   symbol TEXT PRIMARY KEY,
@@ -272,8 +302,8 @@ def get_cached_news(symbol, max_age_hours=24):
     """Returns cached news for symbol if scraped within max_age_hours, else None (caller should re-scrape)."""
     with connect() as conn:
         rows = conn.execute(
-            "SELECT title, summary, url, published_at, sentiment_label, sentiment_score, scraped_at "
-            "FROM stock_news WHERE symbol = %s ORDER BY published_at DESC NULLS LAST",
+            "SELECT title, summary, url, published_at, sentiment_label, sentiment_score, source, origin, "
+            "scraped_at FROM stock_news WHERE symbol = %s ORDER BY published_at DESC NULLS LAST",
             (symbol,),
         ).fetchall()
     if not rows:
@@ -291,12 +321,57 @@ def save_news(symbol, items):
         for item in items:
             conn.execute(
                 "INSERT INTO stock_news (symbol, title, summary, url, published_at, "
-                "sentiment_label, sentiment_score) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                "sentiment_label, sentiment_score, source, origin) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     symbol, item["title"], item["summary"], item["url"], item.get("published_at"),
-                    item.get("sentiment_label"), item.get("sentiment_score"),
+                    item.get("sentiment_label"), item.get("sentiment_score"), item.get("source"),
+                    item.get("origin"),
                 ),
             )
+
+
+def get_cached_top_news(max_age_hours=24):
+    """Returns cached top-news wholesale if scraped within max_age_hours, else None (caller
+    should re-scrape all pages)."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT title, summary, url, published_at, source, isins, scraped_at "
+            "FROM top_news ORDER BY published_at DESC NULLS LAST"
+        ).fetchall()
+    if not rows:
+        return None
+    newest_scrape = max(r["scraped_at"] for r in rows)
+    if newest_scrape < datetime.now(timezone.utc) - timedelta(hours=max_age_hours):
+        return None
+    return rows
+
+
+def save_top_news(items):
+    """Replaces the cached top-news wholesale with a freshly scraped list."""
+    with connect() as conn:
+        conn.execute("DELETE FROM top_news")
+        for item in items:
+            conn.execute(
+                "INSERT INTO top_news (title, summary, url, published_at, source, isins) "
+                "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (url) DO NOTHING",
+                (item["title"], item["summary"], item["url"], item.get("published_at"),
+                 item.get("source"), item.get("isins")),
+            )
+
+
+def get_isin_cache(symbol):
+    with connect() as conn:
+        row = conn.execute("SELECT isin FROM symbol_isin WHERE symbol = %s", (symbol,)).fetchone()
+    return row["isin"] if row else None
+
+
+def set_isin_cache(symbol, isin):
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO symbol_isin (symbol, isin) VALUES (%s, %s) "
+            "ON CONFLICT (symbol) DO UPDATE SET isin = excluded.isin",
+            (symbol, isin),
+        )
 
 
 def list_watchlist():
@@ -632,6 +707,14 @@ def set_litellm_config(base_url, api_key=None):
     _set_setting("litellm_base_url", base_url)
     if api_key is not None:
         _set_setting("litellm_api_key", api_key)
+
+
+def get_cogencis_token():
+    return _get_setting("cogencis_token")
+
+
+def set_cogencis_token(token):
+    _set_setting("cogencis_token", token)
 
 
 def set_session_model(session_id, model):

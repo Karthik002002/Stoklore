@@ -66,8 +66,67 @@ def web_search(query, limit=5):
     return [{"title": r["title"], "url": r["href"], "snippet": r["body"]} for r in results]
 
 
+COGENCIS_NEWS_URL = "https://data.cogencis.com/api/v1/web/news/stories"
+COGENCIS_HEADERS_BASE = {
+    "accept": "application/json, text/plain, */*",
+    "origin": "https://iinvest.cogencis.com",
+    "user-agent": NSE_HEADERS["User-Agent"],
+}
+
+
+def get_isin(symbol):
+    """NSE ISIN for a symbol - Cogencis news (below) is keyed/matched by ISIN, not NSE symbol."""
+    return yf.Ticker(f"{symbol}.NS").isin
+
+
+def _cogencis_rows(token, params):
+    headers = {**COGENCIS_HEADERS_BASE, "authorization": f"Bearer {token}"}
+    resp = requests.get(COGENCIS_NEWS_URL, headers=headers, params=params, timeout=15)
+    resp.raise_for_status()
+    return resp.json().get("response", {}).get("data", [])
+
+
+def _cogencis_item(row):
+    raw_time = row.get("sourceDateTime") or row.get("enteredDateTime")
+    try:
+        published_at = datetime.fromisoformat(raw_time) if raw_time else None
+    except ValueError:
+        published_at = None
+    return {
+        "title": row.get("headline", ""),
+        "summary": row.get("synopsis") or "",
+        "url": row.get("sourceLink") or "",
+        "published_at": published_at,
+        "source": row.get("sourceName") or row.get("source") or "",
+        "isins": row.get("isins", ""),
+        "origin": "cogencis",
+    }
+
+
+def get_cogencis_news(isin, token, limit=20):
+    """Recent news stories for one stock from Cogencis (data.cogencis.com), keyed by ISIN. Needs a
+    Cogencis session bearer token (Settings > Cogencis) - these expire after ~24h (grabbed from
+    the browser's network tab while signed into iinvest.cogencis.com) and must be pasted in again
+    once they do; there's no login flow here to auto-renew them. Returns the same shape as
+    get_news: [{title, summary, url, published_at, source, origin}]."""
+    rows = _cogencis_rows(token, {"sWebNews": "true", "forWebSite": "true", "pageNo": 1,
+                                   "pageSize": limit, "isins": isin})
+    return [_cogencis_item(r) for r in rows]
+
+
+def get_cogencis_top_news(token, page_no=1, page_size=20):
+    """One page of Cogencis's general top-news feed (data.cogencis.com) - not scoped to any one
+    stock, this is their homepage "what's moving" feed. Same token/expiry caveats as
+    get_cogencis_news above. Each item's `isins` field lists every stock the story mentions, e.g.
+    "INE099Z01011 MISHDHAT.BS MISHDHAT.NS, INE258A01016 BEML.BS BEML.NS" - api.py's top-news
+    endpoint uses that to flag which watchlisted stocks a story affects."""
+    rows = _cogencis_rows(token, {"pageNo": page_no, "pageSize": page_size})
+    return [_cogencis_item(r) for r in rows]
+
+
 def get_news(symbol, limit=10):
-    """Returns list of {title, summary, url, published_at} for an NSE symbol's recent news."""
+    """Returns list of {title, summary, url, published_at, source, origin} for an NSE symbol's
+    recent news."""
     items = []
     for item in yf.Ticker(f"{symbol}.NS").news[:limit]:
         c = item.get("content", {})
@@ -77,6 +136,8 @@ def get_news(symbol, limit=10):
             "summary": c.get("summary", ""),
             "url": (c.get("canonicalUrl") or {}).get("url", ""),
             "published_at": datetime.fromisoformat(pub_date) if pub_date else None,
+            "source": (c.get("provider") or {}).get("displayName", ""),
+            "origin": "yfinance",
         })
     return items
 

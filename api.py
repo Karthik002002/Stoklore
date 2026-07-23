@@ -2,8 +2,9 @@
 import json
 import re
 import threading
+import time
 import uuid
-from datetime import date
+from datetime import date, datetime, timezone
 
 import requests
 from fastapi import FastAPI, HTTPException
@@ -64,6 +65,69 @@ def events_feed(
     from_date: str | None = None, to_date: str | None = None, limit: int = 100,
 ):
     return db.list_events(list_name=list_name, symbol=symbol, from_date=from_date, to_date=to_date, limit=limit)
+
+
+# Cogencis's general news feed is refetched wholesale (not per-symbol) at most once a day - a
+# lock keeps concurrent requests from re-triggering the paginated scrape at the same time.
+_top_news_lock = threading.Lock()
+
+
+def _isins_in(text):
+    """Extracts ISIN codes from Cogencis's 'isins' field, e.g. "INE099Z01011 MISHDHAT.BS
+    MISHDHAT.NS, INE258A01016 BEML.BS BEML.NS" -> {"INE099Z01011", "INE258A01016"}."""
+    return {group.strip().split()[0] for group in (text or "").split(",") if group.strip()}
+
+
+def _cached_isin(symbol):
+    """ISIN never changes for a listed security, so this is a permanent cache - only ever one
+    live yfinance call per symbol, ever."""
+    isin = db.get_isin_cache(symbol)
+    if isin:
+        return isin
+    try:
+        isin = scraper.get_isin(symbol)
+    except Exception:
+        isin = None
+    if isin:
+        db.set_isin_cache(symbol, isin)
+    return isin
+
+
+@app.get("/api/top-news")
+def top_news(force: bool = False):
+    """Cogencis's general "what's moving" feed (not scoped to one stock), cached wholesale for
+    24h (force=true bypasses the cache and re-scrapes, for a manual Reload button). On a cold
+    cache, paginates 5 pages of 20 (latest 100 stories) with a 2s gap between requests. Each story
+    comes back tagged with which of your watchlisted stocks it affects, matched by ISIN -
+    recomputed fresh every call so watchlist changes show up immediately even against cached
+    stories."""
+    with _top_news_lock:
+        cached = None if force else db.get_cached_top_news()
+        if cached is None:
+            token = db.get_cogencis_token()
+            if not token:
+                raise HTTPException(status_code=400,
+                                     detail="Cogencis isn't configured - add a token in Settings > Cogencis")
+            items = []
+            for page in range(1, 6):
+                items += scraper.get_cogencis_top_news(token, page_no=page, page_size=20)
+                if page < 5:
+                    time.sleep(2)
+            db.save_top_news(items)
+            cached = db.get_cached_top_news()
+
+    symbol_by_isin = {}
+    for symbol in db.watchlist_symbols():
+        isin = _cached_isin(symbol)
+        if isin:
+            symbol_by_isin[isin] = symbol
+
+    return [
+        {**item, "affected_symbols": sorted(
+            symbol_by_isin[i] for i in _isins_in(item["isins"]) if i in symbol_by_isin
+        )}
+        for item in cached
+    ]
 
 
 # Populated by the background price-history sync (POST /api/prices/sync) - same manual-trigger +
@@ -226,6 +290,10 @@ class LiteLLMConfigRequest(BaseModel):
     api_key: str | None = None  # None (omitted) leaves the previously-saved key untouched
 
 
+class CogencisConfigRequest(BaseModel):
+    token: str
+
+
 class WatchRuleRequest(BaseModel):
     name: str
     text: str
@@ -363,6 +431,18 @@ def set_litellm_config(req: LiteLLMConfigRequest):
     return {"ok": True}
 
 
+@app.get("/api/settings/cogencis")
+def get_cogencis_config():
+    # never echo the token back - the UI shows "•••• saved" instead of the real value
+    return {"has_token": bool(db.get_cogencis_token())}
+
+
+@app.put("/api/settings/cogencis")
+def set_cogencis_config(req: CogencisConfigRequest):
+    db.set_cogencis_token(req.token)
+    return {"ok": True}
+
+
 @app.post("/api/stocks")
 def add_stock(req: AddStockRequest):
     """Manually add a stock by symbol and scrape it live, same path the chat uses on-demand."""
@@ -473,7 +553,10 @@ def index_chart(name: str, range: str = "1mo"):
 
 
 def _cached_news(symbol):
-    """Serves news from Postgres if scraped within the last day, otherwise re-scrapes and refreshes it."""
+    """Serves news from Postgres if scraped within the last day, otherwise re-scrapes and refreshes it.
+    Merges in Cogencis news (Settings > Cogencis) when a token is configured - it's keyed by ISIN
+    rather than NSE symbol and often surfaces different sources than yfinance, so both are kept
+    (deduped by url) rather than one replacing the other."""
     cached = db.get_cached_news(symbol)
     if cached is not None:
         return cached
@@ -481,6 +564,26 @@ def _cached_news(symbol):
         fresh = scraper.get_news(symbol)
     except Exception:
         fresh = []
+
+    token = db.get_cogencis_token()
+    if token:
+        try:
+            isin = scraper.get_isin(symbol)
+            if isin:
+                fresh += scraper.get_cogencis_news(isin, token)
+        except Exception:
+            pass  # token likely expired/invalid - yfinance news still shown
+
+    seen_urls = set()
+    deduped = []
+    for item in fresh:
+        if item["url"] and item["url"] in seen_urls:
+            continue
+        seen_urls.add(item["url"])
+        deduped.append(item)
+    deduped.sort(key=lambda i: i["published_at"] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    fresh = deduped
+
     for item in fresh:
         try:
             score = sentiment.analyze(f"{item['title']}. {item['summary']}")

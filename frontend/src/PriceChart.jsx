@@ -45,12 +45,13 @@ const TOOLTIP_MARGIN = 14
 // market-local time - so format tooltip dates as UTC too, or the browser would shift it again.
 function formatBarDate(time, intraday) {
   const date = new Date(time * 1000)
-  const opts = { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' }
+  // 'en-GB' (not 'en-IN') for a consistent day-month-year ordering regardless of viewer locale
+  const opts = { timeZone: 'UTC', day: '2-digit', month: 'short', year: 'numeric' }
   if (intraday) {
     opts.hour = '2-digit'
     opts.minute = '2-digit'
   }
-  return date.toLocaleString('en-IN', opts)
+  return date.toLocaleString('en-GB', opts)
 }
 
 /** Candlestick/line price chart with a volume pane and optional EMA overlays - shared by the

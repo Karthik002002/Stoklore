@@ -21,10 +21,12 @@ import {
   createWatchRule,
   deleteWatchRule,
   getActiveModel,
+  getCogencisConfig,
   getLiteLLMConfig,
   getModels,
   getWatchRules,
   setActiveModel,
+  setCogencisToken,
   setLiteLLMConfig,
 } from '@/services/api'
 
@@ -140,6 +142,55 @@ function LiteLLMTab() {
         </a>{' '}
         (e.g. <code>litellm --config config.yaml</code>). Its models then show up in the Model tab as{' '}
         <code>litellm/&lt;model&gt;</code>, with full tool-calling chatbot support.
+      </p>
+    </div>
+  )
+}
+
+function CogencisTab() {
+  const queryClient = useQueryClient()
+  const { data: config } = useQuery({ queryKey: ['cogencisConfig'], queryFn: getCogencisConfig })
+  const [token, setToken] = useState('')
+
+  const save = useMutation({
+    mutationFn: () => setCogencisToken(token),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cogencisConfig'] })
+      toast.success('Cogencis token saved')
+      setToken('')
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Session bearer token</p>
+        <Input
+          type="password"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          placeholder={config?.has_token ? '•••• saved - leave blank to keep it' : 'eyJhbGciOi...'}
+        />
+      </div>
+      <Button size="sm" onClick={() => save.mutate()} disabled={!token || save.isPending}>
+        Save token
+      </Button>
+      <p className="text-xs text-muted-foreground">
+        Adds Cogencis news coverage (matched by ISIN) alongside the default Yahoo Finance news on each stock's
+        page. This token comes from your own signed-in session at{' '}
+        <a
+          href="https://iinvest.cogencis.com"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-0.5 underline hover:text-foreground"
+        >
+          iinvest.cogencis.com <ExternalLinkIcon className="size-3" />
+        </a>{' '}
+        - open dev tools, Network tab, find any <code>data.cogencis.com</code> request, and copy its{' '}
+        <code>authorization: Bearer …</code> header value (without the "Bearer " prefix). It expires after
+        about 24 hours, so you'll need to paste in a fresh one here when stock news stops picking up new
+        Cogencis articles.
       </p>
     </div>
   )
@@ -285,6 +336,7 @@ export default function Settings() {
             <TabsIndicator />
             <TabsTab value="model">Model</TabsTab>
             <TabsTab value="litellm">LiteLLM</TabsTab>
+            <TabsTab value="cogencis">Cogencis</TabsTab>
             <TabsTab value="rules">Watch rules</TabsTab>
           </TabsList>
           <div className="min-w-0 flex-1 overflow-y-auto pr-1">
@@ -293,6 +345,9 @@ export default function Settings() {
             </TabsPanel>
             <TabsPanel value="litellm">
               <LiteLLMTab />
+            </TabsPanel>
+            <TabsPanel value="cogencis">
+              <CogencisTab />
             </TabsPanel>
             <TabsPanel value="rules">
               <WatchRulesTab />

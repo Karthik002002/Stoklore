@@ -1,5 +1,5 @@
 import { Link, Outlet } from '@tanstack/react-router'
-import { LayoutDashboardIcon, NewspaperIcon, RefreshCwIcon } from 'lucide-react'
+import { LayoutDashboardIcon, NewspaperIcon, RefreshCwIcon, TrendingUpIcon } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Toaster } from 'sonner'
@@ -12,6 +12,7 @@ import ThemeToggle from './ThemeToggle'
 const NAV_ITEMS = [
   { to: '/', icon: LayoutDashboardIcon, label: 'Stocks' },
   { to: '/events', icon: NewspaperIcon, label: 'Events' },
+  { to: '/top-news', icon: TrendingUpIcon, label: 'Top news' },
 ]
 
 // Icon-rail nav item: TanStack Router's Link auto-applies an "active" class on route match

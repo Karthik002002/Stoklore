@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
-import { compact, fmt, inr, timeAgo } from '@/lib/format'
+import { compact, fmt, formatDateTime, inr, timeAgo } from '@/lib/format'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { collectMaxHistory, getEmaCrossover, getMaxHistory, getMaxHistoryStatus } from '@/services/api'
 import DeleteStockButton from './DeleteStockButton'
@@ -205,6 +205,8 @@ function EmaCrossover({ symbol }) {
   )
 }
 
+const ORIGIN_LABELS = { yfinance: 'Yahoo Finance', cogencis: 'Cogencis' }
+
 const STAT_FIELDS = [
   ['Market Cap', 'marketCap', (v) => `₹${compact(v)}`],
   ['P/E (trailing)', 'trailingPE', fmt],
@@ -338,10 +340,17 @@ export default function StockDetail() {
                 )}
               </div>
               {n.summary && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{n.summary}</p>}
-              {n.published_at && (
-                <time className="mt-2 block text-xs text-muted-foreground">
-                  {new Date(n.published_at).toLocaleString()}
-                </time>
+              {(n.source || n.published_at || n.origin) && (
+                <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  {n.source}
+                  {n.source && n.published_at && ' · '}
+                  {n.published_at && <time>{formatDateTime(n.published_at)}</time>}
+                  {n.origin && (
+                    <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                      {ORIGIN_LABELS[n.origin] ?? n.origin}
+                    </Badge>
+                  )}
+                </p>
               )}
             </li>
           ))}
@@ -366,9 +375,7 @@ export default function StockDetail() {
                 <Trash2Icon className="size-4" />
               </Button>
               <Streamdown className="text-sm">{r.content_markdown}</Streamdown>
-              <time className="mt-3 block text-xs text-muted-foreground">
-                {new Date(r.scraped_at).toLocaleString()}
-              </time>
+              <time className="mt-3 block text-xs text-muted-foreground">{formatDateTime(r.scraped_at)}</time>
             </article>
           ))}
         </div>

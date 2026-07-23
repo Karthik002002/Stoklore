@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
+import { formatDate } from '@/lib/format'
 
 const DATE_PRESETS = [
   ['Last 1 week', 7],
@@ -240,7 +241,7 @@ export default function EventsFeed() {
                 {e.detail && <p className="mt-0.5 text-muted-foreground">{e.detail}</p>}
               </div>
               <span className="shrink-0 text-muted-foreground">
-                {e.event_time ? new Date(e.event_time).toLocaleDateString() : ''}
+                {e.event_time ? formatDate(e.event_time) : ''}
               </span>
             </div>
           ))}

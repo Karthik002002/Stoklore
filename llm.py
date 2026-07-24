@@ -244,10 +244,20 @@ def get_models():
     if LITELLM_BASE:
         try:
             headers = {"Authorization": f"Bearer {LITELLM_API_KEY}"} if LITELLM_API_KEY else {}
-            req = urllib.request.Request(f"{LITELLM_BASE}/models", headers=headers)
+            # return_wildcard_routes=true - without it, LiteLLM's /models lists a model_list
+            # entry like "openai/*" as that literal wildcard string instead of expanding it into
+            # the actual models it covers.
+            req = urllib.request.Request(f"{LITELLM_BASE}/models?return_wildcard_routes=true", headers=headers)
             with urllib.request.urlopen(req, timeout=5) as r:
                 data = json.load(r)
-            models += [{"id": f"litellm/{m['id']}", "label": f"{m['id']} (LiteLLM)"} for m in data.get("data", [])]
+            # return_wildcard_routes also echoes back the raw pattern itself (e.g. "openai/*",
+            # sometimes more than once) alongside its expansion - not a real, callable model id.
+            seen = set()
+            for m in data.get("data", []):
+                if "*" in m["id"] or m["id"] in seen:
+                    continue
+                seen.add(m["id"])
+                models.append({"id": f"litellm/{m['id']}", "label": f"{m['id']} (LiteLLM)"})
         except (urllib.error.URLError, ConnectionRefusedError):
             pass
     return models

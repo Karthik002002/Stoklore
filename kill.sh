@@ -1,5 +1,13 @@
 #!/bin/bash
-pkill -9 -f "uvicorn api:app" 2>/dev/null
-pkill -9 -f "crawler/frontend/node_modules/.bin/vite" 2>/dev/null
+# Kills whatever's listening on this app's ports - backend (uvicorn), frontend (vite), and the
+# LiteLLM proxy. Port-based instead of pattern-matching process names, so a stale/reload-spawned
+# worker still gets killed even if its command line doesn't match a fixed pattern.
+for port in 8010 5180 4000; do
+  pid=$(lsof -ti :$port)
+  if [ -n "$pid" ]; then
+    kill -9 $pid 2>/dev/null
+    echo "killed process on port $port"
+  fi
+done
 brew services stop postgresql@17
 echo "stopped"

@@ -26,15 +26,21 @@ model_list:
       model: openai/gpt-4o-mini       # <provider>/<model id> - LiteLLM's own naming, not OpenAI's
       api_key: os.environ/OPENAI_API_KEY
 
-  # Wildcard alternative - expands into every model your key can see (gpt-4o, gpt-4o-mini,
-  # gpt-4.1, etc.), no need to list them one by one. Requires check_provider_endpoint: true
-  # below, or it stays a single literal model named "openai/*" instead of actually expanding.
+  # Wildcard alternative - expands into every model LiteLLM knows about for this provider
+  # (~200 for openai/*, from LiteLLM's own bundled catalog), no need to list them one by one.
+  # This app's /api/models already requests ?return_wildcard_routes=true, which is what makes
+  # the expansion happen at all - a plain /models call would show "openai/*" as one literal id.
   # Swap this in for the entry above if you want the full catalog rather than one pinned model:
   #
   # - model_name: openai/*
   #   litellm_params:
   #     model: openai/*
   #     api_key: os.environ/OPENAI_API_KEY
+  #
+  # Do NOT add litellm_settings.check_provider_endpoint to try to make this a *live* fetch from
+  # OpenAI's own /models endpoint - in this LiteLLM version that code path never resolves an
+  # `os.environ/...` api_key reference (sends the literal string to OpenAI, gets a 401, and
+  # silently returns zero models instead of the bundled catalog). Leave it unset.
 
   # Add more providers the same way - one model_list entry each, any provider LiteLLM supports
   # (https://docs.litellm.ai/docs/providers). Each needs its own API key env var.
@@ -48,12 +54,6 @@ general_settings:
   # Remove this whole key to run the proxy with no auth - fine for local-only use, never for
   # anything reachable off your machine.
   master_key: os.environ/LITELLM_MASTER_KEY
-
-litellm_settings:
-  # Only needed if you use the openai/* wildcard above - forces LiteLLM to fetch the live model
-  # list from the provider's own /models endpoint instead of treating "openai/*" as one literal
-  # model id. Harmless to leave on even with a single named model.
-  check_provider_endpoint: true
 
 # Proxy-level guardrails (PII masking, content moderation, etc.), applied to every request
 # through this proxy regardless of which model is used - a second layer beneath this app's own

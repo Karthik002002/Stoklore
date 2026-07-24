@@ -55,6 +55,19 @@ general_settings:
   # anything reachable off your machine.
   master_key: os.environ/LITELLM_MASTER_KEY
 
+# Optional: send every request/response through this proxy to Langfuse for tracing (prompts,
+# tool calls, latency, cost). Needs `langfuse` installed (already in requirements.txt). run.sh
+# and kill.sh start/stop a self-hosted Langfuse for you (docker-compose.langfuse.yml) - sign up
+# at http://localhost:3000 (no restrictions on a local instance), create a project, and export
+# its keys:
+#   export LANGFUSE_PUBLIC_KEY=pk-lf-...
+#   export LANGFUSE_SECRET_KEY=sk-lf-...
+#   export LANGFUSE_HOST=http://localhost:3000   # defaults to Langfuse Cloud if unset instead
+# Remove this whole block (and skip docker-compose.langfuse.yml) if you don't want tracing.
+litellm_settings:
+  success_callback: ["langfuse"]
+  failure_callback: ["langfuse"]
+
 # Proxy-level guardrails (PII masking, content moderation, etc.), applied to every request
 # through this proxy regardless of which model is used - a second layer beneath this app's own
 # tool-call confirmation gate and prompt-injection wrapping (see llm.py).

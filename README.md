@@ -28,6 +28,8 @@ leaves localhost unless you point it at one yourself.
   - [`5` Watchlist Events Feed](#5-watchlist-events-feed)
   - [`6` Sentiment Analysis](#6-sentiment-analysis)
   - [`7` Multi-Model Support](#7-multi-model-support)
+  - [`8` Watch Rules](#8-watch-rules)
+  - [`9` Top News](#9-top-news)
   - [`*` What's more](#-whats-more)
 - [🧱 Stack](#-stack)
 - [🚀 Running It](#-running-it)
@@ -65,8 +67,8 @@ to guard rails you can see and control.
 - **Watchlists**: bookmark any tracked stock into named lists, move a stock
   between lists, filter the table by tab
 - A minimal icon-rail sidebar nav (hover tooltips, active-route highlight) —
-  Stocks dashboard, Events feed, Settings, theme toggle, and a **Reload**
-  button that clears the shared cache on demand
+  Stocks dashboard, Events feed, Top news, Settings, theme toggle, and a
+  **Reload** button that clears the shared cache on demand
 
 <div align="right">
 
@@ -80,15 +82,31 @@ The floating chat isn't just RAG — it's a real tool-calling agent that talks
 directly to Ollama's or an OpenAI-compatible server's native function-calling
 API (no LangChain, no framework):
 
-- **Tools are auto-generated from the API itself** — every `/api/*` route
-  becomes a callable tool automatically, named after its handler function,
-  described from its docstring, and typed from its function signature. Add
-  or change an endpoint and the agent picks it up on next restart; nothing
-  to wire by hand.
-- The chat panel is **resizable** (drag the top-left handle) and its own
-  history is listable, reopenable, and deletable from a dropdown
+- **12 explicit tools** (`api.py`, `AGENT_TOOLS`/`REAL_TOOL_IMPLS`) covering
+  live price/EMA/movers lookups, watchlist listing, semantic report search,
+  a live stock scrape+report, background event scans/price syncs, DuckDuckGo
+  web search, recording a verified event, checking a user-defined watch
+  rule, fetching/analyzing an arbitrary URL (`scrape_url`, nothing saved to
+  disk — separate from `POST /api/scrape`, which does write one), and
+  listing past chat session titles ("what have I asked about before")
+- **`@` tag menu** in the chat input autocompletes stocks, watch rules, *and*
+  events — tagging an event inserts its source URL (not just its headline),
+  which is what makes `scrape_url` actually have something to fetch
+- **"Tag in chat"** is also one click away from any event/news card (Events
+  feed, Top News, a stock's Latest Events) via a shared "···" menu — opens
+  the chat, drops the link in, autofocuses
+- Every tool call renders as an **expandable chip** — click to see the exact
+  input args and output the model got, not just a name and a checkmark
+- Conversation history now carries **prior tool results forward** across
+  turns (capped to the last 20 messages, older tool output truncated) — the
+  agent reuses what it already found instead of silently losing it or
+  re-running the same tool
+- The chat panel is **resizable** (drag the top-left handle), autofocuses
+  its input whenever opened, shows the **current session's title** in its
+  header (not a static label), and its own history is listable, reopenable,
+  and deletable from a dropdown
 - Slash commands: `/history SYMBOL FROM TO`, `/sentiment URL`,
-  `/confirm <tool> [key=value ...]`
+  `/rule NAME [SYMBOL]`, `/confirm <tool> [key=value ...]`, `/clear`
 
 <div align="right">
 
@@ -101,20 +119,24 @@ API (no LangChain, no framework):
 Because the agent can call real endpoints, it ships with layered guard
 rails instead of a blanket "trust the model":
 
-- **Confirmation gate, decided by HTTP method** — `GET` routes (read-only by
-  construction: price lookups, EMA signals, watchlist listing, report
-  search) run immediately. `POST`/`PUT`/`DELETE` routes (writes, scrapes,
-  background scans/syncs) return a `requires_confirmation` message instead
-  of executing — the agent has to ask, and only your own explicit
-  `/confirm <tool> ...` message actually runs it.
+- **Confirmation gate, one tool** — everything except adding a new stock
+  (`scrape_stock`, a live scrape + report generation) runs immediately,
+  including the background event scan/price sync tools. `scrape_stock`
+  returns a `requires_confirmation` message instead of executing — the
+  agent has to ask, and only your own explicit `/confirm <tool> ...`
+  message (or the chat UI's inline **Confirm/Cancel** buttons, wired to the
+  same mechanism) actually runs it.
 - **Prompt-injection defense** — every tool result (scraped news, stored
-  reports) is wrapped in an explicit `<tool_result>...</tool_result>`
-  data-not-instructions boundary before it re-enters the model's context,
-  with a regex flag for obvious override phrasing ("ignore previous
-  instructions", "reveal your system prompt", etc.)
-- **LiteLLM proxy-level guardrails** (optional) — a starter
-  `litellm.config.yaml` with a `presidio` PII-masking guardrail template,
-  for when you're routing through a LiteLLM proxy instead of local Ollama
+  reports, replayed tool history from earlier turns) is wrapped in an
+  explicit `<tool_result>...</tool_result>` data-not-instructions boundary
+  before it re-enters the model's context, with a regex flag for obvious
+  override phrasing ("ignore previous instructions", "reveal your system
+  prompt", etc.)
+- **LiteLLM proxy-level guardrails** (optional) — `litellm.config.example.yaml`
+  is the tracked template (copy it to `litellm.config.yaml`, which is
+  gitignored/per-developer); guardrails go under a top-level `guardrails:`
+  key, not nested under `litellm_settings` — that nested form silently
+  routes to LiteLLM's old legacy guardrails schema and crashes on this one
 
 <div align="right">
 
@@ -153,6 +175,8 @@ re-running a scan never duplicates what it already found.
 - From/to date-range filter with a presets popover (last 1 week / 1 month /
   3 months / 6 months)
 - Sentiment badges on news events (local FinRoBERTa)
+- Each event with a source link gets a "···" menu: **Open** it, or **Tag in
+  chat** to jump straight into asking the agent about it
 
 <div align="right">
 
@@ -198,10 +222,65 @@ Three interchangeable backends, picked via a `provider/model` id:
 | `litellm/*` | Your own [LiteLLM proxy][litellm-proxy] | Configure the proxy URL + API key in Settings → LiteLLM. Full tool-calling agent support once connected. |
 | *(anything else)* | OmniRoute (local multi-provider proxy) | Falls back to plain retrieval-augmented chat — tool-calling support varies too much across OmniRoute's many upstream providers to guarantee. |
 
-Settings is a tabbed dialog (**Model** / **LiteLLM**) — the Model tab's
-dropdown lists whatever's actually reachable right now (Ollama is always
-listed; OmniRoute's and LiteLLM's catalogs are queried live and degrade
-quietly if either isn't running).
+Settings is a tabbed dialog (**Model** / **LiteLLM** / **Cogencis** /
+**Watch rules**) — the Model tab's dropdown lists whatever's actually
+reachable right now (Ollama is always listed; OmniRoute's and LiteLLM's
+catalogs are queried live and degrade quietly if either isn't running).
+
+A `model_name` ending in `/*` (e.g. `openai/*`) in `litellm.config.yaml`
+expands into every model in LiteLLM's own bundled catalog for that provider
+(~200 for OpenAI) instead of one pinned id — the app's model-list request
+already passes `?return_wildcard_routes=true`, which is what makes LiteLLM
+expand it at all. `litellm.config.example.yaml` is the tracked starting
+template; `litellm.config.yaml` (gitignored) is where you actually configure
+it, per-developer.
+
+**Optional: Langfuse tracing.** `docker-compose.langfuse.yml` runs a
+self-hosted Langfuse (its official multi-container stack: Postgres,
+ClickHouse, Redis, MinIO, web + worker) — `run.sh` starts it and `kill.sh`
+tears it down automatically whenever Docker is running, and skips it quietly
+otherwise. Point `litellm.config.yaml`'s `success_callback`/`failure_callback`
+at `["langfuse"]` and export `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`
+(from a project created at `http://localhost:3000`) to see every LiteLLM
+call traced — prompts, tool calls, latency, cost.
+
+<div align="right">
+
+[![][back-to-top]](#readme-top)
+
+</div>
+
+### `8` Watch Rules
+
+User-defined criteria (Settings → Watch rules) checked against live data on
+demand — not tied to any one stock, and never a buy/sell recommendation,
+just pass/fail against *your own* stated criteria:
+
+- `/rule NAME [SYMBOL]` chat command, and a `check_watch_rule` agent tool —
+  omit the symbol to run it as a screener across the whole watchlist instead
+  of one stock
+- The one thing the agent will do when asked "is it a good time to buy" —
+  it can't give advice, but it can point at a rule you've set up and report
+  whether it currently holds
+
+<div align="right">
+
+[![][back-to-top]](#readme-top)
+
+</div>
+
+### `9` Top News
+
+A `/top-news` page: Cogencis's general market news feed (not scoped to a
+watchlist), configured with a token in Settings → Cogencis.
+
+- Cached wholesale for 24h (paginated fetch, 5 pages × 20 stories, 2s gap
+  between requests) — a manual **Reload** bypasses the cache
+- Each story is tagged with `affected_symbols`, matched by ISIN against your
+  current watchlist, recomputed fresh on every call so watchlist changes
+  show up immediately even against cached stories
+- **"Affecting my watchlist only"** filter toggle
+- Same "···" Open/Tag-in-chat menu as the Events feed
 
 <div align="right">
 
@@ -215,6 +294,17 @@ quietly if either isn't running).
   same threshold constants as the `skills/movement.py`/`skills/volume.py`
   filters used for movers scanning — no duplicated logic
 - Session deletion for chat history, with cascade-delete of its messages
+- `scraper.py`'s article scraper checks a page's `schema.org` JSON-LD
+  (`articleBody`) before falling back to scraping `<p>` tags — many news
+  sites (this includes Economic Times/ETEnergyworld) don't put their actual
+  article text in `<p>` tags at all, so the old approach picked up
+  nav/comment-policy boilerplate instead of the article
+- `kill.sh` kills by port (backend/frontend/LiteLLM/Postgres/Langfuse)
+  instead of pattern-matching process names, so a stale or reload-spawned
+  worker still gets cleaned up
+- `warning.md` — a local-model sizing note: don't run large prompts/long
+  sessions against the local Ollama model, switch to a LiteLLM-routed model
+  for anything reading a lot of text at once
 - An animated gradient app-logo mark and a redesigned icon-rail nav
 
 <div align="right">
@@ -232,8 +322,9 @@ quietly if either isn't running).
 | Events     | `events.py` — watchlist-scoped news/price/volume/corporate-action scan |
 | Prices     | `prices.py` — incremental daily OHLCV sync (1y + full-history tiers) + EMA crossover math |
 | Storage    | Postgres + pgvector (`db.py`)                                      |
-| API        | FastAPI (`api.py`) — chat streams over the AI SDK UI Message Stream protocol; chat tools are auto-generated from this same API's routes |
+| API        | FastAPI (`api.py`) — chat streams over the AI SDK UI Message Stream protocol; 12 explicit agent tools (`AGENT_TOOLS`/`REAL_TOOL_IMPLS`) |
 | Frontend   | React + Vite, shadcn/ui, AI Elements, `@ai-sdk/react`, lightweight-charts (`frontend/`) |
+| Tracing    | Langfuse (optional, self-hosted via `docker-compose.langfuse.yml`) — traces every LiteLLM call: prompts, tool calls, latency, cost |
 
 <div align="right">
 
@@ -246,8 +337,9 @@ quietly if either isn't running).
 ```bash
 ollama serve   # start Ollama first (if it isn't already running)
 
-./run.sh   # starts Postgres, serves API (:8010) + frontend (:5180)
-./kill.sh  # stops everything
+./run.sh   # starts Postgres, API (:8010), frontend (:5180) - plus LiteLLM
+           # (:4000) and self-hosted Langfuse if they're set up, see below
+./kill.sh  # stops everything - by port, so a stale process still gets killed
 ```
 
 The API starts immediately — it doesn't run any scan on startup. Trigger
@@ -256,13 +348,21 @@ scans manually from the UI (or `POST /api/events/scan` and
 is still available standalone (see below).
 
 Requires Postgres (`postgresql@17` + `pgvector`) and Ollama with `llama3.1`
-and `nomic-embed-text` pulled — `run.sh` checks Ollama is running and fails
-fast with a clear message if it isn't.
+and `nomic-embed-text` pulled. See `warning.md` before running large
+prompts/long sessions against the local model.
 
-**Optional:** to use `litellm/*` models, install and run a LiteLLM proxy
-(`pip install 'litellm[proxy]'`, then `litellm --config litellm.config.yaml
---port 4000`), and point Settings → LiteLLM at it. See `litellm.config.yaml`
-for a starter config with a PII-masking guardrail template.
+**Optional: LiteLLM proxy** (for `litellm/*` models) — install with
+`pip install 'litellm[proxy]'` (already in `requirements.txt`), then
+`cp litellm.config.example.yaml litellm.config.yaml` and fill in your
+model(s) + API key env vars (the template has step-by-step comments).
+`run.sh` starts it on port 4000 automatically once that file exists; point
+Settings → LiteLLM at `http://localhost:4000`.
+
+**Optional: Langfuse tracing** — needs Docker running. `run.sh`/`kill.sh`
+start/stop a self-hosted instance (`docker-compose.langfuse.yml`)
+automatically whenever Docker is available, and skip it quietly otherwise.
+First boot pulls several images and runs migrations, so
+`http://localhost:3000` takes a minute to answer the first time.
 
 <div align="right">
 

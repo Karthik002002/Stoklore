@@ -179,6 +179,24 @@ export const analyzeBulkTradeImage = (file, model) => {
   return fetch(`/api/manual-trades/bulk/analyze${qs}`, { method: 'POST', body: form }).then(json)
 }
 
+export const pingActivity = (kind) =>
+  fetch('/api/activity/ping', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind }),
+  }).then(json)
+
+export const getActivitySummary = () => fetch('/api/activity/summary').then(json)
+
+export const getActivitySettings = () => fetch('/api/settings/activity').then(json)
+
+export const setActivitySettings = (settings) =>
+  fetch('/api/settings/activity', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  }).then(json)
+
 export const searchStocks = (q = '') => fetch(`/api/stocks/search?q=${encodeURIComponent(q)}`).then(json)
 
 export const addStock = (symbol) =>

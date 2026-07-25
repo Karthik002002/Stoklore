@@ -1,4 +1,5 @@
 """Postgres + pgvector storage for scraped reports and chat history."""
+import json
 import os
 from datetime import date, datetime, timedelta, timezone
 
@@ -261,6 +262,17 @@ CREATE TABLE IF NOT EXISTS manual_trades (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS manual_trades_traded_at_idx ON manual_trades (traded_at DESC);
+
+-- Daily usage-time + "did they analyze/review today" signals for the consistency/streak feature
+-- (Profile modal). "traded" is deliberately NOT a column here - it's derived live from
+-- manual_trades.created_at wherever needed, so it can never drift out of sync with the trade
+-- journal itself.
+CREATE TABLE IF NOT EXISTS daily_activity (
+  date DATE PRIMARY KEY,
+  seconds_active INTEGER NOT NULL DEFAULT 0,
+  analyzed BOOLEAN NOT NULL DEFAULT false,
+  reviewed BOOLEAN NOT NULL DEFAULT false
+);
 """
 
 
@@ -1022,3 +1034,76 @@ def delete_manual_trade(trade_id):
 def update_manual_trade_image(trade_id, filename):
     with connect() as conn:
         conn.execute("UPDATE manual_trades SET image_filename = %s WHERE id = %s", (filename, trade_id))
+
+
+def add_activity_seconds(seconds):
+    """Upserts today's row, adding to (not replacing) seconds_active - the heartbeat endpoint
+    calls this every ~20s while the tab is visible, so a day's total accumulates across calls."""
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO daily_activity (date, seconds_active) VALUES (CURRENT_DATE, %s) "
+            "ON CONFLICT (date) DO UPDATE SET seconds_active = daily_activity.seconds_active + excluded.seconds_active",
+            (seconds,),
+        )
+
+
+def ping_activity(kind):
+    """kind: 'analyzed' or 'reviewed' - upserts today's row, setting that flag true. Idempotent -
+    pinging twice in a day is a no-op past the first call."""
+    column = "analyzed" if kind == "analyzed" else "reviewed"
+    with connect() as conn:
+        conn.execute(
+            f"INSERT INTO daily_activity (date, {column}) VALUES (CURRENT_DATE, true) "
+            f"ON CONFLICT (date) DO UPDATE SET {column} = true",
+        )
+
+
+def list_activity_days(days=371):
+    """Ascending {date, seconds_active, analyzed, reviewed} rows for the last `days` days -
+    doesn't backfill missing dates (no row = no activity that day), left to the caller."""
+    with connect() as conn:
+        return conn.execute(
+            "SELECT date, seconds_active, analyzed, reviewed FROM daily_activity "
+            "WHERE date >= CURRENT_DATE - %s::int ORDER BY date",
+            (days,),
+        ).fetchall()
+
+
+def traded_dates(days=371):
+    """Distinct dates a manual trade was logged (by creation time, not the editable traded_at) -
+    the third "qualifying activity" signal, kept live off manual_trades rather than duplicated
+    into daily_activity so it can never drift out of sync with the trade journal."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT created_at::date AS date FROM manual_trades "
+            "WHERE created_at >= CURRENT_DATE - %s::int",
+            (days,),
+        ).fetchall()
+    return {r["date"] for r in rows}
+
+
+DEFAULT_ACTIVITY_QUALIFIERS = {"trade": True, "analyze": True, "review": True}
+DEFAULT_ACTIVITY_DAILY_GOAL_MINUTES = 15
+
+
+def get_activity_qualifiers():
+    raw = _get_setting("activity_qualifiers")
+    if not raw:
+        return dict(DEFAULT_ACTIVITY_QUALIFIERS)
+    try:
+        return {**DEFAULT_ACTIVITY_QUALIFIERS, **json.loads(raw)}
+    except (ValueError, TypeError):
+        return dict(DEFAULT_ACTIVITY_QUALIFIERS)
+
+
+def set_activity_qualifiers(qualifiers):
+    _set_setting("activity_qualifiers", json.dumps(qualifiers))
+
+
+def get_activity_daily_goal_minutes():
+    raw = _get_setting("activity_daily_goal_minutes")
+    return int(raw) if raw else DEFAULT_ACTIVITY_DAILY_GOAL_MINUTES
+
+
+def set_activity_daily_goal_minutes(minutes):
+    _set_setting("activity_daily_goal_minutes", str(minutes))

@@ -33,6 +33,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { fmt, formatDate, inr } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
+import { pingActivity } from '@/services/api'
 import DeleteStockButton from './DeleteStockButton'
 import IndexCard from './IndexCard'
 
@@ -309,6 +310,9 @@ function WatchlistTabMenu({ name, stockCount, onRenamed, onDeleted }) {
 
 export default function StocksList() {
   usePageTitle()
+  useEffect(() => {
+    pingActivity('review').catch(() => {})
+  }, [])
   const [stocks, setStocks] = useState(null)
   const [watchlist, setWatchlist] = useState([])
   const [listNames, setListNames] = useState([])

@@ -9,6 +9,7 @@ import {
   NewspaperIcon,
   SettingsIcon,
   TrendingUpIcon,
+  UserRoundIcon,
   WalletIcon,
 } from 'lucide-react'
 import {
@@ -21,6 +22,7 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Spinner } from '@/components/ui/spinner'
+import { openProfile } from './Profile'
 import { addStock, searchStocks } from '@/services/api'
 
 const PAGES = [
@@ -100,6 +102,11 @@ export default function CommandPalette() {
     close()
   }
 
+  const openProfileModal = () => {
+    openProfile()
+    close()
+  }
+
   return (
     <CommandDialog
       open={open}
@@ -149,6 +156,10 @@ export default function CommandPalette() {
                     {p.label}
                   </CommandItem>
                 ))}
+                <CommandItem value="Profile" onSelect={openProfileModal}>
+                  <UserRoundIcon className="size-4" />
+                  Profile
+                </CommandItem>
               </CommandGroup>
               <CommandGroup heading="Backtesting">
                 {BACKTEST_TABS.map((t) => (

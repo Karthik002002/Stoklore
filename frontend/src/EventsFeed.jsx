@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Spinner } from '@/components/ui/spinner'
 import { formatDate } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
+import { pingActivity } from '@/services/api'
 import EventActionsMenu from './EventActionsMenu'
 
 const DATE_PRESETS = [
@@ -39,6 +40,9 @@ const SENTIMENT_STYLE = {
 
 export default function EventsFeed() {
   usePageTitle('Events')
+  useEffect(() => {
+    pingActivity('review').catch(() => {})
+  }, [])
   const [eventsList, setEventsList] = useState(null)
   const [watchlist, setWatchlist] = useState([])
   const [tab, setTab] = useState('All')

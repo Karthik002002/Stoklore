@@ -25,6 +25,18 @@ export const formatDateTime = (dateStr) =>
       })
     : '—'
 
+// Seconds -> "1h 23m" / "23m 05s" / "42s" - drops leading zero units rather than always showing
+// hh:mm:ss, since most days will be minutes not hours.
+export const formatDuration = (totalSeconds) => {
+  const s = Math.max(0, Math.round(totalSeconds))
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  const sec = s % 60
+  if (h > 0) return `${h}h ${String(m).padStart(2, '0')}m`
+  if (m > 0) return `${m}m ${String(sec).padStart(2, '0')}s`
+  return `${sec}s`
+}
+
 const RTF = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
 
 // "2 days ago", "3 weeks ago", etc. from an ISO date string.

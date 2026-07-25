@@ -42,6 +42,8 @@
     --color-background: var(--background);
     --color-up: var(--up);
     --color-down: var(--down);
+    --color-success: var(--success);
+    --color-success-foreground: var(--success-foreground);
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);

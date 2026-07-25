@@ -14,6 +14,9 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': 'http://localhost:8010',
+      // shorthand string form (like '/api' above) doesn't proxy the WebSocket upgrade - needs
+      // the object form with ws:true explicitly.
+      '/ws': { target: 'ws://localhost:8010', ws: true },
     },
     // Vite blocks unrecognized Host headers by default (DNS-rebinding protection) - allow
     // Cloudflare Quick Tunnel hosts (random *.trycloudflare.com per run) through.

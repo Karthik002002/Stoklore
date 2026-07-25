@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { SettingsIcon, ExternalLinkIcon, Trash2Icon } from 'lucide-react'
@@ -23,6 +23,7 @@ import {
   createWatchRule,
   deleteWatchRule,
   getActiveModel,
+  getActivitySettings,
   getBrokerConfig,
   getCogencisConfig,
   getLiteLLMConfig,
@@ -30,6 +31,7 @@ import {
   getWatchRules,
   getKiteLoginUrl,
   setActiveModel,
+  setActivitySettings,
   setCogencisToken,
   setDhanConfig,
   setKiteConfig,
@@ -504,6 +506,84 @@ function WatchRulesTab() {
   )
 }
 
+function ActivityTab() {
+  const queryClient = useQueryClient()
+  const { data: config } = useQuery({ queryKey: ['activitySettings'], queryFn: getActivitySettings })
+  const [qualifiers, setQualifiers] = useState(null)
+  const [goalMinutes, setGoalMinutes] = useState('')
+
+  useEffect(() => {
+    if (config) {
+      setQualifiers(config.qualifiers)
+      setGoalMinutes(String(config.daily_goal_minutes))
+    }
+  }, [config])
+
+  const save = useMutation({
+    mutationFn: () => setActivitySettings({ qualifiers, daily_goal_minutes: Number(goalMinutes) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['activitySettings'] })
+      queryClient.invalidateQueries({ queryKey: ['activitySummary'] })
+      toast.success('Activity settings saved')
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
+  if (!qualifiers) return <p className="text-sm text-muted-foreground">Loading…</p>
+
+  const toggle = (key) => setQualifiers((q) => ({ ...q, [key]: !q[key] }))
+  const atLeastOneEnabled = Object.values(qualifiers).some(Boolean)
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <p className="text-sm font-medium">What counts as "showing up" for a day</p>
+        <div className="space-y-1.5">
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={qualifiers.trade} onChange={() => toggle('trade')} />
+            Logging a manual trade
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={qualifiers.analyze} onChange={() => toggle('analyze')} />
+            Running an Auto backtest
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={qualifiers.review} onChange={() => toggle('review')} />
+            Reviewing the watchlist or events
+          </label>
+        </div>
+        {!atLeastOneEnabled && <p className="text-xs text-destructive">At least one must stay enabled.</p>}
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Daily usage-time goal</p>
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            min="1"
+            value={goalMinutes}
+            onChange={(e) => setGoalMinutes(e.target.value)}
+            className="w-24"
+          />
+          <span className="text-sm text-muted-foreground">minutes/day</span>
+        </div>
+      </div>
+
+      <Button
+        size="sm"
+        onClick={() => save.mutate()}
+        disabled={!atLeastOneEnabled || !goalMinutes || save.isPending}
+      >
+        Save
+      </Button>
+      <p className="text-xs text-muted-foreground">
+        Drives the streak/guilt banner shown across the app and the Profile modal's stats (the Profile icon
+        above Settings).
+      </p>
+    </div>
+  )
+}
+
 export default function Settings() {
   const { settings } = useSearch({ strict: false })
   const navigate = useNavigate()
@@ -539,6 +619,7 @@ export default function Settings() {
             <TabsTab value="cogencis">Cogencis</TabsTab>
             <TabsTab value="broker">Broker</TabsTab>
             <TabsTab value="rules">Watch rules</TabsTab>
+            <TabsTab value="activity">Activity</TabsTab>
           </TabsList>
           <div className="min-w-0 flex-1 overflow-y-auto pr-1">
             <TabsPanel value="model">
@@ -555,6 +636,9 @@ export default function Settings() {
             </TabsPanel>
             <TabsPanel value="rules">
               <WatchRulesTab />
+            </TabsPanel>
+            <TabsPanel value="activity">
+              <ActivityTab />
             </TabsPanel>
           </div>
         </Tabs>

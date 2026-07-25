@@ -16,6 +16,7 @@ import {
   getAutoBacktestScript,
   getMaxHistory,
   getMaxHistoryStatus,
+  pingActivity,
   updateAutoBacktestScript,
 } from '@/services/api'
 
@@ -87,6 +88,7 @@ export default function AutoBacktestDetail() {
     onSuccess: (r) => {
       setResult(r)
       setError(null)
+      pingActivity('analyze').catch(() => {})
     },
     onError: (e) => {
       setResult(null)

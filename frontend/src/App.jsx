@@ -12,8 +12,11 @@ import { toast } from 'sonner'
 import { Toaster } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import ActivityTracker from './ActivityTracker'
 import ChatWidget from './ChatWidget'
 import CommandPalette from './CommandPalette'
+import GuiltBanner from './GuiltBanner'
+import Profile from './Profile'
 import Settings from './Settings'
 import ThemeToggle from './ThemeToggle'
 
@@ -102,6 +105,9 @@ function App() {
             <TooltipIcon label="Reload">
               <ReloadButton />
             </TooltipIcon>
+            <TooltipIcon label="Profile">
+              <Profile />
+            </TooltipIcon>
             <TooltipIcon label="Settings">
               <Settings />
             </TooltipIcon>
@@ -112,10 +118,12 @@ function App() {
         </aside>
 
         <main className="mx-auto w-full max-w-5xl px-4 py-8">
+          <GuiltBanner />
           <Outlet />
         </main>
       </div>
 
+      <ActivityTracker />
       <ChatWidget />
       <CommandPalette />
       <Toaster position="top-center" richColors closeButton />

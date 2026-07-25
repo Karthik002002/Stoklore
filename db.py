@@ -235,6 +235,32 @@ CREATE TABLE IF NOT EXISTS auto_backtest_scripts (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Manually logged trades for the Manual backtest tab - a personal trade journal, not tied to
+-- price_history/NSE at all (entry/exit/P&L are exactly what the user typed in, not computed from
+-- market data). P&L, R:R, and return% are deliberately NOT stored here - they're derived from
+-- entry/exit/stop/target/quantity and computed at read time (frontend) so editing a trade later
+-- never leaves a stale derived value behind. `result` starts as that same auto-computed
+-- profit/loss/neutral but is a real column since the user can override it by hand.
+CREATE TABLE IF NOT EXISTS manual_trades (
+  id SERIAL PRIMARY KEY,
+  symbol TEXT NOT NULL,
+  direction TEXT NOT NULL,
+  quantity REAL NOT NULL,
+  entry_price REAL NOT NULL,
+  exit_price REAL,
+  stop_loss REAL,
+  target REAL,
+  is_open BOOLEAN NOT NULL DEFAULT false,
+  result TEXT,
+  emotion TEXT,
+  tags TEXT[] NOT NULL DEFAULT '{}',
+  notes TEXT,
+  image_filename TEXT,
+  traded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS manual_trades_traded_at_idx ON manual_trades (traded_at DESC);
 """
 
 
@@ -951,3 +977,48 @@ def update_auto_backtest_script(script_id, name, script):
 def delete_auto_backtest_script(script_id):
     with connect() as conn:
         conn.execute("DELETE FROM auto_backtest_scripts WHERE id = %s", (script_id,))
+
+
+def create_manual_trade(symbol, direction, quantity, entry_price, exit_price, stop_loss, target,
+                         is_open, result, emotion, tags, notes, traded_at, image_filename=None):
+    with connect() as conn:
+        row = conn.execute(
+            "INSERT INTO manual_trades (symbol, direction, quantity, entry_price, exit_price, "
+            "stop_loss, target, is_open, result, emotion, tags, notes, traded_at, image_filename) VALUES "
+            "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, now()), %s) RETURNING id",
+            (symbol, direction, quantity, entry_price, exit_price, stop_loss, target, is_open,
+             result, emotion, tags, notes, traded_at, image_filename),
+        ).fetchone()
+    return row["id"]
+
+
+def list_manual_trades():
+    with connect() as conn:
+        return conn.execute("SELECT * FROM manual_trades ORDER BY traded_at DESC").fetchall()
+
+
+def get_manual_trade(trade_id):
+    with connect() as conn:
+        return conn.execute("SELECT * FROM manual_trades WHERE id = %s", (trade_id,)).fetchone()
+
+
+def update_manual_trade(trade_id, symbol, direction, quantity, entry_price, exit_price, stop_loss,
+                         target, is_open, result, emotion, tags, notes, traded_at):
+    with connect() as conn:
+        conn.execute(
+            "UPDATE manual_trades SET symbol = %s, direction = %s, quantity = %s, entry_price = %s, "
+            "exit_price = %s, stop_loss = %s, target = %s, is_open = %s, result = %s, emotion = %s, "
+            "tags = %s, notes = %s, traded_at = COALESCE(%s, traded_at) WHERE id = %s",
+            (symbol, direction, quantity, entry_price, exit_price, stop_loss, target, is_open,
+             result, emotion, tags, notes, traded_at, trade_id),
+        )
+
+
+def delete_manual_trade(trade_id):
+    with connect() as conn:
+        conn.execute("DELETE FROM manual_trades WHERE id = %s", (trade_id,))
+
+
+def update_manual_trade_image(trade_id, filename):
+    with connect() as conn:
+        conn.execute("UPDATE manual_trades SET image_filename = %s WHERE id = %s", (filename, trade_id))

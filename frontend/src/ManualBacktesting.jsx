@@ -1,0 +1,474 @@
+import { useEffect, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ImagesIcon, PlusIcon, Trash2Icon } from 'lucide-react'
+import { toast } from 'sonner'
+import BulkTradesDialog from './BulkTradesDialog'
+import SymbolCombobox from '@/components/SymbolCombobox'
+import TagInput from '@/components/TagInput'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Spinner } from '@/components/ui/spinner'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
+import { formatDate, inr } from '@/lib/format'
+import { autoResult, EMOTIONS, RESULT_META, tradePnl, tradeRR, tradeReturnPct } from '@/lib/manualTrades'
+import {
+  createManualTrade,
+  deleteManualTrade,
+  getManualTrades,
+  updateManualTrade,
+  uploadManualTradeImage,
+} from '@/services/api'
+import ManualOverview from './ManualOverview'
+
+function emptyForm() {
+  return {
+    tradedAt: '',
+    symbol: '',
+    direction: 'long',
+    quantity: '',
+    entryPrice: '',
+    exitPrice: '',
+    stopLoss: '',
+    target: '',
+    isOpen: false,
+    result: null,
+    resultManual: false,
+    emotion: '',
+    tags: [],
+    imageFile: null,
+  }
+}
+
+// datetime-local wants "YYYY-MM-DDTHH:mm" in local time - Date's own ISO getter is UTC, so this
+// is built from the local getters instead.
+function toDatetimeLocal(iso) {
+  const d = new Date(iso)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function formFromTrade(t) {
+  return {
+    tradedAt: toDatetimeLocal(t.traded_at),
+    symbol: t.symbol,
+    direction: t.direction,
+    quantity: String(t.quantity),
+    entryPrice: String(t.entry_price),
+    exitPrice: t.exit_price != null ? String(t.exit_price) : '',
+    stopLoss: t.stop_loss != null ? String(t.stop_loss) : '',
+    target: t.target != null ? String(t.target) : '',
+    isOpen: t.is_open,
+    result: t.result,
+    resultManual: true, // reopening a saved trade shouldn't silently recompute over its stored result
+    emotion: t.emotion ?? '',
+    tags: t.tags ?? [],
+    imageFile: null,
+  }
+}
+
+const numeric = (v) => (v === '' || v == null ? null : Number(v))
+
+function TradeFormDialog({ open, onOpenChange, trade, onSaved }) {
+  const [form, setForm] = useState(emptyForm)
+
+  useEffect(() => {
+    if (open) setForm(trade ? formFromTrade(trade) : emptyForm())
+  }, [open, trade])
+
+  const set = (key) => (value) => setForm((f) => ({ ...f, [key]: value }))
+
+  const computedResult = autoResult({
+    direction: form.direction,
+    quantity: numeric(form.quantity),
+    entry_price: numeric(form.entryPrice),
+    exit_price: form.isOpen ? null : numeric(form.exitPrice),
+  })
+  const effectiveResult = form.resultManual ? form.result : computedResult
+
+  const valid =
+    form.symbol.trim() &&
+    numeric(form.quantity) > 0 &&
+    numeric(form.entryPrice) > 0 &&
+    (form.isOpen || numeric(form.exitPrice) != null)
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const payload = {
+        symbol: form.symbol.trim().toUpperCase(),
+        direction: form.direction,
+        quantity: numeric(form.quantity),
+        entry_price: numeric(form.entryPrice),
+        exit_price: form.isOpen ? null : numeric(form.exitPrice),
+        stop_loss: numeric(form.stopLoss),
+        target: numeric(form.target),
+        is_open: form.isOpen,
+        result: form.isOpen ? null : effectiveResult,
+        emotion: form.emotion || null,
+        tags: form.tags,
+        notes: trade?.notes ?? null,
+        traded_at: form.tradedAt ? new Date(form.tradedAt).toISOString() : null,
+      }
+      let id
+      if (trade) {
+        await updateManualTrade(trade.id, payload)
+        id = trade.id
+      } else {
+        id = (await createManualTrade(payload)).id
+      }
+      if (form.imageFile) await uploadManualTradeImage(id, form.imageFile)
+    },
+    onSuccess: () => {
+      toast.success(trade ? 'Trade updated' : 'Trade added')
+      onSaved()
+      onOpenChange(false)
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{trade ? 'Edit trade' : 'Add trade'}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Date</label>
+              <Input
+                type="datetime-local"
+                value={form.tradedAt}
+                onChange={(e) => set('tradedAt')(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Symbol</label>
+              <SymbolCombobox value={form.symbol} onChange={set('symbol')} className="w-full" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Direction</label>
+              <Select value={form.direction} onValueChange={set('direction')}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="long">Buy (Long)</SelectItem>
+                  <SelectItem value="short">Sell (Short)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Quantity</label>
+              <Input
+                type="number"
+                min="0"
+                value={form.quantity}
+                onChange={(e) => set('quantity')(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Entry ₹</label>
+              <Input
+                type="number"
+                step="0.01"
+                value={form.entryPrice}
+                onChange={(e) => set('entryPrice')(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Exit ₹{form.isOpen ? ' (open)' : ''}</label>
+              <Input
+                type="number"
+                step="0.01"
+                value={form.exitPrice}
+                disabled={form.isOpen}
+                onChange={(e) => set('exitPrice')(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Stop loss ₹</label>
+              <Input
+                type="number"
+                step="0.01"
+                value={form.stopLoss}
+                onChange={(e) => set('stopLoss')(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Target ₹</label>
+              <Input
+                type="number"
+                step="0.01"
+                value={form.target}
+                onChange={(e) => set('target')(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={form.isOpen}
+              onChange={(e) => setForm((f) => ({ ...f, isOpen: e.target.checked }))}
+            />
+            Trade still open (exit not required)
+          </label>
+
+          {!form.isOpen && (
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Result</label>
+              <Select
+                value={effectiveResult ?? ''}
+                onValueChange={(v) => setForm((f) => ({ ...f, result: v, resultManual: true }))}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="—" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="profit">Profit</SelectItem>
+                  <SelectItem value="loss">Loss</SelectItem>
+                  <SelectItem value="neutral">Neutral</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Emotion</label>
+            <Select value={form.emotion} onValueChange={set('emotion')}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="How did it feel?" />
+              </SelectTrigger>
+              <SelectContent>
+                {EMOTIONS.map((e) => (
+                  <SelectItem key={e} value={e}>
+                    {e}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Tags (setup, mistakes, anything)</label>
+            <TagInput value={form.tags} onChange={set('tags')} />
+          </div>
+
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Trade screenshot</label>
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              onChange={(e) => set('imageFile')(e.target.files?.[0] ?? null)}
+              className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:text-foreground"
+            />
+            {trade?.image_filename && !form.imageFile && (
+              <img
+                src={`/uploads/${trade.image_filename}`}
+                alt="Trade"
+                className="mt-2 max-h-32 rounded-lg border"
+              />
+            )}
+          </div>
+
+          <Button className="w-full" disabled={!valid || save.isPending} onClick={() => save.mutate()}>
+            {save.isPending && <Spinner className="size-4" />}
+            {trade ? 'Save changes' : 'Add trade'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function TradesTable({ trades, onEdit, onDelete }) {
+  if (trades.length === 0) {
+    return <p className="text-sm text-muted-foreground">No trades logged yet - add one above.</p>
+  }
+  return (
+    <div className="overflow-x-auto rounded-xl border bg-card">
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead>Date</TableHead>
+            <TableHead>Symbol</TableHead>
+            <TableHead>Direction</TableHead>
+            <TableHead className="text-right">Qty</TableHead>
+            <TableHead className="text-right">Entry ₹</TableHead>
+            <TableHead className="text-right">Exit ₹</TableHead>
+            <TableHead className="text-right">Stop Loss ₹</TableHead>
+            <TableHead className="text-right">Target ₹</TableHead>
+            <TableHead className="text-right">P&L ₹</TableHead>
+            <TableHead className="text-right">R:R</TableHead>
+            <TableHead>Result</TableHead>
+            <TableHead>Emotion</TableHead>
+            <TableHead>Tags</TableHead>
+            <TableHead>Notes</TableHead>
+            <TableHead className="text-right">Return %</TableHead>
+            <TableHead>Image</TableHead>
+            <TableHead className="w-10" />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {trades.map((t) => {
+            const pnl = tradePnl(t)
+            const rr = tradeRR(t)
+            const returnPct = tradeReturnPct(t)
+            const resultMeta = t.result ? RESULT_META[t.result] : null
+            return (
+              <TableRow key={t.id} className="cursor-pointer" onClick={() => onEdit(t)}>
+                <TableCell className="whitespace-nowrap">{formatDate(t.traded_at)}</TableCell>
+                <TableCell className="font-medium">{t.symbol}</TableCell>
+                <TableCell className="capitalize">{t.direction}</TableCell>
+                <TableCell className="text-right tabular-nums">{t.quantity}</TableCell>
+                <TableCell className="text-right tabular-nums">{inr(t.entry_price)}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {t.exit_price != null ? inr(t.exit_price) : '—'}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {t.stop_loss != null ? inr(t.stop_loss) : '—'}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {t.target != null ? inr(t.target) : '—'}
+                </TableCell>
+                <TableCell
+                  className={`text-right tabular-nums ${pnl == null ? '' : pnl >= 0 ? 'text-up' : 'text-down'}`}
+                >
+                  {pnl == null ? '—' : inr(pnl)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">{rr ?? '—'}</TableCell>
+                <TableCell>
+                  {t.is_open ? (
+                    <Badge variant="outline">Open</Badge>
+                  ) : resultMeta ? (
+                    <Badge variant={resultMeta.badgeVariant}>{resultMeta.label}</Badge>
+                  ) : (
+                    '—'
+                  )}
+                </TableCell>
+                <TableCell className="text-muted-foreground">{t.emotion || '—'}</TableCell>
+                <TableCell>
+                  <div className="flex flex-wrap gap-1">
+                    {(t.tags ?? []).map((tag) => (
+                      <Badge key={tag} variant="secondary">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                </TableCell>
+                <TableCell className="max-w-40 truncate text-muted-foreground">{t.notes || '—'}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {returnPct == null ? '—' : `${returnPct}%`}
+                </TableCell>
+                <TableCell>
+                  {t.image_filename ? (
+                    <img
+                      src={`/uploads/${t.image_filename}`}
+                      alt=""
+                      className="size-8 rounded object-cover"
+                    />
+                  ) : (
+                    '—'
+                  )}
+                </TableCell>
+                <TableCell>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={`Delete ${t.symbol} trade`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onDelete(t.id)
+                    }}
+                  >
+                    <Trash2Icon className="size-3.5" />
+                  </Button>
+                </TableCell>
+              </TableRow>
+            )
+          })}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
+export default function ManualBacktesting() {
+  const [view, setView] = useState('overview')
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingTrade, setEditingTrade] = useState(null)
+  const [bulkOpen, setBulkOpen] = useState(false)
+  const queryClient = useQueryClient()
+
+  const { data: trades = [] } = useQuery({ queryKey: ['manualTrades'], queryFn: getManualTrades })
+
+  const remove = useMutation({
+    mutationFn: deleteManualTrade,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['manualTrades'] }),
+    onError: (e) => toast.error(e.message),
+  })
+
+  const openAdd = () => {
+    setEditingTrade(null)
+    setDialogOpen(true)
+  }
+  const openEdit = (trade) => {
+    setEditingTrade(trade)
+    setDialogOpen(true)
+  }
+
+  return (
+    <div className="space-y-4">
+      <Tabs value={view} onValueChange={setView}>
+        <div className="flex items-center justify-between">
+          <TabsList>
+            <TabsTab value="overview">Overview</TabsTab>
+            <TabsTab value="trades">Trades</TabsTab>
+            <TabsIndicator />
+          </TabsList>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)}>
+              <ImagesIcon className="size-4" />
+              Bulk Trades
+            </Button>
+            <Button size="sm" onClick={openAdd}>
+              <PlusIcon className="size-4" />
+              Add Trade
+            </Button>
+          </div>
+        </div>
+        <TabsPanel value="overview">
+          <ManualOverview trades={trades} />
+        </TabsPanel>
+        <TabsPanel value="trades">
+          <TradesTable trades={trades} onEdit={openEdit} onDelete={(id) => remove.mutate(id)} />
+        </TabsPanel>
+      </Tabs>
+
+      <TradeFormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        trade={editingTrade}
+        onSaved={() => queryClient.invalidateQueries({ queryKey: ['manualTrades'] })}
+      />
+      <BulkTradesDialog
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+        onSaved={() => queryClient.invalidateQueries({ queryKey: ['manualTrades'] })}
+      />
+    </div>
+  )
+}

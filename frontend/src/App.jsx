@@ -13,6 +13,7 @@ import { Toaster } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import ChatWidget from './ChatWidget'
+import CommandPalette from './CommandPalette'
 import Settings from './Settings'
 import ThemeToggle from './ThemeToggle'
 
@@ -116,6 +117,7 @@ function App() {
       </div>
 
       <ChatWidget />
+      <CommandPalette />
       <Toaster position="top-center" richColors closeButton />
     </TooltipProvider>
   )

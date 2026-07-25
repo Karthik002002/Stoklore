@@ -1,4 +1,5 @@
 """FastAPI server: serves stored reports and a RAG chatbot (AI SDK UI Message Stream protocol) to React."""
+import base64
 import json
 import os
 import re
@@ -8,9 +9,10 @@ import uuid
 from datetime import date, datetime, timezone
 
 import requests
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import backtest
@@ -26,6 +28,12 @@ import sentiment
 
 app = FastAPI()
 db.init_schema()
+
+# Manual-trade screenshot uploads - local disk only, matches the app's "nothing leaves your
+# machine" design. Served straight back out at /uploads/<filename>.
+UPLOAD_DIR = "uploads"
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
 @app.on_event("startup")
@@ -342,6 +350,23 @@ class AutoBacktestScriptRequest(BaseModel):
     script: str
 
 
+class ManualTradeRequest(BaseModel):
+    symbol: str
+    direction: str  # "long" | "short"
+    quantity: float
+    entry_price: float
+    exit_price: float | None = None
+    stop_loss: float | None = None
+    target: float | None = None
+    is_open: bool = False
+    result: str | None = None  # "profit" | "loss" | "neutral"
+    emotion: str | None = None
+    tags: list[str] = []
+    notes: str | None = None
+    traded_at: str | None = None  # ISO datetime; omitted -> now()
+    image_filename: str | None = None  # already-uploaded file (e.g. from the Bulk Trades import)
+
+
 @app.get("/api/watch-rules")
 def watch_rules():
     return db.list_watch_rules()
@@ -461,6 +486,91 @@ def update_auto_backtest_script(script_id: int, req: AutoBacktestScriptRequest):
 def delete_auto_backtest_script(script_id: int):
     db.delete_auto_backtest_script(script_id)
     return {"ok": True}
+
+
+DIRECTIONS = {"long", "short"}
+RESULTS = {"profit", "loss", "neutral"}
+
+
+def _validate_manual_trade(req):
+    if req.direction not in DIRECTIONS:
+        raise HTTPException(status_code=422, detail="direction must be 'long' or 'short'")
+    if req.result is not None and req.result not in RESULTS:
+        raise HTTPException(status_code=422, detail="result must be 'profit', 'loss', or 'neutral'")
+
+
+@app.get("/api/manual-trades")
+def manual_trades():
+    return db.list_manual_trades()
+
+
+@app.post("/api/manual-trades")
+def create_manual_trade(req: ManualTradeRequest):
+    _validate_manual_trade(req)
+    trade_id = db.create_manual_trade(
+        req.symbol.strip().upper(), req.direction, req.quantity, req.entry_price, req.exit_price,
+        req.stop_loss, req.target, req.is_open, req.result, req.emotion, req.tags, req.notes,
+        req.traded_at, req.image_filename,
+    )
+    return {"id": trade_id}
+
+
+@app.put("/api/manual-trades/{trade_id}")
+def update_manual_trade(trade_id: int, req: ManualTradeRequest):
+    _validate_manual_trade(req)
+    db.update_manual_trade(
+        trade_id, req.symbol.strip().upper(), req.direction, req.quantity, req.entry_price,
+        req.exit_price, req.stop_loss, req.target, req.is_open, req.result, req.emotion, req.tags,
+        req.notes, req.traded_at,
+    )
+    return {"ok": True}
+
+
+@app.delete("/api/manual-trades/{trade_id}")
+def delete_manual_trade(trade_id: int):
+    db.delete_manual_trade(trade_id)
+    return {"ok": True}
+
+
+ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+
+
+@app.post("/api/manual-trades/{trade_id}/image")
+async def upload_manual_trade_image(trade_id: int, file: UploadFile = File(...)):
+    # ponytail: re-uploading (editing a trade's screenshot) orphans the old file on disk instead
+    # of deleting it - add cleanup if upload volume ever makes that worth doing.
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=422, detail="unsupported image type - use PNG, JPEG, WEBP, or GIF")
+    ext = os.path.splitext(file.filename or "")[1]
+    filename = f"{trade_id}-{uuid.uuid4().hex}{ext}"
+    with open(os.path.join(UPLOAD_DIR, filename), "wb") as f:
+        f.write(await file.read())
+    db.update_manual_trade_image(trade_id, filename)
+    return {"filename": filename}
+
+
+@app.post("/api/manual-trades/bulk/analyze")
+async def analyze_bulk_trade_image(file: UploadFile = File(...), model: str | None = None):
+    """One chart screenshot -> extracted trade fields, for the Bulk Trades import. The frontend
+    fires one of these per selected image (not sequentially), so analysis across a batch happens
+    in parallel. The image is saved to disk immediately - not gated on the user actually
+    confirming the extracted fields - so it isn't re-uploaded when the trade is created.
+    ponytail: a cancelled/abandoned bulk import orphans these files on disk, same tradeoff as the
+    single re-upload path above."""
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=422, detail="unsupported image type - use PNG, JPEG, WEBP, or GIF")
+    raw = await file.read()
+    ext = os.path.splitext(file.filename or "")[1]
+    filename = f"bulk-{uuid.uuid4().hex}{ext}"
+    with open(os.path.join(UPLOAD_DIR, filename), "wb") as f:
+        f.write(raw)
+    try:
+        fields = llm.analyze_trade_screenshot(
+            base64.b64encode(raw).decode(), file.content_type, model or db.get_active_model()
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return {"filename": filename, **fields}
 
 
 def _text(message):

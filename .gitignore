@@ -11,6 +11,9 @@ dashboard.html
 frontend/node_modules
 frontend/dist
 
+# manual-trade screenshot uploads (api.py) - local-only, never shared/committed
+uploads/
+
 # local-only: LiteLLM proxy connection + guardrails config (ports, model list, env var names
 # specific to this machine's setup) - never shared/committed, each dev configures their own
 litellm.config.yaml

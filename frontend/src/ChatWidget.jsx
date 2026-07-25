@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useChat } from '@ai-sdk/react'
+import { useHotkey } from '@tanstack/react-hotkeys'
 import { useQuery } from '@tanstack/react-query'
 import { useParams } from '@tanstack/react-router'
 import { DefaultChatTransport } from 'ai'
+import { useLocalStorage } from 'react-haiku'
 import { toast } from 'sonner'
 import {
   BotIcon,
@@ -362,8 +364,11 @@ export default function ChatWidget() {
   const openRef = useRef(open)
   openRef.current = open
 
-  const [size, setSize] = useState(DEFAULT_SIZE)
+  const [size, setSize] = useLocalStorage('chatPanelSize', DEFAULT_SIZE)
   const startResize = useTopLeftResize(size, setSize)
+
+  // Cmd/Ctrl+/ toggles the chat panel from anywhere - Cmd/Ctrl+K is taken by the command palette.
+  useHotkey('Mod+/', () => setOpen((o) => !o))
 
   const [sessions, setSessions] = useState([])
   const [chatId, setChatId] = useState(newId)

@@ -377,6 +377,73 @@ def chat(history, context, model=DEFAULT_MODEL):
     return _chat(messages, model)
 
 
+def _vision_messages(prompt, image_b64, mime, model):
+    """Ollama takes images as a separate `images` field on the message; OpenAI-compatible APIs
+    (LiteLLM, OmniRoute) want an image_url content part with a data: URI instead."""
+    if model.startswith("ollama/"):
+        return [{"role": "user", "content": prompt, "images": [image_b64]}]
+    return [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{image_b64}"}},
+            ],
+        }
+    ]
+
+
+TRADE_SCREENSHOT_PROMPT = (
+    "This is a screenshot of a stock trading chart (e.g. from TradingView), possibly annotated "
+    "with markers for a trade's entry/exit. Extract what you can determine about this ONE trade "
+    "into JSON with these optional fields:\n"
+    "- symbol (string): the ticker/company name shown, e.g. \"SUZLON\"\n"
+    "- direction (string): \"long\" or \"short\"\n"
+    "- entry_price, exit_price, stop_loss, target (numbers): price levels, only if visibly marked\n"
+    "- traded_at (string, YYYY-MM-DD): the entry date if visible on the chart\n"
+    "- notes (string): one short sentence on anything else relevant (chart pattern, indicator "
+    "readings, markers you can see)\n"
+    "Only include a field if you can actually see it on the chart - never guess or invent a "
+    'number. Reply with ONLY the JSON object, e.g. {"symbol": "SUZLON", "direction": "long", '
+    '"entry_price": 52.8}. If nothing is extractable, reply {}.'
+)
+
+
+def analyze_trade_screenshot(image_b64, mime, model=DEFAULT_MODEL):
+    """Vision LLM call for the Bulk Trades import - extracts structured trade fields from one
+    chart screenshot. Returns a dict with only the fields the model could actually read off the
+    image; missing/uncertain fields are simply absent, never guessed. Raises RuntimeError if the
+    provider/model can't be reached (same as every other llm.py call) - a model that doesn't
+    support vision at all typically surfaces as an HTTP error from that provider, not a crash."""
+    messages = _vision_messages(TRADE_SCREENSHOT_PROMPT, image_b64, mime, model)
+    if model.startswith("ollama/"):
+        reply = _ollama_post(
+            "/api/chat", {"model": model.removeprefix("ollama/"), "messages": messages, "stream": False}
+        )["message"]["content"].strip()
+    elif model.startswith("litellm/"):
+        reply = _litellm_chat(messages, model.removeprefix("litellm/"))["content"].strip()
+    else:
+        reply = _omniroute_chat(messages, model)["content"].strip()
+    try:
+        parsed = json.loads(reply[reply.index("{") : reply.rindex("}") + 1])
+    except (ValueError, json.JSONDecodeError):
+        return {}
+
+    fields = {}
+    if isinstance(parsed.get("symbol"), str) and parsed["symbol"].strip():
+        fields["symbol"] = parsed["symbol"].strip().upper()
+    if parsed.get("direction") in ("long", "short"):
+        fields["direction"] = parsed["direction"]
+    for key in ("entry_price", "exit_price", "stop_loss", "target"):
+        if isinstance(parsed.get(key), (int, float)):
+            fields[key] = parsed[key]
+    if isinstance(parsed.get("traded_at"), str) and parsed["traded_at"].strip():
+        fields["traded_at"] = parsed["traded_at"].strip()
+    if isinstance(parsed.get("notes"), str) and parsed["notes"].strip():
+        fields["notes"] = parsed["notes"].strip()
+    return fields
+
+
 def auto_title(first_message, model=DEFAULT_MODEL):
     prompt = f'Reply with only a 4-6 word title for a chat that starts with: "{first_message}"'
     return _generate(prompt, model).strip('"')

@@ -2,6 +2,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
 import { usePageTitle } from '@/lib/usePageTitle'
 import AutoBacktesting from './AutoBacktesting'
+import ManualBacktesting from './ManualBacktesting'
 
 export default function Backtesting() {
   usePageTitle('Backtesting')
@@ -18,7 +19,9 @@ export default function Backtesting() {
       <TabsPanel value="auto">
         <AutoBacktesting />
       </TabsPanel>
-      <TabsPanel value="manual" />
+      <TabsPanel value="manual">
+        <ManualBacktesting />
+      </TabsPanel>
     </Tabs>
   )
 }

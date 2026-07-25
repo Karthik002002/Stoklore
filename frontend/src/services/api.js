@@ -148,6 +148,37 @@ export const updateAutoBacktestScript = (id, script) =>
 export const deleteAutoBacktestScript = (id) =>
   fetch(`/api/backtest/auto/scripts/${id}`, { method: 'DELETE' }).then(json)
 
+export const getManualTrades = () => fetch('/api/manual-trades').then(json)
+
+export const createManualTrade = (trade) =>
+  fetch('/api/manual-trades', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(trade),
+  }).then(json)
+
+export const updateManualTrade = (id, trade) =>
+  fetch(`/api/manual-trades/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(trade),
+  }).then(json)
+
+export const deleteManualTrade = (id) => fetch(`/api/manual-trades/${id}`, { method: 'DELETE' }).then(json)
+
+export const uploadManualTradeImage = (id, file) => {
+  const form = new FormData()
+  form.append('file', file)
+  return fetch(`/api/manual-trades/${id}/image`, { method: 'POST', body: form }).then(json)
+}
+
+export const analyzeBulkTradeImage = (file, model) => {
+  const form = new FormData()
+  form.append('file', file)
+  const qs = model ? `?model=${encodeURIComponent(model)}` : ''
+  return fetch(`/api/manual-trades/bulk/analyze${qs}`, { method: 'POST', body: form }).then(json)
+}
+
 export const searchStocks = (q = '') => fetch(`/api/stocks/search?q=${encodeURIComponent(q)}`).then(json)
 
 export const addStock = (symbol) =>

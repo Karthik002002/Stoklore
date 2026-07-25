@@ -16,5 +16,7 @@ torch==2.13.0
 # LiteLLM proxy CLI - optional, only needed for the litellm/* model backend (see Settings > LiteLLM)
 litellm[proxy]==1.93.0
 # LiteLLM's Langfuse logging callback (litellm_settings.success_callback in litellm.config.yaml)
-# imports this directly - optional, only needed if that callback is enabled
-langfuse==4.14.1
+# imports this directly - optional, only needed if that callback is enabled.
+# Pinned <3: litellm 1.93.0's callback reads langfuse.version.__version__, a submodule the SDK
+# removed in its v3 OTel-based rewrite, so 3.x/4.x break the callback outright.
+langfuse==2.60.9

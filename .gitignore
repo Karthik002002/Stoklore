@@ -15,3 +15,6 @@ frontend/dist
 # specific to this machine's setup) - never shared/committed, each dev configures their own
 litellm.config.yaml
 test_guardrails.py
+
+
+.env

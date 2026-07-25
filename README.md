@@ -240,9 +240,13 @@ self-hosted Langfuse (its official multi-container stack: Postgres,
 ClickHouse, Redis, MinIO, web + worker) — `run.sh` starts it and `kill.sh`
 tears it down automatically whenever Docker is running, and skips it quietly
 otherwise. Point `litellm.config.yaml`'s `success_callback`/`failure_callback`
-at `["langfuse"]` and export `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`
-(from a project created at `http://localhost:3000`) to see every LiteLLM
-call traced — prompts, tool calls, latency, cost.
+at `["langfuse"]` and set `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`/
+`LANGFUSE_HOST` in `.env` (from a project created at `http://localhost:3000`;
+`cp .env.example .env` for the full list of vars this app reads, including
+`OPENAI_API_KEY` for LiteLLM) to see every LiteLLM call traced — prompts,
+tool calls, latency, cost. `LANGFUSE_HOST` must be that exact name (not
+`LANGFUSE_BASE_URL`) — litellm falls back to Langfuse Cloud otherwise, so
+traces silently go to the wrong place instead of your local instance.
 
 <div align="right">
 
@@ -354,15 +358,19 @@ prompts/long sessions against the local model.
 **Optional: LiteLLM proxy** (for `litellm/*` models) — install with
 `pip install 'litellm[proxy]'` (already in `requirements.txt`), then
 `cp litellm.config.example.yaml litellm.config.yaml` and fill in your
-model(s) + API key env vars (the template has step-by-step comments).
-`run.sh` starts it on port 4000 automatically once that file exists; point
-Settings → LiteLLM at `http://localhost:4000`.
+model(s) (the template has step-by-step comments). API key env vars
+(`OPENAI_API_KEY`, `LITELLM_MASTER_KEY`, ...) go in `.env`
+(`cp .env.example .env`) — litellm loads it automatically, no need to
+`export` anything. `run.sh` starts the proxy on port 4000 automatically
+once `litellm.config.yaml` exists; point Settings → LiteLLM at
+`http://localhost:4000`.
 
 **Optional: Langfuse tracing** — needs Docker running. `run.sh`/`kill.sh`
 start/stop a self-hosted instance (`docker-compose.langfuse.yml`)
 automatically whenever Docker is available, and skip it quietly otherwise.
 First boot pulls several images and runs migrations, so
-`http://localhost:3000` takes a minute to answer the first time.
+`http://localhost:3000` takes a minute to answer the first time. See
+`.env.example` for the Langfuse keys once you've created a project there.
 
 <div align="right">
 

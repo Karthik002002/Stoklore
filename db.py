@@ -224,6 +224,17 @@ CREATE TABLE IF NOT EXISTS backtests (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS backtests_symbol_idx ON backtests (symbol, created_at DESC);
+
+-- Saved Pine Script templates for the Auto backtest tab - execution happens client-side (PineTS
+-- in the browser) against OHLCV pulled from price_history, so this table only stores the script
+-- text itself, nothing about any particular run.
+CREATE TABLE IF NOT EXISTS auto_backtest_scripts (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  script TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 
@@ -904,3 +915,39 @@ def delete_backtest(backtest_id):
 def update_backtest_lessons(backtest_id, lessons):
     with connect() as conn:
         conn.execute("UPDATE backtests SET lessons = %s WHERE id = %s", (lessons, backtest_id))
+
+
+def create_auto_backtest_script(name, script):
+    with connect() as conn:
+        row = conn.execute(
+            "INSERT INTO auto_backtest_scripts (name, script) VALUES (%s, %s) RETURNING id",
+            (name, script),
+        ).fetchone()
+    return row["id"]
+
+
+def list_auto_backtest_scripts():
+    with connect() as conn:
+        return conn.execute(
+            "SELECT id, name, created_at, updated_at FROM auto_backtest_scripts ORDER BY created_at DESC"
+        ).fetchall()
+
+
+def get_auto_backtest_script(script_id):
+    with connect() as conn:
+        return conn.execute(
+            "SELECT * FROM auto_backtest_scripts WHERE id = %s", (script_id,)
+        ).fetchone()
+
+
+def update_auto_backtest_script(script_id, name, script):
+    with connect() as conn:
+        conn.execute(
+            "UPDATE auto_backtest_scripts SET name = %s, script = %s, updated_at = now() WHERE id = %s",
+            (name, script, script_id),
+        )
+
+
+def delete_auto_backtest_script(script_id):
+    with connect() as conn:
+        conn.execute("DELETE FROM auto_backtest_scripts WHERE id = %s", (script_id,))

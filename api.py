@@ -337,6 +337,11 @@ class BacktestLessonsRequest(BaseModel):
     lessons: str
 
 
+class AutoBacktestScriptRequest(BaseModel):
+    name: str
+    script: str
+
+
 @app.get("/api/watch-rules")
 def watch_rules():
     return db.list_watch_rules()
@@ -419,6 +424,42 @@ def backtest_update_lessons(backtest_id: int, req: BacktestLessonsRequest):
 @app.delete("/api/backtest/{backtest_id}")
 def backtest_delete(backtest_id: int):
     db.delete_backtest(backtest_id)
+    return {"ok": True}
+
+
+# Auto backtest Pine Script templates - execution is client-side (PineTS in the browser, against
+# /api/prices/{symbol}), so this is plain CRUD over the saved script text, nothing to run here.
+@app.get("/api/backtest/auto/scripts")
+def auto_backtest_scripts():
+    return db.list_auto_backtest_scripts()
+
+
+@app.post("/api/backtest/auto/scripts")
+def create_auto_backtest_script(req: AutoBacktestScriptRequest):
+    if not req.name.strip() or not req.script.strip():
+        raise HTTPException(status_code=422, detail="name and script can't be empty")
+    return {"id": db.create_auto_backtest_script(req.name.strip(), req.script)}
+
+
+@app.get("/api/backtest/auto/scripts/{script_id}")
+def get_auto_backtest_script(script_id: int):
+    script = db.get_auto_backtest_script(script_id)
+    if script is None:
+        raise HTTPException(status_code=404, detail="script not found")
+    return script
+
+
+@app.put("/api/backtest/auto/scripts/{script_id}")
+def update_auto_backtest_script(script_id: int, req: AutoBacktestScriptRequest):
+    if not req.name.strip() or not req.script.strip():
+        raise HTTPException(status_code=422, detail="name and script can't be empty")
+    db.update_auto_backtest_script(script_id, req.name.strip(), req.script)
+    return {"ok": True}
+
+
+@app.delete("/api/backtest/auto/scripts/{script_id}")
+def delete_auto_backtest_script(script_id: int):
+    db.delete_auto_backtest_script(script_id)
     return {"ok": True}
 
 

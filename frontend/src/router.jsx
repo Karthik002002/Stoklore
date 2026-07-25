@@ -1,5 +1,6 @@
 import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
 import App from './App'
+import AutoBacktestDetail from './AutoBacktestDetail'
 import Backtesting from './Backtesting'
 import EventsFeed from './EventsFeed'
 import Holdings from './Holdings'
@@ -58,7 +59,14 @@ const holdingsRoute = createRoute({
 const backtestingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/backtesting',
+  validateSearch: (search) => ({ tab: search.tab === 'manual' ? 'manual' : 'auto' }),
   component: Backtesting,
+})
+
+const autoBacktestDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/backtest/auto/$scriptId',
+  component: AutoBacktestDetail,
 })
 
 const routeTree = rootRoute.addChildren([
@@ -68,6 +76,7 @@ const routeTree = rootRoute.addChildren([
   topNewsRoute,
   holdingsRoute,
   backtestingRoute,
+  autoBacktestDetailRoute,
 ])
 
 export const router = createRouter({ routeTree })

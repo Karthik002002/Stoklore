@@ -337,25 +337,40 @@ no order placement, no funds movement:
 
 ### `11` Backtesting
 
-A `/backtesting` page for checking "would my own rule have worked" against
-stored price history — deliberately simple for now (one strategy), built to
-grow:
+A `/backtesting` page split into **Auto** and **Manual** tabs
+(`?tab=auto|manual`, deep-linkable).
 
-- **EMA-crossover strategy**: long-only, buys the golden cross, sells the
-  next death cross; a position still open at the window's end is marked to
-  the last close, flagged with an **Open** badge
-- Symbol + short/long period inputs (same 20/50, 20/100, 50/200 presets as
-  the stock-detail EMA panel) and an optional from/to date window — leave
-  blank to use the full stored history
-- **Run ≠ Save**: running is a free preview (total return, win rate,
-  per-trade breakdown); only **Save this backtest** persists it, optionally
-  with a **lessons-learned note** — the "what would I do differently"
-  written down while it's fresh, instead of re-learned the hard way later
-- Saved runs (and their lessons) resurface on that stock's detail page as
-  the Backtest summary card — the point is confidence *at decision time*,
-  not a report you ran once and forgot
-- Runs entirely from the `price_history` table — no live fetches; if a
-  symbol has no synced history yet, run a price sync first
+**Auto** — write a Pine Script strategy or indicator and run it against real
+OHLCV, no backend execution involved:
+
+- Powered by [PineTS](https://github.com/LuxAlgo/PineTS) (`pinets` npm
+  package) — a real Pine v5 transpiler/runtime that runs entirely in the
+  browser. Strategy scripts (`strategy.entry`/`strategy.close`) come back as
+  `{trades, summary}` and render through the same trade table/return badge
+  as any other backtest result; indicator-only scripts (just `plot()`) show
+  their plotted series instead
+- **Add script** modal: a Pine Script editor plus a live preview (pick a
+  symbol, run against its default 1y `price_history`) before saving; Save
+  persists the script as a reusable template (`auto_backtest_scripts` table)
+- Saved scripts list as a table on the Auto tab; click through to
+  `/backtest/auto/:script_id` for the full editor + run view
+- **Symbol picker** is a searchable combobox over already-tracked stocks,
+  with a fallback "Add SYMBOL" option that validates the ticker actually
+  exists (a live NSE scrape, same check `POST /api/stocks` always did)
+  before it can be selected
+- Detail-page runs use the *full* collected history (`price_history_max`),
+  not the default 1y window: a **Collect max data** button next to the
+  symbol picker kicks off the same background collection job the stock
+  detail page uses, polls until it finishes, and only then enables
+  **Execute** — until max data exists for the picked symbol, Execute stays
+  disabled with an inline message
+
+**Manual** — reserved for now, tab content is intentionally empty. The
+original single-strategy backtest (long-only EMA-crossover: buys the golden
+cross, sells the next death cross; Run vs. Save with an optional
+lessons-learned note; results surfaced on a stock's detail page) still lives
+in `backtest.py` and `api.py`'s `/api/backtest*` endpoints, just not wired
+into this tab yet.
 
 <div align="right">
 
@@ -397,10 +412,10 @@ grow:
 | Events     | `events.py` — watchlist-scoped news/price/volume/corporate-action scan |
 | Prices     | `prices.py` — incremental daily OHLCV sync (1y + full-history tiers) + EMA crossover math |
 | Brokers    | `broker.py` (Dhan v2) + `kite.py` (Kite Connect v3) — read-only holdings/margin, normalized to one shape |
-| Backtests  | `backtest.py` — long-only EMA-crossover backtest over stored `price_history` |
+| Backtests  | Manual: `backtest.py` — long-only EMA-crossover backtest over stored `price_history` (not yet wired into the UI). Auto: user-written Pine Script run client-side via `pinets` (PineTS) against `price_history`/`price_history_max`, saved as templates in `auto_backtest_scripts` |
 | Storage    | Postgres + pgvector (`db.py`)                                      |
 | API        | FastAPI (`api.py`) — chat streams over the AI SDK UI Message Stream protocol; 14 explicit agent tools (`AGENT_TOOLS`/`REAL_TOOL_IMPLS`) |
-| Frontend   | React + Vite, shadcn/ui, AI Elements, `@ai-sdk/react`, lightweight-charts (`frontend/`) |
+| Frontend   | React + Vite, shadcn/ui, AI Elements, `@ai-sdk/react`, lightweight-charts, `pinets` (in-browser Pine Script v5 runtime) (`frontend/`) |
 | Tracing    | Langfuse (optional, self-hosted via `docker-compose.langfuse.yml`) — traces every LiteLLM call: prompts, tool calls, latency, cost |
 
 <div align="right">

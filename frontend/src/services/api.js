@@ -124,3 +124,35 @@ export const updateBacktestLessons = (id, lessons) =>
   }).then(json)
 
 export const deleteBacktest = (id) => fetch(`/api/backtest/${id}`, { method: 'DELETE' }).then(json)
+
+export const getPriceHistory = (symbol, days = 365) => fetch(`/api/prices/${symbol}?days=${days}`).then(json)
+
+export const getAutoBacktestScripts = () => fetch('/api/backtest/auto/scripts').then(json)
+
+export const getAutoBacktestScript = (id) => fetch(`/api/backtest/auto/scripts/${id}`).then(json)
+
+export const createAutoBacktestScript = (script) =>
+  fetch('/api/backtest/auto/scripts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(script),
+  }).then(json)
+
+export const updateAutoBacktestScript = (id, script) =>
+  fetch(`/api/backtest/auto/scripts/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(script),
+  }).then(json)
+
+export const deleteAutoBacktestScript = (id) =>
+  fetch(`/api/backtest/auto/scripts/${id}`, { method: 'DELETE' }).then(json)
+
+export const searchStocks = (q = '') => fetch(`/api/stocks/search?q=${encodeURIComponent(q)}`).then(json)
+
+export const addStock = (symbol) =>
+  fetch('/api/stocks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ symbol }),
+  }).then(json)

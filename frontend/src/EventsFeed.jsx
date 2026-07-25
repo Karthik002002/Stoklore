@@ -9,6 +9,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { formatDate } from '@/lib/format'
+import { usePageTitle } from '@/lib/usePageTitle'
 import EventActionsMenu from './EventActionsMenu'
 
 const DATE_PRESETS = [
@@ -37,6 +38,7 @@ const SENTIMENT_STYLE = {
 }
 
 export default function EventsFeed() {
+  usePageTitle('Events')
   const [eventsList, setEventsList] = useState(null)
   const [watchlist, setWatchlist] = useState([])
   const [tab, setTab] = useState('All')

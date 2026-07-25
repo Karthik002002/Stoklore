@@ -103,7 +103,7 @@ function ToolCallChip({ part }) {
 // A confirm-gated tool call (scrape_stock/scan_events/sync_prices) comes back with
 // output.requires_confirmation instead of running - shown as a Confirm/Cancel prompt instead of
 // a plain chip, so the user doesn't have to type `/confirm <tool>` by hand.
-function ConfirmToolCard({ part, onConfirm, onCancel, resolved }) {
+function ConfirmToolCard({ part, onConfirm, onCancel, resolved, disabled }) {
   const { tool, args, message } = part.output
   if (resolved) {
     return (
@@ -126,10 +126,21 @@ function ConfirmToolCard({ part, onConfirm, onCancel, resolved }) {
       </span>
       <p className="text-muted-foreground">{message}</p>
       <div className="flex gap-2">
-        <Button size="sm" className="h-6 px-2.5 text-xs" onClick={() => onConfirm(tool, args)}>
+        <Button
+          size="sm"
+          className="h-6 px-2.5 text-xs"
+          disabled={disabled}
+          onClick={() => onConfirm(tool, args)}
+        >
           Confirm
         </Button>
-        <Button size="sm" variant="outline" className="h-6 px-2.5 text-xs" onClick={() => onCancel()}>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 px-2.5 text-xs"
+          disabled={disabled}
+          onClick={() => onCancel()}
+        >
           Cancel
         </Button>
       </div>
@@ -223,6 +234,7 @@ function ChatThread({
   // call's Confirm/Cancel prompt - collapses it to a plain chip so it can't be re-triggered.
   const [resolvedCalls, setResolvedCalls] = useState({})
   const confirmTool = (tool, args) => {
+    if (isBusy) return // one sendMessage in flight at a time - useChat doesn't support overlapping streams
     const argsStr = Object.entries(args ?? {})
       .map(([k, v]) => `${k}=${v}`)
       .join(' ')
@@ -270,11 +282,16 @@ function ChatThread({
                               key={id}
                               part={p}
                               resolved={resolvedCalls[id]}
+                              disabled={isBusy}
                               onConfirm={(tool, args) => {
+                                if (isBusy) return
                                 setResolvedCalls((prev) => ({ ...prev, [id]: 'confirmed' }))
                                 confirmTool(tool, args)
                               }}
-                              onCancel={() => setResolvedCalls((prev) => ({ ...prev, [id]: 'cancelled' }))}
+                              onCancel={() => {
+                                if (isBusy) return
+                                setResolvedCalls((prev) => ({ ...prev, [id]: 'cancelled' }))
+                              }}
                             />
                           )
                         }

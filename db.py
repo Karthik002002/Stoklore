@@ -1,6 +1,6 @@
 """Postgres + pgvector storage for scraped reports and chat history."""
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import psycopg
 from psycopg.rows import dict_row
@@ -203,6 +203,27 @@ CREATE TABLE IF NOT EXISTS price_history_max (
   PRIMARY KEY (symbol, date)
 );
 CREATE INDEX IF NOT EXISTS price_history_max_symbol_date_idx ON price_history_max (symbol, date DESC);
+
+-- Saved runs of the (currently single-strategy) EMA-crossover backtest - trades is the full
+-- per-trade breakdown (JSONB, same shape backtest.run_ema_crossover returns), lessons is a
+-- free-text note the user writes after reviewing a run so the "what did I learn" doesn't live
+-- only in their head - shown alongside the stock's own page so it resurfaces next time they look
+-- at that symbol instead of getting re-discovered (or re-forgotten) from scratch.
+CREATE TABLE IF NOT EXISTS backtests (
+  id SERIAL PRIMARY KEY,
+  symbol TEXT NOT NULL,
+  short_period INTEGER NOT NULL,
+  long_period INTEGER NOT NULL,
+  from_date DATE,
+  to_date DATE,
+  total_return_pct REAL,
+  win_rate REAL,
+  num_trades INTEGER,
+  trades JSONB,
+  lessons TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS backtests_symbol_idx ON backtests (symbol, created_at DESC);
 """
 
 
@@ -221,8 +242,10 @@ def purge_old(days=14):
 
 
 def _vec(embedding):
-    """pgvector has no Python-list adapter without the extra `pgvector` package; cast a literal instead."""
-    return "[" + ",".join(map(str, embedding)) + "]"
+    """pgvector has no Python-list adapter without the extra `pgvector` package; cast a literal
+    instead. None passes through as NULL (embedding step failed but the report itself is still
+    worth keeping) - NULL::vector is valid SQL, it just won't surface in similarity_search."""
+    return None if embedding is None else "[" + ",".join(map(str, embedding)) + "]"
 
 
 def insert_scraped_item(symbol, markdown, embedding):
@@ -727,6 +750,60 @@ def set_cogencis_token(token):
     _set_setting("cogencis_token", token)
 
 
+DEFAULT_BROKER = "dhan"
+
+
+def get_active_broker():
+    return _get_setting("active_broker", DEFAULT_BROKER)
+
+
+def set_active_broker(broker):
+    _set_setting("active_broker", broker)
+
+
+def get_dhan_credentials():
+    """None if either half is missing - broker.py callers treat that as "not configured"."""
+    client_id = _get_setting("dhan_client_id")
+    access_token = _get_setting("dhan_access_token")
+    if not client_id or not access_token:
+        return None
+    return {"client_id": client_id, "access_token": access_token}
+
+
+def set_dhan_credentials(client_id, access_token):
+    _set_setting("dhan_client_id", client_id)
+    _set_setting("dhan_access_token", access_token)
+
+
+def get_kite_credentials():
+    """The registered app's api_key/api_secret - not a session, see get_kite_session for that."""
+    api_key = _get_setting("kite_api_key")
+    api_secret = _get_setting("kite_api_secret")
+    if not api_key or not api_secret:
+        return None
+    return {"api_key": api_key, "api_secret": api_secret}
+
+
+def set_kite_credentials(api_key, api_secret):
+    _set_setting("kite_api_key", api_key)
+    _set_setting("kite_api_secret", api_secret)
+
+
+def get_kite_session():
+    """None if there's no access_token, or it wasn't issued today - Kite's tokens expire at the
+    next trading day's reset, so a token from a prior day is just as unusable as no token."""
+    access_token = _get_setting("kite_access_token")
+    issued_date = _get_setting("kite_access_token_date")
+    if not access_token or issued_date != date.today().isoformat():
+        return None
+    return {"access_token": access_token}
+
+
+def set_kite_session(access_token):
+    _set_setting("kite_access_token", access_token)
+    _set_setting("kite_access_token_date", date.today().isoformat())
+
+
 def set_session_model(session_id, model):
     with connect() as conn:
         conn.execute("UPDATE chat_sessions SET model = %s WHERE id = %s", (model, session_id))
@@ -786,3 +863,44 @@ def list_messages(session_id):
             "WHERE session_id = %s ORDER BY created_at",
             (session_id,),
         ).fetchall()
+
+
+def create_backtest(symbol, short_period, long_period, from_date, to_date,
+                     total_return_pct, win_rate, num_trades, trades, lessons):
+    with connect() as conn:
+        row = conn.execute(
+            "INSERT INTO backtests (symbol, short_period, long_period, from_date, to_date, "
+            "total_return_pct, win_rate, num_trades, trades, lessons) VALUES "
+            "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (symbol, short_period, long_period, from_date, to_date, total_return_pct, win_rate,
+             num_trades, Jsonb(trades), lessons),
+        ).fetchone()
+    return row["id"]
+
+
+def list_backtests(symbol=None):
+    query = "SELECT * FROM backtests"
+    params = []
+    if symbol:
+        query += " WHERE symbol = %s"
+        params.append(symbol)
+    query += " ORDER BY created_at DESC"
+    with connect() as conn:
+        return conn.execute(query, params).fetchall()
+
+
+def latest_backtest(symbol):
+    with connect() as conn:
+        return conn.execute(
+            "SELECT * FROM backtests WHERE symbol = %s ORDER BY created_at DESC LIMIT 1", (symbol,)
+        ).fetchone()
+
+
+def delete_backtest(backtest_id):
+    with connect() as conn:
+        conn.execute("DELETE FROM backtests WHERE id = %s", (backtest_id,))
+
+
+def update_backtest_lessons(backtest_id, lessons):
+    with connect() as conn:
+        conn.execute("UPDATE backtests SET lessons = %s WHERE id = %s", (lessons, backtest_id))

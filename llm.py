@@ -31,17 +31,20 @@ def _post(base, path, body, headers=None, timeout=120):
         return json.load(resp)
 
 
-def embed(text):
-    """Always local Ollama - scraped_items.embedding is a fixed VECTOR(768) column, so the
-    embedding model can't be swapped without breaking every existing row + similarity search."""
-    return _post(OLLAMA_BASE, "/api/embed", {"model": EMBED_MODEL, "input": text})["embeddings"][0]
-
-
 def _ollama_post(path, body):
     try:
         return _post(OLLAMA_BASE, path, body)
     except (urllib.error.URLError, ConnectionRefusedError) as e:
         raise RuntimeError("Ollama is unavailable - is `ollama serve` running?") from e
+
+
+def embed(text):
+    """Always local Ollama - scraped_items.embedding is a fixed VECTOR(768) column, so the
+    embedding model can't be swapped without breaking every existing row + similarity search.
+    Routed through _ollama_post (not _post directly) so a connection failure raises the same
+    friendly RuntimeError every other Ollama call does, instead of a raw urllib error - this is
+    the one path every embed() caller (scrape_stock, search_reports, chat RAG) goes through."""
+    return _ollama_post("/api/embed", {"model": EMBED_MODEL, "input": text})["embeddings"][0]
 
 
 def _openai_compat_post(base, api_key, body, provider_label, unavailable_hint):

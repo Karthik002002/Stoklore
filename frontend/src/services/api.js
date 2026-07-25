@@ -1,5 +1,8 @@
 async function json(res) {
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  if (!res.ok) {
+    const { detail } = await res.json().catch(() => ({}))
+    throw new Error(detail || `${res.status} ${res.statusText}`)
+  }
   return res.json()
 }
 
@@ -63,3 +66,61 @@ export const deleteWatchRule = (id) => fetch(`/api/watch-rules/${id}`, { method:
 
 export const checkWatchRule = (id, symbol) =>
   fetch(`/api/watch-rules/${id}/check${symbol ? `?symbol=${symbol}` : ''}`).then(json)
+
+export const getBrokerConfig = () => fetch('/api/settings/broker').then(json)
+
+export const setActiveBroker = (broker) =>
+  fetch('/api/settings/broker', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ broker }),
+  }).then(json)
+
+export const setDhanConfig = (clientId, accessToken) =>
+  fetch('/api/settings/dhan', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ client_id: clientId, access_token: accessToken }),
+  }).then(json)
+
+export const setKiteConfig = (apiKey, apiSecret) =>
+  fetch('/api/settings/kite', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ api_key: apiKey, api_secret: apiSecret }),
+  }).then(json)
+
+export const getKiteLoginUrl = () => fetch('/api/kite/login-url').then(json)
+
+export const getHoldings = (broker, force = false) => {
+  const params = new URLSearchParams()
+  if (broker) params.set('broker_id', broker)
+  if (force) params.set('force', 'true')
+  const qs = params.toString()
+  return fetch(`/api/holdings${qs ? `?${qs}` : ''}`).then(json)
+}
+
+export const getBacktests = (symbol) => fetch(`/api/backtests${symbol ? `?symbol=${symbol}` : ''}`).then(json)
+
+export const runBacktest = (params) =>
+  fetch('/api/backtest/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  }).then(json)
+
+export const saveBacktest = (params) =>
+  fetch('/api/backtest', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  }).then(json)
+
+export const updateBacktestLessons = (id, lessons) =>
+  fetch(`/api/backtest/${id}/lessons`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lessons }),
+  }).then(json)
+
+export const deleteBacktest = (id) => fetch(`/api/backtest/${id}`, { method: 'DELETE' }).then(json)

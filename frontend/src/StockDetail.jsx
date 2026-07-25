@@ -1,16 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from '@tanstack/react-router'
+import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Streamdown } from 'streamdown'
-import { ArrowLeftIcon, DatabaseIcon, Trash2Icon } from 'lucide-react'
+import {
+  ArrowLeftIcon,
+  DatabaseIcon,
+  FlaskConicalIcon,
+  Trash2Icon,
+  TrendingDownIcon,
+  TrendingUpIcon,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { compact, fmt, formatDateTime, inr, timeAgo } from '@/lib/format'
+import { usePageTitle } from '@/lib/usePageTitle'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { collectMaxHistory, getEmaCrossover, getMaxHistory, getMaxHistoryStatus } from '@/services/api'
+import {
+  collectMaxHistory,
+  getBacktests,
+  getEmaCrossover,
+  getMaxHistory,
+  getMaxHistoryStatus,
+} from '@/services/api'
 import DeleteStockButton from './DeleteStockButton'
 import EventActionsMenu from './EventActionsMenu'
 import PriceChart from './PriceChart'
@@ -206,6 +220,55 @@ function EmaCrossover({ symbol }) {
   )
 }
 
+function BacktestSummary({ symbol }) {
+  const { data: backtests } = useQuery({
+    queryKey: ['backtests', symbol],
+    queryFn: () => getBacktests(symbol),
+  })
+  const latest = backtests?.[0]
+
+  return (
+    <section>
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="text-sm font-medium text-muted-foreground">Backtest summary</h2>
+        <Button variant="outline" size="sm" render={<Link to="/backtesting" />}>
+          <FlaskConicalIcon className="size-4" /> Backtesting
+        </Button>
+      </div>
+      {!latest && (
+        <p className="text-sm text-muted-foreground">
+          No saved backtest for {symbol} yet — run one from the Backtesting tab.
+        </p>
+      )}
+      {latest && (
+        <div className="rounded-xl border bg-card p-4">
+          <div className="flex flex-wrap items-center gap-3">
+            {(() => {
+              const up = latest.total_return_pct >= 0
+              const Icon = up ? TrendingUpIcon : TrendingDownIcon
+              return (
+                <Badge variant={up ? 'default' : 'destructive'} className="gap-1">
+                  <Icon className="size-3" />
+                  {up ? '+' : ''}
+                  {fmt(latest.total_return_pct)}%
+                </Badge>
+              )
+            })()}
+            <span className="text-sm text-muted-foreground">
+              EMA{latest.short_period}/{latest.long_period} · {latest.num_trades} trade
+              {latest.num_trades === 1 ? '' : 's'} · {latest.win_rate}% win rate
+            </span>
+            <span className="ml-auto text-xs text-muted-foreground">{timeAgo(latest.created_at)}</span>
+          </div>
+          {latest.lessons && (
+            <p className="mt-3 border-t pt-3 text-sm text-muted-foreground">{latest.lessons}</p>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
+
 const ORIGIN_LABELS = { yfinance: 'Yahoo Finance', cogencis: 'Cogencis' }
 
 const STAT_FIELDS = [
@@ -225,6 +288,7 @@ const STAT_FIELDS = [
 
 export default function StockDetail() {
   const { symbol } = useParams({ from: '/stock/$symbol' })
+  usePageTitle(symbol)
   const navigate = useNavigate()
   const onBack = () => navigate({ to: '/' })
   const [data, setData] = useState(null)
@@ -303,6 +367,8 @@ export default function StockDetail() {
         <h2 className="mb-3 text-sm font-medium text-muted-foreground">EMA crossover</h2>
         <EmaCrossover symbol={symbol} />
       </section>
+
+      <BacktestSummary symbol={symbol} />
 
       <section>
         <h2 className="mb-3 text-sm font-medium text-muted-foreground">Financials (quarterly)</h2>

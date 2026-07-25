@@ -102,8 +102,8 @@ adding another feed to check.
 
 - **Not investment advice.** Watch Rules check *your own* criteria; the
   agent reports pass/fail, never "buy" or "sell."
-- **Not a broker.** No order execution, no funds movement — portfolio
-  tracking is watchlists + positions you record, not a trading account.
+- **Not a broker.** Holdings sync (Dhan for now, Kite planned) is read-only —
+  it mirrors what you already hold, it never places an order or moves funds.
 - **Not a replacement for your own judgment** — it's a shortcut to the
   facts your judgment needs, faster than a browser tab.
 

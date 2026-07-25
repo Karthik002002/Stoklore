@@ -1,5 +1,6 @@
 """FastAPI server: serves stored reports and a RAG chatbot (AI SDK UI Message Stream protocol) to React."""
 import json
+import os
 import re
 import threading
 import time
@@ -9,11 +10,14 @@ from datetime import date, datetime, timezone
 import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
+import backtest
+import broker
 import db
 import events
+import kite
 import llm
 import prices
 import rules
@@ -303,6 +307,36 @@ class WatchRuleRequest(BaseModel):
     text: str
 
 
+class ActiveBrokerRequest(BaseModel):
+    broker: str
+
+
+class DhanConfigRequest(BaseModel):
+    client_id: str
+    access_token: str
+
+
+class KiteConfigRequest(BaseModel):
+    api_key: str
+    api_secret: str
+
+
+class BacktestRunRequest(BaseModel):
+    symbol: str
+    short: int = 20
+    long: int = 50
+    from_date: str | None = None
+    to_date: str | None = None
+
+
+class BacktestSaveRequest(BacktestRunRequest):
+    lessons: str | None = None
+
+
+class BacktestLessonsRequest(BaseModel):
+    lessons: str
+
+
 @app.get("/api/watch-rules")
 def watch_rules():
     return db.list_watch_rules()
@@ -339,6 +373,53 @@ def check_watch_rule(rule_id: int, symbol: str | None = None):
     if symbol:
         return {"symbol": symbol.upper(), **rules.evaluate(rule, symbol.upper())}
     return [{"symbol": s, **rules.evaluate(rule, s)} for s in db.watchlist_symbols()]
+
+
+def _run_backtest(req):
+    if req.short >= req.long:
+        raise HTTPException(status_code=422, detail="Short period must be less than the long period")
+    result = backtest.run_ema_crossover(req.symbol.upper(), req.short, req.long, req.from_date, req.to_date)
+    if result is None:
+        raise HTTPException(status_code=404,
+                             detail=f"Not enough synced price history for '{req.symbol}' yet - run a price sync first")
+    return result
+
+
+@app.post("/api/backtest/run")
+def backtest_run(req: BacktestRunRequest):
+    """Runs a backtest without saving it - the interactive preview before deciding to keep it."""
+    return _run_backtest(req)
+
+
+@app.get("/api/backtests")
+def backtests(symbol: str | None = None):
+    return db.list_backtests(symbol.upper() if symbol else None)
+
+
+@app.post("/api/backtest")
+def backtest_save(req: BacktestSaveRequest):
+    """Re-runs the backtest and persists it (with an optional lessons-learned note) - a
+    separate call from /api/backtest/run so previewing a backtest never writes a row by itself."""
+    result = _run_backtest(req)
+    symbol = req.symbol.upper()
+    backtest_id = db.create_backtest(
+        symbol, req.short, req.long, req.from_date, req.to_date,
+        result["summary"]["total_return_pct"], result["summary"]["win_rate"],
+        result["summary"]["num_trades"], result["trades"], req.lessons,
+    )
+    return {"id": backtest_id, "symbol": symbol, **result}
+
+
+@app.put("/api/backtest/{backtest_id}/lessons")
+def backtest_update_lessons(backtest_id: int, req: BacktestLessonsRequest):
+    db.update_backtest_lessons(backtest_id, req.lessons)
+    return {"ok": True}
+
+
+@app.delete("/api/backtest/{backtest_id}")
+def backtest_delete(backtest_id: int):
+    db.delete_backtest(backtest_id)
+    return {"ok": True}
 
 
 def _text(message):
@@ -404,6 +485,16 @@ def clear_cache():
     return {"ok": True}
 
 
+def _embed_or_none(markdown):
+    """Embeddings always need local Ollama regardless of the active chat model - if it's not
+    running, the report itself (already scraped/generated) shouldn't be thrown away over it, just
+    stored without a vector (skips similarity_search, everything else about it still works)."""
+    try:
+        return llm.embed(markdown)
+    except RuntimeError:
+        return None
+
+
 def _live_scrape(symbol, model):
     """Scrapes+analyzes a symbol on demand from the user's prompt and caches it like a normal
     scan. Reuses the existing report instead of re-scraping if one was made within the last 24h -
@@ -415,7 +506,7 @@ def _live_scrape(symbol, model):
     if not news and not financials.get("sector"):
         return None
     markdown = llm.build_markdown(symbol, financials, news, model=model)
-    db.insert_scraped_item(symbol, markdown, llm.embed(markdown))
+    db.insert_scraped_item(symbol, markdown, _embed_or_none(markdown))
     return markdown
 
 
@@ -483,6 +574,130 @@ def get_cogencis_config():
 def set_cogencis_config(req: CogencisConfigRequest):
     db.set_cogencis_token(req.token)
     return {"ok": True}
+
+
+SUPPORTED_BROKERS = {"dhan", "kite"}
+
+
+@app.get("/api/settings/broker")
+def get_broker_config():
+    return {
+        "active_broker": db.get_active_broker(),
+        "dhan": {"has_credentials": bool(db.get_dhan_credentials())},
+        "kite": {
+            "has_credentials": bool(db.get_kite_credentials()),
+            "logged_in_today": bool(db.get_kite_session()),
+        },
+    }
+
+
+@app.put("/api/settings/broker")
+def set_broker_config(req: ActiveBrokerRequest):
+    if req.broker not in SUPPORTED_BROKERS:
+        raise HTTPException(status_code=422, detail=f"'{req.broker}' isn't supported yet")
+    db.set_active_broker(req.broker)
+    return {"ok": True}
+
+
+@app.put("/api/settings/dhan")
+def set_dhan_config(req: DhanConfigRequest):
+    db.set_dhan_credentials(req.client_id.strip(), req.access_token.strip())
+    return {"ok": True}
+
+
+@app.put("/api/settings/kite")
+def set_kite_config(req: KiteConfigRequest):
+    db.set_kite_credentials(req.api_key.strip(), req.api_secret.strip())
+    return {"ok": True}
+
+
+@app.get("/api/kite/login-url")
+def kite_login_url():
+    creds = db.get_kite_credentials()
+    if not creds:
+        raise HTTPException(status_code=400,
+                             detail="Kite isn't configured - add your API key and secret in Settings > Kite")
+    return {"url": kite.login_url(creds["api_key"])}
+
+
+# The frontend runs on its own dev-server origin (run.sh's fixed port 5180), separate from this
+# API's - a relative RedirectResponse below would redirect within this API's own origin instead.
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5180")
+
+
+@app.get("/api/kite/callback")
+def kite_callback(request_token: str | None = None, status: str | None = None):
+    """Where Kite's login redirect lands (register this exact URL - http://localhost:8010/api/kite/callback
+    - as the app's Redirect URL at developers.kite.trade/apps). Exchanges request_token for a
+    day-valid access_token server-side, then bounces the browser back into the app."""
+    creds = db.get_kite_credentials()
+    if not creds:
+        raise HTTPException(status_code=400, detail="Kite isn't configured")
+    if status != "success" or not request_token:
+        return RedirectResponse(f"{FRONTEND_URL}/holdings?broker=kite&kite_login=failed")
+    try:
+        access_token = kite.generate_session(creds["api_key"], creds["api_secret"], request_token)
+    except kite.KiteError:
+        return RedirectResponse(f"{FRONTEND_URL}/holdings?broker=kite&kite_login=failed")
+    db.set_kite_session(access_token)
+    return RedirectResponse(f"{FRONTEND_URL}/holdings?broker=kite&kite_login=success")
+
+
+HOLDINGS_CACHE_TTL_MINUTES = 5
+
+
+def _get_holdings(broker_id=None, force=False):
+    """Shared by GET /api/holdings and the chat agent's get_holdings tool - one holdings-fetch
+    path so both ever see the same cached-vs-live behavior. Raises HTTPException on failure."""
+    active = broker_id or db.get_active_broker()
+    if active not in SUPPORTED_BROKERS:
+        raise HTTPException(status_code=422, detail=f"'{active}' isn't supported yet")
+
+    cached = None if force else db.get_cached(active, "holdings", HOLDINGS_CACHE_TTL_MINUTES)
+    if cached is not None:
+        return cached
+
+    if active == "dhan":
+        creds = db.get_dhan_credentials()
+        if not creds:
+            raise HTTPException(status_code=400,
+                                 detail="Dhan isn't configured - add your client ID and access token in Settings > Broker")
+        try:
+            data = broker.get_portfolio(creds["client_id"], creds["access_token"])
+        except broker.DhanError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+    else:
+        creds = db.get_kite_credentials()
+        if not creds:
+            raise HTTPException(status_code=400,
+                                 detail="Kite isn't configured - add your API key and secret in Settings > Kite")
+        session = db.get_kite_session()
+        if not session:
+            raise HTTPException(status_code=400,
+                                 detail="Not logged in to Kite today - connect in Settings > Kite")
+        try:
+            data = kite.get_portfolio(creds["api_key"], session["access_token"])
+        except kite.KiteError as e:
+            raise HTTPException(status_code=422, detail=str(e)) from e
+
+    # Neither Dhan's holdings endpoint nor a paid market-data plan gives a live price - reuse this
+    # app's existing yfinance price cache instead, same one /api/stocks already hits. Kite's own
+    # holdings response already includes last_price, so this only fills in what's still missing.
+    for h in data["holdings"]:
+        if h.get("ltp") is not None:
+            continue
+        try:
+            h["ltp"] = _cached(h["symbol"], "price", 15, lambda s=h["symbol"]: scraper.get_price(s))["price"]
+        except Exception:
+            h["ltp"] = None
+
+    db.set_cached(active, "holdings", data)
+    return data
+
+
+@app.get("/api/holdings")
+def holdings(broker_id: str | None = None, force: bool = False):
+    return _get_holdings(broker_id, force)
 
 
 SCRAPE_OUTPUT_FILE = "scraped.json"
@@ -732,7 +947,7 @@ def _history_reply(user_text, model):
     if history is None:
         return f"No price data found for '{symbol}' between {start} and {end}."
     markdown = llm.build_history_markdown(symbol, history, model=model)
-    db.insert_scraped_item(symbol, markdown, llm.embed(markdown))
+    db.insert_scraped_item(symbol, markdown, _embed_or_none(markdown))
     return markdown
 
 
@@ -818,6 +1033,15 @@ def _tool_list_watchlists():
     return db.list_watchlist()
 
 
+def _tool_get_holdings():
+    """Actual broker-synced positions (qty, entry vs current price, P&L) - distinct from the
+    watchlist tools above, which only track symbols the user is following, not what they hold."""
+    try:
+        return _get_holdings()
+    except HTTPException as e:
+        return e.detail
+
+
 def _tool_scrape_url(url):
     """Fetches a URL and returns its title+text for the model to analyze in this reply - nothing
     is written to a file or the DB, unlike POST /api/scrape. Only lives in this turn's context."""
@@ -896,6 +1120,7 @@ REAL_TOOL_IMPLS = {
     "get_movers": _tool_get_movers,
     "get_ema_crossover": _tool_ema_crossover,
     "list_watchlists": _tool_list_watchlists,
+    "get_holdings": _tool_get_holdings,
     "scrape_url": _tool_scrape_url,
     "list_chat_sessions": _tool_list_chat_sessions,
     "search_reports": _tool_search_reports,
@@ -956,6 +1181,11 @@ AGENT_TOOLS = [
     _fn("get_ema_crossover", "EMA crossover signal (golden/death cross) for a stock from stored history",
         {**_SYMBOL_PROP, "short": {"type": "integer"}, "long": {"type": "integer"}}, ["symbol"]),
     _fn("list_watchlists", "All watchlisted stocks and which named list each belongs to"),
+    _fn("get_holdings", "The user's actual broker-synced portfolio: current positions with "
+        "quantity, entry price, current price, and P&L, plus available account balance. Use "
+        "this - not list_watchlists/scan_events - whenever asked to analyze/review 'my "
+        "holdings', 'my portfolio', or 'what I own'; those other tools only cover watchlisted "
+        "symbols being tracked for research, not stocks actually held."),
     _fn("scrape_url", "Fetches a web page (news article, blog post, press release) and returns "
         "its title and text for you to analyze in your reply. Call this whenever the user "
         "pastes/mentions a URL or @-tags one, or references 'this article'/'this link'. The "

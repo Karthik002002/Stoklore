@@ -10,7 +10,8 @@ Everything runs on your own machine. No cloud APIs required, no data
 leaves localhost unless you point it at one yourself.
 
 **Scraping** · **Local LLM chat with tool calling** · **Watchlists & events** ·
-**Price history & EMA crossover** · **Sentiment analysis**
+**Price history & EMA crossover** · **Sentiment analysis** ·
+**Broker-synced holdings** · **Backtesting**
 
 </div>
 
@@ -30,6 +31,8 @@ leaves localhost unless you point it at one yourself.
   - [`7` Multi-Model Support](#7-multi-model-support)
   - [`8` Watch Rules](#8-watch-rules)
   - [`9` Top News](#9-top-news)
+  - [`10` Holdings (Broker Sync)](#10-holdings-broker-sync)
+  - [`11` Backtesting](#11-backtesting)
   - [`*` What's more](#-whats-more)
 - [🧱 Stack](#-stack)
 - [🚀 Running It](#-running-it)
@@ -67,8 +70,8 @@ to guard rails you can see and control.
 - **Watchlists**: bookmark any tracked stock into named lists, move a stock
   between lists, filter the table by tab
 - A minimal icon-rail sidebar nav (hover tooltips, active-route highlight) —
-  Stocks dashboard, Events feed, Top news, Settings, theme toggle, and a
-  **Reload** button that clears the shared cache on demand
+  Stocks dashboard, Events feed, Top news, Holdings, Backtesting, Settings,
+  theme toggle, and a **Reload** button that clears the shared cache on demand
 
 <div align="right">
 
@@ -82,8 +85,9 @@ The floating chat isn't just RAG — it's a real tool-calling agent that talks
 directly to Ollama's or an OpenAI-compatible server's native function-calling
 API (no LangChain, no framework):
 
-- **12 explicit tools** (`api.py`, `AGENT_TOOLS`/`REAL_TOOL_IMPLS`) covering
-  live price/EMA/movers lookups, watchlist listing, semantic report search,
+- **14 explicit tools** (`api.py`, `AGENT_TOOLS`/`REAL_TOOL_IMPLS`) covering
+  live price/EMA/movers lookups, watchlist listing, broker-synced holdings
+  (`get_holdings` — "how is my portfolio doing"), semantic report search,
   a live stock scrape+report, background event scans/price syncs, DuckDuckGo
   web search, recording a verified event, checking a user-defined watch
   rule, fetching/analyzing an arbitrary URL (`scrape_url`, nothing saved to
@@ -157,6 +161,10 @@ rails instead of a blanket "trust the model":
 - **EMA crossover panel** — two period inputs (with 20/50, 20/100, 50/200
   presets) computing a golden/death cross, or the %-above/below spread when
   there's no crossover, entirely from cached data (no live re-fetch)
+- **Backtest summary card** — the stock's latest saved backtest (return,
+  win rate, trade count) plus your own lessons-learned note, surfaced
+  passively so past homework resurfaces every time you look at the stock
+  (see [`11` Backtesting](#11-backtesting))
 
 <div align="right">
 
@@ -223,9 +231,11 @@ Three interchangeable backends, picked via a `provider/model` id:
 | *(anything else)* | OmniRoute (local multi-provider proxy) | Falls back to plain retrieval-augmented chat — tool-calling support varies too much across OmniRoute's many upstream providers to guarantee. |
 
 Settings is a tabbed dialog (**Model** / **LiteLLM** / **Cogencis** /
-**Watch rules**) — the Model tab's dropdown lists whatever's actually
-reachable right now (Ollama is always listed; OmniRoute's and LiteLLM's
-catalogs are queried live and degrade quietly if either isn't running).
+**Broker** / **Watch rules**), with its open state and active tab in the
+URL (`?settings=broker`) so any page can deep-link into a specific tab —
+the Model tab's dropdown lists whatever's actually reachable right now
+(Ollama is always listed; OmniRoute's and LiteLLM's catalogs are queried
+live and degrade quietly if either isn't running).
 
 A `model_name` ending in `/*` (e.g. `openai/*`) in `litellm.config.yaml`
 expands into every model in LiteLLM's own bundled catalog for that provider
@@ -292,6 +302,67 @@ watchlist), configured with a token in Settings → Cogencis.
 
 </div>
 
+### `10` Holdings (Broker Sync)
+
+A `/holdings` page that mirrors your **actual broker account** — read-only,
+no order placement, no funds movement:
+
+- **Dashboard cards**: available balance, invested value, current value,
+  and total P&L, computed from live positions
+- **Positions table**: qty, entry price, current price, invested/current
+  value, and per-row P&L (₹ and %) — click any row to jump to that stock's
+  detail page
+- **Two brokers**, switchable from a logo dropdown whose selection lives in
+  the URL (`?broker=dhan|kite`):
+  - **Dhan** — client ID + long-lived access token (Settings → Broker → Dhan)
+  - **Kite (Zerodha)** — API key/secret + a per-trading-day login redirect
+    (Kite Connect issues no long-lived tokens; "Connect to Kite" in Settings
+    routes through Zerodha's login and back to `/api/kite/callback`)
+- **No paid market-data APIs** — Dhan's live-price feed is a separately-paid
+  plan, so current prices come from the app's own yfinance price cache
+  (same one the dashboard uses); Kite's holdings response already includes
+  `last_price` for free
+- Snapshot cached for 5 minutes (`stock_cache`), manual reload bypasses it;
+  if the active broker isn't configured, the page shows a **Configure**
+  button that deep-links straight into Settings → Broker with the right
+  sub-tab focused
+- The chat agent gets the same data via its `get_holdings` tool — ask
+  "how is my portfolio doing" without leaving the chat
+
+<div align="right">
+
+[![][back-to-top]](#readme-top)
+
+</div>
+
+### `11` Backtesting
+
+A `/backtesting` page for checking "would my own rule have worked" against
+stored price history — deliberately simple for now (one strategy), built to
+grow:
+
+- **EMA-crossover strategy**: long-only, buys the golden cross, sells the
+  next death cross; a position still open at the window's end is marked to
+  the last close, flagged with an **Open** badge
+- Symbol + short/long period inputs (same 20/50, 20/100, 50/200 presets as
+  the stock-detail EMA panel) and an optional from/to date window — leave
+  blank to use the full stored history
+- **Run ≠ Save**: running is a free preview (total return, win rate,
+  per-trade breakdown); only **Save this backtest** persists it, optionally
+  with a **lessons-learned note** — the "what would I do differently"
+  written down while it's fresh, instead of re-learned the hard way later
+- Saved runs (and their lessons) resurface on that stock's detail page as
+  the Backtest summary card — the point is confidence *at decision time*,
+  not a report you ran once and forgot
+- Runs entirely from the `price_history` table — no live fetches; if a
+  symbol has no synced history yet, run a price sync first
+
+<div align="right">
+
+[![][back-to-top]](#readme-top)
+
+</div>
+
 ### `*` What's more
 
 - Corporate-action, price-move, and volume-spike detection reuse the exact
@@ -325,8 +396,10 @@ watchlist), configured with a token in Settings → Cogencis.
 | Analysis   | `llm.py` — Ollama / OmniRoute / LiteLLM (chat + tool calling), `nomic-embed-text` for embeddings; `sentiment.py` — local FinRoBERTa classifier |
 | Events     | `events.py` — watchlist-scoped news/price/volume/corporate-action scan |
 | Prices     | `prices.py` — incremental daily OHLCV sync (1y + full-history tiers) + EMA crossover math |
+| Brokers    | `broker.py` (Dhan v2) + `kite.py` (Kite Connect v3) — read-only holdings/margin, normalized to one shape |
+| Backtests  | `backtest.py` — long-only EMA-crossover backtest over stored `price_history` |
 | Storage    | Postgres + pgvector (`db.py`)                                      |
-| API        | FastAPI (`api.py`) — chat streams over the AI SDK UI Message Stream protocol; 12 explicit agent tools (`AGENT_TOOLS`/`REAL_TOOL_IMPLS`) |
+| API        | FastAPI (`api.py`) — chat streams over the AI SDK UI Message Stream protocol; 14 explicit agent tools (`AGENT_TOOLS`/`REAL_TOOL_IMPLS`) |
 | Frontend   | React + Vite, shadcn/ui, AI Elements, `@ai-sdk/react`, lightweight-charts (`frontend/`) |
 | Tracing    | Langfuse (optional, self-hosted via `docker-compose.langfuse.yml`) — traces every LiteLLM call: prompts, tool calls, latency, cost |
 

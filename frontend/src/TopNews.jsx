@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatDateTime } from '@/lib/format'
+import { usePageTitle } from '@/lib/usePageTitle'
 import EventActionsMenu from './EventActionsMenu'
 
 function NewsCard({ n }) {
@@ -71,6 +72,7 @@ function NewsCard({ n }) {
 }
 
 export default function TopNews() {
+  usePageTitle('Top news')
   const [news, setNews] = useState(null)
   const [error, setError] = useState(null)
   const [onlyAffecting, setOnlyAffecting] = useState(false)

@@ -1,7 +1,9 @@
 import { useState } from 'react'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { SettingsIcon, ExternalLinkIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
+import { BrokerLogo } from '@/BrokerLogo'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -21,12 +23,16 @@ import {
   createWatchRule,
   deleteWatchRule,
   getActiveModel,
+  getBrokerConfig,
   getCogencisConfig,
   getLiteLLMConfig,
   getModels,
   getWatchRules,
+  getKiteLoginUrl,
   setActiveModel,
   setCogencisToken,
+  setDhanConfig,
+  setKiteConfig,
   setLiteLLMConfig,
 } from '@/services/api'
 
@@ -196,6 +202,185 @@ function CogencisTab() {
   )
 }
 
+function DhanTab() {
+  const queryClient = useQueryClient()
+  const { data: config } = useQuery({ queryKey: ['brokerConfig'], queryFn: getBrokerConfig })
+  const [clientId, setClientId] = useState('')
+  const [accessToken, setAccessToken] = useState('')
+
+  const save = useMutation({
+    mutationFn: () => setDhanConfig(clientId, accessToken),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['brokerConfig'] })
+      queryClient.invalidateQueries({ queryKey: ['holdings'] })
+      toast.success('Dhan credentials saved')
+      setClientId('')
+      setAccessToken('')
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Dhan client ID</p>
+        <Input
+          value={clientId}
+          onChange={(e) => setClientId(e.target.value)}
+          placeholder={config?.dhan?.has_credentials ? '•••• saved - leave blank to keep it' : '1000000000'}
+        />
+      </div>
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Access token</p>
+        <Input
+          type="password"
+          value={accessToken}
+          onChange={(e) => setAccessToken(e.target.value)}
+          placeholder={
+            config?.dhan?.has_credentials ? '•••• saved - leave blank to keep it' : 'eyJhbGciOi...'
+          }
+        />
+      </div>
+      <Button
+        size="sm"
+        onClick={() => save.mutate()}
+        disabled={!clientId.trim() || !accessToken.trim() || save.isPending}
+      >
+        Save credentials
+      </Button>
+      <p className="text-xs text-muted-foreground">
+        From your Dhan account's{' '}
+        <a
+          href="https://web.dhan.co/"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-0.5 underline hover:text-foreground"
+        >
+          API access section <ExternalLinkIcon className="size-3" />
+        </a>{' '}
+        (Profile → DhanHQ Trading APIs) — generates an access token that expires after some time, so you'll
+        need to paste in a fresh one here once it does. Powers the Holdings page; pick the active broker
+        there.
+      </p>
+    </div>
+  )
+}
+
+function KiteTab() {
+  const queryClient = useQueryClient()
+  const { data: config } = useQuery({ queryKey: ['brokerConfig'], queryFn: getBrokerConfig })
+  const [apiKey, setApiKey] = useState('')
+  const [apiSecret, setApiSecret] = useState('')
+
+  const save = useMutation({
+    mutationFn: () => setKiteConfig(apiKey, apiSecret),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['brokerConfig'] })
+      toast.success('Kite credentials saved')
+      setApiKey('')
+      setApiSecret('')
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
+  const connect = useMutation({
+    mutationFn: getKiteLoginUrl,
+    onSuccess: ({ url }) => {
+      window.location.href = url
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Kite Connect API key</p>
+        <Input
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          placeholder={
+            config?.kite?.has_credentials ? '•••• saved - leave blank to keep it' : 'abcd1234efgh5678'
+          }
+        />
+      </div>
+      <div className="space-y-2">
+        <p className="text-sm font-medium">API secret</p>
+        <Input
+          type="password"
+          value={apiSecret}
+          onChange={(e) => setApiSecret(e.target.value)}
+          placeholder={
+            config?.kite?.has_credentials ? '•••• saved - leave blank to keep it' : 'eyJhbGciOi...'
+          }
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          onClick={() => save.mutate()}
+          disabled={!apiKey.trim() || !apiSecret.trim() || save.isPending}
+        >
+          Save credentials
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => connect.mutate()}
+          disabled={!config?.kite?.has_credentials || connect.isPending}
+        >
+          {config?.kite?.logged_in_today ? 'Reconnect to Kite' : 'Connect to Kite'}
+        </Button>
+        {config?.kite?.logged_in_today && (
+          <Badge variant="secondary" className="text-up">
+            Logged in today
+          </Badge>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        From your app at{' '}
+        <a
+          href="https://developers.kite.trade/apps"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-0.5 underline hover:text-foreground"
+        >
+          developers.kite.trade/apps <ExternalLinkIcon className="size-3" />
+        </a>{' '}
+        - set its Redirect URL to <code>http://localhost:8010/api/kite/callback</code> (the backend's own
+        port, not the frontend's). Unlike Dhan, Kite has no long-lived token: "Connect to Kite" logs you in
+        through Zerodha and the session lasts until the next trading day's reset, so you'll need to reconnect
+        each morning before Holdings can sync.
+      </p>
+    </div>
+  )
+}
+
+function BrokerTab() {
+  const { broker } = useSearch({ strict: false })
+  const navigate = useNavigate()
+  const setBroker = (next) => navigate({ search: (prev) => ({ ...prev, broker: next }), replace: true })
+
+  return (
+    <Tabs value={broker} onValueChange={setBroker}>
+      <TabsList>
+        <TabsIndicator />
+        <TabsTab value="dhan" className="gap-1.5">
+          <BrokerLogo broker="dhan" /> Dhan
+        </TabsTab>
+        <TabsTab value="kite" className="gap-1.5">
+          <BrokerLogo broker="kite" /> Kite
+        </TabsTab>
+      </TabsList>
+      <TabsPanel value="dhan" className="pt-4">
+        <DhanTab />
+      </TabsPanel>
+      <TabsPanel value="kite" className="pt-4">
+        <KiteTab />
+      </TabsPanel>
+    </Tabs>
+  )
+}
+
 function WatchRulesTab() {
   const queryClient = useQueryClient()
   const { data: rules } = useQuery({ queryKey: ['watchRules'], queryFn: getWatchRules })
@@ -320,8 +505,18 @@ function WatchRulesTab() {
 }
 
 export default function Settings() {
+  const { settings } = useSearch({ strict: false })
+  const navigate = useNavigate()
+
+  const setOpen = (open) =>
+    navigate({
+      search: (prev) => ({ ...prev, settings: open ? (settings ?? 'model') : undefined }),
+      replace: true,
+    })
+  const setTab = (tab) => navigate({ search: (prev) => ({ ...prev, settings: tab }), replace: true })
+
   return (
-    <Dialog>
+    <Dialog open={!!settings} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Settings" />}>
         <SettingsIcon className="size-4" />
       </DialogTrigger>
@@ -331,12 +526,18 @@ export default function Settings() {
           <DialogDescription>Models and connections used across scans, reports, and chat.</DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="model" orientation="vertical" className="min-h-0 h-full flex-1 flex-row gap-4">
+        <Tabs
+          value={settings ?? 'model'}
+          onValueChange={setTab}
+          orientation="vertical"
+          className="min-h-0 h-full flex-1 flex-row gap-4"
+        >
           <TabsList className="w-44 shrink-0 self-start !h-full">
             <TabsIndicator />
             <TabsTab value="model">Model</TabsTab>
             <TabsTab value="litellm">LiteLLM</TabsTab>
             <TabsTab value="cogencis">Cogencis</TabsTab>
+            <TabsTab value="broker">Broker</TabsTab>
             <TabsTab value="rules">Watch rules</TabsTab>
           </TabsList>
           <div className="min-w-0 flex-1 overflow-y-auto pr-1">
@@ -348,6 +549,9 @@ export default function Settings() {
             </TabsPanel>
             <TabsPanel value="cogencis">
               <CogencisTab />
+            </TabsPanel>
+            <TabsPanel value="broker">
+              <BrokerTab />
             </TabsPanel>
             <TabsPanel value="rules">
               <WatchRulesTab />

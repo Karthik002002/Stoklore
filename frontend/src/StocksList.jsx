@@ -32,6 +32,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { fmt, formatDate, inr } from '@/lib/format'
+import { usePageTitle } from '@/lib/usePageTitle'
 import DeleteStockButton from './DeleteStockButton'
 import IndexCard from './IndexCard'
 
@@ -307,6 +308,7 @@ function WatchlistTabMenu({ name, stockCount, onRenamed, onDeleted }) {
 }
 
 export default function StocksList() {
+  usePageTitle()
   const [stocks, setStocks] = useState(null)
   const [watchlist, setWatchlist] = useState([])
   const [listNames, setListNames] = useState([])

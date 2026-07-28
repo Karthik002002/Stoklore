@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ImagesIcon, PlusIcon, Trash2Icon } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { ClapperboardIcon, ImagesIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
 import BulkTradesDialog from './BulkTradesDialog'
 import SymbolCombobox from '@/components/SymbolCombobox'
@@ -440,6 +441,10 @@ export default function ManualBacktesting() {
             <TabsIndicator />
           </TabsList>
           <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" render={<Link to="/backtest/replay" />}>
+              <ClapperboardIcon className="size-4" />
+              Bar Replay
+            </Button>
             <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)}>
               <ImagesIcon className="size-4" />
               Bulk Trades

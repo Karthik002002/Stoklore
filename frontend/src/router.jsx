@@ -2,8 +2,10 @@ import { createRootRoute, createRoute, createRouter } from '@tanstack/react-rout
 import App from './App'
 import AutoBacktestDetail from './AutoBacktestDetail'
 import Backtesting from './Backtesting'
+import BarReplay from './features/bar-replay'
 import EventsFeed from './EventsFeed'
 import Holdings from './Holdings'
+import { REPLAY_TIMEFRAMES } from './lib/replay'
 import StockDetail from './StockDetail'
 import StocksList from './StocksList'
 import TopNews from './TopNews'
@@ -69,6 +71,27 @@ const autoBacktestDetailRoute = createRoute({
   component: AutoBacktestDetail,
 })
 
+// All replay progress lives here (not local state) so a reload resumes exactly where the user
+// stopped - symbol/timeframe/bar pointer, plus every open/pending order. The router's default
+// search serialization already JSON-encodes/decodes non-string values on its own, so `orders`
+// is passed through as a plain array - manually JSON.stringify-ing it before navigate() double-
+// encodes it and makes the router's own auto-parse hand back a value JSON.parse can't re-parse.
+const barReplayRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/backtest/replay',
+  validateSearch: (search) => {
+    const num = (v) => (v === undefined || v === null || v === '' ? undefined : Number(v))
+    const orders = Array.isArray(search.orders) ? search.orders : []
+    return {
+      symbol: typeof search.symbol === 'string' && search.symbol ? search.symbol.toUpperCase() : undefined,
+      timeframe: REPLAY_TIMEFRAMES.some((t) => t.value === search.timeframe) ? search.timeframe : '1D',
+      barIndex: num(search.barIndex),
+      orders,
+    }
+  },
+  component: BarReplay,
+})
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   stockRoute,
@@ -77,6 +100,7 @@ const routeTree = rootRoute.addChildren([
   holdingsRoute,
   backtestingRoute,
   autoBacktestDetailRoute,
+  barReplayRoute,
 ])
 
 export const router = createRouter({ routeTree })

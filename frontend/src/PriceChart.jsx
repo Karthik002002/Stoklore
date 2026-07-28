@@ -5,21 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { compact } from '@/lib/format'
-
-const EMA_COLORS = ['#f59e0b', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6']
-
-function computeEma(bars, period) {
-  if (bars.length < period) return []
-  const k = 2 / (period + 1)
-  const sma = bars.slice(0, period).reduce((sum, b) => sum + b.close, 0) / period
-  const out = [{ time: bars[period - 1].time, value: sma }]
-  let prev = sma
-  for (let i = period; i < bars.length; i++) {
-    prev = bars[i].close * k + prev * (1 - k)
-    out.push({ time: bars[i].time, value: prev })
-  }
-  return out
-}
+import { computeEma, INDICATOR_COLORS as EMA_COLORS } from '@/lib/indicators'
 
 // lightweight-charts' internal color parser only understands rgb()/hex/hsl literals, and
 // getComputedStyle doesn't reliably convert our theme.css oklch() values to rgb() across

@@ -5,7 +5,6 @@ import Backtesting from './Backtesting'
 import BarReplay from './features/bar-replay'
 import EventsFeed from './EventsFeed'
 import Holdings from './Holdings'
-import { REPLAY_TIMEFRAMES } from './lib/replay'
 import StockDetail from './StockDetail'
 import StocksList from './StocksList'
 import TopNews from './TopNews'
@@ -71,24 +70,12 @@ const autoBacktestDetailRoute = createRoute({
   component: AutoBacktestDetail,
 })
 
-// All replay progress lives here (not local state) so a reload resumes exactly where the user
-// stopped - symbol/timeframe/bar pointer, plus every open/pending order. The router's default
-// search serialization already JSON-encodes/decodes non-string values on its own, so `orders`
-// is passed through as a plain array - manually JSON.stringify-ing it before navigate() double-
-// encodes it and makes the router's own auto-parse hand back a value JSON.parse can't re-parse.
+// Replay progress (symbol/timeframe/bar pointer, orders, indicators, chart settings) lives in
+// the persisted Zustand store (features/bar-replay/store.js), not the URL - so this route has no
+// search params of its own, and a reload of /backtest/replay just reads that store back.
 const barReplayRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/backtest/replay',
-  validateSearch: (search) => {
-    const num = (v) => (v === undefined || v === null || v === '' ? undefined : Number(v))
-    const orders = Array.isArray(search.orders) ? search.orders : []
-    return {
-      symbol: typeof search.symbol === 'string' && search.symbol ? search.symbol.toUpperCase() : undefined,
-      timeframe: REPLAY_TIMEFRAMES.some((t) => t.value === search.timeframe) ? search.timeframe : '1D',
-      barIndex: num(search.barIndex),
-      orders,
-    }
-  },
   component: BarReplay,
 })
 

@@ -5,9 +5,16 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { INDICATOR_COLORS, INDICATOR_TYPES } from '@/lib/indicators'
 
+const DEFAULT_PERIOD = { ema: '20', sma: '20', rsi: '14' }
+
 export default function IndicatorControls({ indicators, onChange }) {
   const [type, setType] = useState('ema')
-  const [period, setPeriod] = useState('20')
+  const [period, setPeriod] = useState(DEFAULT_PERIOD.ema)
+
+  const changeType = (next) => {
+    setType(next)
+    setPeriod(DEFAULT_PERIOD[next] ?? '20')
+  }
 
   const add = () => {
     const n = Number.parseInt(period, 10)
@@ -34,7 +41,7 @@ export default function IndicatorControls({ indicators, onChange }) {
         </span>
       ))}
       <div className="flex items-center gap-1.5">
-        <Select value={type} onValueChange={setType}>
+        <Select value={type} onValueChange={changeType}>
           <SelectTrigger size="sm" className="h-6 w-20 text-xs">
             <SelectValue />
           </SelectTrigger>

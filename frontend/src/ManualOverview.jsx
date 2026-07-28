@@ -64,11 +64,28 @@ function MiniChart({ data, kind }) {
   )
 }
 
-function CalendarHeatmap({ dailyByDay }) {
-  const [cursor, setCursor] = useState(() => {
-    const d = new Date()
-    return new Date(d.getFullYear(), d.getMonth(), 1)
-  })
+const currentMonth = () => {
+  const d = new Date()
+  return new Date(d.getFullYear(), d.getMonth(), 1)
+}
+const monthOf = (dayStr) => {
+  const [y, m] = dayStr.split('-').map(Number)
+  return new Date(y, m - 1, 1)
+}
+
+function CalendarHeatmap({ dailyByDay, latestDay }) {
+  const [cursor, setCursor] = useState(() => (latestDay ? monthOf(latestDay) : currentMonth()))
+  // Trades load async, so `latestDay` is often still null on first render (defaulting to the
+  // current month above) - once it arrives, jump to it once so the calendar doesn't open on an
+  // empty current month while all the data sits in some other month. Guarded so it never fights
+  // the Today/prev/next buttons after that first jump.
+  const autoJumped = useRef(false)
+  useEffect(() => {
+    if (!autoJumped.current && latestDay) {
+      setCursor(monthOf(latestDay))
+      autoJumped.current = true
+    }
+  }, [latestDay])
   const today = new Date()
 
   const year = cursor.getFullYear()
@@ -222,7 +239,7 @@ export default function ManualOverview({ trades }) {
         </div>
       </div>
 
-      <CalendarHeatmap dailyByDay={dailyByDay} />
+      <CalendarHeatmap dailyByDay={dailyByDay} latestDay={sortedDays.at(-1)?.[0] ?? null} />
     </div>
   )
 }

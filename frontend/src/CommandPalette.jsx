@@ -4,6 +4,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import {
   ArrowRightIcon,
+  ClapperboardIcon,
   FlaskConicalIcon,
   LayoutDashboardIcon,
   NewspaperIcon,
@@ -172,6 +173,10 @@ export default function CommandPalette() {
                     {t.label}
                   </CommandItem>
                 ))}
+                <CommandItem value="Bar Replay" onSelect={() => goTo('/backtest/replay')}>
+                  <ClapperboardIcon className="size-4" />
+                  Bar Replay
+                </CommandItem>
               </CommandGroup>
               <CommandGroup heading="Settings">
                 {SETTINGS_TABS.map((s) => (

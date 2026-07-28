@@ -10,7 +10,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 
 import requests
-from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -510,8 +510,13 @@ def _validate_manual_trade(req):
 
 
 @app.get("/api/manual-trades")
-def manual_trades():
-    return db.list_manual_trades()
+def manual_trades(request: Request):
+    trades = db.list_manual_trades()
+    for t in trades:
+        # Full URL (not just the bare filename) so the frontend never has to know or guess the
+        # /uploads mount path itself - one source of truth, here, for where images actually live.
+        t["image_url"] = f"{request.base_url}uploads/{t['image_filename']}" if t["image_filename"] else None
+    return trades
 
 
 @app.post("/api/manual-trades")

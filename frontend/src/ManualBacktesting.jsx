@@ -276,12 +276,8 @@ function TradeFormDialog({ open, onOpenChange, trade, onSaved }) {
               onChange={(e) => set('imageFile')(e.target.files?.[0] ?? null)}
               className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:text-foreground"
             />
-            {trade?.image_filename && !form.imageFile && (
-              <img
-                src={`/uploads/${trade.image_filename}`}
-                alt="Trade"
-                className="mt-2 max-h-32 rounded-lg border"
-              />
+            {trade?.image_url && !form.imageFile && (
+              <img src={trade.image_url} alt="Trade" className="mt-2 max-h-32 rounded-lg border" />
             )}
           </div>
 
@@ -375,12 +371,8 @@ function TradesTable({ trades, onEdit, onDelete }) {
                   {returnPct == null ? '—' : `${returnPct}%`}
                 </TableCell>
                 <TableCell>
-                  {t.image_filename ? (
-                    <img
-                      src={`/uploads/${t.image_filename}`}
-                      alt=""
-                      className="size-8 rounded object-cover"
-                    />
+                  {t.image_url ? (
+                    <img src={t.image_url} alt="" className="size-8 rounded object-cover" />
                   ) : (
                     '—'
                   )}

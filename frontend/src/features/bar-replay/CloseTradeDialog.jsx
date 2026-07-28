@@ -9,7 +9,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { inr } from '@/lib/format'
 import { autoResult, EMOTIONS, tradePnl } from '@/lib/manualTrades'
-import { createManualTrade } from '@/services/api'
+import { createManualTrade, uploadManualTradeImage } from '@/services/api'
 import { CLOSE_REASON_LABEL } from './orderEngine'
 
 export default function CloseTradeDialog({
@@ -18,8 +18,8 @@ export default function CloseTradeDialog({
   symbol,
   order,
   exitPrice,
-  exitDate,
   reason,
+  chartImage,
   onClosed,
 }) {
   const [result, setResult] = useState(null)
@@ -52,8 +52,8 @@ export default function CloseTradeDialog({
     : null
 
   const save = useMutation({
-    mutationFn: () =>
-      createManualTrade({
+    mutationFn: async () => {
+      const { id } = await createManualTrade({
         symbol,
         direction: order.direction,
         quantity: order.quantity,
@@ -66,9 +66,17 @@ export default function CloseTradeDialog({
         emotion: emotion || null,
         tags: [...tags, 'replay'],
         notes: notes || null,
-        traded_at: `${exitDate}T00:00:00`,
+        // The replay bar's date is simulated history, not when this trade was actually journaled -
+        // logging it under the real wall-clock time keeps the journal's dates meaningful (e.g. for
+        // the overview's calendar) regardless of which historical period was being replayed.
+        traded_at: new Date().toISOString(),
         image_filename: null,
-      }),
+      })
+      // The chart snapshot (see BarReplay's captureScreenshot) is taken at close time, before
+      // this dialog even opens - same upload-after-create flow as the manual trade form's own
+      // screenshot upload, just from a captured Blob instead of a user-picked file.
+      if (chartImage) await uploadManualTradeImage(id, chartImage)
+    },
     onSuccess: () => {
       toast.success('Trade logged')
       onClosed()

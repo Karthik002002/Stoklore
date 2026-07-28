@@ -44,6 +44,12 @@ model_list:
 
   # Add more providers the same way - one model_list entry each, any provider LiteLLM supports
   # (https://docs.litellm.ai/docs/providers). Each needs its own API key env var.
+
+  # NVIDIA NIM - api_base defaults to https://integrate.api.nvidia.com/v1, no need to set it.
+  # - model_name: nvidia_nim/*
+  #   litellm_params:
+  #     model: nvidia_nim/*
+  #     api_key: os.environ/NVIDIA_NIM_API_KEY
   # - model_name: claude-haiku
   #   litellm_params:
   #     model: anthropic/claude-haiku-4-5

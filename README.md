@@ -33,6 +33,7 @@ leaves localhost unless you point it at one yourself.
   - [`9` Top News](#9-top-news)
   - [`10` Holdings (Broker Sync)](#10-holdings-broker-sync)
   - [`11` Backtesting](#11-backtesting)
+  - [`12` Bar Replay](#12-bar-replay)
   - [`*` What's more](#-whats-more)
 - [🧱 Stack](#-stack)
 - [🚀 Running It](#-running-it)
@@ -371,6 +372,37 @@ cross, sells the next death cross; Run vs. Save with an optional
 lessons-learned note; results surfaced on a stock's detail page) still lives
 in `backtest.py` and `api.py`'s `/api/backtest*` endpoints, just not wired
 into this tab yet.
+
+<div align="right">
+
+[![][back-to-top]](#readme-top)
+
+</div>
+
+### `12` Bar Replay
+
+A `/backtest/replay` page (linked from Backtesting → Manual): step through a
+stock's real history one bar at a time and paper-trade it, like TradingView's
+Bar Replay.
+
+- **Playback** — step forward/back, play/pause at 0.5×–4×, or jump to a date.
+  Shortcuts: `B`/`S` buy/sell, `Shift+↓` play/pause, `Shift+→` step forward
+- **Trading** — Market or Limit orders with optional stop-loss/target;
+  validated so a target/SL on the wrong side of entry is rejected up front.
+  If a bar gaps clean past a level instead of touching it, the trade still
+  closes — filled at the bar's open, not the skipped level
+- Stop-loss/target lines are **draggable directly on the chart** to adjust
+  them after the fact
+- **Indicators**: EMA, SMA, and RSI (its own pane below the candles, via
+  lightweight-charts' multi-pane support)
+- **Settings modal** — candle colors, default order quantity, RSI reference
+  levels, all editable
+- Every closed trade is logged to the same manual trade journal as the rest
+  of Backtesting → Manual (tagged `replay`), with a screenshot of the chart
+  at close time attached automatically
+- All session state (symbol, timeframe, bar position, orders, indicators,
+  settings) lives in one persisted store (`localStorage`) — reload the page
+  or navigate away and it resumes exactly where you left off
 
 <div align="right">
 

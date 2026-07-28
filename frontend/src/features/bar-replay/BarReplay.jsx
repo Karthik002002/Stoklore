@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useHotkey } from '@tanstack/react-hotkeys'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate, useSearch } from '@tanstack/react-router'
+import { Link } from '@tanstack/react-router'
 import {
   ActivityIcon,
   ArrowLeftIcon,
@@ -31,34 +31,62 @@ import IndicatorControls from './IndicatorControls'
 import OrderTicketDialog from './OrderTicketDialog'
 import { processBarForOrders } from './orderEngine'
 import ReplayChart from './ReplayChart'
+import SettingsDialog from './SettingsDialog'
+import { useBarReplayStore } from './store'
 import TradingPanel from './TradingPanel'
 
 const numeric = (v) => (v === '' || v == null ? null : Number(v))
+const round2 = (v) => Math.round(v * 100) / 100
 
 const FIELD_LABEL = { stopLoss: 'Stop loss', target: 'Target' }
 
 export default function BarReplay() {
   usePageTitle('Bar Replay')
-  const { symbol, timeframe, barIndex, orders } = useSearch({ from: '/backtest/replay' })
-  const navigate = useNavigate({ from: '/backtest/replay' })
   const queryClient = useQueryClient()
 
-  const setSearch = (patch) => navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true })
-  const setOrders = (next) => setSearch({ orders: next })
-  const changeSymbol = (next) => setSearch({ symbol: next, barIndex: undefined, orders: [] })
-  const changeTimeframe = (next) => setSearch({ timeframe: next, barIndex: undefined, orders: [] })
+  // Session state (symbol/timeframe/bar position, orders, indicators, speed, chart settings)
+  // lives in the persisted Zustand store (store.js) - see its comment for why that's the right
+  // home for it instead of the URL or plain component state. Selected field-by-field (not one
+  // object selector) so each setter only re-renders on its own slice changing.
+  const symbol = useBarReplayStore((s) => s.symbol)
+  const timeframe = useBarReplayStore((s) => s.timeframe)
+  const barIndex = useBarReplayStore((s) => s.barIndex)
+  const orders = useBarReplayStore((s) => s.orders)
+  const indicators = useBarReplayStore((s) => s.indicators)
+  const speedMs = useBarReplayStore((s) => s.speedMs)
+  const chartSettings = useBarReplayStore((s) => s.settings)
+  const changeSymbol = useBarReplayStore((s) => s.setSymbol)
+  const changeTimeframe = useBarReplayStore((s) => s.setTimeframe)
+  const setBarIndex = useBarReplayStore((s) => s.setBarIndex)
+  const setOrders = useBarReplayStore((s) => s.setOrders)
+  const setIndicators = useBarReplayStore((s) => s.setIndicators)
+  const setSpeedMs = useBarReplayStore((s) => s.setSpeedMs)
+  const setChartSettings = useBarReplayStore((s) => s.setSettings)
+  const restartStore = useBarReplayStore((s) => s.restart)
 
   const [startDate, setStartDate] = useState('')
   const [dateDraft, setDateDraft] = useState('')
   const [playing, setPlaying] = useState(false)
-  const [speedMs, setSpeedMs] = useState(1000)
-  const [indicators, setIndicators] = useState([{ key: 'default-ema20', type: 'ema', period: 20 }])
   const [orderDraft, setOrderDraft] = useState(null)
+  // Draw long/short tool - disabled for now, kept for later (see the commented-out wiring below).
+  // 'long' | 'short' | null - armed by the Draw long/short buttons, disarmed after one drag on
+  // the chart (see ReplayChart's DrawZone) or Escape. Only one tool active at a time.
+  // const [drawMode, setDrawMode] = useState(null)
+  // Zones dropped onto the chart by the draw tool - purely visual until clicked (see
+  // convertDrawingToOrder below). Not persisted: sketches, not trades.
+  // const [drawings, setDrawings] = useState([])
   // Auto-triggered closes (stop loss/target hit) and manual "Close" clicks both land here and
   // share the same confirm dialog, shown one at a time. An order only leaves `orders` once its
   // entry in this queue is actually confirmed - dismissing the dialog just drops the queue entry
-  // and leaves the order open, so nothing is silently lost.
+  // and leaves the order open, so nothing is silently lost. Deliberately plain component state,
+  // not in the persisted store - a stale confirm dialog reopening after a reload would be worse
+  // than just losing track of an unconfirmed close.
   const [closeQueue, setCloseQueue] = useState([])
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  // Imperative handle onto ReplayChart (see its captureScreenshot) - grabbing a snapshot of the
+  // chart at close time isn't state the chart needs to re-render for, so a ref fits better than
+  // threading a callback prop down just to call it back up.
+  const replayChartRef = useRef(null)
 
   const wasRunning = useRef(false)
   const { data: maxHistory } = useQuery({
@@ -94,8 +122,6 @@ export default function BarReplay() {
   const lastBar = visibleBars.length ? visibleBars[visibleBars.length - 1] : null
   const atEnd = started && currentIndex >= allBars.length - 1
 
-  const setBarIndex = (idx) => setSearch({ barIndex: idx })
-
   // Fresh symbol/timeframe - nothing carries over (a limit/SL/target from a different instrument
   // makes no sense), so the trigger-detection cursor and any queued closes reset too.
   const prevIndexRef = useRef(null)
@@ -120,12 +146,16 @@ export default function BarReplay() {
     const { nextOrders, triggeredCloses, changed } = processBarForOrders(orders, bar, currentIndex)
     if (changed) setOrders(nextOrders)
     if (triggeredCloses.length) {
-      setCloseQueue((q) => [
-        ...q,
-        ...triggeredCloses
-          .filter((tc) => !q.some((existing) => existing.order.id === tc.order.id))
-          .map((tc) => ({ order: tc.order, exitPrice: tc.exitPrice, exitDate: bar.date, reason: tc.reason })),
-      ])
+      // Snapshot the chart once for this batch (same bar for all of them) rather than per-order -
+      // captureScreenshot is async, so the queue only gets appended to once it resolves.
+      replayChartRef.current?.captureScreenshot().then((chartImage) => {
+        setCloseQueue((q) => [
+          ...q,
+          ...triggeredCloses
+            .filter((tc) => !q.some((existing) => existing.order.id === tc.order.id))
+            .map((tc) => ({ order: tc.order, exitPrice: tc.exitPrice, reason: tc.reason, chartImage })),
+        ])
+      })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIndex])
@@ -148,7 +178,7 @@ export default function BarReplay() {
       const found = allBars.findIndex((b) => b.date >= startDate)
       if (found >= 0) idx = found
     }
-    setSearch({ barIndex: idx })
+    setBarIndex(idx)
   }
 
   // Jump mid-session to any date within the collected range (Playback panel's date picker) -
@@ -174,7 +204,7 @@ export default function BarReplay() {
     setPlaying(false)
     setCloseQueue([])
     prevIndexRef.current = null
-    setSearch({ barIndex: undefined, orders: [] })
+    restartStore()
   }
 
   const openOrderTicket = (direction) => {
@@ -183,7 +213,7 @@ export default function BarReplay() {
       direction,
       orderType: 'market',
       entryPrice: '',
-      qty: '1',
+      qty: String(chartSettings.defaultQty),
       slEnabled: false,
       sl: '',
       targetEnabled: false,
@@ -218,10 +248,36 @@ export default function BarReplay() {
   // Dragging a stop-loss/target line on the chart commits here: round to paise, patch just that
   // order's field, and confirm with a toast since the change has no other visible confirmation.
   const adjustOrder = (orderId, field, price) => {
-    const rounded = Math.round(price * 100) / 100
+    const rounded = round2(price)
     setOrders(orders.map((o) => (o.id === orderId ? { ...o, [field]: rounded } : o)))
     toast.success(`${FIELD_LABEL[field]} updated to ${inr(rounded)}`)
   }
+
+  // const toggleDrawMode = (direction) => setDrawMode((m) => (m === direction ? null : direction))
+
+  // The Draw long/short tool (ReplayChart's DrawZone) hands off the dragged levels here as a
+  // saved zone - it just sits on the chart, nothing is submitted yet. Clicking the zone itself
+  // (convertDrawingToOrder below) is what turns it into an order to review.
+  // const handleDrawComplete = ({ direction, entryPrice, target, stopLoss }) => {
+  //   setDrawMode(null)
+  //   setDrawings((ds) => [...ds, { id: crypto.randomUUID(), direction, entryPrice, target, stopLoss }])
+  // }
+
+  // Clicking a drawn zone opens the same ticket used for typed entries (as a Limit at the drawn
+  // entry price) so qty, R:R, and the target/SL-side validation all still apply before anything
+  // is actually submitted. The drawing itself is left on the chart, in case it's reused.
+  // const convertDrawingToOrder = (drawing) => {
+  //   setOrderDraft({
+  //     direction: drawing.direction,
+  //     orderType: 'limit',
+  //     entryPrice: String(round2(drawing.entryPrice)),
+  //     qty: '1',
+  //     slEnabled: true,
+  //     sl: String(round2(drawing.stopLoss)),
+  //     targetEnabled: true,
+  //     target: String(round2(drawing.target)),
+  //   })
+  // }
 
   const previewOrder =
     orderDraft && lastBar
@@ -236,44 +292,71 @@ export default function BarReplay() {
         }
       : null
 
-  const requestClose = (order) => {
+  const requestClose = async (order) => {
     if (!lastBar) return
+    const chartImage = await replayChartRef.current?.captureScreenshot()
     setCloseQueue((q) =>
       q.some((existing) => existing.order.id === order.id)
         ? q
-        : [...q, { order, exitPrice: lastBar.close, exitDate: lastBar.date, reason: 'manual' }],
+        : [...q, { order, exitPrice: lastBar.close, reason: 'manual', chartImage }],
     )
   }
   const activeClose = closeQueue[0] ?? null
+  // The close-trade feedback modal asks for result/emotion/notes - autoplay revealing more bars
+  // underneath while it's open would move the replay on without the user noticing.
+  useEffect(() => {
+    if (activeClose) setPlaying(false)
+  }, [activeClose])
 
   // 'B'/'S' shortcuts open the order ticket, same as clicking Buy/Sell - ignored automatically
   // while typing in any input/textarea (ignoreInputs defaults true for single-key hotkeys).
   const hotkeysEnabled = started && !orderDraft
   useHotkey('b', () => openOrderTicket('long'), { enabled: hotkeysEnabled })
   useHotkey('s', () => openOrderTicket('short'), { enabled: hotkeysEnabled })
+  // TradingView's own bar-replay bindings: Shift+Down plays/pauses, Shift+Right steps one bar.
+  useHotkey('shift+down', () => setPlaying((p) => !p), { enabled: hotkeysEnabled && (!atEnd || playing) })
+  useHotkey('shift+right', () => setBarIndex(currentIndex + 1), { enabled: hotkeysEnabled && !atEnd })
+  // useHotkey('escape', () => setDrawMode(null), { enabled: !!drawMode })
 
   return (
     <div className="fixed inset-y-0 right-0 left-16 z-40 bg-background">
       <ReplayChart
+        ref={replayChartRef}
         bars={visibleBars}
         indicators={indicators}
         orders={orders}
         previewOrder={previewOrder}
         resetKey={`${symbol}-${timeframe}`}
         onAdjustOrder={adjustOrder}
+        settings={chartSettings}
+        // drawMode={drawMode}
+        // drawings={drawings}
+        // onDrawComplete={handleDrawComplete}
+        // onConvertDrawing={convertDrawingToOrder}
       />
 
       {/* Each cluster below is its own small absolutely-positioned box (explicit z-10), not one
           full-viewport wrapper - no reliance on pointer-events inheritance racing against the
           chart's own canvas layers. */}
       <div className="absolute top-4 left-4 z-10 flex w-72 flex-col gap-3">
-        <Link
-          to="/backtesting"
-          search={{ tab: 'manual' }}
-          className="flex w-fit items-center gap-1.5 rounded-full border bg-card/95 px-3 py-1.5 text-sm text-muted-foreground shadow-lg backdrop-blur-sm hover:text-foreground"
-        >
-          <ArrowLeftIcon className="size-4" /> Back to backtesting
-        </Link>
+        <div className="flex items-center justify-between gap-2">
+          <Link
+            to="/backtesting"
+            search={{ tab: 'manual' }}
+            className="flex w-fit items-center gap-1.5 rounded-full border bg-card/95 px-3 py-1.5 text-sm text-muted-foreground shadow-lg backdrop-blur-sm hover:text-foreground"
+          >
+            <ArrowLeftIcon className="size-4" /> Back to backtesting
+          </Link>
+          <Button
+            size="icon-sm"
+            variant="outline"
+            className="rounded-full bg-card/95 shadow-lg backdrop-blur-sm"
+            aria-label="Chart settings"
+            onClick={() => setSettingsOpen(true)}
+          >
+            <SettingsIcon className="size-4" />
+          </Button>
+        </div>
 
         <FloatingPanel title="Setup" icon={SettingsIcon}>
           <SymbolCombobox value={symbol ?? ''} onChange={changeSymbol} className="w-full" />
@@ -335,13 +418,16 @@ export default function BarReplay() {
       </div>
 
       {symbol && hasMaxData && started && (
-        <div className="absolute top-4 right-4 z-10 w-72">
+        <div className="absolute top-4 right-[5%] z-10 w-72">
           <FloatingPanel title="Trade" icon={WalletIcon}>
             <TradingPanel
               orders={orders}
               lastBar={lastBar}
               onOpenTicket={openOrderTicket}
               onRequestClose={requestClose}
+              onAdjustOrder={adjustOrder}
+              // drawMode={drawMode}
+              // onToggleDraw={toggleDrawMode}
             />
           </FloatingPanel>
         </div>
@@ -422,6 +508,13 @@ export default function BarReplay() {
         </div>
       )}
 
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        settings={chartSettings}
+        onSave={setChartSettings}
+      />
+
       <OrderTicketDialog
         draft={orderDraft}
         onChange={updateDraft}
@@ -439,8 +532,8 @@ export default function BarReplay() {
         symbol={symbol}
         order={activeClose?.order ?? null}
         exitPrice={activeClose?.exitPrice}
-        exitDate={activeClose?.exitDate}
         reason={activeClose?.reason}
+        chartImage={activeClose?.chartImage}
         onClosed={() => {
           queryClient.invalidateQueries({ queryKey: ['manualTrades'] })
           const closedId = activeClose?.order.id

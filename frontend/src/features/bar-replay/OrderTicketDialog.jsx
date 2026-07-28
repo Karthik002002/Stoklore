@@ -17,12 +17,21 @@ export default function OrderTicketDialog({ draft, onChange, onCancel, onSubmit,
   const slPrice = draft.slEnabled ? numeric(draft.sl) : null
   const targetPrice = draft.targetEnabled ? numeric(draft.target) : null
 
-  const risk = slPrice != null ? Math.abs(entry - slPrice) * qty : null
-  const reward = targetPrice != null ? Math.abs(targetPrice - entry) * qty : null
-  const riskPct = slPrice != null && entry ? (Math.abs(entry - slPrice) / entry) * 100 : null
-  const rewardPct = targetPrice != null && entry ? (Math.abs(targetPrice - entry) / entry) * 100 : null
-  const rr = risk && reward ? reward / risk : null
-  const valid = qty > 0 && (!isLimit || numeric(draft.entryPrice) != null)
+  const isLong = draft.direction === 'long'
+  // Signed (not Math.abs'd) moves - a target/stop on the wrong side of entry comes out negative
+  // here instead of silently showing as a positive-looking reward/risk.
+  const rewardMove = targetPrice != null ? (isLong ? targetPrice - entry : entry - targetPrice) : null
+  const riskMove = slPrice != null ? (isLong ? entry - slPrice : slPrice - entry) : null
+  const reward = rewardMove != null ? rewardMove * qty : null
+  const risk = riskMove != null ? riskMove * qty : null
+  const rewardPct = rewardMove != null && entry ? (rewardMove / entry) * 100 : null
+  const riskPct = riskMove != null && entry ? (riskMove / entry) * 100 : null
+  const rr = risk > 0 && reward > 0 ? reward / risk : null
+  const targetError =
+    rewardMove != null && rewardMove <= 0 ? `Target must be ${isLong ? 'above' : 'below'} entry price` : null
+  const slError =
+    riskMove != null && riskMove <= 0 ? `Stop loss must be ${isLong ? 'below' : 'above'} entry price` : null
+  const valid = qty > 0 && (!isLimit || numeric(draft.entryPrice) != null) && !targetError && !slError
 
   return (
     <Dialog open onOpenChange={(next) => !next && onCancel()}>
@@ -101,7 +110,16 @@ export default function OrderTicketDialog({ draft, onChange, onCancel, onSubmit,
                   onChange={(e) => onChange({ target: e.target.value })}
                   placeholder="Price ₹"
                 />
-                {rewardPct != null && <p className="text-xs text-up">+{rewardPct.toFixed(2)}%</p>}
+                {targetError ? (
+                  <p className="text-xs text-down">{targetError}</p>
+                ) : (
+                  rewardPct != null && (
+                    <p className={`text-xs ${rewardPct >= 0 ? 'text-up' : 'text-down'}`}>
+                      {rewardPct >= 0 ? '+' : ''}
+                      {rewardPct.toFixed(2)}%
+                    </p>
+                  )
+                )}
               </>
             )}
           </div>
@@ -124,7 +142,11 @@ export default function OrderTicketDialog({ draft, onChange, onCancel, onSubmit,
                   onChange={(e) => onChange({ sl: e.target.value })}
                   placeholder="Price ₹"
                 />
-                {riskPct != null && <p className="text-xs text-down">-{riskPct.toFixed(2)}%</p>}
+                {slError ? (
+                  <p className="text-xs text-down">{slError}</p>
+                ) : (
+                  riskPct != null && <p className="text-xs text-down">-{riskPct.toFixed(2)}%</p>
+                )}
               </>
             )}
           </div>
@@ -137,13 +159,13 @@ export default function OrderTicketDialog({ draft, onChange, onCancel, onSubmit,
             <div className="flex items-center justify-between text-xs">
               <span className="text-muted-foreground">Risk</span>
               <span className="text-down tabular-nums">
-                {risk != null ? `${inr(risk)} (${riskPct.toFixed(2)}%)` : '—'}
+                {risk != null && !slError ? `${inr(risk)} (${riskPct.toFixed(2)}%)` : '—'}
               </span>
             </div>
             <div className="flex items-center justify-between text-xs">
               <span className="text-muted-foreground">Reward</span>
               <span className="text-up tabular-nums">
-                {reward != null ? `${inr(reward)} (${rewardPct.toFixed(2)}%)` : '—'}
+                {reward != null && !targetError ? `${inr(reward)} (${rewardPct.toFixed(2)}%)` : '—'}
               </span>
             </div>
           </div>

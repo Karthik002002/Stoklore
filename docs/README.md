@@ -1,0 +1,18 @@
+# Feature Guide
+
+How to use what's in the app, page by page. For *what* each feature is and
+why it exists, see the main [README](../README.md) — these docs are the
+"how do I actually do X" reference.
+
+- [Dashboard & Watchlists](dashboard.md)
+- [Chat Agent](chat-agent.md)
+- [Stock Detail](stock-detail.md)
+- [Events Feed](events-feed.md)
+- [Sentiment (`/sentiment`)](sentiment.md)
+- [Model Settings](model-settings.md)
+- [Watch Rules](watch-rules.md)
+- [Top News](top-news.md)
+- [Holdings](holdings.md)
+- [Backtesting — Auto](backtesting-auto.md)
+- [Backtesting — Manual (Trade Journal)](backtesting-manual.md)
+- [Bar Replay](bar-replay.md)

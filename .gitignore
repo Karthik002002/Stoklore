@@ -32,4 +32,6 @@ graphify-out/
 # fetch, separate from the app's own price_history_max collection) - fetched data, not code, so
 # it stays out of git the same way uploads/ does.
 local_data/
+
+# per-machine MCP server config (local absolute paths) - never shared/committed
 .mcp.json

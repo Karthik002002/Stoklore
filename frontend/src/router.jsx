@@ -9,7 +9,17 @@ import StockDetail from './StockDetail'
 import StocksList from './StocksList'
 import TopNews from './TopNews'
 
-const SETTINGS_TABS = ['model', 'litellm', 'cogencis', 'broker', 'rules', 'activity']
+const SETTINGS_TABS = [
+  'model',
+  'litellm',
+  'cogencis',
+  'broker',
+  'rules',
+  'data',
+  'stocks',
+  'activity',
+  'backtesting',
+]
 
 // Lives on the root route (not a leaf) since the Settings dialog is mounted in App.jsx's layout,
 // on top of every page - any page can open it to a specific tab via the same `settings` param,

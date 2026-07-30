@@ -6,6 +6,7 @@ gap since the latest stored date - so scanning many symbols never re-downloads a
 from datetime import date, datetime, timedelta
 
 import db
+import price_sources
 import scraper
 
 
@@ -38,12 +39,15 @@ def sync_all(symbols, on_progress=None):
     return total_bars
 
 
-def collect_max_history(symbol):
-    """Fetches a symbol's entire available daily history (yfinance period='max') and stores it in
-    price_history_max - separate from the 1y price_history table synced by sync_symbol/sync_all.
-    Explicitly user-triggered per symbol (e.g. a "Collect max history" button), not part of the
-    regular watchlist scan. Returns the number of bars stored."""
-    bars = scraper.get_daily_bars(symbol, period="max")
+def collect_max_history(symbol, source=price_sources.DEFAULT_SOURCE):
+    """Fetches a symbol's entire available daily history and stores it in price_history_max -
+    separate from the 1y price_history table synced by sync_symbol/sync_all. Explicitly
+    user-triggered per symbol (e.g. a "Collect max history" button), not part of the regular
+    watchlist scan. `source` picks which price_sources plugin actually does the fetching (see
+    that package) - callers should let price_sources.SourceError/ValueError propagate and handle
+    them per-symbol, so one symbol or one source failing never affects any other. Returns the
+    number of bars stored."""
+    bars = price_sources.fetch_max(source, symbol)
     db.insert_max_bars(symbol, bars)
     return len(bars)
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useHotkey } from '@tanstack/react-hotkeys'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
   ActivityIcon,
@@ -16,6 +16,7 @@ import {
   WalletIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import SourceSelect from '@/components/SourceSelect'
 import SymbolCombobox from '@/components/SymbolCombobox'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,8 +24,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Spinner } from '@/components/ui/spinner'
 import { inr } from '@/lib/format'
 import { aggregateBars, REPLAY_SPEEDS, REPLAY_TIMEFRAMES } from '@/lib/replay'
+import { useMaxHistoryCollector } from '@/lib/useMaxHistoryCollector'
 import { usePageTitle } from '@/lib/usePageTitle'
-import { collectMaxHistory, getMaxHistory, getMaxHistoryStatus } from '@/services/api'
 import CloseTradeDialog from './CloseTradeDialog'
 import FloatingPanel from './FloatingPanel'
 import IndicatorControls from './IndicatorControls'
@@ -88,29 +89,15 @@ export default function BarReplay() {
   // threading a callback prop down just to call it back up.
   const replayChartRef = useRef(null)
 
-  const wasRunning = useRef(false)
-  const { data: maxHistory } = useQuery({
-    queryKey: ['maxHistory', symbol],
-    queryFn: () => getMaxHistory(symbol),
-    enabled: !!symbol,
-  })
-  const { data: maxStatus } = useQuery({
-    queryKey: ['maxHistoryStatus', symbol],
-    queryFn: () => getMaxHistoryStatus(symbol),
-    enabled: !!symbol,
-    refetchInterval: (q) => (q.state.data?.running ? 1500 : false),
-  })
-  useEffect(() => {
-    if (wasRunning.current && !maxStatus?.running)
-      queryClient.invalidateQueries({ queryKey: ['maxHistory', symbol] })
-    wasRunning.current = !!maxStatus?.running
-  }, [maxStatus?.running, symbol, queryClient])
-  const collect = useMutation({
-    mutationFn: () => collectMaxHistory(symbol),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['maxHistoryStatus', symbol] }),
-    onError: (e) => toast.error(e.message),
-  })
-  const hasMaxData = (maxHistory?.length ?? 0) > 0
+  const {
+    maxHistory,
+    hasMaxData,
+    status: maxStatus,
+    sources,
+    source,
+    setSource,
+    collect,
+  } = useMaxHistoryCollector(symbol)
 
   const allBars = useMemo(
     () => (maxHistory ? aggregateBars(maxHistory, timeframe) : []),
@@ -373,6 +360,7 @@ export default function BarReplay() {
               ))}
             </SelectContent>
           </Select>
+          <SourceSelect sources={sources} value={source} onChange={setSource} className="w-full" />
           <Button
             size="sm"
             variant="outline"
@@ -385,11 +373,10 @@ export default function BarReplay() {
           </Button>
           {symbol && !hasMaxData && (
             <p className="text-xs text-muted-foreground">
-              {maxStatus?.running
-                ? 'Collecting full history from NSE listing…'
-                : 'Needed before replay can start.'}
+              {maxStatus?.running ? 'Collecting full history…' : 'Needed before replay can start.'}
             </p>
           )}
+          {maxStatus?.error && <p className="text-xs text-destructive">{maxStatus.error}</p>}
           {symbol && hasMaxData && !started && (
             <div className="space-y-2 border-t pt-2">
               <label className="text-xs text-muted-foreground">Start date</label>

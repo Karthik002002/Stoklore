@@ -8,6 +8,7 @@ yfinance==1.5.1
 beautifulsoup4==4.15.0
 requests==2.34.2
 ddgs==9.14.4
+scrapling[fetchers]==0.4.12
 
 pandas==3.0.3
 transformers==5.14.1

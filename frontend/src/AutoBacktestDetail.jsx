@@ -1,24 +1,19 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
 import { ArrowLeftIcon, DatabaseIcon, PlayIcon, SaveIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { BacktestResultView, PlotsResultView } from '@/components/BacktestResult'
+import SourceSelect from '@/components/SourceSelect'
 import SymbolCombobox from '@/components/SymbolCombobox'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
+import { useMaxHistoryCollector } from '@/lib/useMaxHistoryCollector'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { runPineScriptOnRows } from '@/lib/runPineScript'
-import {
-  collectMaxHistory,
-  getAutoBacktestScript,
-  getMaxHistory,
-  getMaxHistoryStatus,
-  pingActivity,
-  updateAutoBacktestScript,
-} from '@/services/api'
+import { getAutoBacktestScript, pingActivity, updateAutoBacktestScript } from '@/services/api'
 
 export default function AutoBacktestDetail() {
   const { scriptId } = useParams({ from: '/backtest/auto/$scriptId' })
@@ -55,33 +50,15 @@ export default function AutoBacktestDetail() {
 
   // Backtests need the full collected history (price_history_max), not the default 1y window -
   // same "collect once, then run" gate as StockDetail's MaxHistorySection.
-  const wasRunning = useRef(false)
-  const { data: maxHistory } = useQuery({
-    queryKey: ['maxHistory', symbol],
-    queryFn: () => getMaxHistory(symbol),
-    enabled: !!symbol,
-  })
-  const { data: maxStatus } = useQuery({
-    queryKey: ['maxHistoryStatus', symbol],
-    queryFn: () => getMaxHistoryStatus(symbol),
-    enabled: !!symbol,
-    refetchInterval: (query) => (query.state.data?.running ? 1500 : false),
-  })
-
-  useEffect(() => {
-    if (wasRunning.current && !maxStatus?.running) {
-      queryClient.invalidateQueries({ queryKey: ['maxHistory', symbol] })
-    }
-    wasRunning.current = !!maxStatus?.running
-  }, [maxStatus?.running, symbol, queryClient])
-
-  const collect = useMutation({
-    mutationFn: () => collectMaxHistory(symbol),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['maxHistoryStatus', symbol] }),
-    onError: (e) => toast.error(e.message),
-  })
-
-  const hasMaxData = (maxHistory?.length ?? 0) > 0
+  const {
+    maxHistory,
+    hasMaxData,
+    status: maxStatus,
+    sources,
+    source,
+    setSource,
+    collect,
+  } = useMaxHistoryCollector(symbol)
 
   const execute = useMutation({
     mutationFn: () => runPineScriptOnRows(script, maxHistory ?? []),
@@ -140,6 +117,7 @@ export default function AutoBacktestDetail() {
         <h2 className="text-sm font-medium text-muted-foreground">Run</h2>
         <div className="flex items-center gap-2">
           <SymbolCombobox value={symbol} onChange={setSymbol} />
+          <SourceSelect sources={sources} value={source} onChange={setSource} />
           <Button
             size="sm"
             variant="outline"
@@ -161,10 +139,11 @@ export default function AutoBacktestDetail() {
         {symbol && !hasMaxData && (
           <p className="text-sm text-muted-foreground">
             {maxStatus?.running
-              ? 'Collecting full history from NSE listing… this can take a moment.'
+              ? 'Collecting full history… this can take a moment.'
               : 'Collect max data for this symbol to run the script.'}
           </p>
         )}
+        {maxStatus?.error && <p className="text-sm text-destructive">{maxStatus.error}</p>}
         {error && <p className="text-sm text-destructive">{error}</p>}
         {result &&
           (result.trades ? <BacktestResultView result={result} /> : <PlotsResultView plots={result.plots} />)}

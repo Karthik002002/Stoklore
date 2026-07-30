@@ -259,9 +259,25 @@ CREATE TABLE IF NOT EXISTS manual_trades (
   notes TEXT,
   image_filename TEXT,
   traded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  setup TEXT,
+  ideal_risk_amount REAL
 );
 CREATE INDEX IF NOT EXISTS manual_trades_traded_at_idx ON manual_trades (traded_at DESC);
+ALTER TABLE manual_trades ADD COLUMN IF NOT EXISTS setup TEXT;
+ALTER TABLE manual_trades ADD COLUMN IF NOT EXISTS ideal_risk_amount REAL;
+
+-- Manual corrections to the running account-balance equity curve (deposits/withdrawals/broker
+-- true-ups that aren't trades themselves) - see docs/manual-backtesting-improvement-plan.md.
+CREATE TABLE IF NOT EXISTS balance_adjustments (
+  id SERIAL PRIMARY KEY,
+  amount REAL NOT NULL,
+  type TEXT NOT NULL, -- 'add' | 'subtract'
+  reason TEXT,
+  notes TEXT,
+  adjusted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 -- Daily usage-time + "did they analyze/review today" signals for the consistency/streak feature
 -- (Profile modal). "traded" is deliberately NOT a column here - it's derived live from
@@ -273,6 +289,20 @@ CREATE TABLE IF NOT EXISTS daily_activity (
   analyzed BOOLEAN NOT NULL DEFAULT false,
   reviewed BOOLEAN NOT NULL DEFAULT false
 );
+
+-- NSE's full listed-equity master (SYMBOL, NAME OF COMPANY, SERIES, DATE OF LISTING, ISIN NUMBER
+-- from the exchange's EQUITY_L.csv) - independent of scraped_items/watchlist, which only ever
+-- hold symbols the user has actually looked at. This is the reference list the "manage stocks"
+-- settings tab searches/browses; re-importing a fresh CSV just upserts, so it stays current.
+CREATE TABLE IF NOT EXISTS stocks_master (
+  symbol TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  series TEXT,
+  listing_date DATE,
+  isin TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS stocks_master_name_idx ON stocks_master (name);
 """
 
 
@@ -992,14 +1022,16 @@ def delete_auto_backtest_script(script_id):
 
 
 def create_manual_trade(symbol, direction, quantity, entry_price, exit_price, stop_loss, target,
-                         is_open, result, emotion, tags, notes, traded_at, image_filename=None):
+                         is_open, result, emotion, tags, notes, traded_at, image_filename=None,
+                         setup=None, ideal_risk_amount=None):
     with connect() as conn:
         row = conn.execute(
             "INSERT INTO manual_trades (symbol, direction, quantity, entry_price, exit_price, "
-            "stop_loss, target, is_open, result, emotion, tags, notes, traded_at, image_filename) VALUES "
-            "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, now()), %s) RETURNING id",
+            "stop_loss, target, is_open, result, emotion, tags, notes, traded_at, image_filename, "
+            "setup, ideal_risk_amount) VALUES "
+            "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, now()), %s, %s, %s) RETURNING id",
             (symbol, direction, quantity, entry_price, exit_price, stop_loss, target, is_open,
-             result, emotion, tags, notes, traded_at, image_filename),
+             result, emotion, tags, notes, traded_at, image_filename, setup, ideal_risk_amount),
         ).fetchone()
     return row["id"]
 
@@ -1015,14 +1047,16 @@ def get_manual_trade(trade_id):
 
 
 def update_manual_trade(trade_id, symbol, direction, quantity, entry_price, exit_price, stop_loss,
-                         target, is_open, result, emotion, tags, notes, traded_at):
+                         target, is_open, result, emotion, tags, notes, traded_at, setup=None,
+                         ideal_risk_amount=None):
     with connect() as conn:
         conn.execute(
             "UPDATE manual_trades SET symbol = %s, direction = %s, quantity = %s, entry_price = %s, "
             "exit_price = %s, stop_loss = %s, target = %s, is_open = %s, result = %s, emotion = %s, "
-            "tags = %s, notes = %s, traded_at = COALESCE(%s, traded_at) WHERE id = %s",
+            "tags = %s, notes = %s, traded_at = COALESCE(%s, traded_at), setup = %s, "
+            "ideal_risk_amount = %s WHERE id = %s",
             (symbol, direction, quantity, entry_price, exit_price, stop_loss, target, is_open,
-             result, emotion, tags, notes, traded_at, trade_id),
+             result, emotion, tags, notes, traded_at, setup, ideal_risk_amount, trade_id),
         )
 
 
@@ -1107,3 +1141,80 @@ def get_activity_daily_goal_minutes():
 
 def set_activity_daily_goal_minutes(minutes):
     _set_setting("activity_daily_goal_minutes", str(minutes))
+
+
+# --- Manual backtesting settings (setups list, risk discipline, opening balance) ---------------
+DEFAULT_MANUAL_BACKTEST_SETTINGS = {
+    "setups": [],
+    "risk_deviation_tolerance_pct": 10,
+    "opening_balance": 0,
+}
+
+
+def get_manual_backtest_settings():
+    raw = _get_setting("manual_backtest_settings")
+    if not raw:
+        return dict(DEFAULT_MANUAL_BACKTEST_SETTINGS)
+    try:
+        return {**DEFAULT_MANUAL_BACKTEST_SETTINGS, **json.loads(raw)}
+    except (ValueError, TypeError):
+        return dict(DEFAULT_MANUAL_BACKTEST_SETTINGS)
+
+
+def set_manual_backtest_settings(settings):
+    _set_setting("manual_backtest_settings", json.dumps(settings))
+
+
+def create_balance_adjustment(amount, adj_type, reason, notes, adjusted_at):
+    with connect() as conn:
+        row = conn.execute(
+            "INSERT INTO balance_adjustments (amount, type, reason, notes, adjusted_at) VALUES "
+            "(%s, %s, %s, %s, COALESCE(%s, now())) RETURNING id",
+            (amount, adj_type, reason, notes, adjusted_at),
+        ).fetchone()
+    return row["id"]
+
+
+def list_balance_adjustments():
+    with connect() as conn:
+        return conn.execute("SELECT * FROM balance_adjustments ORDER BY adjusted_at DESC").fetchall()
+
+
+def delete_balance_adjustment(adjustment_id):
+    with connect() as conn:
+        conn.execute("DELETE FROM balance_adjustments WHERE id = %s", (adjustment_id,))
+
+
+def upsert_stocks_master(rows):
+    """rows: list of {symbol, name, series, listing_date, isin}. Bulk upsert - re-importing a
+    fresh NSE CSV just refreshes existing rows and adds new listings, never removes delisted ones."""
+    if not rows:
+        return
+    with connect() as conn:
+        conn.cursor().executemany(
+            "INSERT INTO stocks_master (symbol, name, series, listing_date, isin, updated_at) "
+            "VALUES (%s, %s, %s, %s, %s, now()) ON CONFLICT (symbol) DO UPDATE SET "
+            "name = excluded.name, series = excluded.series, listing_date = excluded.listing_date, "
+            "isin = excluded.isin, updated_at = excluded.updated_at",
+            [(r["symbol"], r["name"], r["series"], r["listing_date"], r["isin"]) for r in rows],
+        )
+
+
+def search_stocks_master(query="", limit=30):
+    """Case-insensitive substring match on symbol or company name, capped at `limit`."""
+    with connect() as conn:
+        return conn.execute(
+            "SELECT symbol, name, series, listing_date, isin FROM stocks_master "
+            "WHERE symbol ILIKE %s OR name ILIKE %s ORDER BY symbol LIMIT %s",
+            (f"%{query}%", f"%{query}%", limit),
+        ).fetchall()
+
+
+def count_stocks_master():
+    with connect() as conn:
+        return conn.execute("SELECT count(*) AS n FROM stocks_master").fetchone()["n"]
+
+
+def delete_stock_master(symbol):
+    with connect() as conn:
+        conn.execute("DELETE FROM stocks_master WHERE symbol = %s", (symbol,))

@@ -7,6 +7,7 @@ import requests
 import yfinance as yf
 from bs4 import BeautifulSoup
 from ddgs import DDGS
+from scrapling.fetchers import Fetcher
 
 NSE_BASE = "https://www.nseindia.com"
 NSE_HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
@@ -63,11 +64,24 @@ def _jsonld_article_body(soup):
     return None
 
 
-def scrape_article(url):
-    """Fetches an arbitrary news/blog URL and returns its title + best-effort body text."""
+def _fetch_html(url):
+    """Scrapling first - its stealthy headers/impersonation get past bot-detection that a plain
+    requests.get trips (many news sites 403 a bare Python UA). Falls back to plain requests if
+    Scrapling errors or comes back non-200."""
+    try:
+        resp = Fetcher.get(url, stealthy_headers=True, timeout=15)
+        if resp.status == 200:
+            return resp.html_content
+    except Exception:
+        pass
     resp = requests.get(url, headers=NSE_HEADERS, timeout=15)
     resp.raise_for_status()
-    soup = BeautifulSoup(resp.text, "html.parser")
+    return resp.text
+
+
+def scrape_article(url):
+    """Fetches an arbitrary news/blog URL and returns its title + best-effort body text."""
+    soup = BeautifulSoup(_fetch_html(url), "html.parser")
 
     jsonld = _jsonld_article_body(soup)
     if jsonld:

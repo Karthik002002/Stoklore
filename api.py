@@ -1,6 +1,8 @@
 """FastAPI server: serves stored reports and a RAG chatbot (AI SDK UI Message Stream protocol) to React."""
 import asyncio
 import base64
+import csv
+import io
 import json
 import os
 import re
@@ -12,7 +14,7 @@ from datetime import date, datetime, timedelta, timezone
 import requests
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -22,10 +24,12 @@ import db
 import events
 import kite
 import llm
+import price_sources
 import prices
 import rules
 import scraper
 import sentiment
+import stocks_master
 
 app = FastAPI()
 db.init_schema()
@@ -186,6 +190,15 @@ def ema_crossover_scan(list_name: str | None = None, short: int = 20, long: int 
     return results
 
 
+@app.get("/api/prices/sources")
+def price_sources_list():
+    """Available "Collect max history" plugins (see price_sources/) - the frontend populates its
+    source selector from this instead of hardcoding names, so adding a new plugin needs no
+    frontend change either. Declared before /api/prices/{symbol} so this literal path isn't
+    shadowed by the parameterized route (same reasoning as ema_crossover_scan above)."""
+    return {"sources": list(price_sources.SOURCES), "default": price_sources.DEFAULT_SOURCE}
+
+
 @app.get("/api/prices/{symbol}")
 def price_history(symbol: str, days: int = 365):
     return db.list_price_history(symbol.upper(), days)
@@ -200,32 +213,83 @@ def price_ema_crossover(symbol: str, short: int = 20, long: int = 50):
 
 
 # Per-symbol max-history collection state, since (unlike the watchlist scans above) this can be
-# triggered independently for any number of symbols at once from their own detail pages.
+# triggered independently for any number of symbols at once from their own detail pages. `error`
+# surfaces a failed source/symbol to the UI instead of just logging it - the whole point of the
+# price_sources plugin split is that one source failing is visible and isolated, not silent.
 _max_collect_state = {}
 
 
-def _run_max_collect(symbol):
-    _max_collect_state[symbol] = {"running": True}
+def _run_max_collect(symbol, source):
+    _max_collect_state[symbol] = {"running": True, "error": None}
     try:
-        prices.collect_max_history(symbol)
+        prices.collect_max_history(symbol, source)
+        _max_collect_state[symbol] = {"running": False, "error": None}
+    except (price_sources.SourceError, ValueError) as e:
+        _max_collect_state[symbol] = {"running": False, "error": str(e)}
     except Exception as e:
-        print(f"max history collection failed for {symbol}: {e}")
-    finally:
-        _max_collect_state[symbol] = {"running": False}
+        _max_collect_state[symbol] = {"running": False, "error": f"unexpected error: {e}"}
 
 
 @app.post("/api/prices/{symbol}/max/collect")
-def trigger_max_collect(symbol: str):
+def trigger_max_collect(symbol: str, source: str = price_sources.DEFAULT_SOURCE):
     symbol = symbol.upper()
+    if source not in price_sources.SOURCES:
+        raise HTTPException(status_code=422, detail=f"unknown price source '{source}'")
     if _max_collect_state.get(symbol, {}).get("running"):
         raise HTTPException(status_code=409, detail=f"Already collecting max history for '{symbol}'")
-    threading.Thread(target=_run_max_collect, args=(symbol,), daemon=True).start()
+    threading.Thread(target=_run_max_collect, args=(symbol, source), daemon=True).start()
     return {"ok": True}
 
 
 @app.get("/api/prices/{symbol}/max/status")
 def max_collect_status(symbol: str):
-    return _max_collect_state.get(symbol.upper(), {"running": False})
+    return _max_collect_state.get(symbol.upper(), {"running": False, "error": None})
+
+
+# Multi-symbol collection, one at a time with a minimum gap between requests (same "sequential,
+# not concurrent" spirit as sync_all's watchlist scan) - a single shared state dict since only
+# one bulk run makes sense at a time, unlike the per-symbol state above.
+BULK_COLLECT_INTERVAL_SECONDS = 5
+
+_bulk_collect_state = {"running": False, "done": 0, "total": 0, "current_symbol": None, "results": []}
+
+
+def _run_bulk_collect(symbols, source):
+    _bulk_collect_state.update(running=True, done=0, total=len(symbols), current_symbol=None, results=[])
+    for i, symbol in enumerate(symbols):
+        _bulk_collect_state["current_symbol"] = symbol
+        try:
+            prices.collect_max_history(symbol, source)
+            _bulk_collect_state["results"].append({"symbol": symbol, "ok": True, "error": None})
+        except (price_sources.SourceError, ValueError) as e:
+            # Caught per-symbol, not around the whole loop - one bad symbol/source failure never
+            # stops the rest of the batch from running.
+            _bulk_collect_state["results"].append({"symbol": symbol, "ok": False, "error": str(e)})
+        except Exception as e:
+            _bulk_collect_state["results"].append({"symbol": symbol, "ok": False, "error": f"unexpected error: {e}"})
+        _bulk_collect_state["done"] = i + 1
+        if i < len(symbols) - 1:
+            time.sleep(BULK_COLLECT_INTERVAL_SECONDS)
+    _bulk_collect_state["running"] = False
+    _bulk_collect_state["current_symbol"] = None
+
+
+@app.post("/api/prices/max/collect-bulk")
+def trigger_bulk_max_collect(req: BulkMaxCollectRequest):
+    if req.source not in price_sources.SOURCES:
+        raise HTTPException(status_code=422, detail=f"unknown price source '{req.source}'")
+    if _bulk_collect_state["running"]:
+        raise HTTPException(status_code=409, detail="A bulk collection is already running")
+    symbols = [s.strip().upper() for s in req.symbols if s.strip()]
+    if not symbols:
+        raise HTTPException(status_code=422, detail="symbols can't be empty")
+    threading.Thread(target=_run_bulk_collect, args=(symbols, req.source), daemon=True).start()
+    return {"ok": True, "total": len(symbols)}
+
+
+@app.get("/api/prices/max/collect-bulk/status")
+def bulk_max_collect_status():
+    return _bulk_collect_state
 
 
 @app.get("/api/prices/{symbol}/max")
@@ -283,6 +347,11 @@ class ActiveModelRequest(BaseModel):
 
 class SentimentRequest(BaseModel):
     url: str
+
+
+class BulkMaxCollectRequest(BaseModel):
+    symbols: list[str]
+    source: str = price_sources.DEFAULT_SOURCE
     model: str | None = None
 
 
@@ -366,6 +435,22 @@ class ManualTradeRequest(BaseModel):
     notes: str | None = None
     traded_at: str | None = None  # ISO datetime; omitted -> now()
     image_filename: str | None = None  # already-uploaded file (e.g. from the Bulk Trades import)
+    setup: str | None = None  # freeform strategy/setup label, e.g. "Breakout" - see manual-backtesting plan
+    ideal_risk_amount: float | None = None  # planned risk in rupees, for Expected-R / risk-deviation
+
+
+class ManualBacktestSettingsRequest(BaseModel):
+    setups: list[str] = []
+    risk_deviation_tolerance_pct: float = 10
+    opening_balance: float = 0
+
+
+class BalanceAdjustmentRequest(BaseModel):
+    amount: float
+    type: str  # "add" | "subtract"
+    reason: str | None = None
+    notes: str | None = None
+    adjusted_at: str | None = None  # ISO datetime; omitted -> now()
 
 
 class ActivityPingRequest(BaseModel):
@@ -525,7 +610,7 @@ def create_manual_trade(req: ManualTradeRequest):
     trade_id = db.create_manual_trade(
         req.symbol.strip().upper(), req.direction, req.quantity, req.entry_price, req.exit_price,
         req.stop_loss, req.target, req.is_open, req.result, req.emotion, req.tags, req.notes,
-        req.traded_at, req.image_filename,
+        req.traded_at, req.image_filename, req.setup, req.ideal_risk_amount,
     )
     return {"id": trade_id}
 
@@ -536,7 +621,7 @@ def update_manual_trade(trade_id: int, req: ManualTradeRequest):
     db.update_manual_trade(
         trade_id, req.symbol.strip().upper(), req.direction, req.quantity, req.entry_price,
         req.exit_price, req.stop_loss, req.target, req.is_open, req.result, req.emotion, req.tags,
-        req.notes, req.traded_at,
+        req.notes, req.traded_at, req.setup, req.ideal_risk_amount,
     )
     return {"ok": True}
 
@@ -586,6 +671,65 @@ async def analyze_bulk_trade_image(file: UploadFile = File(...), model: str | No
     except RuntimeError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     return {"filename": filename, **fields}
+
+
+@app.get("/api/settings/manual-backtest")
+def get_manual_backtest_settings():
+    return db.get_manual_backtest_settings()
+
+
+@app.put("/api/settings/manual-backtest")
+def set_manual_backtest_settings(req: ManualBacktestSettingsRequest):
+    settings = {
+        "setups": [s.strip() for s in req.setups if s.strip()],
+        "risk_deviation_tolerance_pct": req.risk_deviation_tolerance_pct,
+        "opening_balance": req.opening_balance,
+    }
+    db.set_manual_backtest_settings(settings)
+    return settings
+
+
+@app.get("/api/manual-trades/balance-adjustments")
+def balance_adjustments():
+    return db.list_balance_adjustments()
+
+
+@app.post("/api/manual-trades/balance-adjustments")
+def create_balance_adjustment(req: BalanceAdjustmentRequest):
+    if req.type not in {"add", "subtract"}:
+        raise HTTPException(status_code=422, detail="type must be 'add' or 'subtract'")
+    adjustment_id = db.create_balance_adjustment(req.amount, req.type, req.reason, req.notes, req.adjusted_at)
+    return {"id": adjustment_id}
+
+
+@app.delete("/api/manual-trades/balance-adjustments/{adjustment_id}")
+def delete_balance_adjustment(adjustment_id: int):
+    db.delete_balance_adjustment(adjustment_id)
+    return {"ok": True}
+
+
+MANUAL_TRADE_EXPORT_FIELDS = [
+    "id", "symbol", "direction", "setup", "quantity", "entry_price", "exit_price", "stop_loss",
+    "target", "ideal_risk_amount", "is_open", "result", "emotion", "tags", "notes", "traded_at",
+]
+
+
+@app.get("/api/manual-trades/export")
+def export_manual_trades(format: str = "csv"):
+    trades = db.list_manual_trades()
+    if format == "json":
+        body = json.dumps(trades, default=str, indent=2)
+        media_type, filename = "application/json", "manual-trades.json"
+    elif format == "csv":
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=MANUAL_TRADE_EXPORT_FIELDS, extrasaction="ignore")
+        writer.writeheader()
+        for t in trades:
+            writer.writerow({**t, "tags": ", ".join(t["tags"])})
+        body, media_type, filename = buf.getvalue(), "text/csv", "manual-trades.csv"
+    else:
+        raise HTTPException(status_code=422, detail="format must be 'csv' or 'json'")
+    return Response(body, media_type=media_type, headers={"Content-Disposition": f"attachment; filename={filename}"})
 
 
 # --- Consistency/streak tracking (Profile modal) -----------------------------------------------
@@ -1100,6 +1244,31 @@ def stocks():
 def search_stocks(q: str = "", limit: int = 30):
     """Symbol search for the chat @ tag menu - every scraped symbol, not just watchlisted ones."""
     return db.search_symbols(q, min(limit, 30))
+
+
+@app.get("/api/stocks-master")
+def stocks_master_search(q: str = "", limit: int = 30):
+    """Search endpoint for the full NSE listed-equity master (Settings > Manage stocks), separate
+    from /api/stocks/search above which only covers previously-scraped symbols. Always capped at
+    30 - this table has 2000+ rows, nowhere near safe to return unbounded."""
+    return {"stocks": db.search_stocks_master(q, min(limit, 30)), "total": db.count_stocks_master()}
+
+
+@app.post("/api/stocks-master/import")
+async def stocks_master_import(file: UploadFile = File(...)):
+    """Bulk (re)import from an NSE EQUITY_L.csv export - upserts, so re-running with a fresh
+    download just refreshes the list."""
+    rows = stocks_master.parse_csv(await file.read())
+    if not rows:
+        raise HTTPException(status_code=422, detail="no valid rows found in CSV")
+    db.upsert_stocks_master(rows)
+    return {"imported": len(rows), "total": db.count_stocks_master()}
+
+
+@app.delete("/api/stocks-master/{symbol}")
+def stocks_master_delete(symbol: str):
+    db.delete_stock_master(symbol.upper())
+    return {"ok": True}
 
 
 @app.get("/api/indices")

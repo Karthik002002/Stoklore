@@ -21,3 +21,14 @@ test_guardrails.py
 
 
 .env
+
+# graphify - generated knowledge-graph output (graph.json, GRAPH_REPORT.md, HTML viz, Obsidian
+# vault, cost tracker) - regenerable from source, never committed
+graphify-out/
+
+.obsidian/
+
+# local_data/ - scratch output of moneycontrol_local.py's standalone CLI mode (a personal ad-hoc
+# fetch, separate from the app's own price_history_max collection) - fetched data, not code, so
+# it stays out of git the same way uploads/ does.
+local_data/

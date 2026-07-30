@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { ClapperboardIcon, ImagesIcon, PlusIcon, Trash2Icon } from 'lucide-react'
+import { ClapperboardIcon, DownloadIcon, ImagesIcon, PlusIcon, Trash2Icon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import BulkTradesDialog from './BulkTradesDialog'
 import SymbolCombobox from '@/components/SymbolCombobox'
@@ -15,10 +15,22 @@ import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
 import { formatDate, inr } from '@/lib/format'
-import { autoResult, EMOTIONS, RESULT_META, tradePnl, tradeRR, tradeReturnPct } from '@/lib/manualTrades'
+import {
+  autoResult,
+  EMOTIONS,
+  expectedR,
+  NSE_SESSIONS,
+  RESULT_META,
+  riskStatus,
+  sessionFor,
+  tradePnl,
+  tradeRR,
+  tradeReturnPct,
+} from '@/lib/manualTrades'
 import {
   createManualTrade,
   deleteManualTrade,
+  getManualBacktestSettings,
   getManualTrades,
   updateManualTrade,
   uploadManualTradeImage,
@@ -30,11 +42,13 @@ function emptyForm() {
     tradedAt: '',
     symbol: '',
     direction: 'long',
+    setup: '',
     quantity: '',
     entryPrice: '',
     exitPrice: '',
     stopLoss: '',
     target: '',
+    idealRiskAmount: '',
     isOpen: false,
     result: null,
     resultManual: false,
@@ -57,11 +71,13 @@ function formFromTrade(t) {
     tradedAt: toDatetimeLocal(t.traded_at),
     symbol: t.symbol,
     direction: t.direction,
+    setup: t.setup ?? '',
     quantity: String(t.quantity),
     entryPrice: String(t.entry_price),
     exitPrice: t.exit_price != null ? String(t.exit_price) : '',
     stopLoss: t.stop_loss != null ? String(t.stop_loss) : '',
     target: t.target != null ? String(t.target) : '',
+    idealRiskAmount: t.ideal_risk_amount != null ? String(t.ideal_risk_amount) : '',
     isOpen: t.is_open,
     result: t.result,
     resultManual: true, // reopening a saved trade shouldn't silently recompute over its stored result
@@ -75,6 +91,10 @@ const numeric = (v) => (v === '' || v == null ? null : Number(v))
 
 function TradeFormDialog({ open, onOpenChange, trade, onSaved }) {
   const [form, setForm] = useState(emptyForm)
+  const { data: backtestSettings } = useQuery({
+    queryKey: ['manualBacktestSettings'],
+    queryFn: getManualBacktestSettings,
+  })
 
   useEffect(() => {
     if (open) setForm(trade ? formFromTrade(trade) : emptyForm())
@@ -101,11 +121,13 @@ function TradeFormDialog({ open, onOpenChange, trade, onSaved }) {
       const payload = {
         symbol: form.symbol.trim().toUpperCase(),
         direction: form.direction,
+        setup: form.setup.trim() || null,
         quantity: numeric(form.quantity),
         entry_price: numeric(form.entryPrice),
         exit_price: form.isOpen ? null : numeric(form.exitPrice),
         stop_loss: numeric(form.stopLoss),
         target: numeric(form.target),
+        ideal_risk_amount: numeric(form.idealRiskAmount),
         is_open: form.isOpen,
         result: form.isOpen ? null : effectiveResult,
         emotion: form.emotion || null,
@@ -172,6 +194,34 @@ function TradeFormDialog({ open, onOpenChange, trade, onSaved }) {
                 min="0"
                 value={form.quantity}
                 onChange={(e) => set('quantity')(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Setup</label>
+              <Input
+                list="setup-suggestions"
+                value={form.setup}
+                onChange={(e) => set('setup')(e.target.value)}
+                placeholder="e.g. Breakout"
+              />
+              <datalist id="setup-suggestions">
+                {(backtestSettings?.setups ?? []).map((s) => (
+                  <option key={s} value={s} />
+                ))}
+              </datalist>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Ideal risk ₹</label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.idealRiskAmount}
+                onChange={(e) => set('idealRiskAmount')(e.target.value)}
+                placeholder="Planned risk for this setup"
               />
             </div>
           </div>
@@ -291,17 +341,27 @@ function TradeFormDialog({ open, onOpenChange, trade, onSaved }) {
   )
 }
 
-function TradesTable({ trades, onEdit, onDelete }) {
+function TradesTable({ trades, onEdit, onDelete, selected, onToggleSelect, onToggleSelectAll }) {
   if (trades.length === 0) {
-    return <p className="text-sm text-muted-foreground">No trades logged yet - add one above.</p>
+    return <p className="text-sm text-muted-foreground">No trades match - add one above or clear filters.</p>
   }
+  const allSelected = trades.length > 0 && trades.every((t) => selected.has(t.id))
   return (
     <div className="overflow-x-auto rounded-xl border bg-card">
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
+            <TableHead className="w-8">
+              <input
+                type="checkbox"
+                aria-label="Select all trades"
+                checked={allSelected}
+                onChange={() => onToggleSelectAll(trades)}
+              />
+            </TableHead>
             <TableHead>Date</TableHead>
             <TableHead>Symbol</TableHead>
+            <TableHead>Setup</TableHead>
             <TableHead>Direction</TableHead>
             <TableHead className="text-right">Qty</TableHead>
             <TableHead className="text-right">Entry ₹</TableHead>
@@ -327,8 +387,17 @@ function TradesTable({ trades, onEdit, onDelete }) {
             const resultMeta = t.result ? RESULT_META[t.result] : null
             return (
               <TableRow key={t.id} className="cursor-pointer" onClick={() => onEdit(t)}>
+                <TableCell onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${t.symbol} trade`}
+                    checked={selected.has(t.id)}
+                    onChange={() => onToggleSelect(t.id)}
+                  />
+                </TableCell>
                 <TableCell className="whitespace-nowrap">{formatDate(t.traded_at)}</TableCell>
                 <TableCell className="font-medium">{t.symbol}</TableCell>
+                <TableCell className="text-muted-foreground">{t.setup || '—'}</TableCell>
                 <TableCell className="capitalize">{t.direction}</TableCell>
                 <TableCell className="text-right tabular-nums">{t.quantity}</TableCell>
                 <TableCell className="text-right tabular-nums">{inr(t.entry_price)}</TableCell>
@@ -399,14 +468,201 @@ function TradesTable({ trades, onEdit, onDelete }) {
   )
 }
 
+const RISK_STATUS_LABEL = { good: 'Good risk', over: 'Over-risked', under: 'Under-risked' }
+const EMPTY_FILTERS = { setup: '', session: '', riskStatus: '', minR: '', maxR: '' }
+
+function applyFilters(trades, filters, tolerancePct) {
+  const { setup, session, riskStatus: riskFilter, minR, maxR } = filters
+  if (!setup && !session && !riskFilter && !minR && !maxR) return trades
+  return trades.filter((t) => {
+    if (setup && t.setup !== setup) return false
+    if (session && sessionFor(t) !== session) return false
+    if (riskFilter && riskStatus(t, tolerancePct) !== riskFilter) return false
+    const r = expectedR(t)
+    if (minR && (r == null || r < Number(minR))) return false
+    if (maxR && (r == null || r > Number(maxR))) return false
+    return true
+  })
+}
+
+function FilterBar({ trades, filters, onChange }) {
+  const setups = useMemo(() => [...new Set(trades.map((t) => t.setup).filter(Boolean))].sort(), [trades])
+  const active = Object.values(filters).some(Boolean)
+  const set = (key) => (value) => onChange({ ...filters, [key]: value })
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-2">
+      <Select value={filters.setup || 'all'} onValueChange={(v) => set('setup')(v === 'all' ? '' : v)}>
+        <SelectTrigger size="sm" className="w-36">
+          <SelectValue placeholder="Setup" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All setups</SelectItem>
+          {setups.map((s) => (
+            <SelectItem key={s} value={s}>
+              {s}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select value={filters.session || 'all'} onValueChange={(v) => set('session')(v === 'all' ? '' : v)}>
+        <SelectTrigger size="sm" className="w-32">
+          <SelectValue placeholder="Session" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All sessions</SelectItem>
+          {NSE_SESSIONS.map((s) => (
+            <SelectItem key={s.name} value={s.name}>
+              {s.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Select
+        value={filters.riskStatus || 'all'}
+        onValueChange={(v) => set('riskStatus')(v === 'all' ? '' : v)}
+      >
+        <SelectTrigger size="sm" className="w-36">
+          <SelectValue placeholder="Risk discipline" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Any risk sizing</SelectItem>
+          {Object.entries(RISK_STATUS_LABEL).map(([key, label]) => (
+            <SelectItem key={key} value={key}>
+              {label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <Input
+        type="number"
+        step="0.1"
+        placeholder="Min R"
+        value={filters.minR}
+        onChange={(e) => set('minR')(e.target.value)}
+        className="w-20"
+      />
+      <Input
+        type="number"
+        step="0.1"
+        placeholder="Max R"
+        value={filters.maxR}
+        onChange={(e) => set('maxR')(e.target.value)}
+        className="w-20"
+      />
+      {active && (
+        <Button size="sm" variant="ghost" onClick={() => onChange(EMPTY_FILTERS)}>
+          <XIcon className="size-3.5" />
+          Clear
+        </Button>
+      )}
+    </div>
+  )
+}
+
+// Every field this needs to send back is already on the trade object the list endpoint returns
+// (matches ManualTradeRequest one-to-one) - a PUT replaces the whole row, so unlike a real PATCH
+// every field has to be resent, not just the ones being bulk-changed.
+function toUpdatePayload(t) {
+  return {
+    symbol: t.symbol,
+    direction: t.direction,
+    setup: t.setup,
+    quantity: t.quantity,
+    entry_price: t.entry_price,
+    exit_price: t.exit_price,
+    stop_loss: t.stop_loss,
+    target: t.target,
+    ideal_risk_amount: t.ideal_risk_amount,
+    is_open: t.is_open,
+    result: t.result,
+    emotion: t.emotion,
+    tags: t.tags,
+    notes: t.notes,
+    traded_at: t.traded_at,
+  }
+}
+
+function BulkEditDialog({ open, onOpenChange, trades, onSaved }) {
+  const [setup, setSetup] = useState('')
+  const [addTag, setAddTag] = useState('')
+
+  useEffect(() => {
+    if (open) {
+      setSetup('')
+      setAddTag('')
+    }
+  }, [open])
+
+  const apply = useMutation({
+    mutationFn: () =>
+      Promise.all(
+        trades.map((t) =>
+          updateManualTrade(t.id, {
+            ...toUpdatePayload(t),
+            setup: setup.trim() ? setup.trim() : t.setup,
+            tags: addTag.trim() && !t.tags.includes(addTag.trim()) ? [...t.tags, addTag.trim()] : t.tags,
+          }),
+        ),
+      ),
+    onSuccess: () => {
+      toast.success(`Updated ${trades.length} trade${trades.length === 1 ? '' : 's'}`)
+      onSaved()
+      onOpenChange(false)
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Bulk edit {trades.length} trades</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Set setup (leave blank to skip)</label>
+            <Input value={setup} onChange={(e) => setSetup(e.target.value)} placeholder="e.g. Breakout" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Add tag (leave blank to skip)</label>
+            <Input value={addTag} onChange={(e) => setAddTag(e.target.value)} placeholder="e.g. reviewed" />
+          </div>
+          <Button
+            className="w-full"
+            disabled={(!setup.trim() && !addTag.trim()) || apply.isPending}
+            onClick={() => apply.mutate()}
+          >
+            {apply.isPending && <Spinner className="size-4" />}
+            Apply to {trades.length} trade{trades.length === 1 ? '' : 's'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export default function ManualBacktesting() {
   const [view, setView] = useState('overview')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingTrade, setEditingTrade] = useState(null)
   const [bulkOpen, setBulkOpen] = useState(false)
+  const [bulkEditOpen, setBulkEditOpen] = useState(false)
+  const [filters, setFilters] = useState(EMPTY_FILTERS)
+  const [selected, setSelected] = useState(() => new Set())
   const queryClient = useQueryClient()
 
   const { data: trades = [] } = useQuery({ queryKey: ['manualTrades'], queryFn: getManualTrades })
+  const { data: backtestSettings } = useQuery({
+    queryKey: ['manualBacktestSettings'],
+    queryFn: getManualBacktestSettings,
+  })
+
+  const filteredTrades = useMemo(
+    () => applyFilters(trades, filters, backtestSettings?.risk_deviation_tolerance_pct ?? 10),
+    [trades, filters, backtestSettings],
+  )
+  const selectedTrades = useMemo(() => trades.filter((t) => selected.has(t.id)), [trades, selected])
 
   const remove = useMutation({
     mutationFn: deleteManualTrade,
@@ -423,6 +679,21 @@ export default function ManualBacktesting() {
     setDialogOpen(true)
   }
 
+  const toggleSelect = (id) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  const toggleSelectAll = (visibleTrades) =>
+    setSelected((prev) => {
+      const allSelected = visibleTrades.every((t) => prev.has(t.id))
+      const next = new Set(prev)
+      visibleTrades.forEach((t) => (allSelected ? next.delete(t.id) : next.add(t.id)))
+      return next
+    })
+
   return (
     <div className="space-y-4">
       <Tabs value={view} onValueChange={setView}>
@@ -433,6 +704,10 @@ export default function ManualBacktesting() {
             <TabsIndicator />
           </TabsList>
           <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" render={<a href="/api/manual-trades/export?format=csv" />}>
+              <DownloadIcon className="size-4" />
+              Export CSV
+            </Button>
             <Button size="sm" variant="outline" render={<Link to="/backtest/replay" />}>
               <ClapperboardIcon className="size-4" />
               Bar Replay
@@ -450,8 +725,29 @@ export default function ManualBacktesting() {
         <TabsPanel value="overview">
           <ManualOverview trades={trades} />
         </TabsPanel>
-        <TabsPanel value="trades">
-          <TradesTable trades={trades} onEdit={openEdit} onDelete={(id) => remove.mutate(id)} />
+        <TabsPanel value="trades" className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <FilterBar trades={trades} filters={filters} onChange={setFilters} />
+            {selected.size > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">{selected.size} selected</span>
+                <Button size="sm" variant="outline" onClick={() => setBulkEditOpen(true)}>
+                  Bulk edit
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+                  Clear
+                </Button>
+              </div>
+            )}
+          </div>
+          <TradesTable
+            trades={filteredTrades}
+            onEdit={openEdit}
+            onDelete={(id) => remove.mutate(id)}
+            selected={selected}
+            onToggleSelect={toggleSelect}
+            onToggleSelectAll={toggleSelectAll}
+          />
         </TabsPanel>
       </Tabs>
 
@@ -465,6 +761,15 @@ export default function ManualBacktesting() {
         open={bulkOpen}
         onOpenChange={setBulkOpen}
         onSaved={() => queryClient.invalidateQueries({ queryKey: ['manualTrades'] })}
+      />
+      <BulkEditDialog
+        open={bulkEditOpen}
+        onOpenChange={setBulkEditOpen}
+        trades={selectedTrades}
+        onSaved={() => {
+          queryClient.invalidateQueries({ queryKey: ['manualTrades'] })
+          setSelected(new Set())
+        }}
       />
     </div>
   )

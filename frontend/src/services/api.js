@@ -21,8 +21,23 @@ export const getMaxHistory = (symbol) => fetch(`/api/prices/${symbol}/max`).then
 
 export const getMaxHistoryStatus = (symbol) => fetch(`/api/prices/${symbol}/max/status`).then(json)
 
-export const collectMaxHistory = (symbol) =>
-  fetch(`/api/prices/${symbol}/max/collect`, { method: 'POST' }).then(json)
+// `source` picks which price_sources plugin (backend) actually fetches the data - see
+// GET /api/prices/sources for the live list instead of hardcoding names here.
+export const getPriceSources = () => fetch('/api/prices/sources').then(json)
+
+export const collectMaxHistory = (symbol, source) =>
+  fetch(`/api/prices/${symbol}/max/collect?source=${encodeURIComponent(source)}`, { method: 'POST' }).then(
+    json,
+  )
+
+export const collectMaxHistoryBulk = (symbols, source) =>
+  fetch('/api/prices/max/collect-bulk', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ symbols, source }),
+  }).then(json)
+
+export const getBulkCollectStatus = () => fetch('/api/prices/max/collect-bulk/status').then(json)
 
 export const getModels = () => fetch('/api/models').then(json)
 
@@ -179,6 +194,27 @@ export const analyzeBulkTradeImage = (file, model) => {
   return fetch(`/api/manual-trades/bulk/analyze${qs}`, { method: 'POST', body: form }).then(json)
 }
 
+export const getManualBacktestSettings = () => fetch('/api/settings/manual-backtest').then(json)
+
+export const setManualBacktestSettings = (settings) =>
+  fetch('/api/settings/manual-backtest', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  }).then(json)
+
+export const getBalanceAdjustments = () => fetch('/api/manual-trades/balance-adjustments').then(json)
+
+export const createBalanceAdjustment = (adjustment) =>
+  fetch('/api/manual-trades/balance-adjustments', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(adjustment),
+  }).then(json)
+
+export const deleteBalanceAdjustment = (id) =>
+  fetch(`/api/manual-trades/balance-adjustments/${id}`, { method: 'DELETE' }).then(json)
+
 export const pingActivity = (kind) =>
   fetch('/api/activity/ping', {
     method: 'POST',
@@ -205,3 +241,15 @@ export const addStock = (symbol) =>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ symbol }),
   }).then(json)
+
+export const searchStocksMaster = (q = '') =>
+  fetch(`/api/stocks-master?q=${encodeURIComponent(q)}`).then(json)
+
+export const importStocksMaster = (file) => {
+  const form = new FormData()
+  form.append('file', file)
+  return fetch('/api/stocks-master/import', { method: 'POST', body: form }).then(json)
+}
+
+export const deleteStockMaster = (symbol) =>
+  fetch(`/api/stocks-master/${symbol}`, { method: 'DELETE' }).then(json)

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Streamdown } from 'streamdown'
 import {
   ArrowLeftIcon,
@@ -10,21 +10,16 @@ import {
   TrendingDownIcon,
   TrendingUpIcon,
 } from 'lucide-react'
-import { toast } from 'sonner'
+import SourceSelect from '@/components/SourceSelect'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { compact, fmt, formatDateTime, inr, timeAgo } from '@/lib/format'
+import { useMaxHistoryCollector } from '@/lib/useMaxHistoryCollector'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import {
-  collectMaxHistory,
-  getBacktests,
-  getEmaCrossover,
-  getMaxHistory,
-  getMaxHistoryStatus,
-} from '@/services/api'
+import { getBacktests, getEmaCrossover } from '@/services/api'
 import DeleteStockButton from './DeleteStockButton'
 import EventActionsMenu from './EventActionsMenu'
 import PriceChart from './PriceChart'
@@ -56,67 +51,51 @@ function MaxHistoryChart({ rows }) {
 }
 
 function MaxHistorySection({ symbol }) {
-  const queryClient = useQueryClient()
-  const wasRunning = useRef(false)
-
-  const { data: history } = useQuery({
-    queryKey: ['maxHistory', symbol],
-    queryFn: () => getMaxHistory(symbol),
-  })
-  const { data: status } = useQuery({
-    queryKey: ['maxHistoryStatus', symbol],
-    queryFn: () => getMaxHistoryStatus(symbol),
-    refetchInterval: (query) => (query.state.data?.running ? 1500 : false),
-  })
-
-  useEffect(() => {
-    if (wasRunning.current && !status?.running) {
-      queryClient.invalidateQueries({ queryKey: ['maxHistory', symbol] })
-    }
-    wasRunning.current = !!status?.running
-  }, [status?.running, symbol, queryClient])
-
-  const collect = useMutation({
-    mutationFn: () => collectMaxHistory(symbol),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['maxHistoryStatus', symbol] }),
-    onError: (e) => toast.error(e.message),
-  })
-
-  const alreadyCollected = history?.length > 0
+  const {
+    maxHistory: history,
+    hasMaxData: alreadyCollected,
+    status,
+    sources,
+    source,
+    setSource,
+    collect,
+  } = useMaxHistoryCollector(symbol)
 
   return (
     <section>
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-medium text-muted-foreground">Full price history</h2>
-        <Tooltip>
-          {/* disabled <button>s can swallow hover in some browsers - a wrapping span keeps the
-              tooltip working regardless of the button's disabled state, same trick as App.jsx's
-              TooltipIcon. */}
-          <TooltipTrigger render={<span className="inline-flex" />}>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => collect.mutate()}
-              disabled={status?.running || alreadyCollected}
-            >
-              {status?.running ? <Spinner className="size-4" /> : <DatabaseIcon className="size-4" />}
-              Collect max history
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="left">
-            {status?.running
-              ? 'Collecting full history…'
-              : alreadyCollected
-                ? 'Max data is already available'
-                : 'Fetch this stock’s entire price history'}
-          </TooltipContent>
-        </Tooltip>
+        <div className="flex items-center gap-2">
+          <SourceSelect sources={sources} value={source} onChange={setSource} />
+          <Tooltip>
+            {/* disabled <button>s can swallow hover in some browsers - a wrapping span keeps the
+                tooltip working regardless of the button's disabled state, same trick as App.jsx's
+                TooltipIcon. */}
+            <TooltipTrigger render={<span className="inline-flex" />}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => collect.mutate()}
+                disabled={status?.running || alreadyCollected}
+              >
+                {status?.running ? <Spinner className="size-4" /> : <DatabaseIcon className="size-4" />}
+                Collect max history
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              {status?.running
+                ? 'Collecting full history…'
+                : alreadyCollected
+                  ? 'Max data is already available'
+                  : 'Fetch this stock’s entire price history'}
+            </TooltipContent>
+          </Tooltip>
+        </div>
       </div>
       {status?.running && (
-        <p className="mb-3 text-sm text-muted-foreground">
-          Collecting full history from NSE listing… this can take a moment.
-        </p>
+        <p className="mb-3 text-sm text-muted-foreground">Collecting full history… this can take a moment.</p>
       )}
+      {status?.error && <p className="mb-3 text-sm text-destructive">{status.error}</p>}
       {history?.length > 0 && <MaxHistoryChart rows={history} />}
     </section>
   )

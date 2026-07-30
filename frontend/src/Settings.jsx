@@ -1,9 +1,21 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { SettingsIcon, ExternalLinkIcon, Trash2Icon } from 'lucide-react'
+import {
+  CheckCircle2Icon,
+  DatabaseIcon,
+  ExternalLinkIcon,
+  SettingsIcon,
+  Trash2Icon,
+  UploadIcon,
+  XCircleIcon,
+  XIcon,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { BrokerLogo } from '@/BrokerLogo'
+import SourceSelect from '@/components/SourceSelect'
+import StockMasterCombobox from '@/components/StockMasterCombobox'
+import TagInput from '@/components/TagInput'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -16,21 +28,31 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Spinner } from '@/components/ui/spinner'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import {
   checkWatchRule,
+  collectMaxHistoryBulk,
   createWatchRule,
   deleteWatchRule,
+  deleteStockMaster,
   getActiveModel,
   getActivitySettings,
   getBrokerConfig,
+  getBulkCollectStatus,
   getCogencisConfig,
   getLiteLLMConfig,
   getModels,
+  getPriceSources,
   getWatchRules,
   getKiteLoginUrl,
+  getManualBacktestSettings,
+  importStocksMaster,
+  searchStocksMaster,
   setActiveModel,
+  setManualBacktestSettings,
   setActivitySettings,
   setCogencisToken,
   setDhanConfig,
@@ -506,6 +528,107 @@ function WatchRulesTab() {
   )
 }
 
+// Minimum gap enforced between symbols server-side (api.py's BULK_COLLECT_INTERVAL_SECONDS) -
+// mirrored here only for the copy below, not to actually throttle anything client-side.
+const BULK_COLLECT_INTERVAL_SECONDS = 5
+
+function DataCollectionTab() {
+  const queryClient = useQueryClient()
+  const { data: sourcesData } = useQuery({ queryKey: ['priceSources'], queryFn: getPriceSources })
+  const sources = sourcesData?.sources ?? []
+  const [source, setSource] = useState('')
+  useEffect(() => {
+    if (!source && sourcesData?.default) setSource(sourcesData.default)
+  }, [source, sourcesData])
+
+  const [symbols, setSymbols] = useState([])
+  const toggleSymbol = (symbol) =>
+    setSymbols((s) => (s.includes(symbol) ? s.filter((x) => x !== symbol) : [...s, symbol]))
+  const removeSymbol = (symbol) => setSymbols((s) => s.filter((x) => x !== symbol))
+
+  const { data: status } = useQuery({
+    queryKey: ['bulkCollectStatus'],
+    queryFn: getBulkCollectStatus,
+    refetchInterval: (query) => (query.state.data?.running ? 1500 : false),
+  })
+  const running = !!status?.running
+
+  const start = useMutation({
+    mutationFn: () => collectMaxHistoryBulk(symbols, source),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['bulkCollectStatus'] }),
+    onError: (e) => toast.error(e.message),
+  })
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-1">
+        <p className="text-sm font-medium">Multi-stock max-history collector</p>
+        <p className="text-xs text-muted-foreground">
+          Collects full price history for several symbols one at a time, at least{' '}
+          {BULK_COLLECT_INTERVAL_SECONDS}s apart, using the source below - see the source selector next to any
+          "Collect max data" button elsewhere in the app for the same per-symbol version of this.
+        </p>
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-xs text-muted-foreground">Source</label>
+        <SourceSelect sources={sources} value={source} onChange={setSource} className="w-full" />
+      </div>
+
+      <div className="space-y-1.5">
+        <label className="text-xs text-muted-foreground">Symbols</label>
+        <StockMasterCombobox selected={symbols} onSelect={toggleSymbol} />
+        {symbols.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-input p-2">
+            {symbols.map((symbol) => (
+              <span
+                key={symbol}
+                className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs"
+              >
+                {symbol}
+                <button type="button" aria-label={`Remove ${symbol}`} onClick={() => removeSymbol(symbol)}>
+                  <XIcon className="size-3 text-muted-foreground hover:text-foreground" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <Button
+        size="sm"
+        onClick={() => start.mutate()}
+        disabled={symbols.length === 0 || running || start.isPending}
+      >
+        {running ? <Spinner className="size-4" /> : <DatabaseIcon className="size-4" />}
+        Start collecting {symbols.length > 0 ? `(${symbols.length})` : ''}
+      </Button>
+
+      {status && (status.running || status.results?.length > 0) && (
+        <div className="space-y-2 rounded-lg border p-3">
+          <p className="text-sm">
+            {status.done}/{status.total} done
+            {status.current_symbol ? ` - collecting ${status.current_symbol}…` : ''}
+          </p>
+          <div className="space-y-1">
+            {status.results?.map((r) => (
+              <div key={r.symbol} className="flex items-center gap-2 text-xs">
+                {r.ok ? (
+                  <CheckCircle2Icon className="size-3.5 shrink-0 text-up" />
+                ) : (
+                  <XCircleIcon className="size-3.5 shrink-0 text-down" />
+                )}
+                <span className="font-medium">{r.symbol}</span>
+                {r.error && <span className="truncate text-muted-foreground">{r.error}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ActivityTab() {
   const queryClient = useQueryClient()
   const { data: config } = useQuery({ queryKey: ['activitySettings'], queryFn: getActivitySettings })
@@ -584,6 +707,202 @@ function ActivityTab() {
   )
 }
 
+function ManualBacktestTab() {
+  const queryClient = useQueryClient()
+  const { data: config } = useQuery({
+    queryKey: ['manualBacktestSettings'],
+    queryFn: getManualBacktestSettings,
+  })
+  const [setups, setSetups] = useState(null)
+  const [tolerance, setTolerance] = useState('')
+  const [openingBalance, setOpeningBalance] = useState('')
+
+  useEffect(() => {
+    if (config) {
+      setSetups(config.setups)
+      setTolerance(String(config.risk_deviation_tolerance_pct))
+      setOpeningBalance(String(config.opening_balance))
+    }
+  }, [config])
+
+  const save = useMutation({
+    mutationFn: () =>
+      setManualBacktestSettings({
+        setups,
+        risk_deviation_tolerance_pct: Number(tolerance),
+        opening_balance: Number(openingBalance),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['manualBacktestSettings'] })
+      toast.success('Backtesting settings saved')
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
+  if (!setups) return <p className="text-sm text-muted-foreground">Loading…</p>
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Setups</p>
+        <TagInput value={setups} onChange={setSetups} placeholder="Add a setup, e.g. Breakout…" />
+        <p className="text-xs text-muted-foreground">
+          Suggested values for the Setup field when logging a manual trade - what you actually type there
+          isn't restricted to this list, it's just autocomplete so the same setup name stays spelled the same
+          way across trades (needed for the per-setup breakdown on the Overview tab to group correctly).
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Risk deviation tolerance</p>
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            min="0"
+            value={tolerance}
+            onChange={(e) => setTolerance(e.target.value)}
+            className="w-24"
+          />
+          <span className="text-sm text-muted-foreground">%</span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          How far actual risk (from stop-loss × quantity) can drift from a trade's planned "ideal risk" before
+          it's flagged over/under-risked.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Opening balance</p>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">₹</span>
+          <Input
+            type="number"
+            min="0"
+            value={openingBalance}
+            onChange={(e) => setOpeningBalance(e.target.value)}
+            className="w-32"
+          />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Starting point for the account-balance equity curve on the Manual backtesting Overview tab.
+        </p>
+      </div>
+
+      <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
+        Save
+      </Button>
+    </div>
+  )
+}
+
+function StocksMasterTab() {
+  const queryClient = useQueryClient()
+  const fileInput = useRef(null)
+  const [query, setQuery] = useState('')
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['stocksMaster', query],
+    queryFn: () => searchStocksMaster(query),
+  })
+  const stocks = data?.stocks ?? []
+
+  const importCsv = useMutation({
+    mutationFn: importStocksMaster,
+    onSuccess: ({ imported }) => {
+      queryClient.invalidateQueries({ queryKey: ['stocksMaster'] })
+      toast.success(`Imported ${imported} stocks`)
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
+  const remove = useMutation({
+    mutationFn: deleteStockMaster,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['stocksMaster'] }),
+    onError: (e) => toast.error(e.message),
+  })
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <p className="text-sm font-medium">NSE listed-equity master</p>
+          <p className="text-xs text-muted-foreground">
+            {data ? `${data.total.toLocaleString()} stocks` : 'Loading…'} - imported from NSE's EQUITY_L.csv
+            export. Search shows up to 30 matches at a time.
+          </p>
+        </div>
+        <input
+          ref={fileInput}
+          type="file"
+          accept=".csv"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file) importCsv.mutate(file)
+            e.target.value = ''
+          }}
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => fileInput.current?.click()}
+          disabled={importCsv.isPending}
+        >
+          {importCsv.isPending ? <Spinner className="size-4" /> : <UploadIcon className="size-4" />}
+          Import CSV
+        </Button>
+      </div>
+
+      <Input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Search by symbol or company name…"
+      />
+
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Symbol</TableHead>
+            <TableHead>Name</TableHead>
+            <TableHead>Series</TableHead>
+            <TableHead>Listed</TableHead>
+            <TableHead>ISIN</TableHead>
+            <TableHead className="w-8" />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {stocks.map((s) => (
+            <TableRow key={s.symbol}>
+              <TableCell className="font-medium">{s.symbol}</TableCell>
+              <TableCell className="max-w-56 truncate" title={s.name}>
+                {s.name}
+              </TableCell>
+              <TableCell>{s.series}</TableCell>
+              <TableCell>{s.listing_date}</TableCell>
+              <TableCell className="text-muted-foreground">{s.isin}</TableCell>
+              <TableCell>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={`Remove ${s.symbol}`}
+                  onClick={() => remove.mutate(s.symbol)}
+                >
+                  <Trash2Icon className="size-3.5" />
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      {!isLoading && stocks.length === 0 && (
+        <p className="text-xs text-muted-foreground">
+          {data?.total ? 'No matches.' : 'Nothing imported yet - use "Import CSV" above.'}
+        </p>
+      )}
+    </div>
+  )
+}
+
 export default function Settings() {
   const { settings } = useSearch({ strict: false })
   const navigate = useNavigate()
@@ -619,7 +938,10 @@ export default function Settings() {
             <TabsTab value="cogencis">Cogencis</TabsTab>
             <TabsTab value="broker">Broker</TabsTab>
             <TabsTab value="rules">Watch rules</TabsTab>
+            <TabsTab value="data">Collect data</TabsTab>
+            <TabsTab value="stocks">Manage stocks</TabsTab>
             <TabsTab value="activity">Activity</TabsTab>
+            <TabsTab value="backtesting">Backtesting</TabsTab>
           </TabsList>
           <div className="min-w-0 flex-1 overflow-y-auto pr-1">
             <TabsPanel value="model">
@@ -637,8 +959,17 @@ export default function Settings() {
             <TabsPanel value="rules">
               <WatchRulesTab />
             </TabsPanel>
+            <TabsPanel value="data">
+              <DataCollectionTab />
+            </TabsPanel>
+            <TabsPanel value="stocks">
+              <StocksMasterTab />
+            </TabsPanel>
             <TabsPanel value="activity">
               <ActivityTab />
+            </TabsPanel>
+            <TabsPanel value="backtesting">
+              <ManualBacktestTab />
             </TabsPanel>
           </div>
         </Tabs>

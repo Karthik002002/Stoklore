@@ -18,18 +18,56 @@ paper-trade it.
 
 **Trading**
 - **Buy**/**Sell** in the Trade panel opens an order ticket — Market or
-  Limit, with optional stop-loss/target. A target/SL on the wrong side of
-  entry is rejected with an inline error.
+  Limit, with optional take-profit and stop-loss. A level on the wrong
+  side of entry is rejected with an inline error.
 - Drag a stop-loss/target line directly on the chart to adjust it after
-  placing the order. If an order was placed without one, use **Set stop
-  loss**/**Set target** on that position to add one (seeded near entry,
-  then drag it into place).
+  placing the order.
 - If price gaps clean past a stop-loss/target instead of touching it, the
   trade still closes — filled at that bar's open, not the skipped level.
 - Closing a trade (manually or automatically) opens a feedback dialog
   (result/emotion/notes) and pauses playback while it's open. The trade is
   saved with a screenshot of the chart at that moment, and shows up in the
   [Manual trade journal](backtesting-manual.md) above.
+
+**Multiple stop-loss/target levels (laddered exits)**
+- A position isn't limited to one stop-loss or one target — in the order
+  ticket, click **Add level** under either Take profit or Stop loss to add
+  a second (or third, etc.) level, each with its own price and its own
+  share of the quantity. This is a laddered/scaled exit: e.g. take profit
+  on half the position at a near target and let the rest run toward a
+  farther one, or exit half at a tight stop and the rest at a wider one -
+  instead of an all-or-nothing exit on either side.
+- Each level's quantity is entered directly (not a %) — the total across a
+  ladder's levels must not exceed the order's share count; whatever isn't
+  covered by a level simply has no stop-loss/take-profit protection for
+  that slice, exactly like leaving it off entirely.
+- When a bar's range reaches a level, only *that level's* quantity closes
+  — the position stays open with its remaining, untouched levels still
+  active (on both sides), at the new smaller size. Each level that closes
+  is journaled as its own trade (so a 2-level ladder that fully unwinds
+  across two bars produces two rows in the Manual trade journal, not one).
+  If a single bar (or a gap) blows through more than one level at once,
+  all of them close together, each still logged as its own trade at that
+  bar's fill price. If any stop-loss level is hit, target levels are not
+  also checked that same bar — stop-loss wins for the whole order (same
+  conservative rule as before, just extended to a partial hit).
+
+**Adding a level to a live position — straight from the chart**
+- Once a position is open, its Trade panel row shows an **Add stop
+  loss**/**Add target** button per side (only while some quantity on that
+  side is still unprotected). Clicking it doesn't open any form — it arms
+  the chart (cursor turns into a crosshair, chart pan/zoom is paused, and
+  the button itself shows "Click the chart…") and waits for your next
+  click on the price you want. That click places the new level right
+  there, covering whatever quantity wasn't already covered on that side.
+  Click the button again (or click elsewhere once already armed) to place
+  it; there's no separate "drag it into position afterward" step.
+- Every level, once placed (from the ticket or from the chart), is its own
+  draggable line (labeled `SL1`/`SL2`… or `T1`/`T2`… once there's more than
+  one on that side) and its own row in the Trade panel, each independently
+  removable. Removing a level just drops its protection — it does **not**
+  close any part of the position, only an actual bar touching a level's
+  price does that.
 
 **Indicators & settings**
 - Indicators panel: add EMA, SMA, or RSI. RSI gets its own pane below the
@@ -87,6 +125,132 @@ level itself was never actually available to trade at. If a bar somehow
 hits both stop-loss and target at once (a very wide bar, or a gap past
 both), stop-loss wins — which side happened first intrabar is
 unknowable, so this is the conservative assumption.
+
+### Laddered stop-loss/target: one order, several partial-exit legs, on both sides
+
+A position's stop-loss and target each aren't a single price — they're
+`stopLosses` and `targets`, both lists of `{ id, price, qty }` legs, each
+covering part of the order's quantity. A plain single-stop or
+single-target order is just the one-leg case (one leg, `qty` equal to the
+whole position), so nothing about the simple path changed; the list is
+what makes more than one level possible, independently, on either side.
+
+`processBarForOrders` checks every open order's legs **independently**,
+on both sides, ordered nearest-to-entry first (`orderLegsByProximity` -
+sorted by plain distance from `order.entryPrice`, which happens to land
+stop-loss and target legs in the right nearest-first order on both sides
+of both directions without needing to special-case long vs. short), using
+the exact same `levelHit()` touch-or-gap logic as before, just once per
+leg instead of once per order:
+
+- A leg only shows up in `triggeredCloses` if the bar's range actually
+  reaches (or gaps past) *that leg's own price* — a bar that only reaches
+  a nearer leg leaves a farther one on the same side completely untouched,
+  so the position survives at a reduced size rather than fully closing.
+- Each hit leg gets its **own** `triggeredCloses` entry (carrying that
+  leg's `price`/`qty` and a `reason` of `'stop_loss'` or `'target'`),
+  because a partial hit is a partial close — the caller (BarReplay.jsx)
+  needs to know exactly which slice closed, not just "this order had *a*
+  stop-loss/target hit somewhere."
+- If a gap (or one very wide bar) reaches past more than one leg on the
+  same side at once, every reached leg is hit in the same call, each with
+  its own entry - same underlying `levelHit()` gap-fill rule per leg, so a
+  leg gapped clean through fills at the bar's open just like the
+  single-stop/single-target case always did.
+- If **any** stop-loss leg is hit, target legs are not checked for that
+  order in that same bar — the original "stop-loss wins" conservative
+  rule, just extended to cover a partial hit instead of only a full one.
+
+Nothing is mutated in `orders` for a hit leg until its close is actually
+confirmed (same "closing only happens on confirm" rule the single-stop
+version always followed) — see the next section for what confirming does.
+
+### Partial closes: one order can produce several journaled trades
+
+Closing used to always mean "this order is done, drop it from `orders`."
+With laddered exits that's no longer true for a partial hit, so the
+close-confirmation flow (`BarReplay.jsx`'s `closeQueue` +
+`CloseTradeDialog`) now carries a `leg` alongside the `order` and `reason`
+for every queued close - `null` for a full close (manual, or a legacy
+single-leg order that covers the whole position), or the specific leg
+object for a partial stop-loss/target hit.
+
+- The **dedup key** for the close queue changed from "order id" to "order
+  id + leg id" (`closeKey` in BarReplay.jsx) - a gap that hits two legs of
+  the same order (on the same side) in one bar needs *two* queued
+  confirmations, not one, and the old order-id-only key would have
+  silently dropped the second.
+- `CloseTradeDialog` journals `leg?.qty ?? order.quantity` as the trade's
+  quantity. Its `stop_loss`/`target` fields are gated by `reason` - e.g.
+  `reason === 'stop_loss' ? leg?.price : order.stopLosses?.[0]?.price` -
+  so a target-leg hit doesn't get misreported as a stop-loss price (a leg
+  is now attached for *both* kinds of hit) and vice versa; a manual close
+  falls back to whichever level is first-remaining on each side, purely
+  informational, same as before laddering existed. Its title shows
+  `(partial: N/M shares)` when it isn't the whole position.
+- Confirming a partial close (`onClosed` in BarReplay.jsx) removes just
+  that one leg from the relevant field (`stopLosses` or `targets`,
+  whichever `reason` points at) and reduces `order.quantity` by the leg's
+  `qty`. If that was the last leg (nothing left covering the remaining
+  quantity, i.e. `remainingQty <= 0`), it's really a full close and the
+  order is dropped entirely - same end state as the old single-level
+  path, just reached by however many partial confirmations it took to
+  unwind the ladder. Dismissing the dialog without saving, as always,
+  leaves the order completely unchanged - a stale confirmation can never
+  silently shrink a position.
+
+### Adding a level to a live position from the chart, not a form
+
+TradingPanel's "Add stop loss"/"Add target" buttons don't call anything
+that mutates an order directly. Clicking one arms `addLevelMode` in
+BarReplay.jsx (`{ orderId, kind }`, toggled off by clicking again) and
+waits for the next chart click:
+
+- `ReplayChart.jsx` gets `addLevelMode`/`onPlaceLevel` as props. A reactive
+  effect (same pattern the disabled "Draw long/short" tool already used
+  for this exact reason) disables the chart's own pan/zoom and switches
+  the cursor to a crosshair *at arm time*, not inside the click handler -
+  the chart's own pan handler lives on a descendant canvas and would
+  otherwise see the same pointerdown first and already start panning
+  before a reactive toggle could stop it.
+- The pointerdown handler checks for an existing line-drag first (so
+  dragging a level still works exactly as before); only if nothing was
+  grabbed **and** `addLevelMode` is armed does the click count as a
+  placement - it reads the price at that y-coordinate and calls
+  `onPlaceLevel(price)`.
+- `placeLevel` in BarReplay.jsx (the `onPlaceLevel` handler) resolves
+  `addLevelMode` back to an order + field (`stopLosses` or `targets`),
+  computes the still-uncovered quantity on that side, and appends one new
+  leg there - the exact same "cover whatever's left" rule the old
+  one-shot "Set stop loss"/"Set target" buttons used, just placed by a
+  click instead of a computed default offset that then needed dragging.
+
+### Chart & Trade panel: one line, one row, per leg (both sides)
+
+`ReplayChart.jsx`'s draggable-price-line effect and price-line-drawing
+effect both iterate `order.stopLosses` **and** `order.targets` instead of
+reading two flat fields - each leg on either side gets its own line
+(`SL1`/`SL2`… or `T1`/`T2`… once there's more than one on that side),
+keyed `${orderId}:stopLoss:${legId}`/`${orderId}:target:${legId}` so
+dragging one leg's line only touches that leg. `TradingPanel.jsx`'s
+`OrderRow` mirrors this with one row per leg on each side (each with its
+own remove button) instead of a single optional field - "Add stop
+loss"/"Add target" only appears while some quantity on that side is still
+unprotected (`covered qty < order.quantity`), matching how the old
+one-shot "Set stop loss"/"Set target" buttons only appeared when there
+was nothing set yet.
+
+### Persisted sessions: a one-time store migration
+
+Existing sessions saved before this feature have orders with bare
+`stopLoss: number | null` and `target: number | null` fields, not
+`stopLosses`/`targets` lists. `store.js`'s zustand `persist` config bumps
+to `version: 1` with a `migrate` function that rewrites any
+`version < 1` order's `stopLoss`/`target` into single-leg
+`stopLosses`/`targets` arrays (`[{ id, price, qty: order.quantity }]`, or
+`[]` if it was `null`) the first time the store rehydrates - so a session
+saved before this change resumes exactly as it looked before, just
+represented as the new one-leg-covers-everything shape under the hood.
 
 ### The chart: lightweight-charts, one instance, multiple panes
 

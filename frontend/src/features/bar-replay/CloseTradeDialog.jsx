@@ -19,6 +19,7 @@ export default function CloseTradeDialog({
   order,
   exitPrice,
   reason,
+  leg,
   chartImage,
   onClosed,
 }) {
@@ -38,6 +39,16 @@ export default function CloseTradeDialog({
     }
   }, [open])
 
+  // A laddered stop-loss/target leg only closes its own slice of the position, not the order's
+  // full quantity - falls back to the order's (remaining) quantity for a plain full/manual close.
+  const quantity = leg?.qty ?? order?.quantity
+  // Report whichever level actually triggered THIS close as its journaled price - a leg is
+  // attached for both stop-loss and target hits now, so it must be gated by `reason`, not just
+  // "is there a leg", or a target hit would get misreported as its stop-loss price and vice
+  // versa. Falls back to the position's first remaining level on that side for a manual close
+  // (no reason to attribute to either) - informational only, same as before laddering existed.
+  const stopLossPrice = reason === 'stop_loss' ? leg?.price : (order?.stopLosses?.[0]?.price ?? null)
+  const targetPrice = reason === 'target' ? leg?.price : (order?.targets?.[0]?.price ?? null)
   const computedResult = order
     ? autoResult({ direction: order.direction, entry_price: order.entryPrice, exit_price: exitPrice })
     : null
@@ -47,7 +58,7 @@ export default function CloseTradeDialog({
         direction: order.direction,
         entry_price: order.entryPrice,
         exit_price: exitPrice,
-        quantity: order.quantity,
+        quantity,
       })
     : null
 
@@ -56,11 +67,11 @@ export default function CloseTradeDialog({
       const { id } = await createManualTrade({
         symbol,
         direction: order.direction,
-        quantity: order.quantity,
+        quantity,
         entry_price: order.entryPrice,
         exit_price: exitPrice,
-        stop_loss: order.stopLoss ?? null,
-        target: order.target ?? null,
+        stop_loss: stopLossPrice,
+        target: targetPrice,
         is_open: false,
         result: effectiveResult,
         emotion: emotion || null,
@@ -92,6 +103,11 @@ export default function CloseTradeDialog({
         <DialogHeader>
           <DialogTitle className="capitalize">
             Close {symbol} {order.direction}
+            {leg && quantity < order.quantity && (
+              <span className="ml-1.5 text-xs font-normal text-muted-foreground normal-case">
+                (partial: {quantity}/{order.quantity} shares)
+              </span>
+            )}
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
@@ -100,7 +116,7 @@ export default function CloseTradeDialog({
           )}
           <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-3 text-sm">
             <span>
-              {order.quantity} @ {inr(order.entryPrice)} → {inr(exitPrice)}
+              {quantity} @ {inr(order.entryPrice)} → {inr(exitPrice)}
             </span>
             <span className={`font-semibold tabular-nums ${pnl >= 0 ? 'text-up' : 'text-down'}`}>
               {inr(pnl)}

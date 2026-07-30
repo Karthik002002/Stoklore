@@ -100,3 +100,120 @@ export function sessionFor(t) {
   const session = NSE_SESSIONS.find((s) => minutes >= s.startMinutes && minutes < s.endMinutes)
   return session?.name ?? 'After hours'
 }
+
+// --- Loss-focused analysis: streaks, stop discipline, revenge-trade heuristic -----------------
+// Losing trades diagnose "why" far better than profit metrics, which just reward whatever's
+// already working - these all read fields already captured per trade, no new columns needed.
+
+// trades must be chronological (oldest first).
+function streaksBy(trades, predicate) {
+  let longest = 0
+  let running = 0
+  trades.forEach((t) => {
+    if (predicate(t)) {
+      running += 1
+      longest = Math.max(longest, running)
+    } else {
+      running = 0
+    }
+  })
+  let current = 0
+  for (let i = trades.length - 1; i >= 0; i--) {
+    if (predicate(trades[i])) current += 1
+    else break
+  }
+  return { longest, current }
+}
+
+export function lossStreaks(trades) {
+  return streaksBy(trades, (t) => tradePnl(t) < 0)
+}
+
+export function winStreaks(trades) {
+  return streaksBy(trades, (t) => tradePnl(t) > 0)
+}
+
+// True if the realized loss ate through more than the stop-loss distance implied - the stop
+// wasn't actually honored (slippage, a gap, or a manual override). Null when there's nothing to
+// compare against (no stop set, or the trade wasn't a loss).
+export function lossExceededStop(t) {
+  const pnl = tradePnl(t)
+  const risk = actualRiskAmount(t)
+  if (pnl == null || pnl >= 0 || risk == null || risk === 0) return null
+  return Math.abs(pnl) > risk
+}
+
+// Heuristic, not a stored fact: a trade counts as "likely revenge" if tagged with the Revenge
+// emotion outright, or if it followed a same-day loss and was sized bigger than planned - the two
+// symptoms trading-psychology research on revenge trading calls out (over-sized, off-plan entries
+// right after a loss). trades must be chronological; prevTrade is trades[i - 1].
+export function isLikelyRevenge(trade, prevTrade, tolerancePct) {
+  if (trade.emotion === 'Revenge') return true
+  if (!prevTrade) return false
+  const prevPnl = tradePnl(prevTrade)
+  if (prevPnl == null || prevPnl >= 0) return false
+  if (trade.traded_at.slice(0, 10) !== prevTrade.traded_at.slice(0, 10)) return false
+  return riskStatus(trade, tolerancePct) === 'over'
+}
+
+// --- Profit/edge metrics: is the edge real, or a couple of outliers carrying the average? ------
+// See docs brainstorm on SQN/Sortino/profit concentration - all derived from per-trade R
+// (expectedR, needs ideal_risk_amount set) or raw closed-trade P&L, no new columns needed.
+
+// Van Tharp's System Quality Number: combines expectancy and consistency into one number -
+// sqrt(N) * mean(R) / stdev(R), N capped at 100 so a huge sample doesn't inflate it further.
+// rValues: array of per-trade expectedR() values (nulls already filtered out by the caller).
+export function systemQualityNumber(rValues) {
+  const n = rValues.length
+  if (n < 2) return null
+  const mean = rValues.reduce((s, r) => s + r, 0) / n
+  const variance = rValues.reduce((s, r) => s + (r - mean) ** 2, 0) / (n - 1)
+  const stdev = Math.sqrt(variance)
+  if (stdev === 0) return null
+  return Math.round(((Math.sqrt(Math.min(n, 100)) * mean) / stdev) * 100) / 100
+}
+
+// Van Tharp's classic rating table.
+export function sqnRating(sqn) {
+  if (sqn == null) return null
+  if (sqn < 1.6) return 'Poor'
+  if (sqn < 2.0) return 'Below average'
+  if (sqn < 2.5) return 'Average'
+  if (sqn < 3.0) return 'Good'
+  if (sqn < 5.0) return 'Excellent'
+  if (sqn < 7.0) return 'Superb'
+  return 'Holy grail'
+}
+
+// Sortino ratio, applied to per-trade R rather than a time series of % returns (this journal has
+// no reliable per-day capital base to compute % returns against) - mean(R) over the standard
+// deviation of only the downside (losing) R values, so winners of any size never get penalized.
+export function sortinoRatio(rValues) {
+  const n = rValues.length
+  if (n < 2) return null
+  const mean = rValues.reduce((s, r) => s + r, 0) / n
+  const downsideVariance = rValues.reduce((s, r) => s + Math.min(r, 0) ** 2, 0) / n
+  const downsideDeviation = Math.sqrt(downsideVariance)
+  if (downsideDeviation === 0) return null
+  return Math.round((mean / downsideDeviation) * 100) / 100
+}
+
+export function recoveryFactor(netProfit, maxDrawdown) {
+  if (!maxDrawdown) return null
+  return Math.round((netProfit / maxDrawdown) * 100) / 100
+}
+
+// Underwater curve: drawdown from the running peak at each point of a cumulative P&L series
+// (ascending, oldest first) - values are <= 0. Popularized by Jack Schwager as a clearer read on
+// "how did I get here" than a flat max-drawdown number (one sharp crash vs a slow bleed).
+export function underwaterSeries(cumulativeValues) {
+  let peak = 0
+  let maxDrawdown = 0
+  const series = cumulativeValues.map((v) => {
+    peak = Math.max(peak, v)
+    const dd = Math.round((v - peak) * 100) / 100
+    if (-dd > maxDrawdown) maxDrawdown = -dd
+    return dd
+  })
+  return { series, maxDrawdown: Math.round(maxDrawdown * 100) / 100 }
+}

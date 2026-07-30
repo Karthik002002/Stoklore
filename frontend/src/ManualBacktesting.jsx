@@ -4,6 +4,7 @@ import { Link } from '@tanstack/react-router'
 import { ClapperboardIcon, DownloadIcon, ImagesIcon, PlusIcon, Trash2Icon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import BulkTradesDialog from './BulkTradesDialog'
+import ImageLightbox from '@/components/ImageLightbox'
 import SymbolCombobox from '@/components/SymbolCombobox'
 import TagInput from '@/components/TagInput'
 import { Badge } from '@/components/ui/badge'
@@ -91,6 +92,7 @@ const numeric = (v) => (v === '' || v == null ? null : Number(v))
 
 function TradeFormDialog({ open, onOpenChange, trade, onSaved }) {
   const [form, setForm] = useState(emptyForm)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
   const { data: backtestSettings } = useQuery({
     queryKey: ['manualBacktestSettings'],
     queryFn: getManualBacktestSettings,
@@ -153,195 +155,204 @@ function TradeFormDialog({ open, onOpenChange, trade, onSaved }) {
   })
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>{trade ? 'Edit trade' : 'Add trade'}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Date</label>
-              <Input
-                type="datetime-local"
-                value={form.tradedAt}
-                onChange={(e) => set('tradedAt')(e.target.value)}
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{trade ? 'Edit trade' : 'Add trade'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Date</label>
+                <Input
+                  type="datetime-local"
+                  value={form.tradedAt}
+                  onChange={(e) => set('tradedAt')(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Symbol</label>
+                <SymbolCombobox value={form.symbol} onChange={set('symbol')} className="w-full" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Direction</label>
+                <Select value={form.direction} onValueChange={set('direction')}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="long">Buy (Long)</SelectItem>
+                    <SelectItem value="short">Sell (Short)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Quantity</label>
+                <Input
+                  type="number"
+                  min="0"
+                  value={form.quantity}
+                  onChange={(e) => set('quantity')(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Setup</label>
+                <Input
+                  list="setup-suggestions"
+                  value={form.setup}
+                  onChange={(e) => set('setup')(e.target.value)}
+                  placeholder="e.g. Breakout"
+                />
+                <datalist id="setup-suggestions">
+                  {(backtestSettings?.setups ?? []).map((s) => (
+                    <option key={s} value={s} />
+                  ))}
+                </datalist>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Ideal risk ₹</label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={form.idealRiskAmount}
+                  onChange={(e) => set('idealRiskAmount')(e.target.value)}
+                  placeholder="Planned risk for this setup"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Entry ₹</label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={form.entryPrice}
+                  onChange={(e) => set('entryPrice')(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Exit ₹{form.isOpen ? ' (open)' : ''}</label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={form.exitPrice}
+                  disabled={form.isOpen}
+                  onChange={(e) => set('exitPrice')(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Stop loss ₹</label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={form.stopLoss}
+                  onChange={(e) => set('stopLoss')(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Target ₹</label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={form.target}
+                  onChange={(e) => set('target')(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={form.isOpen}
+                onChange={(e) => setForm((f) => ({ ...f, isOpen: e.target.checked }))}
               />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Symbol</label>
-              <SymbolCombobox value={form.symbol} onChange={set('symbol')} className="w-full" />
-            </div>
-          </div>
+              Trade still open (exit not required)
+            </label>
 
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Direction</label>
-              <Select value={form.direction} onValueChange={set('direction')}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="long">Buy (Long)</SelectItem>
-                  <SelectItem value="short">Sell (Short)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Quantity</label>
-              <Input
-                type="number"
-                min="0"
-                value={form.quantity}
-                onChange={(e) => set('quantity')(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Setup</label>
-              <Input
-                list="setup-suggestions"
-                value={form.setup}
-                onChange={(e) => set('setup')(e.target.value)}
-                placeholder="e.g. Breakout"
-              />
-              <datalist id="setup-suggestions">
-                {(backtestSettings?.setups ?? []).map((s) => (
-                  <option key={s} value={s} />
-                ))}
-              </datalist>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Ideal risk ₹</label>
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                value={form.idealRiskAmount}
-                onChange={(e) => set('idealRiskAmount')(e.target.value)}
-                placeholder="Planned risk for this setup"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Entry ₹</label>
-              <Input
-                type="number"
-                step="0.01"
-                value={form.entryPrice}
-                onChange={(e) => set('entryPrice')(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Exit ₹{form.isOpen ? ' (open)' : ''}</label>
-              <Input
-                type="number"
-                step="0.01"
-                value={form.exitPrice}
-                disabled={form.isOpen}
-                onChange={(e) => set('exitPrice')(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Stop loss ₹</label>
-              <Input
-                type="number"
-                step="0.01"
-                value={form.stopLoss}
-                onChange={(e) => set('stopLoss')(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Target ₹</label>
-              <Input
-                type="number"
-                step="0.01"
-                value={form.target}
-                onChange={(e) => set('target')(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={form.isOpen}
-              onChange={(e) => setForm((f) => ({ ...f, isOpen: e.target.checked }))}
-            />
-            Trade still open (exit not required)
-          </label>
-
-          {!form.isOpen && (
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Result</label>
-              <Select
-                value={effectiveResult ?? ''}
-                onValueChange={(v) => setForm((f) => ({ ...f, result: v, resultManual: true }))}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="—" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="profit">Profit</SelectItem>
-                  <SelectItem value="loss">Loss</SelectItem>
-                  <SelectItem value="neutral">Neutral</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Emotion</label>
-            <Select value={form.emotion} onValueChange={set('emotion')}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="How did it feel?" />
-              </SelectTrigger>
-              <SelectContent>
-                {EMOTIONS.map((e) => (
-                  <SelectItem key={e} value={e}>
-                    {e}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Tags (setup, mistakes, anything)</label>
-            <TagInput value={form.tags} onChange={set('tags')} />
-          </div>
-
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Trade screenshot</label>
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp,image/gif"
-              onChange={(e) => set('imageFile')(e.target.files?.[0] ?? null)}
-              className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:text-foreground"
-            />
-            {trade?.image_url && !form.imageFile && (
-              <img src={trade.image_url} alt="Trade" className="mt-2 max-h-32 rounded-lg border" />
+            {!form.isOpen && (
+              <div className="space-y-1">
+                <label className="text-xs text-muted-foreground">Result</label>
+                <Select
+                  value={effectiveResult ?? ''}
+                  onValueChange={(v) => setForm((f) => ({ ...f, result: v, resultManual: true }))}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="—" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="profit">Profit</SelectItem>
+                    <SelectItem value="loss">Loss</SelectItem>
+                    <SelectItem value="neutral">Neutral</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             )}
-          </div>
 
-          <Button className="w-full" disabled={!valid || save.isPending} onClick={() => save.mutate()}>
-            {save.isPending && <Spinner className="size-4" />}
-            {trade ? 'Save changes' : 'Add trade'}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Emotion</label>
+              <Select value={form.emotion} onValueChange={set('emotion')}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="How did it feel?" />
+                </SelectTrigger>
+                <SelectContent>
+                  {EMOTIONS.map((e) => (
+                    <SelectItem key={e} value={e}>
+                      {e}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Tags (setup, mistakes, anything)</label>
+              <TagInput value={form.tags} onChange={set('tags')} />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Trade screenshot</label>
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                onChange={(e) => set('imageFile')(e.target.files?.[0] ?? null)}
+                className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:text-foreground"
+              />
+              {trade?.image_url && !form.imageFile && (
+                <img
+                  src={trade.image_url}
+                  alt="Trade"
+                  className="mt-2 max-h-32 cursor-pointer rounded-lg border"
+                  onClick={() => setLightboxOpen(true)}
+                />
+              )}
+            </div>
+
+            <Button className="w-full" disabled={!valid || save.isPending} onClick={() => save.mutate()}>
+              {save.isPending && <Spinner className="size-4" />}
+              {trade ? 'Save changes' : 'Add trade'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      <ImageLightbox src={trade?.image_url} open={lightboxOpen} onOpenChange={setLightboxOpen} />
+    </>
   )
 }
 
 function TradesTable({ trades, onEdit, onDelete, selected, onToggleSelect, onToggleSelectAll }) {
+  const [lightboxSrc, setLightboxSrc] = useState(null)
   if (trades.length === 0) {
     return <p className="text-sm text-muted-foreground">No trades match - add one above or clear filters.</p>
   }
@@ -439,9 +450,14 @@ function TradesTable({ trades, onEdit, onDelete, selected, onToggleSelect, onTog
                 <TableCell className="text-right tabular-nums">
                   {returnPct == null ? '—' : `${returnPct}%`}
                 </TableCell>
-                <TableCell>
+                <TableCell onClick={(e) => t.image_url && e.stopPropagation()}>
                   {t.image_url ? (
-                    <img src={t.image_url} alt="" className="size-8 rounded object-cover" />
+                    <img
+                      src={t.image_url}
+                      alt=""
+                      className="size-8 cursor-pointer rounded object-cover"
+                      onClick={() => setLightboxSrc(t.image_url)}
+                    />
                   ) : (
                     '—'
                   )}
@@ -464,6 +480,11 @@ function TradesTable({ trades, onEdit, onDelete, selected, onToggleSelect, onTog
           })}
         </TableBody>
       </Table>
+      <ImageLightbox
+        src={lightboxSrc}
+        open={!!lightboxSrc}
+        onOpenChange={(open) => !open && setLightboxSrc(null)}
+      />
     </div>
   )
 }

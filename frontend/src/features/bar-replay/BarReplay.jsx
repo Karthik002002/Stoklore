@@ -41,6 +41,11 @@ const round2 = (v) => Math.round(v * 100) / 100
 
 const FIELD_LABEL = { stopLoss: 'Stop loss', target: 'Target' }
 
+// Identifies one queued (or already-queued) close - order id alone for a full/manual/target
+// close, order+leg id for one leg of a laddered stop-loss, so two different legs of the same
+// order can both be queued without the second looking like a duplicate of the first.
+const closeKey = (entry) => (entry.leg ? `${entry.order.id}:${entry.leg.id}` : entry.order.id)
+
 export default function BarReplay() {
   usePageTitle('Bar Replay')
   const queryClient = useQueryClient()
@@ -84,6 +89,11 @@ export default function BarReplay() {
   // than just losing track of an unconfirmed close.
   const [closeQueue, setCloseQueue] = useState([])
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // Armed by TradingPanel's "Add stop loss"/"Add target" toggle on an already-open position -
+  // { orderId, kind: 'stopLoss' | 'target' } while waiting for the next chart click to place the
+  // new level there, null otherwise. Placing directly on the chart (see placeLevel below) instead
+  // of a price input field - there's already a chart right there showing exactly where price is.
+  const [addLevelMode, setAddLevelMode] = useState(null)
   // Imperative handle onto ReplayChart (see its captureScreenshot) - grabbing a snapshot of the
   // chart at close time isn't state the chart needs to re-render for, so a ref fits better than
   // threading a callback prop down just to call it back up.
@@ -115,6 +125,7 @@ export default function BarReplay() {
   useEffect(() => {
     prevIndexRef.current = null
     setCloseQueue([])
+    setAddLevelMode(null)
   }, [symbol, timeframe])
 
   // Runs trigger detection against the single newly-revealed bar whenever currentIndex advances
@@ -136,11 +147,20 @@ export default function BarReplay() {
       // Snapshot the chart once for this batch (same bar for all of them) rather than per-order -
       // captureScreenshot is async, so the queue only gets appended to once it resolves.
       replayChartRef.current?.captureScreenshot().then((chartImage) => {
+        // Keyed by order+leg (not just order id) - a laddered stop can have two legs trigger in
+        // the same bar (a gap through both), which now needs two separate queued closes for the
+        // same order rather than being deduped down to one.
         setCloseQueue((q) => [
           ...q,
           ...triggeredCloses
-            .filter((tc) => !q.some((existing) => existing.order.id === tc.order.id))
-            .map((tc) => ({ order: tc.order, exitPrice: tc.exitPrice, reason: tc.reason, chartImage })),
+            .filter((tc) => !q.some((existing) => closeKey(existing) === closeKey(tc)))
+            .map((tc) => ({
+              order: tc.order,
+              exitPrice: tc.exitPrice,
+              reason: tc.reason,
+              leg: tc.leg ?? null,
+              chartImage,
+            })),
         ])
       })
     }
@@ -190,6 +210,7 @@ export default function BarReplay() {
   const restart = () => {
     setPlaying(false)
     setCloseQueue([])
+    setAddLevelMode(null)
     prevIndexRef.current = null
     restartStore()
   }
@@ -202,9 +223,9 @@ export default function BarReplay() {
       entryPrice: '',
       qty: String(chartSettings.defaultQty),
       slEnabled: false,
-      sl: '',
+      stopLosses: [],
       targetEnabled: false,
-      target: '',
+      targets: [],
     })
   }
   const updateDraft = (patch) => setOrderDraft((d) => (d ? { ...d, ...patch } : d))
@@ -217,6 +238,13 @@ export default function BarReplay() {
     const isLimit = orderDraft.orderType === 'limit'
     const entryPrice = isLimit ? numeric(orderDraft.entryPrice) : lastBar.close
     if (entryPrice == null) return
+    // Only fully-filled-in rows become real legs - a row with an empty price/qty (mid-edit, or
+    // just never finished) is silently dropped rather than blocking submission. Same rule for
+    // both ladders (stop-loss and target).
+    const legsFrom = (rows) =>
+      rows
+        .filter((r) => numeric(r.price) != null && numeric(r.qty) > 0)
+        .map((r) => ({ id: r.id, price: numeric(r.price), qty: numeric(r.qty) }))
     const newOrder = {
       id: crypto.randomUUID(),
       type: isLimit ? 'limit' : 'market',
@@ -224,20 +252,65 @@ export default function BarReplay() {
       direction: orderDraft.direction,
       quantity: Number(orderDraft.qty),
       entryPrice,
-      stopLoss: orderDraft.slEnabled ? numeric(orderDraft.sl) : null,
-      target: orderDraft.targetEnabled ? numeric(orderDraft.target) : null,
+      stopLosses: orderDraft.slEnabled ? legsFrom(orderDraft.stopLosses) : [],
+      targets: orderDraft.targetEnabled ? legsFrom(orderDraft.targets) : [],
       entryBarIndex: isLimit ? null : currentIndex,
     }
     setOrders([...orders, newOrder])
     setOrderDraft(null)
   }
 
-  // Dragging a stop-loss/target line on the chart commits here: round to paise, patch just that
-  // order's field, and confirm with a toast since the change has no other visible confirmation.
-  const adjustOrder = (orderId, field, price) => {
+  // Dragging one specific leg's line on the chart (stop-loss or target - both are ladders of
+  // legs now, see orderEngine.js/store.js) commits here: round to paise, patch just that leg's
+  // price, and confirm with a toast since the change has no other visible confirmation.
+  const adjustOrder = (orderId, field, price, legId) => {
     const rounded = round2(price)
-    setOrders(orders.map((o) => (o.id === orderId ? { ...o, [field]: rounded } : o)))
+    const legField = field === 'stopLoss' ? 'stopLosses' : 'targets'
+    setOrders(
+      orders.map((o) =>
+        o.id === orderId
+          ? { ...o, [legField]: o[legField].map((l) => (l.id === legId ? { ...l, price: rounded } : l)) }
+          : o,
+      ),
+    )
     toast.success(`${FIELD_LABEL[field]} updated to ${inr(rounded)}`)
+  }
+
+  // Toggled by TradingPanel's "Add stop loss"/"Add target" button on an already-open position -
+  // arms (or, clicked again on the same order+kind, disarms) waiting for the next chart click to
+  // place the new level (see placeLevel below and ReplayChart's addLevelMode handling).
+  const armAddLevel = (orderId, kind) =>
+    setAddLevelMode((m) => (m?.orderId === orderId && m.kind === kind ? null : { orderId, kind }))
+
+  // Fires once, from ReplayChart, on the first chart click after arming - the new level covers
+  // whatever quantity isn't already protected by an existing leg on that side (a fresh ladder has
+  // none, so this covers the whole size, same as the old one-shot "Set stop loss"/"Set target"
+  // did). A no-op if that side is already fully covered - resizing an existing leg happens by
+  // dragging its line, not by adding another.
+  const placeLevel = (price) => {
+    if (!addLevelMode) return
+    const { orderId, kind } = addLevelMode
+    setAddLevelMode(null)
+    const legField = kind === 'stopLoss' ? 'stopLosses' : 'targets'
+    const order = orders.find((o) => o.id === orderId)
+    if (!order) return
+    const covered = order[legField].reduce((s, l) => s + l.qty, 0)
+    const remaining = order.quantity - covered
+    if (remaining <= 0) return
+    const newLeg = { id: crypto.randomUUID(), price: round2(price), qty: remaining }
+    setOrders(orders.map((o) => (o.id === orderId ? { ...o, [legField]: [...o[legField], newLeg] } : o)))
+  }
+
+  // Removing a leg just drops its protection - the quantity it covered goes back to being
+  // un-stopped/un-targeted (same as never having set one on that slice at all), it does NOT
+  // close any part of the position. Only an actual bar touching a leg's price does that.
+  const removeLevel = (orderId, kind, legId) => {
+    const legField = kind === 'stopLoss' ? 'stopLosses' : 'targets'
+    setOrders(
+      orders.map((o) =>
+        o.id === orderId ? { ...o, [legField]: o[legField].filter((l) => l.id !== legId) } : o,
+      ),
+    )
   }
 
   // const toggleDrawMode = (direction) => setDrawMode((m) => (m === direction ? null : direction))
@@ -274,8 +347,12 @@ export default function BarReplay() {
             orderDraft.orderType === 'limit'
               ? (numeric(orderDraft.entryPrice) ?? lastBar.close)
               : lastBar.close,
-          stop_loss: orderDraft.slEnabled ? numeric(orderDraft.sl) : null,
-          target: orderDraft.targetEnabled ? numeric(orderDraft.target) : null,
+          stop_losses: orderDraft.slEnabled
+            ? orderDraft.stopLosses.map((r) => numeric(r.price)).filter((p) => p != null)
+            : [],
+          targets: orderDraft.targetEnabled
+            ? orderDraft.targets.map((r) => numeric(r.price)).filter((p) => p != null)
+            : [],
         }
       : null
 
@@ -315,6 +392,8 @@ export default function BarReplay() {
         previewOrder={previewOrder}
         resetKey={`${symbol}-${timeframe}`}
         onAdjustOrder={adjustOrder}
+        addLevelMode={addLevelMode}
+        onPlaceLevel={placeLevel}
         settings={chartSettings}
         // drawMode={drawMode}
         // drawings={drawings}
@@ -412,7 +491,9 @@ export default function BarReplay() {
               lastBar={lastBar}
               onOpenTicket={openOrderTicket}
               onRequestClose={requestClose}
-              onAdjustOrder={adjustOrder}
+              addLevelMode={addLevelMode}
+              onArmAddLevel={armAddLevel}
+              onRemoveLevel={removeLevel}
               // drawMode={drawMode}
               // onToggleDraw={toggleDrawMode}
             />
@@ -520,11 +601,29 @@ export default function BarReplay() {
         order={activeClose?.order ?? null}
         exitPrice={activeClose?.exitPrice}
         reason={activeClose?.reason}
+        leg={activeClose?.leg ?? null}
         chartImage={activeClose?.chartImage}
         onClosed={() => {
           queryClient.invalidateQueries({ queryKey: ['manualTrades'] })
-          const closedId = activeClose?.order.id
-          setOrders(orders.filter((o) => o.id !== closedId))
+          const { order, leg, reason } = activeClose
+          if (leg) {
+            // A laddered stop-loss OR target leg hit: only that leg's slice of the position
+            // actually closed. Drop just that leg and shrink quantity by its share - if it was
+            // the last one covering the whole position, this is really a full close, same as
+            // below (and the other side's ladder, if any, is now moot - it's dropped too).
+            const legField = reason === 'target' ? 'targets' : 'stopLosses'
+            const remainingLegs = order[legField].filter((l) => l.id !== leg.id)
+            const remainingQty = order.quantity - leg.qty
+            setOrders(
+              remainingQty > 0
+                ? orders.map((o) =>
+                    o.id === order.id ? { ...o, quantity: remainingQty, [legField]: remainingLegs } : o,
+                  )
+                : orders.filter((o) => o.id !== order.id),
+            )
+          } else {
+            setOrders(orders.filter((o) => o.id !== order.id))
+          }
           setCloseQueue((q) => q.slice(1))
         }}
       />

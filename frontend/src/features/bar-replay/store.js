@@ -44,6 +44,28 @@ export const useBarReplayStore = create(
       setSettings: (settings) => set({ settings }),
       restart: () => set({ barIndex: null, orders: [] }),
     }),
-    { name: 'barReplay.store' },
+    {
+      name: 'barReplay.store',
+      version: 1,
+      // v0 -> v1: a position's stop-loss and target were single `stopLoss`/`target` numbers;
+      // they're now `stopLosses`/`targets`, lists of {id, price, qty} legs (see orderEngine.js)
+      // so one trade can carry a laddered exit on either side - a plain single-SL/single-target
+      // order just becomes a one-leg list covering the full quantity, so nothing about existing
+      // sessions' behavior changes.
+      migrate: (persisted, version) => {
+        if (version < 1 && persisted?.orders) {
+          persisted.orders = persisted.orders.map(({ stopLoss, target, ...order }) => ({
+            ...order,
+            stopLosses:
+              order.stopLosses ??
+              (stopLoss != null ? [{ id: crypto.randomUUID(), price: stopLoss, qty: order.quantity }] : []),
+            targets:
+              order.targets ??
+              (target != null ? [{ id: crypto.randomUUID(), price: target, qty: order.quantity }] : []),
+          }))
+        }
+        return persisted
+      },
+    },
   ),
 )

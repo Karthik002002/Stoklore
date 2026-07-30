@@ -65,6 +65,8 @@ const ReplayChart = forwardRef(function ReplayChart(
     previewOrder,
     resetKey,
     onAdjustOrder,
+    addLevelMode,
+    onPlaceLevel,
     settings = DEFAULT_CHART_SETTINGS,
     // drawMode,
     // drawings = [],
@@ -91,6 +93,10 @@ const ReplayChart = forwardRef(function ReplayChart(
   ordersRef.current = orders
   const onAdjustRef = useRef(onAdjustOrder)
   onAdjustRef.current = onAdjustOrder
+  const addLevelModeRef = useRef(addLevelMode)
+  addLevelModeRef.current = addLevelMode
+  const onPlaceLevelRef = useRef(onPlaceLevel)
+  onPlaceLevelRef.current = onPlaceLevel
   // const drawModeRef = useRef(drawMode)
   // drawModeRef.current = drawMode
   // const onDrawCompleteRef = useRef(onDrawComplete)
@@ -159,6 +165,17 @@ const ReplayChart = forwardRef(function ReplayChart(
   //   chartRef.current?.applyOptions({ handleScroll: !drawMode, handleScale: !drawMode })
   // }, [drawMode])
 
+  // "Add stop loss"/"Add target" on an already-open position (see TradingPanel) arms addLevelMode
+  // and waits for the next chart click to place the new level there - same reasoning as the draw
+  // tool above for disabling pan/zoom reactively at arm time rather than inside onPointerDown:
+  // the chart's own pan handler sees the same pointerdown before this component's container
+  // listener does (it's on a descendant canvas), so toggling handleScroll/handleScale has to
+  // already be off by the time any click happens, not turned off in response to it.
+  useEffect(() => {
+    chartRef.current?.applyOptions({ handleScroll: !addLevelMode, handleScale: !addLevelMode })
+    if (containerRef.current) containerRef.current.style.cursor = addLevelMode ? 'crosshair' : ''
+  }, [addLevelMode])
+
   // Drag-to-adjust an existing order's SL/target line: pointerdown near a line grabs it (and
   // pauses chart pan/zoom so a vertical drag doesn't also scrub the timeline), pointermove
   // repositions the line live via applyOptions (cheap, no React re-render), pointerup commits the
@@ -170,7 +187,7 @@ const ReplayChart = forwardRef(function ReplayChart(
     const chart = chartRef.current
     if (!container || !chart) return
 
-    let drag = null // { orderId, field }
+    let drag = null // { orderId, field, legId? }
     // let draw = null // { direction, entryPrice, x0 }
 
     const priceAt = (clientY) => {
@@ -179,16 +196,22 @@ const ReplayChart = forwardRef(function ReplayChart(
     }
     const coordFor = (price) => candleSeriesRef.current?.priceToCoordinate(price) ?? null
 
+    // A position can have several stop-loss legs AND several target legs (both are ladders, see
+    // orderEngine.js/store.js) - each leg on either side is its own draggable line.
     const findHandle = (clientY) => {
       const rect = container.getBoundingClientRect()
       const y = clientY - rect.top
       for (const order of ordersRef.current) {
         if (order.status !== 'open') continue
-        for (const field of ['stopLoss', 'target']) {
-          const price = order[field]
-          if (price == null) continue
-          const coord = coordFor(price)
-          if (coord != null && Math.abs(coord - y) <= DRAG_HIT_PX) return { orderId: order.id, field }
+        for (const [field, legs] of [
+          ['stopLoss', order.stopLosses ?? []],
+          ['target', order.targets ?? []],
+        ]) {
+          for (const leg of legs) {
+            const coord = coordFor(leg.price)
+            if (coord != null && Math.abs(coord - y) <= DRAG_HIT_PX)
+              return { orderId: order.id, field, legId: leg.id }
+          }
         }
       }
       return null
@@ -200,6 +223,13 @@ const ReplayChart = forwardRef(function ReplayChart(
         drag = handle
         chart.applyOptions({ handleScroll: false, handleScale: false })
         container.style.cursor = 'ns-resize'
+        return
+      }
+      // Armed by TradingPanel's "Add stop loss"/"Add target" toggle - a click that isn't grabbing
+      // an existing line places the new level here instead (see BarReplay's placeLevel).
+      if (addLevelModeRef.current) {
+        const price = priceAt(e.clientY)
+        if (price != null) onPlaceLevelRef.current?.(price)
         return
       }
       // if (drawModeRef.current) {
@@ -214,7 +244,7 @@ const ReplayChart = forwardRef(function ReplayChart(
       if (drag) {
         const price = priceAt(e.clientY)
         if (price == null) return
-        orderLinesRef.current.get(`${drag.orderId}:${drag.field}`)?.applyOptions({ price })
+        orderLinesRef.current.get(`${drag.orderId}:${drag.field}:${drag.legId}`)?.applyOptions({ price })
         return
       }
       // if (draw) {
@@ -226,12 +256,12 @@ const ReplayChart = forwardRef(function ReplayChart(
     }
     const onPointerUp = (e) => {
       if (drag) {
-        const { orderId, field } = drag
+        const { orderId, field, legId } = drag
         const price = priceAt(e.clientY)
         drag = null
         chart.applyOptions({ handleScroll: true, handleScale: true })
         container.style.cursor = ''
-        if (price != null) onAdjustRef.current?.(orderId, field, price)
+        if (price != null) onAdjustRef.current?.(orderId, field, price, legId)
         return
       }
       // if (draw) {
@@ -367,30 +397,32 @@ const ReplayChart = forwardRef(function ReplayChart(
           title: entryTitle,
         }),
       )
-      if (order.stopLoss != null) {
+      const slLegs = order.stopLosses ?? []
+      slLegs.forEach((leg, i) => {
         next.set(
-          `${order.id}:stopLoss`,
+          `${order.id}:stopLoss:${leg.id}`,
           candles.createPriceLine({
-            price: order.stopLoss,
+            price: leg.price,
             color: COLORS.down,
             lineWidth: 1,
             lineStyle: 2,
-            title: 'SL',
+            title: slLegs.length > 1 ? `SL${i + 1} ${leg.qty}` : 'SL',
           }),
         )
-      }
-      if (order.target != null) {
+      })
+      const targetLegs = order.targets ?? []
+      targetLegs.forEach((leg, i) => {
         next.set(
-          `${order.id}:target`,
+          `${order.id}:target:${leg.id}`,
           candles.createPriceLine({
-            price: order.target,
+            price: leg.price,
             color: COLORS.up,
             lineWidth: 1,
             lineStyle: 2,
-            title: 'Target',
+            title: targetLegs.length > 1 ? `T${i + 1} ${leg.qty}` : 'Target',
           }),
         )
-      }
+      })
     })
     orderLinesRef.current = next
   }, [orders, resetKey, bars])
@@ -412,28 +444,28 @@ const ReplayChart = forwardRef(function ReplayChart(
           title: previewOrder.direction === 'long' ? 'Buy' : 'Sell',
         }),
       )
-      if (previewOrder.stop_loss != null) {
+      ;(previewOrder.stop_losses ?? []).forEach((price, i, arr) => {
         previewLinesRef.current.push(
           candles.createPriceLine({
-            price: previewOrder.stop_loss,
+            price,
             color: COLORS.down,
             lineWidth: 1,
             lineStyle: 1,
-            title: 'SL',
+            title: arr.length > 1 ? `SL${i + 1}` : 'SL',
           }),
         )
-      }
-      if (previewOrder.target != null) {
+      })
+      ;(previewOrder.targets ?? []).forEach((price, i, arr) => {
         previewLinesRef.current.push(
           candles.createPriceLine({
-            price: previewOrder.target,
+            price,
             color: COLORS.up,
             lineWidth: 1,
             lineStyle: 1,
-            title: 'Target',
+            title: arr.length > 1 ? `T${i + 1}` : 'Target',
           }),
         )
-      }
+      })
     }
   }, [previewOrder, resetKey])
 

@@ -4,7 +4,8 @@
       "type": "stdio",
       "command": "node",
       "args": [
-        "/Users/karthik/Coding/AI TradingView/tradingview-mcp/src/server.js"
+        
+        
       ],
       "env": {}
     }

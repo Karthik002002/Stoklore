@@ -371,12 +371,32 @@ OHLCV, no backend execution involved:
   **Execute** — until max data exists for the picked symbol, Execute stays
   disabled with an inline message
 
-**Manual** — reserved for now, tab content is intentionally empty. The
-original single-strategy backtest (long-only EMA-crossover: buys the golden
-cross, sells the next death cross; Run vs. Save with an optional
+**Manual** — a full manual trade journal, four sub-tabs (`Overview` /
+`Trades` / `Statistics` / `Goals`):
+
+- **Add/Edit trade dialog** — symbol, direction, setup (autocompletes from
+  your past setups), quantity, entry/exit, stop-loss, target, ideal risk ₹,
+  emotion, free-form tags, and a trade screenshot. Result (profit/loss/
+  neutral) auto-computes from entry/exit/direction but can be overridden by
+  hand — once overridden it stops silently recomputing over what you set.
+  An open trade skips the exit price requirement entirely
+- **Bulk Trades** — add several trades at once from screenshots
+  (`BulkTradesDialog`, backed by `POST /api/manual-trades/bulk/analyze`)
+- **Bulk edit** — select trades via row checkboxes, then set a setup and/or
+  add a tag across all of them in one PUT batch
+- **Filter bar** — by setup, NSE session (pre-open/morning/afternoon/close),
+  risk discipline (good/over-/under-risked vs. your ideal risk ₹, tolerance
+  configurable in Settings), and min/max expected-R
+- **Trades table** — P&L ₹, R:R, and return % computed client-side per row
+  (`tradeStats`/`manualTrades` lib), with an image lightbox for attached
+  screenshots
+- **Export CSV** (`GET /api/manual-trades/export?format=csv`) and a direct
+  link into **Bar Replay** (see [`12` Bar Replay](#12-bar-replay))
+
+The original single-strategy backtest (long-only EMA-crossover: buys the
+golden cross, sells the next death cross; Run vs. Save with an optional
 lessons-learned note; results surfaced on a stock's detail page) still lives
-in `backtest.py` and `api.py`'s `/api/backtest*` endpoints, just not wired
-into this tab yet.
+separately in `backtest.py` and `api.py`'s `/api/backtest*` endpoints.
 
 <div align="right">
 

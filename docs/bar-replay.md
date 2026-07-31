@@ -27,7 +27,11 @@ paper-trade it.
 - Closing a trade (manually or automatically) opens a feedback dialog
   (result/emotion/notes) and pauses playback while it's open. The trade is
   saved with a screenshot of the chart at that moment, and shows up in the
-  [Manual trade journal](backtesting-manual.md) above.
+  [Manual trade journal](backtesting-manual.md) above — including its
+  Statistics tab (grouped like any other trade) and Goals tab (counts
+  toward whichever day/week/month it was closed in), since both read off
+  the same `manual_trades` table with no special case for `replay`-tagged
+  rows.
 
 **Multiple stop-loss/target levels (laddered exits)**
 - A position isn't limited to one stop-loss or one target — in the order

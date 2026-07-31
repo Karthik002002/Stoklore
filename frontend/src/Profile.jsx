@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { UserRoundIcon } from 'lucide-react'
+import { IconUserCircle } from '@tabler/icons-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -57,7 +57,7 @@ export default function Profile() {
       <DialogTrigger
         render={<Button variant="ghost" size="icon-sm" aria-label="Profile" className="relative" />}
       >
-        <UserRoundIcon className="size-4" />
+        <IconUserCircle className="size-4" />
         {daysBehind > 0 && (
           <span className="absolute -top-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-destructive text-[9px] font-medium text-destructive-foreground">
             {daysBehind > 9 ? '9+' : daysBehind}

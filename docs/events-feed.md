@@ -10,6 +10,12 @@
   calls, so it's fast and safe to re-run (won't duplicate what it already
   found).
 - Each event with a link has a "···" menu: **Open** or **Tag in chat**.
+- **Unusual attention** — a row of chips above the event list, showing which
+  watchlisted stocks are getting more event coverage than their own normal
+  pace right now (`NEW` for a symbol with no prior baseline at all, or
+  `2.4×` etc. for how far above its usual rate it is). Independent of the
+  date-range filter below it — it's always "vs. right now", not scoped to
+  whatever historical range you're browsing.
 
 ## How it works
 
@@ -40,3 +46,32 @@ silently no-ops instead of creating a duplicate row.
 FinRoBERTa classifier used by `/sentiment` (see
 [Sentiment](sentiment.md#how-it-works)) — scored once at scan time and
 stored alongside the event, not recomputed on every page view.
+
+### Unusual attention: coverage volume vs. a symbol's own baseline
+
+`GET /api/events/attention` → `db.attention_scores()` (`db.py`) answers "is
+this stock getting more coverage than usual", not "what does the latest
+headline say" — the distinction the whole Events feed above is otherwise
+blind to (a single alarming headline looks the same whether it's an
+isolated story or the start of a building narrative).
+
+For each symbol with any `stock_events` rows in the lookback window, it
+counts events in two buckets - `recent_count` (last `recent_days`, default
+3) and `baseline_count` (the `baseline_days` before that, default 30,
+**excluding** the recent window so a live spike never dilutes its own
+comparison point) - then derives:
+
+- `baseline_avg` = `baseline_count / (baseline_days - recent_days)`, an
+  average events/day over the symbol's normal recent history.
+- `ratio` = `(recent_count / recent_days) / baseline_avg` - how many times
+  above its own normal pace the symbol is right now. `null` when
+  `baseline_avg` is 0 (no prior events at all to compare against) - flagged
+  instead as `is_new_attention`, since "brand new coverage" isn't
+  expressible as "N times normal."
+
+The frontend (`AttentionPanel` in `EventsFeed.jsx`) applies its own display
+threshold on top of the raw scores (`ATTENTION_THRESHOLD = 1.3`, capped to
+the top `MAX_ATTENTION_CHIPS = 8`) - the API itself returns every symbol's
+score unfiltered, sorted `is_new_attention` first, then by `ratio`
+descending, so a stricter or looser cutoff is a one-line frontend change,
+not an API one.

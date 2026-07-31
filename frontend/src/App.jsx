@@ -1,12 +1,12 @@
 import { Link, Outlet } from '@tanstack/react-router'
 import {
-  FlaskConicalIcon,
-  LayoutDashboardIcon,
-  NewspaperIcon,
-  RefreshCwIcon,
-  TrendingUpIcon,
-  WalletIcon,
-} from 'lucide-react'
+  IconFlask,
+  IconLayoutDashboard,
+  IconNews,
+  IconRefresh,
+  IconTrendingUp,
+  IconWallet,
+} from '@tabler/icons-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Toaster } from 'sonner'
@@ -21,11 +21,11 @@ import Settings from './Settings'
 import ThemeToggle from './ThemeToggle'
 
 const NAV_ITEMS = [
-  { to: '/', icon: LayoutDashboardIcon, label: 'Stocks' },
-  { to: '/events', icon: NewspaperIcon, label: 'Events' },
-  { to: '/top-news', icon: TrendingUpIcon, label: 'Top news' },
-  { to: '/holdings', icon: WalletIcon, label: 'Holdings' },
-  { to: '/backtesting', icon: FlaskConicalIcon, label: 'Backtesting' },
+  { to: '/', icon: IconLayoutDashboard, label: 'Stocks' },
+  { to: '/events', icon: IconNews, label: 'Events' },
+  { to: '/top-news', icon: IconTrendingUp, label: 'Top news' },
+  { to: '/holdings', icon: IconWallet, label: 'Holdings' },
+  { to: '/backtesting', icon: IconFlask, label: 'Backtesting' },
 ]
 
 // Icon-rail nav item: TanStack Router's Link auto-applies an "active" class on route match
@@ -77,7 +77,7 @@ function ReloadButton() {
 
   return (
     <Button variant="ghost" size="icon" onClick={reload} disabled={loading} aria-label="Reload">
-      <RefreshCwIcon className={`size-4 ${loading ? 'animate-spin' : ''}`} />
+      <IconRefresh className={`size-4 ${loading ? 'animate-spin' : ''}`} />
     </Button>
   )
 }
@@ -117,7 +117,11 @@ function App() {
           </div>
         </aside>
 
-        <main className="mx-auto w-full max-w-5xl px-4 py-8">
+        {/* Full available width, no centered max-width column - the dashboard/table views are
+            dense and horizontal, so capping them at a reading-width column wasted most of the
+            screen. min-w-0 is what actually lets wide tables scroll inside this flex child
+            instead of forcing the whole page to overflow sideways. */}
+        <main className="min-w-0 flex-1 px-3 py-3">
           <GuiltBanner />
           <Outlet />
         </main>

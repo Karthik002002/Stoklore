@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { IconSettings } from '@tabler/icons-react'
 import {
   CheckCircle2Icon,
   DatabaseIcon,
   ExternalLinkIcon,
-  SettingsIcon,
   Trash2Icon,
   UploadIcon,
   XCircleIcon,
@@ -917,7 +917,7 @@ export default function Settings() {
   return (
     <Dialog open={!!settings} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Settings" />}>
-        <SettingsIcon className="size-4" />
+        <IconSettings className="size-4" />
       </DialogTrigger>
       <DialogContent className="flex w-[70%] h-[80%] !max-w-[70%] flex-col overflow-hidden">
         <DialogHeader className="shrink-0">

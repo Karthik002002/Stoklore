@@ -24,7 +24,10 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
+  /* Terminal-style squared corners. Every rounded-* utility in the app derives from this via the
+     --radius-sm/md/lg/xl/2xl multipliers in index.css, so this one value squares off cards,
+     panels, buttons, inputs, badges and dialogs everywhere at once. */
+  --radius: 0.25rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);

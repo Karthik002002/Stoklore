@@ -4,7 +4,9 @@
 
 ## Using it
 
-- `/backtesting?tab=manual` — **Add Trade** to log a trade by hand (symbol,
+- `/backtesting` (currently the only mode on this page — see
+  [Backtesting — Auto](backtesting-auto.md) for why) — **Add Trade** to log
+  a trade by hand (symbol,
   direction, entry/exit, stop-loss/target, emotion, tags, notes, an
   optional screenshot).
 - **Bulk Trades** to import several trades at once from screenshots — each

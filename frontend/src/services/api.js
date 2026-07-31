@@ -10,6 +10,23 @@ export const getStockChart = (symbol, range) => fetch(`/api/stocks/${symbol}/cha
 
 export const getIndices = () => fetch('/api/indices').then(json)
 
+// --- Dashboard (StocksList's terminal view) -------------------------------------------------
+// These wrap endpoints StocksList used to hit with bare fetch()es - moved here so the dashboard
+// can poll them through react-query (refetchInterval) like every other live view in the app.
+export const getStocks = () => fetch('/api/stocks').then(json)
+
+export const getWatchlist = () => fetch('/api/watchlist').then(json)
+
+export const getWatchlistNames = () => fetch('/api/watchlists').then(json)
+
+export const getEvents = (listName) =>
+  fetch(`/api/events${listName ? `?list_name=${encodeURIComponent(listName)}` : ''}`).then(json)
+
+export const getEventsAttention = (listName) =>
+  fetch(`/api/events/attention${listName ? `?list_name=${encodeURIComponent(listName)}` : ''}`).then(json)
+
+export const getTopNews = () => fetch('/api/top-news').then(json)
+
 export const getIndexChart = (name, range) => fetch(`/api/indices/${name}/chart?range=${range}`).then(json)
 
 export const getStockFinancials = (symbol) => fetch(`/api/stocks/${symbol}/financials`).then(json)

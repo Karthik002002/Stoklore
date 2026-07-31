@@ -5,7 +5,13 @@ import { cn } from '@/lib/utils'
 function Table({ className, containerClassName, ...props }) {
   return (
     <div data-slot="table-container" className={cn('relative w-full overflow-auto', containerClassName)}>
-      <table data-slot="table" className={cn('w-full caption-bottom text-sm', className)} {...props} />
+      {/* text-xs + tabular-nums app-wide: terminal density, and numeric columns line up by digit
+          without every call site having to remember to ask for it. */}
+      <table
+        data-slot="table"
+        className={cn('w-full caption-bottom text-xs tabular-nums', className)}
+        {...props}
+      />
     </div>
   )
 }
@@ -46,7 +52,7 @@ function TableHead({ className, ...props }) {
     <th
       data-slot="table-head"
       className={cn(
-        'h-10 px-2 text-left align-middle font-medium whitespace-nowrap text-foreground [&:has([role=checkbox])]:pr-0',
+        'h-7 px-2 text-left align-middle text-[10px] font-medium tracking-widest whitespace-nowrap text-muted-foreground uppercase [&:has([role=checkbox])]:pr-0',
         className,
       )}
       {...props}
@@ -58,7 +64,7 @@ function TableCell({ className, ...props }) {
   return (
     <td
       data-slot="table-cell"
-      className={cn('p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0', className)}
+      className={cn('px-2 py-1 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0', className)}
       {...props}
     />
   )

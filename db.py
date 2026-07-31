@@ -605,6 +605,57 @@ def list_events(list_name=None, symbol=None, from_date=None, to_date=None, limit
         return conn.execute(query, params).fetchall()
 
 
+def attention_scores(list_name=None, symbol=None, baseline_days=30, recent_days=3):
+    """Attention (event-coverage volume) for each symbol relative to its own recent history -
+    recent_count is stock_events in the last `recent_days`; baseline_avg is the avg events/day
+    over the `baseline_days` before that (the recent window is excluded from the baseline so a
+    spike doesn't dilute its own comparison point). ratio = recent_avg / baseline_avg, None when
+    there's no baseline yet (a symbol with zero prior events - any activity there counts as brand
+    new attention, not "N times normal"). This is "is this stock getting more coverage than
+    usual right now", distinct from any single event's sentiment or size - see
+    docs/events-feed.md."""
+    now = datetime.now(timezone.utc)
+    recent_cutoff = now - timedelta(days=recent_days)
+    baseline_cutoff = now - timedelta(days=baseline_days)
+    query = (
+        "SELECT e.symbol, w.list_name, "
+        "COUNT(*) FILTER (WHERE e.event_time >= %s) AS recent_count, "
+        "COUNT(*) FILTER (WHERE e.event_time >= %s AND e.event_time < %s) AS baseline_count "
+        "FROM stock_events e LEFT JOIN watchlist w ON w.symbol = e.symbol "
+        "WHERE e.event_time >= %s"
+    )
+    params = [recent_cutoff, baseline_cutoff, recent_cutoff, baseline_cutoff]
+    if list_name:
+        query += " AND w.list_name = %s"
+        params.append(list_name)
+    if symbol:
+        query += " AND e.symbol = %s"
+        params.append(symbol)
+    query += " GROUP BY e.symbol, w.list_name"
+    with connect() as conn:
+        rows = conn.execute(query, params).fetchall()
+
+    baseline_window_days = max(baseline_days - recent_days, 1)
+    results = []
+    for r in rows:
+        baseline_avg = r["baseline_count"] / baseline_window_days
+        recent_avg = r["recent_count"] / recent_days
+        ratio = round(recent_avg / baseline_avg, 2) if baseline_avg > 0 else None
+        results.append({
+            "symbol": r["symbol"],
+            "list_name": r["list_name"],
+            "recent_count": r["recent_count"],
+            "baseline_count": r["baseline_count"],
+            "baseline_avg": round(baseline_avg, 2),
+            "ratio": ratio,
+            "is_new_attention": baseline_avg == 0 and r["recent_count"] > 0,
+        })
+    # New-attention symbols (no baseline at all - can't express as "Nx normal") sort first, then
+    # by ratio descending, then raw recent_count as a tiebreaker.
+    results.sort(key=lambda r: (r["ratio"] is not None, -(r["ratio"] or 0), -r["recent_count"]))
+    return results
+
+
 def list_watch_rules():
     with connect() as conn:
         return conn.execute("SELECT * FROM watch_rules ORDER BY name").fetchall()

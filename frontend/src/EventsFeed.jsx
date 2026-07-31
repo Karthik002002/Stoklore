@@ -38,6 +38,46 @@ const SENTIMENT_STYLE = {
   neutral: { variant: 'secondary', className: '' },
 }
 
+// A symbol counts as "unusual" once it's covering noticeably more than its own normal pace -
+// picked as a display cutoff (not baked into the API, which returns every symbol's raw ratio)
+// so it's a one-line tweak if 1.3x turns out too noisy or too quiet.
+const ATTENTION_THRESHOLD = 1.3
+const MAX_ATTENTION_CHIPS = 8
+
+function AttentionPanel({ attention }) {
+  if (!attention?.length) return null
+  const hot = attention
+    .filter((a) => a.is_new_attention || (a.ratio != null && a.ratio >= ATTENTION_THRESHOLD))
+    .slice(0, MAX_ATTENTION_CHIPS)
+  if (hot.length === 0) return null
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        Unusual attention — more coverage than usual right now
+      </p>
+      <div className="flex flex-wrap gap-2">
+        {hot.map((a) => (
+          <Link
+            key={a.symbol}
+            to="/stock/$symbol"
+            params={{ symbol: a.symbol }}
+            className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm hover:bg-muted/50"
+          >
+            <span className="font-semibold">{a.symbol}</span>
+            <Badge variant={a.is_new_attention ? 'secondary' : 'outline'}>
+              {a.is_new_attention ? 'NEW' : `${a.ratio}×`}
+            </Badge>
+            <span className="text-xs text-muted-foreground">
+              {a.recent_count} event{a.recent_count === 1 ? '' : 's'}
+              {a.baseline_avg > 0 ? ` · ${a.baseline_avg}/day avg` : ''}
+            </span>
+          </Link>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function EventsFeed() {
   usePageTitle('Events')
   useEffect(() => {
@@ -45,6 +85,7 @@ export default function EventsFeed() {
   }, [])
   const [eventsList, setEventsList] = useState(null)
   const [watchlist, setWatchlist] = useState([])
+  const [attention, setAttention] = useState(null)
   const [tab, setTab] = useState('All')
   const [scanScope, setScanScope] = useState('All')
   const [scanStatus, setScanStatus] = useState(null)
@@ -61,6 +102,11 @@ export default function EventsFeed() {
     fetch(`/api/events${qs ? `?${qs}` : ''}`)
       .then((r) => r.json())
       .then(setEventsList)
+    // Ignores the from/to date filter - attention is always "vs. right now", not scoped to
+    // whatever historical range the event list happens to be browsing.
+    fetch(`/api/events/attention${tab !== 'All' ? `?list_name=${encodeURIComponent(tab)}` : ''}`)
+      .then((r) => r.json())
+      .then(setAttention)
     fetch('/api/watchlist')
       .then((r) => r.json())
       .then(setWatchlist)
@@ -200,6 +246,8 @@ export default function EventsFeed() {
           ))}
         </div>
       )}
+
+      <AttentionPanel attention={attention} />
 
       {!eventsList && (
         <div className="flex items-center justify-center gap-2 py-24 text-muted-foreground">

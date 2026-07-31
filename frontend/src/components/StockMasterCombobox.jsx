@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { CheckIcon, ChevronsUpDownIcon } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -11,6 +12,12 @@ import { searchStocksMaster } from '@/services/api'
 // table) - unlike SymbolCombobox (previously-scraped symbols, single value, closes on pick), this
 // stays open across picks so several symbols can be added in one search session, showing a check
 // against each already-selected one; it closes only via the trigger or an outside click.
+//
+// Also accepts a comma/newline-separated paste into the search box (e.g. a ticker list copied
+// straight out of a spreadsheet column) - added in bulk instead of being treated as one giant
+// search string. Pasted symbols aren't validated against stocks_master here - an unknown/misspelt
+// one just shows up as a per-symbol error in the bulk collector's results afterward, same as any
+// other failure there.
 export default function StockMasterCombobox({ selected, onSelect, className }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -20,6 +27,24 @@ export default function StockMasterCombobox({ selected, onSelect, className }) {
     queryFn: () => searchStocksMaster(query),
   })
   const matches = data?.stocks ?? []
+
+  const handlePaste = (e) => {
+    const text = e.clipboardData.getData('text')
+    if (!text.includes(',') && !text.includes('\n')) return // a single symbol - paste normally
+    e.preventDefault()
+    const symbols = [
+      ...new Set(
+        text
+          .split(/[,\n]+/)
+          .map((s) => s.trim().toUpperCase())
+          .filter(Boolean),
+      ),
+    ]
+    const added = symbols.filter((s) => !selected.includes(s))
+    added.forEach(onSelect)
+    setQuery('')
+    if (added.length) toast.success(`Added ${added.length} symbol${added.length === 1 ? '' : 's'}`)
+  }
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -36,7 +61,8 @@ export default function StockMasterCombobox({ selected, onSelect, className }) {
           <CommandInput
             value={query}
             onValueChange={setQuery}
-            placeholder="Search symbol or company…"
+            onPaste={handlePaste}
+            placeholder="Search, or paste a comma-separated list…"
             className="uppercase placeholder:normal-case"
           />
           <CommandList>

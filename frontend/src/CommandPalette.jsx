@@ -34,7 +34,7 @@ const PAGES = [
 ]
 
 const BACKTEST_TABS = [
-  { label: 'Backtesting > Auto', tab: 'auto' },
+  // { label: 'Backtesting > Auto', tab: 'auto' }, // Auto backtesting disabled for now - see Backtesting.jsx
   { label: 'Backtesting > Manual', tab: 'manual' },
 ]
 

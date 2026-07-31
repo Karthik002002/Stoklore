@@ -189,7 +189,20 @@ QUOTE_FIELDS = (
 )
 
 
-INDEX_SYMBOLS = {"NIFTY": "^NSEI", "SENSEX": "^BSESN"}
+# Indian benchmarks first (what this app is actually about), then the global indices worth a
+# glance for overnight context on the dashboard's ticker tape. /api/indices loops this whole dict
+# and caches each entry for 15min independently, so adding a name here is all it takes to surface
+# it - but every new one is another (cached) yfinance call on a cold start, so keep it short.
+INDEX_SYMBOLS = {
+    "NIFTY": "^NSEI",
+    "SENSEX": "^BSESN",
+    "BANKNIFTY": "^NSEBANK",
+    "INDIAVIX": "^INDIAVIX",
+    "DOW": "^DJI",
+    "NASDAQ": "^IXIC",
+    "FTSE": "^FTSE",
+    "NIKKEI": "^N225",
+}
 
 
 def _fast_quote(ticker):

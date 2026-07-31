@@ -2,6 +2,15 @@
 
 [← Back to index](README.md)
 
+> **Currently disabled.** The Backtesting page (`/backtesting`) now renders
+> only [Manual](backtesting-manual.md) — the Auto tab's UI is commented out
+> in `frontend/src/Backtesting.jsx` (not deleted), and its command-palette
+> entry is commented out in `frontend/src/CommandPalette.jsx`. Everything
+> below still describes how it works; `AutoBacktesting.jsx`, the
+> `/backtest/auto/$scriptId` detail route, and the backend's
+> `auto_backtest_scripts` endpoints are all untouched, so re-enabling it is
+> just restoring the commented-out Tabs block in `Backtesting.jsx`.
+
 ## Using it
 
 - `/backtesting?tab=auto` → **Add script** → write a Pine Script strategy

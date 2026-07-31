@@ -84,6 +84,19 @@ def events_feed(
     return db.list_events(list_name=list_name, symbol=symbol, from_date=from_date, to_date=to_date, limit=limit)
 
 
+@app.get("/api/events/attention")
+def events_attention(
+    list_name: str | None = None, symbol: str | None = None,
+    baseline_days: int = 30, recent_days: int = 3,
+):
+    """Per-symbol event-coverage volume vs. that symbol's own baseline - see db.attention_scores.
+    Powers the Events page's "Unusual attention" panel: which watchlisted stocks are getting more
+    coverage than usual right now, not just what the latest single headline says."""
+    return db.attention_scores(
+        list_name=list_name, symbol=symbol, baseline_days=baseline_days, recent_days=recent_days
+    )
+
+
 # Cogencis's general news feed is refetched wholesale (not per-symbol) at most once a day - a
 # lock keeps concurrent requests from re-triggering the paginated scrape at the same time.
 _top_news_lock = threading.Lock()

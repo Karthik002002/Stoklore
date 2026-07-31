@@ -13,6 +13,6 @@ why it exists, see the main [README](../README.md) — these docs are the
 - [Watch Rules](watch-rules.md)
 - [Top News](top-news.md)
 - [Holdings](holdings.md)
-- [Backtesting — Auto](backtesting-auto.md)
+- [Backtesting — Auto](backtesting-auto.md) *(currently disabled, see the doc)*
 - [Backtesting — Manual (Trade Journal)](backtesting-manual.md)
 - [Bar Replay](bar-replay.md)

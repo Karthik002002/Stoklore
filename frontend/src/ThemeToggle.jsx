@@ -1,4 +1,4 @@
-import { MoonIcon, SunIcon } from 'lucide-react'
+import { IconMoon, IconSun } from '@tabler/icons-react'
 import { Button } from '@/components/ui/button'
 import { useTheme } from '@/lib/theme'
 
@@ -12,7 +12,7 @@ export default function ThemeToggle() {
       aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
       onClick={toggle}
     >
-      {theme === 'dark' ? <SunIcon className="size-4" /> : <MoonIcon className="size-4" />}
+      {theme === 'dark' ? <IconSun className="size-4" /> : <IconMoon className="size-4" />}
     </Button>
   )
 }

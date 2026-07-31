@@ -1,6 +1,8 @@
 <div align="center"><a name="readme-top"></a>
 
-# 📈 Stoklore
+<img src="frontend/public/favicon.svg" width="72" height="69" alt="Stoklore logo" />
+
+# Stoklore
 
 ## **It watches. You decide.**
 

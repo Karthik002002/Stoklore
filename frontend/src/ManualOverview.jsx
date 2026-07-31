@@ -32,6 +32,7 @@ import {
   getBalanceAdjustments,
   getManualBacktestSettings,
 } from '@/services/api'
+import { GoalsSummary } from './ManualGoals'
 
 const COLORS = { up: '#22c55e', down: '#ef4444', text: '#9ca3af', grid: 'rgba(148, 163, 184, 0.15)' }
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
@@ -854,6 +855,10 @@ export default function ManualOverview({ trades }) {
 
   return (
     <div className="space-y-4">
+      {/* Renders nothing until goals exist, so this stays out of the way for anyone not using
+          them (see the Goals tab). */}
+      <GoalsSummary trades={trades} />
+
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
           label="Total PnL (closed)"

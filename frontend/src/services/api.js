@@ -223,6 +223,15 @@ export const setManualBacktestSettings = (settings) =>
     body: JSON.stringify(settings),
   }).then(json)
 
+export const getTradingGoals = () => fetch('/api/trading-goals').then(json)
+
+export const setTradingGoals = (goals) =>
+  fetch('/api/trading-goals', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(goals),
+  }).then(json)
+
 export const getBalanceAdjustments = () => fetch('/api/manual-trades/balance-adjustments').then(json)
 
 export const createBalanceAdjustment = (adjustment) =>

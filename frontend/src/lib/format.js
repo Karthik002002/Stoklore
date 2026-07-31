@@ -37,6 +37,15 @@ export const formatDuration = (totalSeconds) => {
   return `${sec}s`
 }
 
+// "45m" / "5h" / "2d" - compact form for dense feed rows, unlike timeAgo's "2 days ago".
+export const timeAgoShort = (dateStr) => {
+  const mins = Math.floor((Date.now() - new Date(dateStr)) / 60000)
+  if (mins < 60) return `${Math.max(mins, 0)}m`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h`
+  return `${Math.floor(hours / 24)}d`
+}
+
 const RTF = new Intl.RelativeTimeFormat('en', { numeric: 'auto' })
 
 // "2 days ago", "3 weeks ago", etc. from an ISO date string.

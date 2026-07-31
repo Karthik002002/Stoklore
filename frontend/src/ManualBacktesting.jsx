@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { ClapperboardIcon, DownloadIcon, ImagesIcon, PlusIcon, Trash2Icon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import BulkTradesDialog from './BulkTradesDialog'
@@ -36,7 +36,9 @@ import {
   updateManualTrade,
   uploadManualTradeImage,
 } from '@/services/api'
+import ManualGoals from './ManualGoals'
 import ManualOverview from './ManualOverview'
+import ManualStatistics from './ManualStatistics'
 
 function emptyForm() {
   return {
@@ -664,7 +666,8 @@ function BulkEditDialog({ open, onOpenChange, trades, onSaved }) {
 }
 
 export default function ManualBacktesting() {
-  const [view, setView] = useState('overview')
+  const { view } = useSearch({ from: '/backtesting' })
+  const navigate = useNavigate({ from: '/backtesting' })
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingTrade, setEditingTrade] = useState(null)
   const [bulkOpen, setBulkOpen] = useState(false)
@@ -717,11 +720,13 @@ export default function ManualBacktesting() {
 
   return (
     <div className="space-y-4">
-      <Tabs value={view} onValueChange={setView}>
+      <Tabs value={view} onValueChange={(next) => navigate({ search: { view: next } })}>
         <div className="flex items-center justify-between">
           <TabsList>
             <TabsTab value="overview">Overview</TabsTab>
             <TabsTab value="trades">Trades</TabsTab>
+            <TabsTab value="statistics">Statistics</TabsTab>
+            <TabsTab value="goals">Goals</TabsTab>
             <TabsIndicator />
           </TabsList>
           <div className="flex items-center gap-2">
@@ -769,6 +774,12 @@ export default function ManualBacktesting() {
             onToggleSelect={toggleSelect}
             onToggleSelectAll={toggleSelectAll}
           />
+        </TabsPanel>
+        <TabsPanel value="statistics">
+          <ManualStatistics trades={trades} />
+        </TabsPanel>
+        <TabsPanel value="goals">
+          <ManualGoals trades={trades} />
         </TabsPanel>
       </Tabs>
 

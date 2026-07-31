@@ -1,4 +1,4 @@
-"""CLI: scan NSE India movers, filter via skills, analyze with local llama3.1, store in Postgres."""
+"""CLI: scan NSE India movers, filter via skills, analyze with local Qwythos, store in Postgres."""
 import argparse
 
 import db
@@ -50,7 +50,7 @@ def main():
     parser = argparse.ArgumentParser(description="Scan stock movers, analyze with local LLM, store in Postgres.")
     parser.add_argument("--skills", default="movement,volume", help=f"comma list, available: {skills.available_skills()}")
     parser.add_argument("--limit", type=int, default=10, help="max tickers to analyze")
-    parser.add_argument("--model", default=None, help="e.g. ollama/llama3.1 or an OmniRoute model id; defaults to the active model set in Settings")
+    parser.add_argument("--model", default=None, help="e.g. ollama/qwythos or an OmniRoute model id; defaults to the active model set in Settings")
     parser.add_argument("--watchlist", nargs="?", const="", default=None, metavar="LIST",
                         help="scan saved watchlist symbols instead of movers; optionally a single list name")
     args = parser.parse_args()

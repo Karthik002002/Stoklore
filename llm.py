@@ -9,7 +9,7 @@ import urllib.request
 OLLAMA_BASE = "http://localhost:11434"
 OMNIROUTE_BASE = "http://localhost:20128/v1"
 EMBED_MODEL = "nomic-embed-text"
-DEFAULT_MODEL = "ollama/llama3.1"
+DEFAULT_MODEL = "ollama/hf.co/empero-ai/Qwythos-9B-Claude-Mythos-5-1M-GGUF:Q4_K_M"
 
 # Set by api.py at startup (from db.get_litellm_base_url/get_litellm_api_key) and again whenever
 # the user saves new LiteLLM settings - kept as plain module globals rather than an import of db,
@@ -236,7 +236,7 @@ def run_agent(messages, tools, tool_impls, model, max_rounds=5):
 def get_models():
     """Local Ollama (always available) + live OmniRoute catalog + live LiteLLM catalog (if
     configured). Degrades quietly if either proxy isn't reachable, rather than erroring."""
-    models = [{"id": DEFAULT_MODEL, "label": "Llama 3.1 (local)"}]
+    models = [{"id": DEFAULT_MODEL, "label": "Qwythos 9B (local)"}]
     try:
         req = urllib.request.Request(f"{OMNIROUTE_BASE}/models")
         with urllib.request.urlopen(req, timeout=5) as r:

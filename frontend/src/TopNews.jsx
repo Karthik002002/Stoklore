@@ -1,15 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { RefreshCwIcon } from 'lucide-react'
+import { RefreshCwIcon, SearchIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { formatDateTime } from '@/lib/format'
+import { formatDateTime, timeAgoShort } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
 import EventActionsMenu from './EventActionsMenu'
 
-function NewsCard({ n }) {
+function NewsRow({ n }) {
   const open = () => window.open(n.url, '_blank', 'noopener,noreferrer')
 
   return (
@@ -21,26 +22,19 @@ function NewsCard({ n }) {
             tabIndex={0}
             onClick={open}
             onKeyDown={(e) => e.key === 'Enter' && open()}
-            className="relative flex h-[150px] cursor-pointer flex-col rounded-xl border bg-card p-4 transition-colors hover:border-primary/40"
+            className="group flex cursor-pointer items-center gap-3 border-b px-2 py-1.5 font-mono text-xs transition-colors hover:bg-muted/50"
           />
         }
       >
-        <EventActionsMenu url={n.url} label={n.title} className="absolute top-2 right-2" />
-        <p className="line-clamp-3 pr-6 font-medium">{n.title}</p>
-        {n.summary && <p className="mt-1.5 line-clamp-4 text-sm text-muted-foreground">{n.summary}</p>}
-        {(n.source || n.published_at) && (
-          <p className="mt-2 text-xs text-muted-foreground">
-            {n.source}
-            {n.source && n.published_at && ' · '}
-            {n.published_at && <time>{formatDateTime(n.published_at)}</time>}
-          </p>
+        {n.published_at && (
+          <time className="w-8 shrink-0 text-right text-muted-foreground">
+            {timeAgoShort(n.published_at)}
+          </time>
         )}
+        {n.source && <span className="w-24 shrink-0 truncate font-semibold text-primary">{n.source}</span>}
+        <p className="min-w-0 flex-1 truncate">{n.title}</p>
         {n.affected_symbols?.length > 0 && (
-          <div
-            className="mt-auto flex flex-wrap items-center gap-1.5 border-t pt-2.5"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <span className="text-xs text-muted-foreground">Affects:</span>
+          <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
             {n.affected_symbols.map((symbol) => (
               <Link key={symbol} to="/stock/$symbol" params={{ symbol }}>
                 <Badge variant="secondary" className="hover:bg-primary/15 hover:text-primary">
@@ -50,6 +44,11 @@ function NewsCard({ n }) {
             ))}
           </div>
         )}
+        <EventActionsMenu
+          url={n.url}
+          label={n.title}
+          className="shrink-0 opacity-0 group-hover:opacity-100"
+        />
       </TooltipTrigger>
       <TooltipContent side="top" className="max-w-sm text-left whitespace-normal">
         <div className="space-y-1.5 py-0.5">
@@ -71,25 +70,36 @@ function NewsCard({ n }) {
   )
 }
 
+const PAGE_SIZE = 30
+
 export default function TopNews() {
   usePageTitle('Top news')
   const [news, setNews] = useState(null)
+  const [total, setTotal] = useState(null)
   const [error, setError] = useState(null)
   const [onlyAffecting, setOnlyAffecting] = useState(false)
   const [reloading, setReloading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [query, setQuery] = useState('')
+  const sentinelRef = useRef(null)
 
-  const load = (force = false) => {
-    if (force) setReloading(true)
-    fetch(`/api/top-news${force ? '?force=true' : ''}`)
-      .then(async (r) => {
+  const fetchPage = (offset, force = false) =>
+    fetch(`/api/top-news?offset=${offset}&limit=${PAGE_SIZE}${force ? '&force=true' : ''}`).then(
+      async (r) => {
         if (!r.ok) {
           const { detail } = await r.json().catch(() => ({}))
           throw new Error(detail || 'Failed to load top news')
         }
         return r.json()
-      })
-      .then((data) => {
-        setNews(data)
+      },
+    )
+
+  const load = (force = false) => {
+    if (force) setReloading(true)
+    fetchPage(0, force)
+      .then(({ items, total }) => {
+        setNews(items)
+        setTotal(total)
         setError(null)
       })
       .catch((e) => setError(e.message))
@@ -98,30 +108,75 @@ export default function TopNews() {
 
   useEffect(() => load(false), [])
 
-  const visible = onlyAffecting ? news?.filter((n) => n.affected_symbols?.length > 0) : news
+  const hasMore = news && (total == null || news.length < total)
+
+  // Loads the next 30-story page once the sentinel at the bottom of the list scrolls into view.
+  useEffect(() => {
+    if (!hasMore || loadingMore || error) return
+    const el = sentinelRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) return
+        setLoadingMore(true)
+        fetchPage(news.length)
+          .then(({ items, total }) => {
+            setNews((prev) => [...prev, ...items])
+            setTotal(total)
+          })
+          .catch((e) => setError(e.message))
+          .finally(() => setLoadingMore(false))
+      },
+      { rootMargin: '300px' },
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [hasMore, loadingMore, error, news?.length])
+
+  const visible = useMemo(() => {
+    let v = onlyAffecting ? news?.filter((n) => n.affected_symbols?.length > 0) : news
+    if (query.trim() && v) {
+      const q = query.trim().toLowerCase()
+      v = v.filter((n) => n.title.toLowerCase().includes(q) || n.summary?.toLowerCase().includes(q))
+    }
+    return v
+  }, [news, onlyAffecting, query])
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium text-muted-foreground">Top news</h2>
-        <div className="flex items-center gap-2">
-          <Button
-            variant={onlyAffecting ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setOnlyAffecting((v) => !v)}
-          >
-            Affecting my watchlist only
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Reload top news"
-            onClick={() => load(true)}
-            disabled={reloading}
-          >
-            <RefreshCwIcon className={`size-4 ${reloading ? 'animate-spin' : ''}`} />
-          </Button>
+    <div className="space-y-3 font-mono">
+      <div className="flex items-center gap-2">
+        <h2 className="shrink-0 text-sm font-medium text-muted-foreground">Top news</h2>
+        {news && (
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {news.length}
+            {total != null && ` / ${total}`}
+          </span>
+        )}
+        <div className="relative flex-1">
+          <SearchIcon className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search…"
+            className="h-7 pl-7 font-mono text-xs"
+          />
         </div>
+        <Button
+          variant={onlyAffecting ? 'secondary' : 'ghost'}
+          size="sm"
+          onClick={() => setOnlyAffecting((v) => !v)}
+        >
+          Affecting my watchlist only
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Reload top news"
+          onClick={() => load(true)}
+          disabled={reloading}
+        >
+          <RefreshCwIcon className={`size-4 ${reloading ? 'animate-spin' : ''}`} />
+        </Button>
       </div>
 
       {error && (
@@ -143,10 +198,22 @@ export default function TopNews() {
       )}
 
       {!error && visible?.length > 0 && (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="rounded-lg border">
           {visible.map((n) => (
-            <NewsCard key={n.url} n={n} />
+            <NewsRow key={n.url} n={n} />
           ))}
+          {hasMore && (
+            <div
+              ref={sentinelRef}
+              className="flex items-center justify-center gap-2 py-3 text-xs text-muted-foreground"
+            >
+              {loadingMore && (
+                <>
+                  <Spinner className="size-3.5" /> Loading more…
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

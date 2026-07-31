@@ -73,7 +73,9 @@ const holdingsRoute = createRoute({
 const backtestingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/backtesting',
-  validateSearch: (search) => ({ tab: search.tab === 'manual' ? 'manual' : 'auto' }),
+  validateSearch: (search) => ({
+    view: ['overview', 'trades', 'statistics', 'goals'].includes(search.view) ? search.view : 'overview',
+  }),
   component: Backtesting,
 })
 

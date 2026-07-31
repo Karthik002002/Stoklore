@@ -42,6 +42,7 @@ leaving your laptop unless you tell it to.
 - [🧩 Adding a Custom Skill](#-adding-a-custom-skill)
 - [⌨️ CLI Scan](#️-cli-scan)
 - [🧹 Formatting & Pre-commit](#-formatting--pre-commit)
+- [🙏 Credits](#-credits)
 
 ####
 
@@ -542,6 +543,37 @@ it once per clone with:
 ```bash
 git config core.hooksPath .githooks
 ```
+
+<div align="right">
+
+[![][back-to-top]](#readme-top)
+
+</div>
+
+## 🙏 Credits
+
+**Design & product inspiration:**
+
+- [TradesViz](https://www.tradesviz.com/) — trade journaling/analytics UX
+- [OpenBB](https://openbb.co/) — open-source market terminal approach
+- [Fincept](https://fincept.in/) — terminal-style dashboard layout
+- [Bloomberg Terminal](https://www.bloomberg.com/professional/products/bloomberg-terminal/) — density and information hierarchy
+
+**Built on top of:**
+
+- [PineTS](https://github.com/LuxAlgo/PineTS) — in-browser Pine Script v5 runtime powering Auto Backtesting
+- [lightweight-charts](https://github.com/tradingview/lightweight-charts) — candlestick/volume/RSI charting (Stock Detail, Bar Replay)
+- [shadcn/ui](https://ui.shadcn.com/) + [AI Elements](https://ai-sdk.dev/elements) + [Vercel AI SDK](https://ai-sdk.dev/) — frontend components and chat streaming protocol
+- [Ollama](https://ollama.com/) — local LLM inference and tool calling
+- [LiteLLM](https://www.litellm.ai/) — multi-provider proxy, guardrails, wildcard model routing
+- [Langfuse](https://langfuse.com/) — self-hosted LLM tracing
+- [FinRoBERTa](https://huggingface.co/soleimanian/financial-roberta-large-sentiment) — local financial sentiment classifier
+- [yfinance](https://github.com/ranaroussi/yfinance) — OHLCV price history
+- [NSE India](https://www.nseindia.com/) — market movers, per-stock financials
+- [Cogencis](https://www.cogencis.com/) — general market news feed
+- [Dhan](https://dhanhq.co/) & [Kite Connect](https://kite.trade/) — broker holdings sync
+- [Postgres](https://www.postgresql.org/) + [pgvector](https://github.com/pgvector/pgvector) — storage and RAG retrieval
+- [Biome](https://biomejs.dev/) & [oxlint](https://oxc.rs/docs/guide/usage/linter.html) — frontend formatting/linting
 
 <div align="right">
 

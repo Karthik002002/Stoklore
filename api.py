@@ -10,6 +10,7 @@ import threading
 import time
 import uuid
 from datetime import date, datetime, timedelta, timezone
+from typing import Literal
 
 import requests
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
@@ -139,28 +140,45 @@ def _cached_isin(symbol):
     return isin
 
 
+COGENCIS_PAGE_SIZE = 20
+
+
 @app.get("/api/top-news")
-def top_news(force: bool = False):
-    """Cogencis's general "what's moving" feed (not scoped to one stock), cached wholesale for
-    24h (force=true bypasses the cache and re-scrapes, for a manual Reload button). On a cold
-    cache, paginates 5 pages of 20 (latest 100 stories) with a 2s gap between requests. Each story
-    comes back tagged with which of your watchlisted stocks it affects, matched by ISIN -
-    recomputed fresh every call so watchlist changes show up immediately even against cached
-    stories."""
+def top_news(force: bool = False, offset: int = 0, limit: int = 30):
+    """Cogencis's general "what's moving" feed (not scoped to one stock), cached and paginated
+    (offset/limit) for infinite scroll. force=true (manual Reload button) wipes the cache and
+    re-scrapes page 1 wholesale; a stale (>24h) cache does the same on next read. Beyond that,
+    whenever a page request reaches past what's already cached, additional Cogencis pages are
+    scraped on demand and appended (never replacing older cached stories) until there's enough to
+    satisfy it, or Cogencis runs out of pages. Each story comes back tagged with which of your
+    watchlisted stocks it affects, matched by ISIN - recomputed fresh every call so watchlist
+    changes show up immediately even against cached stories."""
     with _top_news_lock:
-        cached = None if force else db.get_cached_top_news()
-        if cached is None:
+        if force or not db.top_news_is_fresh():
             token = db.get_cogencis_token()
             if not token:
                 raise HTTPException(status_code=400,
                                      detail="Cogencis isn't configured - add a token in Settings > Cogencis")
-            items = []
-            for page in range(1, 6):
-                items += scraper.get_cogencis_top_news(token, page_no=page, page_size=20)
-                if page < 5:
-                    time.sleep(2)
-            db.save_top_news(items)
-            cached = db.get_cached_top_news()
+            db.save_top_news(scraper.get_cogencis_top_news(token, page_no=1, page_size=COGENCIS_PAGE_SIZE))
+
+        have = db.count_top_news()
+        needed = offset + limit
+        if needed > have:
+            token = db.get_cogencis_token()
+            if token:
+                next_page = have // COGENCIS_PAGE_SIZE + 1
+                while have < needed:
+                    new_items = scraper.get_cogencis_top_news(token, page_no=next_page, page_size=COGENCIS_PAGE_SIZE)
+                    if not new_items:
+                        break
+                    db.append_top_news(new_items)
+                    have = db.count_top_news()
+                    next_page += 1
+                    if have < needed:
+                        time.sleep(2)
+
+        page = db.get_top_news_page(offset, limit)
+        total = db.count_top_news()
 
     symbol_by_isin = {}
     for symbol in db.watchlist_symbols():
@@ -168,12 +186,15 @@ def top_news(force: bool = False):
         if isin:
             symbol_by_isin[isin] = symbol
 
-    return [
-        {**item, "affected_symbols": sorted(
-            symbol_by_isin[i] for i in _isins_in(item["isins"]) if i in symbol_by_isin
-        )}
-        for item in cached
-    ]
+    return {
+        "items": [
+            {**item, "affected_symbols": sorted(
+                symbol_by_isin[i] for i in _isins_in(item["isins"]) if i in symbol_by_isin
+            )}
+            for item in page
+        ],
+        "total": total,
+    }
 
 
 # Populated by the background price-history sync (POST /api/prices/sync) - same manual-trigger +
@@ -474,6 +495,16 @@ class ManualBacktestSettingsRequest(BaseModel):
     opening_balance: float = 0
 
 
+class TradingGoalRequest(BaseModel):
+    id: str
+    metric: str  # key into the frontend's GOAL_METRICS - unknown keys simply render as unscored
+    operator: Literal["gt", "lt"]  # "gt" = a target to reach, "lt" = a limit to stay under
+    target: float
+    period: Literal["daily", "weekly", "monthly"]
+    mode: Literal["continuous", "binary"] = "continuous"
+    label: str | None = None
+
+
 class BalanceAdjustmentRequest(BaseModel):
     amount: float
     type: str  # "add" | "subtract"
@@ -716,6 +747,20 @@ def set_manual_backtest_settings(req: ManualBacktestSettingsRequest):
     }
     db.set_manual_backtest_settings(settings)
     return settings
+
+
+@app.get("/api/trading-goals")
+def trading_goals():
+    return db.get_trading_goals()
+
+
+@app.put("/api/trading-goals")
+def save_trading_goals(goals: list[TradingGoalRequest]):
+    """Replaces the whole goal list - the UI always sends the full set, and there's no per-goal
+    history to preserve (achievement is recomputed from trades, never stored)."""
+    saved = [g.model_dump() for g in goals]
+    db.set_trading_goals(saved)
+    return saved
 
 
 @app.get("/api/manual-trades/balance-adjustments")

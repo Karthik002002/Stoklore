@@ -457,26 +457,47 @@ def save_news(symbol, items):
             )
 
 
-def get_cached_top_news(max_age_hours=24):
-    """Returns cached top-news wholesale if scraped within max_age_hours, else None (caller
-    should re-scrape all pages)."""
+def top_news_is_fresh(max_age_hours=24):
+    """True if the top-news cache has been scraped within max_age_hours (caller should re-scrape
+    the first page wholesale if not - see save_top_news)."""
     with connect() as conn:
-        rows = conn.execute(
-            "SELECT title, summary, url, published_at, source, isins, scraped_at "
-            "FROM top_news ORDER BY published_at DESC NULLS LAST"
+        newest = conn.execute("SELECT max(scraped_at) AS t FROM top_news").fetchone()["t"]
+    return bool(newest) and newest >= datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+
+
+def count_top_news():
+    with connect() as conn:
+        return conn.execute("SELECT count(*) AS n FROM top_news").fetchone()["n"]
+
+
+def get_top_news_page(offset, limit):
+    """Paginated slice of the cached top-news feed, newest first."""
+    with connect() as conn:
+        return conn.execute(
+            "SELECT title, summary, url, published_at, source, isins "
+            "FROM top_news ORDER BY published_at DESC NULLS LAST OFFSET %s LIMIT %s",
+            (offset, limit),
         ).fetchall()
-    if not rows:
-        return None
-    newest_scrape = max(r["scraped_at"] for r in rows)
-    if newest_scrape < datetime.now(timezone.utc) - timedelta(hours=max_age_hours):
-        return None
-    return rows
 
 
 def save_top_news(items):
-    """Replaces the cached top-news wholesale with a freshly scraped list."""
+    """Replaces the cached top-news wholesale with a freshly scraped list - used for the daily
+    from-scratch refresh (force=true or a stale cache)."""
     with connect() as conn:
         conn.execute("DELETE FROM top_news")
+        for item in items:
+            conn.execute(
+                "INSERT INTO top_news (title, summary, url, published_at, source, isins) "
+                "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (url) DO NOTHING",
+                (item["title"], item["summary"], item["url"], item.get("published_at"),
+                 item.get("source"), item.get("isins")),
+            )
+
+
+def append_top_news(items):
+    """Adds more (older) pages to the existing cache without clearing it - used when a scroll
+    request needs deeper pages than what's cached so far."""
+    with connect() as conn:
         for item in items:
             conn.execute(
                 "INSERT INTO top_news (title, summary, url, published_at, source, isins) "
@@ -866,7 +887,7 @@ def watchlist_symbols(list_name=None):
     return [r["symbol"] for r in rows]
 
 
-DEFAULT_MODEL = "ollama/llama3.1"
+DEFAULT_MODEL = "ollama/hf.co/empero-ai/Qwythos-9B-Claude-Mythos-5-1M-GGUF:Q4_K_M"
 
 
 def get_active_model():
@@ -1267,6 +1288,26 @@ def get_manual_backtest_settings():
 
 def set_manual_backtest_settings(settings):
     _set_setting("manual_backtest_settings", json.dumps(settings))
+
+
+# --- Trading goals (targets and limits scored against the manual-trade journal) ----------------
+# One JSON blob in `settings` rather than its own table: goals are a short user-defined list
+# that's always read and written whole, never joined, filtered, or queried by column. Achievement
+# is never stored - it's recomputed from the trades on every read, so editing a goal (or a trade)
+# can't leave a stale score behind, the same reason manual_trades doesn't persist P&L.
+def get_trading_goals():
+    raw = _get_setting("trading_goals")
+    if not raw:
+        return []
+    try:
+        goals = json.loads(raw)
+    except (ValueError, TypeError):
+        return []
+    return goals if isinstance(goals, list) else []
+
+
+def set_trading_goals(goals):
+    _set_setting("trading_goals", json.dumps(goals))
 
 
 def create_balance_adjustment(amount, adj_type, reason, notes, adjusted_at):

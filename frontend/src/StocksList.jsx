@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useNavigate } from '@tanstack/react-router'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   PlusIcon,
   BookmarkIcon,
-  CheckIcon,
   EllipsisVerticalIcon,
   PencilIcon,
   RadarIcon,
@@ -23,6 +22,7 @@ import {
 } from '@/components/ui/dialog'
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -44,6 +44,8 @@ import {
   pingActivity,
 } from '@/services/api'
 import DeleteStockButton from './DeleteStockButton'
+
+const EMPTY_SET = new Set()
 
 // --- formatting helpers, shared by every panel ------------------------------------------------
 const pctClass = (v) => (v == null ? 'text-muted-foreground' : v >= 0 ? 'text-up' : 'text-down')
@@ -432,26 +434,29 @@ function AddStock({ onAdded }) {
   )
 }
 
-function WatchlistButton({ symbol, lists, current, onChange }) {
-  const save = async (listName) => {
+// A stock can belong to any number of watchlists (composite symbol+list_name key on the
+// backend), so this is a checkbox menu rather than a single-select - toggling one list on/off
+// doesn't touch its membership in any other.
+function WatchlistButton({ symbol, lists, memberOf, onChange }) {
+  const add = async (listName) => {
     await fetch(`/api/watchlist/${symbol}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ list_name: listName }),
     })
-    toast.success(`${symbol} saved to ${listName}`)
+    toast.success(`${symbol} added to ${listName}`)
     onChange()
   }
 
-  const remove = async () => {
-    await fetch(`/api/watchlist/${symbol}`, { method: 'DELETE' })
-    toast.success(`${symbol} removed from watchlist`)
+  const remove = async (listName) => {
+    await fetch(`/api/watchlist/${symbol}?list_name=${encodeURIComponent(listName)}`, { method: 'DELETE' })
+    toast.success(`${symbol} removed from ${listName}`)
     onChange()
   }
 
   const createNew = () => {
     const name = window.prompt('New watchlist name (e.g. Banking, IT, Long term)')
-    if (name?.trim()) save(name.trim())
+    if (name?.trim()) add(name.trim())
   }
 
   return (
@@ -468,26 +473,24 @@ function WatchlistButton({ symbol, lists, current, onChange }) {
         }
       >
         <BookmarkIcon
-          className={`size-3.5 ${current ? 'text-primary' : 'text-muted-foreground'}`}
-          fill={current ? 'currentColor' : 'none'}
+          className={`size-3.5 ${memberOf.size ? 'text-primary' : 'text-muted-foreground'}`}
+          fill={memberOf.size ? 'currentColor' : 'none'}
         />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48" onClick={(e) => e.stopPropagation()}>
         {lists.map((name) => (
-          <DropdownMenuItem key={name} onClick={() => save(name)}>
+          <DropdownMenuCheckboxItem
+            key={name}
+            checked={memberOf.has(name)}
+            onCheckedChange={(checked) => (checked ? add(name) : remove(name))}
+          >
             {name}
-            {current === name && <CheckIcon className="ml-auto size-4" />}
-          </DropdownMenuItem>
+          </DropdownMenuCheckboxItem>
         ))}
         {lists.length > 0 && <DropdownMenuSeparator />}
         <DropdownMenuItem onClick={createNew}>
           <PlusIcon className="size-4" /> New watchlist…
         </DropdownMenuItem>
-        {current && (
-          <DropdownMenuItem variant="destructive" onClick={remove}>
-            Remove from {current}
-          </DropdownMenuItem>
-        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -658,8 +661,11 @@ export default function StocksList() {
   }, [])
 
   const queryClient = useQueryClient()
-  const navigate = useNavigate()
-  const [tab, setTab] = useState('All')
+  const navigate = useNavigate({ from: '/' })
+  const { list } = useSearch({ from: '/' })
+  const tab = list ?? 'All'
+  const setTab = (name) =>
+    navigate({ search: (prev) => ({ ...prev, list: name === 'All' ? undefined : name }), replace: true })
   const [dragName, setDragName] = useState(null)
   const [session, setSession] = useState(0)
   const [latencyMs, setLatencyMs] = useState(null)
@@ -704,10 +710,19 @@ export default function StocksList() {
     )
   }
 
-  const listOf = Object.fromEntries(watchlist.map((w) => [w.symbol, w.list_name]))
+  // A symbol can sit in more than one watchlist, so membership is a set per symbol rather than a
+  // single name.
+  const membersOf = useMemo(() => {
+    const m = new Map()
+    watchlist.forEach((w) => {
+      if (!m.has(w.symbol)) m.set(w.symbol, new Set())
+      m.get(w.symbol).add(w.list_name)
+    })
+    return m
+  }, [watchlist])
   const lists = listNames
   const stockCountOf = (name) => watchlist.filter((w) => w.list_name === name).length
-  const visible = tab === 'All' ? stocks : stocks?.filter((s) => listOf[s.symbol] === tab)
+  const visible = tab === 'All' ? stocks : stocks?.filter((s) => membersOf.get(s.symbol)?.has(tab))
 
   const dropOn = (targetName) => {
     if (!dragName || dragName === targetName) return
@@ -861,7 +876,7 @@ export default function StocksList() {
                       <WatchlistButton
                         symbol={s.symbol}
                         lists={lists}
-                        current={listOf[s.symbol]}
+                        memberOf={membersOf.get(s.symbol) ?? EMPTY_SET}
                         onChange={load}
                       />
                       <DeleteStockButton
@@ -878,7 +893,7 @@ export default function StocksList() {
           )}
         </TerminalPanel>
 
-        <MarketPulsePanel stocks={stocks} />
+        <MarketPulsePanel stocks={visible} />
       </div>
 
       <div className="grid gap-2 lg:grid-cols-3">

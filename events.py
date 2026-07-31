@@ -57,3 +57,9 @@ def scan(list_name=None, on_progress=None):
         if on_progress:
             on_progress(i, len(symbols))
     return count
+
+
+def should_auto_scan(last_run_date, today):
+    """True once per calendar day - last_run_date is whatever db.get_last_event_scan_date()
+    returned (None if the automatic scan has never run yet), today an ISO date string."""
+    return last_run_date != today

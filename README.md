@@ -2,12 +2,14 @@
 
 # 📈 Stoklore
 
-**A fully local NSE India stock research app** — live market data, an
-LLM chat agent that can actually *do things* (not just talk), watchlists,
-event scanning, price history, and technical indicators.
+## **It watches. You decide.**
 
-Everything runs on your own machine. No cloud APIs required, no data
-leaves localhost unless you point it at one yourself.
+Your own market terminal. It reads the news, the filings, and the numbers — 
+scrapes them continuously, makes sense of them with a local LLM, and only 
+pokes you when something actually happened.
+
+Runs entirely on your machine. No cloud. No APIs reaching out. No data 
+leaving your laptop unless you tell it to.
 
 **Scraping** · **Local LLM chat with tool calling** · **Watchlists & events** ·
 **Price history & EMA crossover** · **Sentiment analysis** ·

@@ -36,6 +36,9 @@ const rootRoute = createRootRoute({
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
+  validateSearch: (search) => ({
+    list: typeof search.list === 'string' && search.list ? search.list : undefined,
+  }),
   component: StocksList,
 })
 

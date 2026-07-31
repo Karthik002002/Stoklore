@@ -45,11 +45,11 @@ app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 def _startup():
     db.purge_old(days=14)
     llm.configure_litellm(db.get_litellm_base_url(), db.get_litellm_api_key())
+    threading.Thread(target=_auto_event_scan_loop, daemon=True).start()
 
 
-# Populated by the background watchlist event scan (POST /api/events/scan) - polled by
-# GET /api/events/status so the frontend can show scan progress. Manual trigger only; the old
-# automatic movers scan on startup is gone (still runnable standalone via `python main.py`).
+# Populated by the background watchlist event scan (POST /api/events/scan, or the daily automatic
+# one below) - polled by GET /api/events/status so the frontend can show scan progress.
 _event_scan_state = {"running": False, "done": 0, "total": 0}
 
 
@@ -61,6 +61,22 @@ def _run_event_scan(list_name):
         pass
     finally:
         _event_scan_state["running"] = False
+
+
+# Runs the full-watchlist event scan once per NSE trading day (Asia/Kolkata calendar date), with
+# no human trigger needed. Checked hourly rather than scheduled for a fixed time - cheap, and
+# means a server that was down at the target time still catches up within the hour of coming
+# back up. The last-run date is persisted (db.get/set_last_event_scan_date) so a same-day restart
+# doesn't fire it twice.
+def _auto_event_scan_loop():
+    from zoneinfo import ZoneInfo
+    ist = ZoneInfo("Asia/Kolkata")
+    while True:
+        today = datetime.now(ist).date().isoformat()
+        if events.should_auto_scan(db.get_last_event_scan_date(), today) and not _event_scan_state["running"]:
+            db.set_last_event_scan_date(today)
+            _run_event_scan(None)
+        time.sleep(3600)
 
 
 @app.post("/api/events/scan")
@@ -1199,8 +1215,9 @@ def set_watchlist(symbol: str, req: WatchlistRequest):
 
 
 @app.delete("/api/watchlist/{symbol}")
-def remove_watchlist(symbol: str):
-    db.remove_from_watchlist(symbol.upper())
+def remove_watchlist(symbol: str, list_name: str | None = None):
+    """Removes from one list, or from every list (used when deleting the stock) when omitted."""
+    db.remove_from_watchlist(symbol.upper(), list_name)
     return {"ok": True}
 
 
@@ -1364,6 +1381,18 @@ def stock_financials(symbol: str):
     if statements is None:
         raise HTTPException(status_code=404, detail=f"No financial statements found for '{symbol}'")
     return statements
+
+
+# Screener's page is a single scrape covering fundamentals + 12y statements + filings, so it's
+# cached as one blob. 6h TTL: the statements only move quarterly, but the announcements list is
+# intraday-fresh, and this is a full HTML fetch+parse (not a cheap JSON call) to redo on a whim.
+@app.get("/api/stocks/{symbol}/screener")
+def stock_screener(symbol: str):
+    symbol = symbol.upper()
+    data = _cached(symbol, "screener", 60 * 6, lambda: scraper.get_screener_data(symbol))
+    if data is None:
+        raise HTTPException(status_code=404, detail=f"No screener.in page found for '{symbol}'")
+    return data
 
 
 @app.get("/api/stocks/{symbol}/chart")

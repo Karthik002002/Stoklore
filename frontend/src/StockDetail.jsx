@@ -23,6 +23,7 @@ import { getBacktests, getEmaCrossover } from '@/services/api'
 import DeleteStockButton from './DeleteStockButton'
 import EventActionsMenu from './EventActionsMenu'
 import PriceChart from './PriceChart'
+import ScreenerPanel from './ScreenerPanel'
 import StockChart from './StockChart'
 import StockFinancials from './StockFinancials'
 
@@ -352,6 +353,13 @@ export default function StockDetail() {
       <section>
         <h2 className="mb-3 text-sm font-medium text-muted-foreground">Financials (quarterly)</h2>
         <StockFinancials symbol={symbol} />
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-medium text-muted-foreground">
+          Screener.in — fundamentals, statements &amp; filings
+        </h2>
+        <ScreenerPanel symbol={symbol} />
       </section>
 
       <section>

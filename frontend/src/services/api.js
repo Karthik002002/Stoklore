@@ -31,6 +31,9 @@ export const getIndexChart = (name, range) => fetch(`/api/indices/${name}/chart?
 
 export const getStockFinancials = (symbol) => fetch(`/api/stocks/${symbol}/financials`).then(json)
 
+// Screener.in company page - fundamentals, pros/cons, 12y statements, shareholding, filings.
+export const getScreenerData = (symbol) => fetch(`/api/stocks/${symbol}/screener`).then(json)
+
 export const getEmaCrossover = (symbol, short, long) =>
   fetch(`/api/prices/${symbol}/ema-crossover?short=${short}&long=${long}`).then(json)
 

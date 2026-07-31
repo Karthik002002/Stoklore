@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { IconSettings } from '@tabler/icons-react'
 import {
+  BookmarkIcon,
   CheckCircle2Icon,
   DatabaseIcon,
   ExternalLinkIcon,
+  PlusIcon,
   Trash2Icon,
   UploadIcon,
   XCircleIcon,
@@ -26,6 +28,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
@@ -33,6 +43,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import {
+  addStock,
   checkWatchRule,
   collectMaxHistoryBulk,
   createWatchRule,
@@ -46,7 +57,10 @@ import {
   getLiteLLMConfig,
   getModels,
   getPriceSources,
+  getStocks,
   getWatchRules,
+  getWatchlist,
+  getWatchlistNames,
   getKiteLoginUrl,
   getManualBacktestSettings,
   importStocksMaster,
@@ -795,6 +809,42 @@ function ManualBacktestTab() {
   )
 }
 
+const EMPTY_SET = new Set()
+
+// A stock can belong to several watchlists at once (composite symbol+list_name key on the
+// backend), so this is a checkbox menu, not a single-select. Checking a list it isn't tracked
+// under yet scrapes it first (same live-fetch path as the dashboard's "Add stock") since only
+// tracked symbols can appear in a watchlist tab.
+function WatchlistCell({ symbol, lists, memberOf, tracked, onAdd, onRemove, onCreateList }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={<Button size="icon-sm" variant="ghost" aria-label={`Add ${symbol} to watchlist`} />}
+      >
+        <BookmarkIcon
+          className={`size-3.5 ${memberOf.size ? 'text-primary' : 'text-muted-foreground'}`}
+          fill={memberOf.size ? 'currentColor' : 'none'}
+        />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        {lists.map((name) => (
+          <DropdownMenuCheckboxItem
+            key={name}
+            checked={memberOf.has(name)}
+            onCheckedChange={(checked) => (checked ? onAdd(symbol, name, tracked) : onRemove(symbol, name))}
+          >
+            {name}
+          </DropdownMenuCheckboxItem>
+        ))}
+        {lists.length > 0 && <DropdownMenuSeparator />}
+        <DropdownMenuItem onClick={() => onCreateList(symbol, tracked)}>
+          <PlusIcon className="size-4" /> New watchlist…
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
 function StocksMasterTab() {
   const queryClient = useQueryClient()
   const fileInput = useRef(null)
@@ -805,6 +855,52 @@ function StocksMasterTab() {
     queryFn: () => searchStocksMaster(query),
   })
   const stocks = data?.stocks ?? []
+
+  // Shared cache keys with the dashboard (StocksList.jsx) - tracked-stock and watchlist state
+  // stay in sync everywhere without a second fetch.
+  const { data: trackedStocks = [] } = useQuery({ queryKey: ['stocks'], queryFn: getStocks })
+  const trackedSymbols = useMemo(() => new Set(trackedStocks.map((s) => s.symbol)), [trackedStocks])
+  const { data: watchlist = [] } = useQuery({ queryKey: ['watchlist'], queryFn: getWatchlist })
+  const { data: listNames = [] } = useQuery({ queryKey: ['watchlists'], queryFn: getWatchlistNames })
+  const membersOf = useMemo(() => {
+    const m = new Map()
+    watchlist.forEach((w) => {
+      if (!m.has(w.symbol)) m.set(w.symbol, new Set())
+      m.get(w.symbol).add(w.list_name)
+    })
+    return m
+  }, [watchlist])
+  const refreshWatchlist = () =>
+    ['stocks', 'watchlist', 'watchlists'].forEach((key) => queryClient.invalidateQueries({ queryKey: [key] }))
+
+  const addToWatchlist = async (symbol, listName, tracked) => {
+    if (!tracked) {
+      try {
+        await addStock(symbol)
+      } catch (err) {
+        toast.error(err.message)
+        return
+      }
+    }
+    await fetch(`/api/watchlist/${symbol}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ list_name: listName }),
+    })
+    toast.success(`${symbol} added to ${listName}`)
+    refreshWatchlist()
+  }
+
+  const removeFromWatchlist = async (symbol, listName) => {
+    await fetch(`/api/watchlist/${symbol}?list_name=${encodeURIComponent(listName)}`, { method: 'DELETE' })
+    toast.success(`${symbol} removed from ${listName}`)
+    refreshWatchlist()
+  }
+
+  const createListAndAdd = (symbol, tracked) => {
+    const name = window.prompt('New watchlist name (e.g. Banking, IT, Long term)')
+    if (name?.trim()) addToWatchlist(symbol, name.trim(), tracked)
+  }
 
   const importCsv = useMutation({
     mutationFn: importStocksMaster,
@@ -868,6 +964,7 @@ function StocksMasterTab() {
             <TableHead>Listed</TableHead>
             <TableHead>ISIN</TableHead>
             <TableHead className="w-8" />
+            <TableHead className="w-8" />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -880,6 +977,17 @@ function StocksMasterTab() {
               <TableCell>{s.series}</TableCell>
               <TableCell>{s.listing_date}</TableCell>
               <TableCell className="text-muted-foreground">{s.isin}</TableCell>
+              <TableCell>
+                <WatchlistCell
+                  symbol={s.symbol}
+                  lists={listNames}
+                  memberOf={membersOf.get(s.symbol) ?? EMPTY_SET}
+                  tracked={trackedSymbols.has(s.symbol)}
+                  onAdd={addToWatchlist}
+                  onRemove={removeFromWatchlist}
+                  onCreateList={createListAndAdd}
+                />
+              </TableCell>
               <TableCell>
                 <Button
                   size="icon-sm"

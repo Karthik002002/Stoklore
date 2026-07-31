@@ -87,10 +87,25 @@ CREATE TABLE IF NOT EXISTS symbol_isin (
 ALTER TABLE stock_news ADD COLUMN IF NOT EXISTS origin TEXT;
 
 CREATE TABLE IF NOT EXISTS watchlist (
-  symbol TEXT PRIMARY KEY,
+  symbol TEXT NOT NULL,
   list_name TEXT NOT NULL,
-  added_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  added_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (symbol, list_name)
 );
+
+-- One-time migration from the old one-list-per-symbol schema (PK on symbol alone) to
+-- many-to-many, so a stock can sit in multiple watchlists at once. Existing rows are already
+-- unique per symbol, so they satisfy the new composite key with no data loss; never fires again
+-- once the PK has 2 columns.
+DO $$ BEGIN
+  IF EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'watchlist'::regclass AND contype = 'p' AND array_length(conkey, 1) = 1
+  ) THEN
+    ALTER TABLE watchlist DROP CONSTRAINT watchlist_pkey;
+    ALTER TABLE watchlist ADD CONSTRAINT watchlist_pkey PRIMARY KEY (symbol, list_name);
+  END IF;
+END $$;
 
 -- Named lists, tracked independently of watchlist rows so an empty list (no stocks yet) still
 -- shows up as a tab, and so tab order (position) is user-controlled via drag-and-drop rather
@@ -487,7 +502,8 @@ def set_isin_cache(symbol, isin):
 
 
 def list_watchlist():
-    """Every watchlisted symbol with its list name. PK on symbol - a stock lives in one list."""
+    """Every watchlisted symbol with its list name(s) - one row per (symbol, list) membership,
+    since a stock can now live in more than one list."""
     with connect() as conn:
         return conn.execute(
             "SELECT symbol, list_name FROM watchlist ORDER BY list_name, added_at"
@@ -502,20 +518,27 @@ _NEXT_POSITION_INSERT = (
 
 
 def set_watchlist(symbol, list_name):
-    """Add to a list, or move between lists - same upsert. Also registers the list name (appended
-    after the current last tab) so it persists as a tab even if this symbol is later moved out."""
+    """Adds symbol to a list (no-op if it's already there). Also registers the list name (appended
+    after the current last tab) so it persists as a tab even if every symbol later leaves it."""
     with connect() as conn:
         conn.execute(_NEXT_POSITION_INSERT, (list_name,))
         conn.execute(
             "INSERT INTO watchlist (symbol, list_name) VALUES (%s, %s) "
-            "ON CONFLICT (symbol) DO UPDATE SET list_name = excluded.list_name",
+            "ON CONFLICT (symbol, list_name) DO NOTHING",
             (symbol, list_name),
         )
 
 
-def remove_from_watchlist(symbol):
+def remove_from_watchlist(symbol, list_name=None):
+    """Removes symbol from one list, or from every list it's in when list_name is omitted (used
+    when the stock itself is deleted)."""
     with connect() as conn:
-        conn.execute("DELETE FROM watchlist WHERE symbol = %s", (symbol,))
+        if list_name is None:
+            conn.execute("DELETE FROM watchlist WHERE symbol = %s", (symbol,))
+        else:
+            conn.execute(
+                "DELETE FROM watchlist WHERE symbol = %s AND list_name = %s", (symbol, list_name)
+            )
 
 
 def list_watchlist_names():
@@ -579,15 +602,25 @@ def list_events(list_name=None, symbol=None, from_date=None, to_date=None, limit
     from_date/to_date (inclusive, YYYY-MM-DD) filter on event_time - events with no event_time
     (shouldn't happen now that every scan path sets one, but defensively) are excluded once a
     date filter is applied, since they can't be placed in the range."""
-    query = (
-        "SELECT e.id, e.symbol, e.event_type, e.headline, e.detail, e.url, e.event_time, "
-        "e.sentiment_label, e.sentiment_score, e.scraped_at, w.list_name "
-        "FROM stock_events e LEFT JOIN watchlist w ON w.symbol = e.symbol"
-    )
-    conditions, params = [], []
+    # A symbol can belong to more than one list now - filtered to one list_name, the composite
+    # (symbol, list_name) key means a plain join can't fan out; unfiltered, joining every
+    # membership would duplicate the event row per list, so pick one arbitrarily via LATERAL.
     if list_name:
-        conditions.append("w.list_name = %s")
-        params.append(list_name)
+        query = (
+            "SELECT e.id, e.symbol, e.event_type, e.headline, e.detail, e.url, e.event_time, "
+            "e.sentiment_label, e.sentiment_score, e.scraped_at, w.list_name "
+            "FROM stock_events e JOIN watchlist w ON w.symbol = e.symbol AND w.list_name = %s"
+        )
+        params = [list_name]
+    else:
+        query = (
+            "SELECT e.id, e.symbol, e.event_type, e.headline, e.detail, e.url, e.event_time, "
+            "e.sentiment_label, e.sentiment_score, e.scraped_at, w.list_name "
+            "FROM stock_events e LEFT JOIN LATERAL "
+            "(SELECT list_name FROM watchlist w2 WHERE w2.symbol = e.symbol LIMIT 1) w ON true"
+        )
+        params = []
+    conditions = []
     if symbol:
         conditions.append("e.symbol = %s")
         params.append(symbol)
@@ -617,11 +650,19 @@ def attention_scores(list_name=None, symbol=None, baseline_days=30, recent_days=
     now = datetime.now(timezone.utc)
     recent_cutoff = now - timedelta(days=recent_days)
     baseline_cutoff = now - timedelta(days=baseline_days)
+    # A symbol can belong to more than one list now. Filtered, the WHERE clause below narrows the
+    # plain join back down to one row per symbol same as before; unfiltered, LATERAL picks one
+    # membership instead of duplicating the symbol once per list it's in.
+    join = (
+        "LEFT JOIN watchlist w ON w.symbol = e.symbol"
+        if list_name
+        else "LEFT JOIN LATERAL (SELECT list_name FROM watchlist w2 WHERE w2.symbol = e.symbol LIMIT 1) w ON true"
+    )
     query = (
         "SELECT e.symbol, w.list_name, "
         "COUNT(*) FILTER (WHERE e.event_time >= %s) AS recent_count, "
         "COUNT(*) FILTER (WHERE e.event_time >= %s AND e.event_time < %s) AS baseline_count "
-        "FROM stock_events e LEFT JOIN watchlist w ON w.symbol = e.symbol "
+        f"FROM stock_events e {join} "
         "WHERE e.event_time >= %s"
     )
     params = [recent_cutoff, baseline_cutoff, recent_cutoff, baseline_cutoff]
@@ -813,13 +854,15 @@ def list_max_history(symbol):
 
 
 def watchlist_symbols(list_name=None):
+    """Symbols in list_name, or every distinct symbol across all lists when omitted - a symbol can
+    belong to more than one list now, so the all-lists query must dedupe."""
     with connect() as conn:
         if list_name:
             rows = conn.execute(
                 "SELECT symbol FROM watchlist WHERE list_name = %s", (list_name,)
             ).fetchall()
         else:
-            rows = conn.execute("SELECT symbol FROM watchlist").fetchall()
+            rows = conn.execute("SELECT DISTINCT symbol FROM watchlist").fetchall()
     return [r["symbol"] for r in rows]
 
 
@@ -854,6 +897,16 @@ def _set_setting(key, value):
             "ON CONFLICT (key) DO UPDATE SET value = excluded.value",
             (key, value),
         )
+
+
+def get_last_event_scan_date():
+    """ISO date (Asia/Kolkata) the automatic daily event scan last ran, or None if never - lets
+    the scan survive a server restart without firing twice in the same day."""
+    return _get_setting("last_event_scan_date")
+
+
+def set_last_event_scan_date(iso_date):
+    _set_setting("last_event_scan_date", iso_date)
 
 
 def get_litellm_base_url():

@@ -38,6 +38,13 @@ def test_scan_symbol_inserts_then_dedups():
             conn.execute("DELETE FROM stock_events WHERE symbol = %s", (SYMBOL,))
 
 
+def test_should_auto_scan_once_per_day():
+    assert events.should_auto_scan(None, "2026-07-31") is True         # never run
+    assert events.should_auto_scan("2026-07-30", "2026-07-31") is True  # new day
+    assert events.should_auto_scan("2026-07-31", "2026-07-31") is False  # already ran today
+
+
 if __name__ == "__main__":
     test_scan_symbol_inserts_then_dedups()
+    test_should_auto_scan_once_per_day()
     print("all checks passed")

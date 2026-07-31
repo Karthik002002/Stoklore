@@ -85,7 +85,7 @@ function ReloadButton() {
 function App() {
   return (
     <TooltipProvider>
-      <div className="flex min-h-screen bg-muted/30">
+      <div className="flex min-h-screen ">
         <aside className="sticky top-0 flex h-screen w-16 shrink-0 flex-col items-center gap-1 border-r bg-background py-4">
           <Link
             to="/"

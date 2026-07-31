@@ -1,6 +1,7 @@
 """Fetches NSE India movers (nseindia.com) plus news/financials (Yahoo Finance via yfinance)."""
 import html
 import json
+import re
 from datetime import datetime, timedelta
 
 import requests
@@ -94,6 +95,144 @@ def scrape_article(url):
     title = h1.get_text(strip=True) if h1 else (soup.title.get_text(strip=True) if soup.title else url)
     text = " ".join(p.get_text(" ", strip=True) for p in soup.find_all("p"))
     return {"title": title, "text": text}
+
+
+# --- screener.in company page ------------------------------------------------------------------
+# Screener publishes things Yahoo/yfinance doesn't expose at all: 12 years of financials (vs
+# yfinance's ~4 quarters), bank-specific NPA ratios, the shareholding-pattern trend, ROCE, its own
+# rule-based pros/cons commentary, and BSE filings with one-line summaries. Everything below is
+# parsed out of the static HTML - the peer-comparison table is AJAX-loaded and the "Insights"
+# section is login-gated (renders as xx,xxx placeholders), so neither is available here.
+SCREENER_URL = "https://www.screener.in/company/{}/"
+
+SCREENER_TABLES = {
+    "quarters": "Quarterly Results",
+    "profit-loss": "Profit & Loss",
+    "balance-sheet": "Balance Sheet",
+    "cash-flow": "Cash Flows",
+    "ratios": "Ratios",
+    "shareholding": "Shareholding Pattern",
+}
+
+
+def _screener_text(node):
+    """Collapses whitespace and drops the trailing '+' screener puts on expandable row labels."""
+    return re.sub(r"\s+", " ", node.get_text(" ", strip=True)).strip().rstrip("+").strip()
+
+
+def _screener_table(section):
+    """One financial table as {periods, rows:[{label, values}]}. Values stay as display strings -
+    a single table mixes units per row (₹ Cr, %, Rs/share), so parsing them to floats would lose
+    what each number actually means."""
+    table = section.find("table")
+    rows = table.find_all("tr") if table else []
+    if not rows:
+        return None
+    periods = [_screener_text(c) for c in rows[0].find_all(["th", "td"])][1:]
+    parsed = []
+    for tr in rows[1:]:
+        cells = tr.find_all(["th", "td"])
+        label = _screener_text(cells[0]) if cells else ""
+        # "Raw PDF" is a trailing row of attachment links, not data.
+        if len(cells) < 2 or not label or label.lower().startswith("raw pdf"):
+            continue
+        parsed.append({"label": label, "values": [_screener_text(c) for c in cells[1:]]})
+    return {"periods": periods, "rows": parsed} if parsed else None
+
+
+def _screener_documents(soup):
+    """Filings grouped as they appear on the page (Announcements / Annual reports / Credit
+    ratings / Concalls). Announcements carry screener's own one-line summary of the filing."""
+    section = soup.find("section", id="documents")
+    if not section:
+        return {}
+    groups = {}
+    for h3 in section.find_all("h3"):
+        box = h3.find_parent("div", class_="documents")
+        if not box:
+            continue
+        items = []
+        for li in box.find_all("li"):
+            # Announcements/reports/ratings are one <a> per row, with a nested
+            # <div class="ink-600"> holding the age + screener's one-line summary. Concall rows
+            # differ: they lead with a quarter label and carry several links (Transcript, PPT),
+            # so the label is prefixed onto each and the row yields one item per link. The
+            # "AI Summary" control there is a modal button with no href - skipped.
+            lead = li.find("div", recursive=False)
+            prefix = _screener_text(lead) if lead else ""
+            for link in li.find_all("a", href=True):
+                sub = link.find("div")
+                detail = _screener_text(sub) if sub else None
+                if sub:
+                    sub.extract()  # so it isn't repeated inside the title below
+                title = _screener_text(link)
+                items.append({
+                    "title": f"{prefix} · {title}" if prefix else title,
+                    "detail": detail,
+                    "url": link["href"],
+                })
+        if items:
+            groups[_screener_text(h3)] = items
+    return groups
+
+
+def parse_screener_html(html_text, url):
+    """Split out from get_screener_data so the parsing can be checked without a network fetch
+    (see test_screener.py). Returns None if this isn't a company page."""
+    soup = BeautifulSoup(html_text, "html.parser")
+
+    heading = soup.find("h1")
+    if not heading:
+        return None  # not a company page (404/interstitial)
+
+    ratios = []
+    top = soup.find("ul", id="top-ratios")
+    for li in top.find_all("li") if top else []:
+        label, value = li.find("span", class_="name"), li.find("span", class_="value")
+        if label and value:
+            ratios.append({"label": _screener_text(label), "value": _screener_text(value)})
+
+    tables = {}
+    for section_id, title in SCREENER_TABLES.items():
+        section = soup.find("section", id=section_id)
+        parsed = _screener_table(section) if section else None
+        if parsed:
+            tables[section_id] = {"title": title, **parsed}
+
+    profile = soup.find("div", class_="company-profile")
+    about = profile.find("div", class_="about") if profile else None
+    key_points = profile.find("div", class_="commentary") if profile else None
+    # Breadcrumb under "Peer comparison" - broad sector > sector > broad industry > industry.
+    peers = soup.find("section", id="peers")
+    industry = [_screener_text(a) for a in peers.find("p", class_="sub").find_all("a")] if (
+        peers and peers.find("p", class_="sub")
+    ) else []
+
+    return {
+        "url": url,
+        "name": _screener_text(heading),
+        "about": _screener_text(about) if about else None,
+        "keyPoints": _screener_text(key_points) if key_points else None,
+        "industry": industry,
+        "ratios": ratios,
+        "pros": [_screener_text(li) for li in soup.find("div", class_="pros").find_all("li")]
+        if soup.find("div", class_="pros") else [],
+        "cons": [_screener_text(li) for li in soup.find("div", class_="cons").find_all("li")]
+        if soup.find("div", class_="cons") else [],
+        "tables": tables,
+        "documents": _screener_documents(soup),
+    }
+
+
+def get_screener_data(symbol):
+    """Everything parseable off a screener.in company page. Returns None if the symbol has no
+    page there (screener covers listed companies only, and uses its own symbol for a few)."""
+    url = SCREENER_URL.format(symbol)
+    try:
+        html_text = _fetch_html(url)
+    except Exception:
+        return None
+    return parse_screener_html(html_text, url)
 
 
 def web_search(query, limit=10):

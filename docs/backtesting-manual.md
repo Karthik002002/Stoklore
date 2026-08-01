@@ -79,8 +79,11 @@ nothing per-chart to wire up.
 - **Overall statistics** is a searchable, collapsible panel of every
   single-number stat at once (`overallStats()`), including risk-discipline
   numbers not shown elsewhere: Sortino ratio, SQN rating, recovery factor,
-  max drawdown, win/loss streaks, and stop-violation count (exit lost more
-  than the stop-loss implied).
+  max drawdown (plus the date it occurred), Omega ratio, adjusted win/loss
+  ratio, total R, win/loss streaks, stop-violation count (exit lost more
+  than the stop-loss implied), winner/loser return % (avg and total), and
+  trade-size/frequency figures (avg/max/min volume per trade, avg/max
+  trades per calendar month and year).
 - **Distribution of gains and losses** bins P&L (or R-multiple/return %)
   with edges pinned to zero, so a small winner and a small loser never land
   in the same bar.
@@ -93,6 +96,16 @@ nothing per-chart to wire up.
 - **Compare** is a free-choice scatter plot of any per-trade stat against
   any other (entry price, quantity, R, return %, P&L, ...), one dot per
   closed trade, colored by win/loss.
+- **Calendar heatmap** is a week/month grid (Monday-start) shading each day
+  by one `METRICS` value and printing a second `METRICS` value underneath —
+  any two of the ten metrics, independently. ◀/▶ page by a week or a month
+  at a time (`shiftCalendarAnchor`); paging forward is disabled once you
+  reach the period containing today, so it can't page into the future.
+  Distinct from the Overview tab's fixed net-P&L calendar (above) — this one
+  is metric-agnostic and lives in `calendarHeatmap()` in `tradeStats.js`.
+  Shade intensity is normalized against the darkest cell *in the current
+  view*, so color isn't comparable across different months — hover a cell
+  for its exact values.
 - Every panel here operates on `closedTrades(trades)` only — an open
   position has no P&L yet, so it's excluded from every chart rather than
   counted as a zero.

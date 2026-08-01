@@ -159,7 +159,7 @@ export const METRICS = {
   winRate: {
     label: 'Win rate',
     format: 'pct',
-    of: (g) => round((g.filter((t) => tradePnl(t) > 0).length / g.length) * 100, 1),
+    of: (g) => (g.length ? round((g.filter((t) => tradePnl(t) > 0).length / g.length) * 100, 1) : null),
   },
   count: { label: 'Trade count', format: 'num', of: (g) => g.length },
   volume: { label: 'Volume (qty)', format: 'num', of: (g) => round(sum(g.map((t) => t.quantity))) },
@@ -337,6 +337,94 @@ export function comparePoints(trades, xKey, yKey) {
     .filter((p) => p.x != null && p.y != null)
 }
 
+// --- Calendar heatmap: any two METRICS, per day, in a week or month grid -----------------------
+// `anchor` is any date inside the period to show - clamped to today so paging forward can never
+// land on a period that hasn't happened yet.
+
+const isoDate = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+const startOfDay = (d) => {
+  const c = new Date(d)
+  c.setHours(0, 0, 0, 0)
+  return c
+}
+const addDays = (d, n) => {
+  const c = new Date(d)
+  c.setDate(c.getDate() + n)
+  return c
+}
+const addMonths = (d, n) => {
+  const c = new Date(d)
+  c.setMonth(c.getMonth() + n, 1)
+  return c
+}
+
+function periodBounds(anchor, period) {
+  if (period === 'week') {
+    const mondayOffset = (anchor.getDay() + 6) % 7 // Sun=0..Sat=6 -> Mon=0..Sun=6
+    const start = addDays(anchor, -mondayOffset)
+    return { start, end: addDays(start, 6) }
+  }
+  const start = new Date(anchor.getFullYear(), anchor.getMonth(), 1)
+  const end = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0)
+  return { start, end }
+}
+
+// Move the anchor one period forward/backward (direction = 1 or -1), clamped to today - the
+// "next" toggle calls this instead of doing its own date math.
+export function shiftCalendarAnchor(anchor, period, direction) {
+  const today = startOfDay(new Date())
+  const base = startOfDay(new Date(anchor))
+  const shifted = period === 'week' ? addDays(base, direction * 7) : addMonths(base, direction)
+  return isoDate(shifted > today ? today : shifted)
+}
+
+export function calendarHeatmap(
+  trades,
+  { period = 'month', anchor = new Date(), metricA = 'netPnl', metricB = 'count' } = {},
+) {
+  const today = startOfDay(new Date())
+  const clampedAnchor = startOfDay(new Date(anchor))
+  const { start, end } = periodBounds(clampedAnchor > today ? today : clampedAnchor, period)
+
+  const byDay = new Map()
+  chronological(closedTrades(trades)).forEach((t) => {
+    const day = t.traded_at.slice(0, 10)
+    if (!byDay.has(day)) byDay.set(day, [])
+    byDay.get(day).push(t)
+  })
+
+  const dayCount = Math.round((end - start) / 86400000) + 1
+  const cells = Array.from({ length: dayCount }, (_, i) => {
+    const date = addDays(start, i)
+    const key = isoDate(date)
+    const group = byDay.get(key) ?? []
+    return {
+      date: key,
+      dayOfWeek: DAY_ORDER[(date.getDay() + 6) % 7],
+      count: group.length,
+      a: METRICS[metricA].of(group),
+      b: METRICS[metricB].of(group),
+      future: date > today,
+    }
+  })
+
+  return {
+    period,
+    label:
+      period === 'week'
+        ? `${start.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – ${end.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}`
+        : start.toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }),
+    start: isoDate(start),
+    end: isoDate(end),
+    metricA: { key: metricA, ...METRICS[metricA] },
+    metricB: { key: metricB, ...METRICS[metricB] },
+    cells,
+    canGoBack: true,
+    canGoForward: end < today,
+  }
+}
+
 // --- Exit discipline / disposition effect ------------------------------------------------------
 // The classic disposition-effect measure ("sell winners too early, hold losers too long") needs
 // hold times, and manual_trades has no exit timestamp. These measure the same behaviour against
@@ -415,6 +503,31 @@ export function overallStats(allTrades) {
   const winnersWithTarget = defined(chrono.filter((t) => tradePnl(t) > 0).map(targetCapturePct))
   const losersWithStop = defined(chrono.map(stopOverrunPct))
 
+  const winReturns = defined(chrono.filter((t) => tradePnl(t) > 0).map(tradeReturnPct))
+  const lossReturns = defined(chrono.filter((t) => tradePnl(t) < 0).map(tradeReturnPct))
+  const lossRate = winRate == null ? null : 1 - winRate
+  const dailyGains = sum(daily.filter((d) => d > 0))
+  const dailyLosses = Math.abs(sum(daily.filter((d) => d < 0)))
+
+  // Trough of the underwater curve, aligned index-for-index with `chrono` - the trade whose date
+  // the deepest drawdown was still open on.
+  const troughIdx = maxDrawdown ? underwater.findIndex((v) => -v === maxDrawdown) : -1
+
+  // Calendar month/year buckets, not the "month"/"year" DIMENSIONS above (those group by
+  // month-of-year / bare year label across years, which is right for seasonality charts but wrong
+  // for a frequency count - it'd merge every January together).
+  const countBy = (keyFn) => {
+    const buckets = new Map()
+    chrono.forEach((t) => {
+      const key = keyFn(t)
+      buckets.set(key, (buckets.get(key) ?? 0) + 1)
+    })
+    return [...buckets.values()]
+  }
+  const monthCounts = countBy((t) => t.traded_at.slice(0, 7))
+  const yearCounts = countBy((t) => t.traded_at.slice(0, 4))
+  const quantities = closed.map((t) => t.quantity)
+
   return [
     {
       group: 'General',
@@ -458,6 +571,18 @@ export function overallStats(allTrades) {
         { label: 'Worst day', value: daily.length ? round(Math.min(...daily)) : null, format: 'inr' },
         { label: 'Winning days', value: daily.filter((d) => d > 0).length, format: 'num' },
         { label: 'Losing days', value: daily.filter((d) => d < 0).length, format: 'num' },
+        { label: 'Avg winning return %', value: round(mean(winReturns), 2), format: 'pct' },
+        {
+          label: 'Total winning return %',
+          value: winReturns.length ? round(sum(winReturns), 2) : null,
+          format: 'pct',
+        },
+        { label: 'Avg losing return %', value: round(mean(lossReturns), 2), format: 'pct' },
+        {
+          label: 'Total losing return %',
+          value: lossReturns.length ? round(sum(lossReturns), 2) : null,
+          format: 'pct',
+        },
       ],
     },
     {
@@ -479,6 +604,7 @@ export function overallStats(allTrades) {
       group: 'Risk & quality',
       stats: [
         { label: 'Avg R (expectancy)', value: round(mean(rValues)), format: 'r' },
+        { label: 'Total R', value: rValues.length ? round(sum(rValues)) : null, format: 'r' },
         { label: 'Best R', value: rValues.length ? round(Math.max(...rValues)) : null, format: 'r' },
         { label: 'Worst R', value: rValues.length ? round(Math.min(...rValues)) : null, format: 'r' },
         { label: 'System quality number (SQN)', value: systemQualityNumber(rValues), format: 'num2' },
@@ -486,7 +612,22 @@ export function overallStats(allTrades) {
         { label: 'Sharpe ratio (annualised, daily P&L)', value: round(sharpe), format: 'num2' },
         { label: 'Sortino ratio', value: sortinoRatio(rValues), format: 'num2' },
         { label: 'Max drawdown', value: maxDrawdown ? round(-maxDrawdown) : 0, format: 'inr' },
+        {
+          label: 'Max drawdown date',
+          value: troughIdx >= 0 ? chrono[troughIdx].traded_at.slice(0, 10) : null,
+          format: 'text',
+        },
         { label: 'Recovery factor', value: recoveryFactor(netPnl, maxDrawdown), format: 'num2' },
+        {
+          label: 'Omega ratio',
+          value: dailyLosses ? round(dailyGains / dailyLosses) : null,
+          format: 'num2',
+        },
+        {
+          label: 'Adjusted win/loss ratio',
+          value: payoff != null && lossRate ? round(payoff * (winRate / lossRate)) : null,
+          format: 'x',
+        },
         {
           label: 'Calmar ratio (annualised / max drawdown)',
           value: annualisedPnl && maxDrawdown ? round(annualisedPnl / maxDrawdown) : null,
@@ -579,6 +720,41 @@ export function overallStats(allTrades) {
         { label: 'Avg return %', value: round(mean(defined(closed.map(tradeReturnPct))), 2), format: 'pct' },
         { label: 'Most profitable symbol', value: bySymbol[0]?.label ?? null, format: 'text' },
         { label: 'Least profitable symbol', value: bySymbol.at(-1)?.label ?? null, format: 'text' },
+        {
+          label: 'Avg volume per trade',
+          value: quantities.length ? round(mean(quantities)) : null,
+          format: 'num',
+        },
+        {
+          label: 'Max volume per trade',
+          value: quantities.length ? round(Math.max(...quantities)) : null,
+          format: 'num',
+        },
+        {
+          label: 'Min volume per trade',
+          value: quantities.length ? round(Math.min(...quantities)) : null,
+          format: 'num',
+        },
+        {
+          label: 'Avg trades per month',
+          value: monthCounts.length ? round(mean(monthCounts)) : null,
+          format: 'num2',
+        },
+        {
+          label: 'Max trades per month',
+          value: monthCounts.length ? Math.max(...monthCounts) : null,
+          format: 'num',
+        },
+        {
+          label: 'Avg trades per year',
+          value: yearCounts.length ? round(mean(yearCounts)) : null,
+          format: 'num2',
+        },
+        {
+          label: 'Max trades per year',
+          value: yearCounts.length ? Math.max(...yearCounts) : null,
+          format: 'num',
+        },
       ],
     },
   ]

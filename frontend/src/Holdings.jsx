@@ -3,6 +3,10 @@ import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCwIcon, TrendingDownIcon, TrendingUpIcon } from 'lucide-react'
 import { toast } from 'sonner'
+import { Group } from '@visx/group'
+import { Pie } from '@visx/shape'
+import { useTooltip, TooltipWithBounds, defaultStyles } from '@visx/tooltip'
+import { localPoint } from '@visx/event'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
@@ -18,6 +22,78 @@ function StatCard({ label, value, sub }) {
       <p className="text-xs text-muted-foreground">{label}</p>
       <p className="mt-1 text-xl font-semibold tabular-nums">{value}</p>
       {sub}
+    </div>
+  )
+}
+
+const CHART_COLORS = ['chart-1', 'chart-2', 'chart-3', 'chart-4', 'chart-5']
+const DONUT_SIZE = 112
+const DONUT_RADIUS = DONUT_SIZE / 2
+
+// Symbol concentration donut - top 5 by current value + "Other".
+function ExposureDonut({ holdings, currentValue }) {
+  const { tooltipData, tooltipLeft, tooltipTop, tooltipOpen, showTooltip, hideTooltip } = useTooltip()
+  if (currentValue <= 0) return null
+
+  const bySymbol = [...holdings]
+    .map((h) => ({ symbol: h.symbol, value: (h.ltp ?? h.avg_price ?? 0) * (h.qty ?? 0) }))
+    .sort((a, b) => b.value - a.value)
+  const top = bySymbol.slice(0, 5)
+  const otherValue = bySymbol.slice(5).reduce((sum, s) => sum + s.value, 0)
+  const slices = otherValue > 0 ? [...top, { symbol: 'Other', value: otherValue }] : top
+
+  return (
+    <div className="relative flex items-center gap-6 rounded-xl border bg-card p-4">
+      <svg width={DONUT_SIZE} height={DONUT_SIZE} className="shrink-0">
+        <Group top={DONUT_RADIUS} left={DONUT_RADIUS}>
+          <Pie
+            data={slices}
+            pieValue={(d) => d.value}
+            outerRadius={DONUT_RADIUS}
+            innerRadius={DONUT_RADIUS - 20}
+            padAngle={0.01}
+          >
+            {(pie) =>
+              pie.arcs.map((arc, i) => (
+                <path
+                  key={arc.data.symbol}
+                  d={pie.path(arc)}
+                  fill={`var(--${CHART_COLORS[i % CHART_COLORS.length]})`}
+                  onMouseMove={(e) => {
+                    const point = localPoint(e) ?? { x: 0, y: 0 }
+                    showTooltip({ tooltipData: arc.data, tooltipLeft: point.x, tooltipTop: point.y })
+                  }}
+                  onMouseLeave={hideTooltip}
+                />
+              ))
+            }
+          </Pie>
+        </Group>
+      </svg>
+      <div className="min-w-0 flex-1 space-y-1.5">
+        <p className="text-xs text-muted-foreground">Exposure by symbol</p>
+        {slices.map((s, i) => (
+          <div key={s.symbol} className="flex items-center justify-between gap-2 text-sm">
+            <span className="flex items-center gap-1.5 truncate">
+              <span
+                className="size-2 shrink-0 rounded-full"
+                style={{ backgroundColor: `var(--${CHART_COLORS[i % CHART_COLORS.length]})` }}
+              />
+              {s.symbol}
+            </span>
+            <span className="tabular-nums text-muted-foreground">{fmt((s.value / currentValue) * 100)}%</span>
+          </div>
+        ))}
+      </div>
+      {tooltipOpen && tooltipData && (
+        <TooltipWithBounds
+          left={tooltipLeft}
+          top={tooltipTop}
+          style={{ ...defaultStyles, background: 'var(--foreground)', color: 'var(--background)' }}
+        >
+          {tooltipData.symbol}: {inr(tooltipData.value)} ({fmt((tooltipData.value / currentValue) * 100)}%)
+        </TooltipWithBounds>
+      )}
     </div>
   )
 }
@@ -119,6 +195,7 @@ export default function Holdings() {
   const currentValue = holdings.reduce((sum, h) => sum + (h.ltp ?? h.avg_price ?? 0) * (h.qty ?? 0), 0)
   const pnl = currentValue - investedValue
   const pnlPct = investedValue > 0 ? (pnl / investedValue) * 100 : null
+  const winners = holdings.filter((h) => (h.ltp ?? h.avg_price ?? 0) >= (h.avg_price ?? 0)).length
 
   return (
     <div className="space-y-4">
@@ -159,16 +236,30 @@ export default function Holdings() {
 
       {!error && data && (
         <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             <StatCard label="Available balance" value={inr(data.available_balance)} />
             <StatCard label="Invested value" value={inr(investedValue)} />
             <StatCard label="Current value" value={inr(currentValue)} />
             <StatCard label="P&L" value={inr(pnl)} sub={<ChangeLine pct={pnlPct} />} />
+            <StatCard
+              label="Positions"
+              value={holdings.length}
+              sub={
+                holdings.length > 0 && (
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    <span className="text-up">{winners} up</span> ·{' '}
+                    <span className="text-down">{holdings.length - winners} down</span>
+                  </p>
+                )
+              }
+            />
           </div>
 
           {holdings.length === 0 && (
             <p className="py-24 text-center text-muted-foreground">No holdings found for this broker.</p>
           )}
+
+          {holdings.length > 0 && <ExposureDonut holdings={holdings} currentValue={currentValue} />}
 
           {holdings.length > 0 && (
             <div className="overflow-hidden rounded-xl border bg-card">

@@ -3,11 +3,13 @@
 //   node src/lib/tradeStats.selfcheck.mjs
 import assert from 'node:assert/strict'
 import {
+  calendarHeatmap,
   comparePoints,
   cumulativeByDay,
   distribution,
   overallStats,
   seriesFor,
+  shiftCalendarAnchor,
   stopOverrunPct,
   targetCapturePct,
   trendSeries,
@@ -137,6 +139,17 @@ assert.equal(find('Tail ratio (95th / 5th percentile)'), 2.86, '|p95 100 / p5 -3
 assert.equal(find('Calmar ratio (annualised / max drawdown)'), null, 'blank under a 30-day span')
 assert.equal(find('Avg actual risk (entry to stop)'), 50, '|100-95| x 10')
 
+assert.equal(find('Total R'), 3, '2 + 2 - 1')
+assert.equal(find('Max drawdown date'), '2026-07-07', 'INFY loser is the trough of the underwater curve')
+assert.equal(find('Avg winning return %'), 10)
+assert.equal(find('Total winning return %'), 20, '10% + 10%')
+assert.equal(find('Avg losing return %'), -5)
+assert.equal(find('Total losing return %'), -5)
+assert.equal(find('Omega ratio'), null, 'no losing day yet (day 2 nets positive)')
+assert.equal(find('Adjusted win/loss ratio'), 4, 'payoff 2 x (win rate 0.667 / loss rate 0.333)')
+assert.deepEqual([find('Avg volume per trade'), find('Max volume per trade'), find('Min volume per trade')], [10, 10, 10])
+assert.equal(find('Avg trades per month'), 3, 'all 3 closed trades fall in July 2026')
+
 // A span wide enough to annualise honestly turns Calmar back on.
 const spread = [
   trade({ traded_at: '2026-01-05T10:00:00+05:30' }),
@@ -147,6 +160,44 @@ const spreadFind = (label) =>
     .flatMap((s) => s.stats)
     .find((s) => s.label === label).value
 assert.ok(spreadFind('Calmar ratio (annualised / max drawdown)') > 0, 'annualises past 30 days')
+assert.equal(spreadFind('Omega ratio'), 2, 'day1 +100 gain, day2 -50 loss')
+assert.equal(spreadFind('Adjusted win/loss ratio'), 2, 'payoff 2 x (win rate 0.5 / loss rate 0.5)')
+assert.equal(spreadFind('Avg trades per month'), 1, 'one trade in Jan, one in Jun')
+assert.equal(spreadFind('Max trades per year'), 2, 'both trades fall in 2026')
+
+// --- calendar heatmap ----------------------------------------------------------------------------
+const todayIso = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// TCS trade lands on 2026-07-06, a Monday - the week grid should start exactly on it.
+const weekHeat = calendarHeatmap(TRADES, { period: 'week', anchor: '2026-07-06T00:00:00+05:30' })
+assert.equal(weekHeat.cells.length, 7, 'Mon-Sun grid')
+assert.equal(weekHeat.start, '2026-07-06')
+const mon = weekHeat.cells.find((c) => c.date === '2026-07-06')
+assert.deepEqual([mon.a, mon.b], [100, 1], 'default metrics netPnl/count: TCS +100, 1 trade')
+const tue = weekHeat.cells.find((c) => c.date === '2026-07-07')
+assert.deepEqual([tue.a, tue.b], [50, 2], 'INFY +100 and -50 nets 50 across 2 trades')
+const wed = weekHeat.cells.find((c) => c.date === '2026-07-08')
+assert.deepEqual([wed.a, wed.b], [0, 0], 'only an open trade that day - no closed-trade contribution')
+assert.equal(weekHeat.canGoForward, true, 'well in the past relative to whenever this test runs')
+
+const monthHeat = calendarHeatmap(TRADES, { period: 'month', anchor: '2026-07-15', metricA: 'winRate' })
+assert.equal(monthHeat.start, '2026-07-01')
+assert.equal(monthHeat.end, '2026-07-31')
+assert.equal(monthHeat.cells.length, 31)
+assert.equal(monthHeat.cells.find((c) => c.date === '2026-07-06').a, 100, 'winRate on a 1-winner day')
+
+const currentWeek = calendarHeatmap([], { period: 'week', anchor: new Date() })
+assert.equal(currentWeek.canGoForward, false, 'the week containing today can never page forward')
+
+assert.equal(
+  shiftCalendarAnchor(new Date(), 'month', 1),
+  todayIso(),
+  'paging forward from today is clamped to today, not the month after',
+)
+assert.equal(shiftCalendarAnchor('2026-07-15', 'week', -1), '2026-07-08', 'pages back exactly 7 days')
 
 // --- exit discipline / disposition proxy -------------------------------------------------------
 // Winner: entry 100, exit 110, target 120 -> captured half the planned move.

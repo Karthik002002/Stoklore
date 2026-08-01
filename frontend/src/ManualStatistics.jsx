@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react'
-import { SearchIcon } from 'lucide-react'
+import { ChevronLeftIcon, ChevronRightIcon, SearchIcon } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { fmt, inr } from '@/lib/format'
 import {
+  calendarHeatmap,
   closedTrades,
   comparePoints,
   cumulativeByDay,
@@ -13,11 +15,16 @@ import {
   METRICS,
   overallStats,
   seriesFor,
+  shiftCalendarAnchor,
   TRADE_AXES,
   TREND_BASES,
   trendSeries,
   whenYouTrade,
 } from '@/lib/tradeStats'
+
+const PERIODS = { week: { label: 'Week' }, month: { label: 'Month' } }
+const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+const WEEKDAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
 const UP = '#22c55e'
 const DOWN = '#ef4444'
@@ -512,6 +519,90 @@ function ComparePanel({ trades }) {
   )
 }
 
+// --- Calendar heatmap: any two metrics, per day, week or month view -----------------------------
+
+function CalendarHeatmap({ trades }) {
+  const [period, setPeriod] = useState('month')
+  const [metricA, setMetricA] = useState('netPnl')
+  const [metricB, setMetricB] = useState('count')
+  const [anchor, setAnchor] = useState(() => new Date().toISOString().slice(0, 10))
+
+  const heat = useMemo(
+    () => calendarHeatmap(trades, { period, anchor, metricA, metricB }),
+    [trades, period, anchor, metricA, metricB],
+  )
+  const page = (direction) => setAnchor(shiftCalendarAnchor(anchor, period, direction))
+
+  const maxAbsA = Math.max(...heat.cells.map((c) => Math.abs(c.a ?? 0)), 0.01)
+  const leadingBlanks = heat.cells.length ? WEEKDAY_ORDER.indexOf(heat.cells[0].dayOfWeek) : 0
+
+  return (
+    <Panel
+      title="Calendar heatmap"
+      hint={`Shade is ${heat.metricA.label.toLowerCase()}, the number is ${heat.metricB.label.toLowerCase()}.`}
+      controls={
+        <>
+          <Picker value={period} onChange={setPeriod} options={PERIODS} width="w-24" />
+          <Picker value={metricA} onChange={setMetricA} options={METRICS} width="w-40" />
+          <Picker value={metricB} onChange={setMetricB} options={METRICS} width="w-40" />
+        </>
+      }
+      className="lg:col-span-2"
+    >
+      <div className="mb-3 flex items-center justify-between">
+        <Button variant="ghost" size="icon-sm" aria-label="Previous period" onClick={() => page(-1)}>
+          <ChevronLeftIcon className="size-4" />
+        </Button>
+        <p className="text-sm font-medium">{heat.label}</p>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Next period"
+          disabled={!heat.canGoForward}
+          onClick={() => page(1)}
+        >
+          <ChevronRightIcon className="size-4" />
+        </Button>
+      </div>
+      <div className="grid grid-cols-7 gap-1">
+        {WEEKDAY_LABELS.map((d) => (
+          <div key={d} className="pb-1 text-center text-[10px] text-muted-foreground">
+            {d}
+          </div>
+        ))}
+        {Array.from({ length: leadingBlanks }, (_, i) => (
+          <div key={`blank-${i}`} />
+        ))}
+        {heat.cells.map((c) => {
+          const intensity = Math.min(Math.abs(c.a ?? 0) / maxAbsA, 1)
+          const up = (c.a ?? 0) >= 0
+          return (
+            <div
+              key={c.date}
+              title={`${c.date} — ${heat.metricA.label}: ${formatValue(c.a, heat.metricA.format)}, ${heat.metricB.label}: ${formatValue(c.b, heat.metricB.format)}`}
+              className={`flex h-12 flex-col items-center justify-center rounded text-xs ${c.future ? 'opacity-30' : ''}`}
+              style={{
+                backgroundColor: c.count
+                  ? `${up ? UP : DOWN}${Math.round((0.15 + intensity * 0.65) * 255)
+                      .toString(16)
+                      .padStart(2, '0')}`
+                  : undefined,
+              }}
+            >
+              <span className="tabular-nums">{Number(c.date.slice(-2))}</span>
+              {c.count > 0 && (
+                <span className="text-[9px] tabular-nums text-muted-foreground">
+                  {formatValue(c.b, heat.metricB.format)}
+                </span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </Panel>
+  )
+}
+
 // --- Overall statistics: the searchable single-number panel --------------------------------------
 
 function OverallStatistics({ trades }) {
@@ -594,6 +685,7 @@ export default function ManualStatistics({ trades }) {
       <TrendPanel trades={closed} />
       <WhenYouTrade trades={closed} />
       <ComparePanel trades={closed} />
+      <CalendarHeatmap trades={trades} />
     </div>
   )
 }

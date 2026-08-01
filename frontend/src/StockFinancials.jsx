@@ -1,13 +1,31 @@
 import { useQuery } from '@tanstack/react-query'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Spinner } from '@/components/ui/spinner'
-import { compact } from '@/lib/format'
+import { compact, fmt } from '@/lib/format'
 import { getStockFinancials } from '@/services/api'
 
-function Cell({ value }) {
+function Cell({ value, prevValue }) {
   if (value == null) return <span className="text-muted-foreground">—</span>
   const sign = value < 0 ? 'text-down' : ''
-  return <span className={sign}>₹{compact(value)}</span>
+
+  let change = null
+  if (prevValue != null && prevValue !== 0) {
+    const pct = ((value - prevValue) / Math.abs(prevValue)) * 100
+    const up = pct >= 0
+    change = (
+      <span className={`ml-1.5 inline-flex items-center gap-0.5 text-[10px] ${up ? 'text-up' : 'text-down'}`}>
+        {up ? '+' : ''}
+        {fmt(pct)}%
+      </span>
+    )
+  }
+
+  return (
+    <>
+      <span className={sign}>₹{compact(value)}</span>
+      {change}
+    </>
+  )
 }
 
 export default function StockFinancials({ symbol }) {
@@ -57,7 +75,7 @@ export default function StockFinancials({ symbol }) {
             </TableCell>
             {row.values.map((v, i) => (
               <TableCell key={i} className="text-right tabular-nums whitespace-nowrap">
-                <Cell value={v} />
+                <Cell value={v} prevValue={i > 0 && data.periods[i] !== 'TTM' ? row.values[i - 1] : null} />
               </TableCell>
             ))}
           </TableRow>

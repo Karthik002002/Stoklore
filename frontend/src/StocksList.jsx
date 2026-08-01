@@ -37,6 +37,7 @@ import {
   getEvents,
   getEventsAttention,
   getIndices,
+  getMacroIndices,
   getStocks,
   getTopNews,
   getWatchlist,
@@ -305,10 +306,10 @@ function NewsPanel({ news, error }) {
         <PanelEmpty>Cogencis isn’t configured — add a token in Settings → Cogencis.</PanelEmpty>
       ) : !news ? (
         <PanelLoading />
-      ) : news.length === 0 ? (
+      ) : !Array.isArray(news?.items) || news?.items?.length === 0 ? (
         <PanelEmpty>No stories cached yet.</PanelEmpty>
       ) : (
-        news.slice(0, 12).map((n) => (
+        news.items?.slice(0, 12).map((n) => (
           <a
             key={n.url}
             href={n.url}
@@ -329,6 +330,91 @@ function NewsPanel({ news, error }) {
             )}
           </a>
         ))
+      )}
+    </TerminalPanel>
+  )
+}
+
+// Surfaces GET /api/macro-indices - NSE's full index-performance table
+// (nseindia.com/market-data/index-performances), ~100+ indices grouped by category. A category
+// filter keeps the table compact - showing every group at once would be ~150 rows of mono text.
+// Defaults to "BROAD MARKET INDICES" (NIFTY 50 / NEXT 50 / MIDCAP / SMALLCAP), the most-glanced cut.
+const DEFAULT_GROUP = 'BROAD MARKET INDICES'
+
+function MacroIndicesPanel({ data, isFetching, onRefresh }) {
+  const [group, setGroup] = useState(DEFAULT_GROUP)
+  const groups = data?.groups ?? []
+  const active = groups.find((g) => g.key === group) ?? groups[0]
+  const rows = active?.indices ?? []
+
+  return (
+    <TerminalPanel
+      className="lg:col-span-2"
+      title="Macro Indices"
+      accent="text-violet-500"
+      actions={
+        <>
+          {groups.length > 0 && (
+            <select
+              value={active?.key ?? ''}
+              onChange={(e) => setGroup(e.target.value)}
+              className="h-6 rounded border bg-background px-1 font-mono text-[10px] uppercase"
+              aria-label="Index category"
+            >
+              {groups.map((g) => (
+                <option key={g.key} value={g.key}>
+                  {g.key}
+                </option>
+              ))}
+            </select>
+          )}
+          <RefreshButton busy={isFetching} onClick={onRefresh} label="Refresh macro indices" />
+        </>
+      }
+    >
+      {!data ? (
+        <PanelLoading />
+      ) : rows.length === 0 ? (
+        <PanelEmpty>No indices in this category.</PanelEmpty>
+      ) : (
+        <table className="w-full font-mono text-xs">
+          <thead>
+            <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
+              <th className="px-2 py-1 text-left font-medium">Index</th>
+              <th className="px-2 py-1 text-right font-medium">Last</th>
+              <th className="px-2 py-1 text-right font-medium">Chg%</th>
+              <th className="px-2 py-1 text-right font-medium">30d</th>
+              <th className="px-2 py-1 text-right font-medium">1y</th>
+              <th className="px-2 py-1 text-right font-medium">PE</th>
+              <th className="px-2 py-1 text-right font-medium">Adv/Dec</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((i) => (
+              <tr key={i.symbol || i.name} className="border-b border-border/40 last:border-0">
+                <td className="px-2 py-1 font-semibold" title={i.name}>
+                  <span className="truncate">{i.name}</span>
+                </td>
+                <td className="px-2 py-1 text-right tabular-nums">{num(i.last)}</td>
+                <td className={`px-2 py-1 text-right tabular-nums ${pctClass(i.percentChange)}`}>
+                  {arrow(i.percentChange)} {signedPct(i.percentChange)}
+                </td>
+                <td className={`px-2 py-1 text-right tabular-nums ${pctClass(i.perChange30d)}`}>
+                  {signedPct(i.perChange30d)}
+                </td>
+                <td className={`px-2 py-1 text-right tabular-nums ${pctClass(i.perChange365d)}`}>
+                  {signedPct(i.perChange365d)}
+                </td>
+                <td className="px-2 py-1 text-right text-muted-foreground tabular-nums">{i.pe ?? '—'}</td>
+                <td className="px-2 py-1 text-right tabular-nums">
+                  <span className="text-up">{i.advances ?? '—'}</span>
+                  <span className="text-muted-foreground">/</span>
+                  <span className="text-down">{i.declines ?? '—'}</span>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </TerminalPanel>
   )
@@ -702,7 +788,13 @@ export default function StocksList() {
   })
   // Needs a Cogencis token - a 400 here is a config state, not a failure worth retrying.
   const newsQuery = useQuery({ queryKey: ['topNews'], queryFn: getTopNews, retry: false })
-
+  // NSE's full index-performance table (nseindia.com/market-data/index-performances) - slow-rotating
+  // macro context, 5min cache on the backend. Polled less often than the watchlist's own prices.
+  const macroQuery = useQuery({
+    queryKey: ['macroIndices'],
+    queryFn: getMacroIndices,
+    refetchInterval: 300_000,
+  })
   const stocks = stocksQuery.data
   const load = () => {
     ;['stocks', 'watchlist', 'watchlists'].forEach((key) =>
@@ -901,6 +993,12 @@ export default function StocksList() {
         <EventsPanel events={events} />
         <NewsPanel news={newsQuery.data} error={newsQuery.isError} />
       </div>
+
+      <MacroIndicesPanel
+        data={macroQuery.data}
+        isFetching={macroQuery.isFetching}
+        onRefresh={() => macroQuery.refetch()}
+      />
 
       <StatusBar
         session={session}

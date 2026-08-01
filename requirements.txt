@@ -8,7 +8,12 @@ yfinance==1.5.1
 beautifulsoup4==4.15.0
 requests==2.34.2
 ddgs==9.14.4
+# Carries the whole anti-block transport used by netfetch.py: browser TLS/JA3 + HTTP2 fingerprint
+# impersonation (via curl_cffi), coherent stealthy browser headers, and the proxy rotator.
 scrapling[fetchers]==0.4.12
+# Already pulled in by scrapling and by yfinance 1.5.1, but pinned explicitly because netfetch.py
+# imports it directly for the proxied yfinance session.
+curl_cffi==0.15.0
 
 pandas==3.0.3
 transformers==5.14.1

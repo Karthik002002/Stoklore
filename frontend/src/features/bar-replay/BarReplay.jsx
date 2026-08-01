@@ -5,7 +5,6 @@ import { Link } from '@tanstack/react-router'
 import {
   ActivityIcon,
   ArrowLeftIcon,
-  ArrowRightIcon,
   DatabaseIcon,
   PauseIcon,
   PlayIcon,
@@ -19,7 +18,6 @@ import { toast } from 'sonner'
 import SourceSelect from '@/components/SourceSelect'
 import SymbolCombobox from '@/components/SymbolCombobox'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { inr } from '@/lib/format'
@@ -28,6 +26,7 @@ import { useMaxHistoryCollector } from '@/lib/useMaxHistoryCollector'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { getTradeAccounts } from '@/services/api'
 import CloseTradeDialog from './CloseTradeDialog'
+import DateJumpMenu from './DateJumpMenu'
 import FloatingPanel from './FloatingPanel'
 import IndicatorControls from './IndicatorControls'
 import OrderTicketDialog from './OrderTicketDialog'
@@ -485,12 +484,12 @@ export default function BarReplay() {
           {symbol && hasMaxData && !started && (
             <div className="space-y-2 border-t pt-2">
               <label className="text-xs text-muted-foreground">Start date</label>
-              <Input
-                type="date"
+              <DateJumpMenu
+                bars={allBars}
                 value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                onClick={(e) => e.currentTarget.showPicker?.()}
-                className="w-full"
+                onSelect={setStartDate}
+                placeholder="Start date"
+                triggerClassName="w-full justify-start"
               />
               <Button size="sm" className="w-full" onClick={startReplay}>
                 <PlayIcon className="size-4" /> Start replay
@@ -572,25 +571,13 @@ export default function BarReplay() {
                   ))}
                 </SelectContent>
               </Select>
-              <Input
-                type="date"
+              <DateJumpMenu
+                bars={allBars}
                 value={dateDraft}
-                min={allBars[0]?.date}
-                max={allBars[allBars.length - 1]?.date}
-                onChange={(e) => setDateDraft(e.target.value)}
-                onBlur={() => jumpToDate(dateDraft)}
-                onClick={(e) => e.currentTarget.showPicker?.()}
-                className="h-7 w-32 text-xs"
-                aria-label="Jump to date"
+                onSelect={jumpToDate}
+                placeholder="Jump to date"
+                triggerClassName="w-32 text-xs"
               />
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Go to date"
-                onClick={() => jumpToDate(dateDraft)}
-              >
-                <ArrowRightIcon className="size-3.5" />
-              </Button>
               <span className="text-xs whitespace-nowrap text-muted-foreground">
                 {currentIndex + 1}/{allBars.length}
               </span>

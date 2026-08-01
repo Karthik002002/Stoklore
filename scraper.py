@@ -1,36 +1,42 @@
-"""Fetches NSE India movers (nseindia.com) plus news/financials (Yahoo Finance via yfinance)."""
+"""Fetches NSE India movers (nseindia.com) plus news/financials (Yahoo Finance via yfinance).
+
+Every outbound fetch here goes through netfetch, which carries the anti-block transport (browser
+TLS fingerprint, coherent browser headers, optional residential proxies, per-host throttling and
+429-aware backoff). See netfetch.py - nothing in this module should call requests.get directly.
+"""
 import html
 import json
 import re
 from datetime import datetime, timedelta
 
-import requests
 import yfinance as yf
 from bs4 import BeautifulSoup
 from ddgs import DDGS
-from scrapling.fetchers import Fetcher
+
+import netfetch
 
 NSE_BASE = "https://www.nseindia.com"
-NSE_HEADERS = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
 
 FINANCIAL_FIELDS = ("marketCap", "trailingPE", "forwardPE", "sector", "shortName")
 
 
-def _nse_session():
-    """NSE blocks requests without a browser-primed cookie, so hit the homepage first."""
-    session = requests.Session()
-    session.headers.update(NSE_HEADERS)
-    session.get(NSE_BASE, timeout=10)
-    return session
+def _ticker(symbol):
+    """yfinance Ticker routed through the configured proxy (no-op when none is set)."""
+    return yf.Ticker(symbol, session=netfetch.yf_session())
+
+
+def _nse_json(path):
+    """NSE 403s any API call whose session hasn't first landed on the homepage and picked up its
+    edge cookies, so every NSE fetch primes on NSE_BASE and shares one pooled cookie jar."""
+    return netfetch.get_json(f"{NSE_BASE}{path}", pool="nse", prime=NSE_BASE)
 
 
 def get_movers(count=25):
     """Returns deduped list of {symbol, changePercent, volume, avgVolume} for NSE stocks."""
-    session = _nse_session()
     movers = {}
 
-    variations = session.get(f"{NSE_BASE}/api/live-analysis-variations?index=gainers", timeout=10).json()
-    variations.update(session.get(f"{NSE_BASE}/api/live-analysis-variations?index=loosers", timeout=10).json())
+    variations = _nse_json("/api/live-analysis-variations?index=gainers")
+    variations.update(_nse_json("/api/live-analysis-variations?index=loosers"))
     for row in variations.get("allSec", {}).get("data", []):
         movers[row["symbol"]] = {
             "symbol": row["symbol"],
@@ -39,7 +45,7 @@ def get_movers(count=25):
             "avgVolume": row.get("trade_quantity", 0) or 1,
         }
 
-    volume_gainers = session.get(f"{NSE_BASE}/api/live-analysis-volume-gainers", timeout=10).json()
+    volume_gainers = _nse_json("/api/live-analysis-volume-gainers")
     for row in volume_gainers.get("data", [])[:count]:
         movers.setdefault(row["symbol"], {"symbol": row["symbol"], "changePercent": row.get("pChange", 0.0)})
         movers[row["symbol"]]["volume"] = row.get("volume", 0)
@@ -66,18 +72,11 @@ def _jsonld_article_body(soup):
 
 
 def _fetch_html(url):
-    """Scrapling first - its stealthy headers/impersonation get past bot-detection that a plain
-    requests.get trips (many news sites 403 a bare Python UA). Falls back to plain requests if
-    Scrapling errors or comes back non-200."""
-    try:
-        resp = Fetcher.get(url, stealthy_headers=True, timeout=15)
-        if resp.status == 200:
-            return resp.html_content
-    except Exception:
-        pass
-    resp = requests.get(url, headers=NSE_HEADERS, timeout=15)
-    resp.raise_for_status()
-    return resp.text
+    """Page HTML via the shared anti-block transport (netfetch): browser TLS fingerprint, real
+    browser headers, throttling and 429 backoff. There's no plain-requests fallback any more - a
+    bare Python UA/TLS handshake is exactly what the sites that 403 here are detecting, so
+    retrying that way only burned the IP a second time."""
+    return netfetch.get_html(url)
 
 
 def scrape_article(url):
@@ -245,23 +244,24 @@ def web_search(query, limit=10):
 
 
 COGENCIS_NEWS_URL = "https://data.cogencis.com/api/v1/web/news/stories"
+# Only the app-specific bits - the User-Agent and the rest of the browser header set come from
+# netfetch's stealthy headers, which keeps them internally consistent with the impersonated TLS
+# fingerprint (a hand-pinned UA that disagrees with the handshake is worse than none).
 COGENCIS_HEADERS_BASE = {
     "accept": "application/json, text/plain, */*",
     "origin": "https://iinvest.cogencis.com",
-    "user-agent": NSE_HEADERS["User-Agent"],
 }
 
 
 def get_isin(symbol):
     """NSE ISIN for a symbol - Cogencis news (below) is keyed/matched by ISIN, not NSE symbol."""
-    return yf.Ticker(f"{symbol}.NS").isin
+    return _ticker(f"{symbol}.NS").isin
 
 
 def _cogencis_rows(token, params):
     headers = {**COGENCIS_HEADERS_BASE, "authorization": f"Bearer {token}"}
-    resp = requests.get(COGENCIS_NEWS_URL, headers=headers, params=params, timeout=15)
-    resp.raise_for_status()
-    return resp.json().get("response", {}).get("data", [])
+    payload = netfetch.get_json(COGENCIS_NEWS_URL, pool="cogencis", headers=headers, params=params)
+    return payload.get("response", {}).get("data", [])
 
 
 def _cogencis_item(row):
@@ -306,7 +306,7 @@ def get_news(symbol, limit=10):
     """Returns list of {title, summary, url, published_at, source, origin} for an NSE symbol's
     recent news."""
     items = []
-    for item in yf.Ticker(f"{symbol}.NS").news[:limit]:
+    for item in _ticker(f"{symbol}.NS").news[:limit]:
         c = item.get("content", {})
         pub_date = c.get("pubDate")
         items.append({
@@ -353,17 +353,17 @@ def _fast_quote(ticker):
 
 def get_price(symbol):
     """Fast live price + day change% for list views."""
-    return _fast_quote(yf.Ticker(f"{symbol}.NS"))
+    return _fast_quote(_ticker(f"{symbol}.NS"))
 
 
 def get_index_price(name):
     """Fast live price + day change% for a market index (NIFTY/SENSEX), same shape as get_price."""
-    return _fast_quote(yf.Ticker(INDEX_SYMBOLS[name]))
+    return _fast_quote(_ticker(INDEX_SYMBOLS[name]))
 
 
 def get_quote(symbol):
     """Full live fundamentals for the stock detail page."""
-    info = yf.Ticker(f"{symbol}.NS").info
+    info = _ticker(f"{symbol}.NS").info
     return {k: info.get(k) for k in QUOTE_FIELDS}
 
 
@@ -426,17 +426,66 @@ def _chart_bars(ticker, range_key):
 
 
 def get_chart(symbol, range_key):
-    return _chart_bars(yf.Ticker(f"{symbol}.NS"), range_key)
+    return _chart_bars(_ticker(f"{symbol}.NS"), range_key)
 
 
 def get_index_chart(name, range_key):
     """Same shape as get_chart, for a market index (NIFTY/SENSEX)."""
-    return _chart_bars(yf.Ticker(INDEX_SYMBOLS[name]), range_key)
+    return _chart_bars(_ticker(INDEX_SYMBOLS[name]), range_key)
+
+
+# NSE publishes a broad index-performance table (nseindia.com/market-data/index-performances) that's
+# loaded by an XHR to /api/allIndexes (plural, not to be confused with the /api/allIndices quote
+# endpoint). The JSON is key-grouped ("INDICES ELIGIBLE IN DERIVATIVES", "BROAD MARKET INDICES",
+# "SECTORAL INDICES", "STRATEGY INDICES", "THEMATIC INDICES") - surfaced wholesale since the same
+# grouping is what the dashboard's table groups by too. Only the columns the UI actually renders are
+# kept, the rest (chart paths, indicativeClose, per-component advances/declines) are dropped.
+NSE_ALLINDICES_URL = f"{NSE_BASE}/api/allIndices"
+
+
+def get_all_indices():
+    """Returns {timestamp, groups:[{key, indices:[{name, last, percentChange, perChange30d,
+    perChange365d, pe, pb, dy, advances, declines}]}]} for NSE's index-performance page. Cookie-
+    primed via _nse_json(); a bare request without the homepage hit gets 403'd by NSE's edge."""
+    payload = _nse_json("/api/allIndices")
+
+    groups = {}
+    for row in payload.get("data", []):
+        key = row.get("key") or "Uncategorized"
+        groups.setdefault(key, []).append({
+            "name": row.get("index", ""),
+            "symbol": row.get("indexSymbol", ""),
+            "last": row.get("last"),
+            "change": row.get("variation"),
+            "percentChange": row.get("percentChange"),
+            "open": row.get("open"),
+            "high": row.get("high"),
+            "low": row.get("low"),
+            "previousClose": row.get("previousClose"),
+            "yearHigh": row.get("yearHigh"),
+            "yearLow": row.get("yearLow"),
+            "pe": row.get("pe"),
+            "pb": row.get("pb"),
+            "dy": row.get("dy"),
+            "advances": row.get("advances"),
+            "declines": row.get("declines"),
+            "unchanged": row.get("unchanged"),
+            "perChange30d": row.get("perChange30d"),
+            "perChange365d": row.get("perChange365d"),
+        })
+
+    return {
+        "timestamp": payload.get("timestamp"),
+        "advances": payload.get("advances"),
+        "declines": payload.get("declines"),
+        "unchanged": payload.get("unchanged"),
+        "groups": [{"key": k, "indices": v} for k, v in groups.items()],
+    }
 
 
 def get_history(symbol, start, end):
     """Summarizes OHLCV price history between two YYYY-MM-DD dates. Returns None if no data."""
-    df = yf.Ticker(f"{symbol}.NS").history(start=start, end=end)
+    df = _ticker(f"{symbol}.NS").history(start=start, end=end)
     if df.empty:
         return None
     return {
@@ -454,7 +503,7 @@ def get_history(symbol, start, end):
 
 def get_financial_statements(symbol):
     """Quarterly + TTM income statement as a table: oldest-to-newest columns, Yahoo's row order."""
-    ticker = yf.Ticker(f"{symbol}.NS")
+    ticker = _ticker(f"{symbol}.NS")
     quarterly = ticker.quarterly_income_stmt
     if quarterly.empty:
         return None
@@ -479,7 +528,7 @@ def get_daily_bars(symbol, start=None, period="1y"):
     `period` backfill (default 1y, pass period="max" for a symbol's entire available history);
     start='YYYY-MM-DD' fetches only bars from that date forward (incremental gap-fill, ignores
     `period`)."""
-    ticker = yf.Ticker(f"{symbol}.NS")
+    ticker = _ticker(f"{symbol}.NS")
     df = ticker.history(period=period, interval="1d") if start is None else ticker.history(start=start, interval="1d")
     return [
         {
@@ -499,7 +548,7 @@ def get_corporate_actions(symbol, since_days=30):
     Verified against yfinance 1.5.1: .actions is a DataFrame with a tz-aware date index and
     'Dividends'/'Stock Splits' columns; .calendar is a dict with an 'Earnings Date' date list
     (used instead of get_earnings_dates(), which needs the lxml package)."""
-    ticker = yf.Ticker(f"{symbol}.NS")
+    ticker = _ticker(f"{symbol}.NS")
     events = []
 
     actions = ticker.actions
@@ -525,7 +574,7 @@ def get_corporate_actions(symbol, since_days=30):
 
 def get_financials(symbol):
     """Returns dict of key financial stats for an NSE symbol. marketCap is INR (NSE), formatted with ₹."""
-    info = yf.Ticker(f"{symbol}.NS").info
+    info = _ticker(f"{symbol}.NS").info
     financials = {k: info.get(k) for k in FINANCIAL_FIELDS}
     if financials.get("marketCap") is not None:
         financials["marketCap"] = f"₹{financials['marketCap']:,}"

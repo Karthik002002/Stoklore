@@ -1451,6 +1451,14 @@ def index_chart(name: str, range: str = "1mo"):
     return _cached(name, f"index-chart:{range}", 15, lambda: scraper.get_index_chart(name, range))
 
 
+@app.get("/api/macro-indices")
+def macro_indices():
+    """NSE's full Live Analysis -> Index Performances table (all 100+ NSE-published indices
+    grouped by category). Cached for 5min; NSE's site itself polls /api/allIndices at the same
+    cadence, so a shorter cache just hammers their edge for no freshness gain."""
+    return _cached("NSE", "macro-indices", 5, scraper.get_all_indices)
+
+
 def _cached_news(symbol):
     """Serves news from Postgres if scraped within the last day, otherwise re-scrapes and refreshes it.
     Merges in Cogencis news (Settings > Cogencis) when a token is configured - it's keyed by ISIN

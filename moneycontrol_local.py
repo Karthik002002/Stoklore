@@ -12,12 +12,12 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-import requests
+import netfetch
 
 PRICEAPI_URL = "https://priceapi.moneycontrol.com/techCharts/indianMarket/stock/history"
+# Only the endpoint-specific bits - the User-Agent and the rest of the browser header set come
+# from netfetch's stealthy headers, kept consistent with the impersonated TLS fingerprint.
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-                  "(KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
     "Accept": "*/*",
     "Origin": "https://www.moneycontrol.com",
     "Referer": "https://www.moneycontrol.com/",
@@ -40,9 +40,7 @@ def fetch_history(symbol, from_ts, to_ts, resolution="60", currency_code="INR", 
         "countback": countback,
         "currencyCode": currency_code,
     }
-    resp = requests.get(PRICEAPI_URL, headers=HEADERS, params=params, timeout=15)
-    resp.raise_for_status()
-    data = resp.json()
+    data = netfetch.get_json(PRICEAPI_URL, pool="moneycontrol", headers=HEADERS, params=params)
     if data.get("s") != "ok":
         return []
     return [

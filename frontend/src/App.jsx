@@ -37,7 +37,7 @@ function NavIcon({ to, icon: Icon, label }) {
         render={
           <Link
             to={to}
-            className="relative flex size-10 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground [&.active]:bg-primary/10 [&.active]:text-primary"
+            className="relative flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground [&.active]:bg-primary/10 [&.active]:text-primary"
           />
         }
       >
@@ -86,11 +86,11 @@ function App() {
   return (
     <TooltipProvider>
       <div className="flex min-h-screen ">
-        <aside className="sticky top-0 flex h-screen w-16 shrink-0 flex-col items-center gap-1 border-r bg-background py-4">
+        <aside className="sticky top-0 flex h-screen w-14 shrink-0 flex-col items-center gap-1 border-r bg-background py-4">
           <Link
             to="/"
             aria-label="NSE Research"
-            className="mb-5 flex size-10 items-center justify-center rounded-xl p-2 [animation:gradient-move_4s_ease-in-out_infinite] [background-image:linear-gradient(135deg,rgba(126,20,255,0.4),rgba(134,59,255,0.4),rgba(71,191,255,0.4),rgba(126,20,255,0.4))] [background-size:200%_200%]"
+            className="mb-5 flex size-8 items-center justify-center rounded-xl p-2 [animation:gradient-move_4s_ease-in-out_infinite] [background-image:linear-gradient(135deg,rgba(126,20,255,0.4),rgba(134,59,255,0.4),rgba(71,191,255,0.4),rgba(126,20,255,0.4))] [background-size:200%_200%]"
           >
             <img src="/favicon.svg" alt="" className="size-full drop-shadow-sm" />
           </Link>
@@ -121,7 +121,7 @@ function App() {
             dense and horizontal, so capping them at a reading-width column wasted most of the
             screen. min-w-0 is what actually lets wide tables scroll inside this flex child
             instead of forcing the whole page to overflow sideways. */}
-        <main className="min-w-0 flex-1 px-3 py-3">
+        <main className="min-w-0 flex-1 px-2 py-3">
           <GuiltBanner />
           <Outlet />
         </main>

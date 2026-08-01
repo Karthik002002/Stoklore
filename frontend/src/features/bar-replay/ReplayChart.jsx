@@ -1,11 +1,31 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
-import { CandlestickSeries, LineSeries, createChart } from 'lightweight-charts'
+import { CandlestickSeries, HistogramSeries, LineSeries, createChart } from 'lightweight-charts'
 // import { inr } from '@/lib/format' // only used by the Draw long/short tool, disabled for now
+import { compact } from '@/lib/format'
 import { INDICATOR_COLORS, INDICATOR_TYPES } from '@/lib/indicators'
 import { tradeReturnPct } from '@/lib/manualTrades'
 import { DEFAULT_CHART_SETTINGS } from './store'
 
 const COLORS = { up: '#22c55e', down: '#ef4444', text: '#9ca3af', grid: 'rgba(148, 163, 184, 0.15)' }
+
+// Volume bars are tinted with the same up/down colors as the candles (settings.bodyUpColor/
+// bodyDownColor), just faded - so a user who customizes candle colors gets matching volume
+// without a second pair of color pickers, and the two always visually agree on which bars were
+// "up" ones.
+function fade(hex, alpha) {
+  const n = parseInt(hex.slice(1), 16)
+  const r = (n >> 16) & 255
+  const g = (n >> 8) & 255
+  const b = n & 255
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}
+
+// Volume lives in the price pane itself, as a separate price scale squashed into the bottom
+// slice of it (TradingView's classic "volume behind the candles" look) rather than its own pane -
+// so it never competes with an oscillator indicator for pane space. Only an oscillator (RSI -
+// anything with `pane: 'separate'`, see lib/indicators.js) gets an actual separate pane, at 1.
+const VOLUME_PRICE_SCALE = 'volume'
+const OSCILLATOR_PANE = 1
 
 // Maps the user-configurable chart settings (see store.js) onto lightweight-charts'
 // candlestick series options - shared by the initial creation and the reactive re-apply below.
@@ -78,6 +98,7 @@ const ReplayChart = forwardRef(function ReplayChart(
   const containerRef = useRef(null)
   const chartRef = useRef(null)
   const candleSeriesRef = useRef(null)
+  const volumeSeriesRef = useRef(null)
   const indicatorSeriesRef = useRef(new Map())
   const orderLinesRef = useRef(new Map())
   const previewLinesRef = useRef([])
@@ -130,6 +151,22 @@ const ReplayChart = forwardRef(function ReplayChart(
     })
     chartRef.current = chart
     candleSeriesRef.current = chart.addSeries(CandlestickSeries, candleOptionsFrom(settings))
+    // Overlaid on the price pane (pane 0), not a pane of its own - its own priceScaleId keeps it
+    // independent of the candles' price scale, and scaleMargins squashes it into roughly the
+    // bottom fifth of the pane so it sits behind the candles rather than fighting them for space.
+    // priceFormat 'custom' is needed, not just 'volume' - the chart-level ₹ priceFormatter above
+    // would otherwise stamp a ₹ in front of volume axis labels too (were the axis shown at all;
+    // it isn't, see priceScale.visible below).
+    volumeSeriesRef.current = chart.addSeries(HistogramSeries, {
+      priceScaleId: VOLUME_PRICE_SCALE,
+      priceFormat: { type: 'custom', formatter: compact, minMove: 1 },
+      priceLineVisible: false,
+      lastValueVisible: false,
+    })
+    chart.priceScale(VOLUME_PRICE_SCALE).applyOptions({
+      scaleMargins: { top: 0.8, bottom: 0 },
+      visible: false,
+    })
     indicatorSeriesRef.current = new Map()
     orderLinesRef.current = new Map()
     previewLinesRef.current = []
@@ -138,6 +175,7 @@ const ReplayChart = forwardRef(function ReplayChart(
       chart.remove()
       chartRef.current = null
       candleSeriesRef.current = null
+      volumeSeriesRef.current = null
       indicatorSeriesRef.current = new Map()
       orderLinesRef.current = new Map()
       previewLinesRef.current = []
@@ -294,7 +332,7 @@ const ReplayChart = forwardRef(function ReplayChart(
     if (!chart) return
     indicatorSeriesRef.current.forEach((series) => chart.removeSeries(series))
     const hasOscillator = indicators.some((ind) => INDICATOR_TYPES[ind.type]?.pane === 'separate')
-    if (!hasOscillator && chart.panes().length > 1) chart.removePane(1)
+    if (!hasOscillator && chart.panes().length > OSCILLATOR_PANE) chart.removePane(OSCILLATOR_PANE)
     const next = new Map()
     indicators.forEach((ind, i) => {
       const separatePane = INDICATOR_TYPES[ind.type]?.pane === 'separate'
@@ -307,7 +345,7 @@ const ReplayChart = forwardRef(function ReplayChart(
           lastValueVisible: separatePane,
           priceLineVisible: false,
         },
-        separatePane ? 1 : 0,
+        separatePane ? OSCILLATOR_PANE : 0,
       )
       if (separatePane) {
         series.priceScale().applyOptions({ autoScale: false })
@@ -328,10 +366,10 @@ const ReplayChart = forwardRef(function ReplayChart(
       next.set(ind.key, series)
     })
     indicatorSeriesRef.current = next
-    const panes = chart.panes()
-    if (panes[1]) {
-      panes[0].setStretchFactor(3)
-      panes[1].setStretchFactor(1)
+    const oscillatorPane = chart.panes()[OSCILLATOR_PANE]
+    if (oscillatorPane) {
+      chart.panes()[0].setStretchFactor(3)
+      oscillatorPane.setStretchFactor(1)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [indicators, resetKey, settings.rsiLevels, settings.bodyUpColor, settings.bodyDownColor])
@@ -347,6 +385,13 @@ const ReplayChart = forwardRef(function ReplayChart(
     if (!candles || bars.length === 0) return
     candles.setData(
       bars.map((b) => ({ time: b.date, open: b.open, high: b.high, low: b.low, close: b.close })),
+    )
+    volumeSeriesRef.current?.setData(
+      bars.map((b) => ({
+        time: b.date,
+        value: b.volume,
+        color: b.close >= b.open ? fade(settings.bodyUpColor, 0.5) : fade(settings.bodyDownColor, 0.5),
+      })),
     )
     const indicatorBars = bars.map((b) => ({ time: b.date, close: b.close }))
     indicators.forEach((ind) => {
@@ -364,7 +409,7 @@ const ReplayChart = forwardRef(function ReplayChart(
       }
       hasFitRef.current = true
     }
-  }, [bars, indicators])
+  }, [bars, indicators, settings.bodyUpColor, settings.bodyDownColor])
 
   // Entry/SL/target lines for every order (pending limits get a dotted amber entry line, filled
   // positions get a dashed gray one) - redrawn whenever the order list changes, or a new bar

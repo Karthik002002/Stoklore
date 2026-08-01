@@ -1453,12 +1453,12 @@ def upsert_stocks_master(rows):
 
 
 def search_stocks_master(query="", limit=30):
-    """Case-insensitive substring match on symbol or company name, capped at `limit`."""
+    """Case-insensitive substring match on symbol, company name, or ISIN, capped at `limit`."""
     with connect() as conn:
         return conn.execute(
             "SELECT symbol, name, series, listing_date, isin FROM stocks_master "
-            "WHERE symbol ILIKE %s OR name ILIKE %s ORDER BY symbol LIMIT %s",
-            (f"%{query}%", f"%{query}%", limit),
+            "WHERE symbol ILIKE %s OR name ILIKE %s OR isin ILIKE %s ORDER BY symbol LIMIT %s",
+            (f"%{query}%", f"%{query}%", f"%{query}%", limit),
         ).fetchall()
 
 

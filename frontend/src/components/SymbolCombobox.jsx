@@ -1,41 +1,26 @@
 import { useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckIcon, ChevronsUpDownIcon, PlusIcon } from 'lucide-react'
-import { toast } from 'sonner'
+import { useQuery } from '@tanstack/react-query'
+import { CheckIcon, ChevronsUpDownIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
-import { addStock, searchStocks } from '@/services/api'
+import { searchStocksMaster } from '@/services/api'
 
-// Searchable symbol dropdown (existing tracked stocks) with a fallback "Add <SYMBOL>" option
-// that validates the symbol exists (via the same live-scrape POST /api/stocks used elsewhere)
-// before it can be selected. Shared by Auto backtesting's run view and the manual trade journal.
+// Searchable single-select symbol dropdown backed by the full NSE listed-equity master
+// (stocks_master table via /api/stocks-master) - covers all ~2000 listed symbols regardless of
+// whether they've been scraped yet, so no "Add <SYMBOL>" fallback is needed (any valid NSE
+// ticker is already searchable). Shared by Auto backtesting's run view and the manual trade
+// journal.
 export default function SymbolCombobox({ value, onChange, className }) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
-  const queryClient = useQueryClient()
 
-  const { data: matches = [] } = useQuery({
+  const { data } = useQuery({
     queryKey: ['stockSearch', query],
-    queryFn: () => searchStocks(query),
+    queryFn: () => searchStocksMaster(query),
   })
-
-  const add = useMutation({
-    mutationFn: () => addStock(query.trim().toUpperCase()),
-    onSuccess: ({ symbol }) => {
-      toast.success(`${symbol} added`)
-      queryClient.invalidateQueries({ queryKey: ['stockSearch'] })
-      onChange(symbol)
-      setOpen(false)
-      setQuery('')
-    },
-    onError: (e) => toast.error(e.message),
-  })
-
-  const normalizedQuery = query.trim().toUpperCase()
-  const exactMatch = matches.some((m) => m.symbol === normalizedQuery)
+  const matches = data?.stocks ?? []
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -54,7 +39,7 @@ export default function SymbolCombobox({ value, onChange, className }) {
             className="uppercase placeholder:normal-case"
           />
           <CommandList>
-            {matches.length === 0 && !normalizedQuery && <CommandEmpty>No stocks tracked yet.</CommandEmpty>}
+            {matches.length === 0 && <CommandEmpty>No matches.</CommandEmpty>}
             {matches.map((m) => (
               <CommandItem
                 key={m.symbol}
@@ -69,16 +54,6 @@ export default function SymbolCombobox({ value, onChange, className }) {
                 {m.symbol}
               </CommandItem>
             ))}
-            {normalizedQuery && !exactMatch && (
-              <CommandItem
-                value={`__add__${normalizedQuery}`}
-                disabled={add.isPending}
-                onSelect={() => add.mutate()}
-              >
-                {add.isPending ? <Spinner className="size-4" /> : <PlusIcon className="size-4" />}
-                Add "{normalizedQuery}"
-              </CommandItem>
-            )}
           </CommandList>
         </Command>
       </PopoverContent>

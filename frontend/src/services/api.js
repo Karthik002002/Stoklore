@@ -10,6 +10,8 @@ export const getStockChart = (symbol, range) => fetch(`/api/stocks/${symbol}/cha
 
 export const getIndices = () => fetch('/api/indices').then(json)
 
+export const getMacroIndices = () => fetch('/api/macro-indices').then(json)
+
 // --- Dashboard (StocksList's terminal view) -------------------------------------------------
 // These wrap endpoints StocksList used to hit with bare fetch()es - moved here so the dashboard
 // can poll them through react-query (refetchInterval) like every other live view in the app.

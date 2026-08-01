@@ -24,6 +24,7 @@ import {
   underwaterSeries,
   winStreaks,
 } from './manualTrades.js'
+import { accountReturnPct } from './tradeAccounts.js'
 
 export const closedTrades = (trades) => (trades ?? []).filter((t) => t.exit_price != null)
 
@@ -176,6 +177,11 @@ export const METRICS = {
     of: (g) => round(mean(defined(g.map(tradeReturnPct))), 2),
   },
   avgPlannedRR: { label: 'Planned R:R', format: 'x', of: (g) => round(mean(defined(g.map(tradeRR)))) },
+  avgAccountReturnPct: {
+    label: 'Avg account return %',
+    format: 'pct',
+    of: (g) => round(mean(defined(g.map(accountReturnPct))), 2),
+  },
 }
 
 export function groupTrades(trades, dimKey) {
@@ -324,6 +330,12 @@ export const TRADE_AXES = {
   hour: { label: 'Hour of day', format: 'num', of: hourOf },
   targetCapture: { label: 'Target captured %', format: 'pct', of: targetCapturePct },
   stopOverrun: { label: 'Stop overrun %', format: 'pct', of: stopOverrunPct },
+  accountReturn: { label: 'Account return %', format: 'pct', of: accountReturnPct },
+  accountBalance: {
+    label: 'Account balance at trade',
+    format: 'inr',
+    of: (t) => t.account_balance_at_trade ?? null,
+  },
 }
 
 export function comparePoints(trades, xKey, yKey) {
@@ -718,6 +730,19 @@ export function overallStats(allTrades) {
         { label: 'Long trades', value: closed.filter((t) => t.direction !== 'short').length, format: 'num' },
         { label: 'Short trades', value: closed.filter((t) => t.direction === 'short').length, format: 'num' },
         { label: 'Avg return %', value: round(mean(defined(closed.map(tradeReturnPct))), 2), format: 'pct' },
+        {
+          label: 'Avg account return % (per trade)',
+          value: round(mean(defined(closed.map(accountReturnPct))), 2),
+          format: 'pct',
+        },
+        {
+          label: 'Total account return %',
+          value: (() => {
+            const pcts = defined(closed.map(accountReturnPct))
+            return pcts.length ? round(sum(pcts), 2) : null
+          })(),
+          format: 'pct',
+        },
         { label: 'Most profitable symbol', value: bySymbol[0]?.label ?? null, format: 'text' },
         { label: 'Least profitable symbol', value: bySymbol.at(-1)?.label ?? null, format: 'text' },
         {

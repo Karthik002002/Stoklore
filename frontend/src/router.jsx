@@ -19,6 +19,7 @@ const SETTINGS_TABS = [
   'stocks',
   'activity',
   'backtesting',
+  'accounts',
 ]
 
 // Lives on the root route (not a leaf) since the Settings dialog is mounted in App.jsx's layout,
@@ -73,8 +74,11 @@ const holdingsRoute = createRoute({
 const backtestingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/backtesting',
+  // `account` is the selected trade account, shared by all four sub-tabs - in the URL so a
+  // per-account view is shareable and survives a reload. Undefined = every account at once.
   validateSearch: (search) => ({
     view: ['overview', 'trades', 'statistics', 'goals'].includes(search.view) ? search.view : 'overview',
+    account: Number.isFinite(Number(search.account)) && search.account ? Number(search.account) : undefined,
   }),
   component: Backtesting,
 })

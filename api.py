@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import backtest
+import backup
 import broker
 import db
 import events
@@ -47,6 +48,33 @@ def _startup():
     db.purge_old(days=14)
     llm.configure_litellm(db.get_litellm_base_url(), db.get_litellm_api_key())
     threading.Thread(target=_auto_event_scan_loop, daemon=True).start()
+    backup.start()
+
+
+# Every mutating request marks the database dirty; backup.py's background thread turns that into
+# at most one pg_dump per interval. Middleware rather than per-endpoint calls so a new POST/PUT/
+# DELETE is backed up without anyone remembering to opt it in.
+@app.middleware("http")
+async def _mark_backup_dirty(request: Request, call_next):
+    response = await call_next(request)
+    if request.method not in ("GET", "HEAD", "OPTIONS") and response.status_code < 400:
+        backup.mark_dirty()
+    return response
+
+
+@app.get("/api/backup/status")
+def backup_status():
+    return backup.status()
+
+
+@app.post("/api/backup")
+def backup_now():
+    """Force a dump immediately - worth hitting before anything risky, rather than waiting out the
+    interval."""
+    try:
+        return {"path": backup.run_dump()}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # Populated by the background watchlist event scan (POST /api/events/scan, or the daily automatic
@@ -487,6 +515,17 @@ class ManualTradeRequest(BaseModel):
     image_filename: str | None = None  # already-uploaded file (e.g. from the Bulk Trades import)
     setup: str | None = None  # freeform strategy/setup label, e.g. "Breakout" - see manual-backtesting plan
     ideal_risk_amount: float | None = None  # planned risk in rupees, for Expected-R / risk-deviation
+    account_id: int | None = None  # which trade_accounts row this belongs to; None = unassigned
+
+
+class TradeAccountRequest(BaseModel):
+    name: str
+    strategy: str | None = None  # exactly one strategy per account, by design
+    strategy_explanation: str | None = None
+    opening_balance: float = 0
+    max_position_size: float | None = None
+    max_position_size_type: Literal["currency", "percentage"] = "currency"
+    max_position_count: int | None = None
 
 
 class ManualBacktestSettingsRequest(BaseModel):
@@ -507,10 +546,11 @@ class TradingGoalRequest(BaseModel):
 
 class BalanceAdjustmentRequest(BaseModel):
     amount: float
-    type: str  # "add" | "subtract"
+    type: str  # "add" (deposit) | "subtract" (withdrawal)
     reason: str | None = None
     notes: str | None = None
     adjusted_at: str | None = None  # ISO datetime; omitted -> now()
+    account_id: int | None = None  # which account's wallet this moves
 
 
 class ActivityPingRequest(BaseModel):
@@ -667,10 +707,11 @@ def manual_trades(request: Request):
 @app.post("/api/manual-trades")
 def create_manual_trade(req: ManualTradeRequest):
     _validate_manual_trade(req)
+    balance = db.account_balance_at(req.account_id, req.traded_at) if req.account_id else None
     trade_id = db.create_manual_trade(
         req.symbol.strip().upper(), req.direction, req.quantity, req.entry_price, req.exit_price,
         req.stop_loss, req.target, req.is_open, req.result, req.emotion, req.tags, req.notes,
-        req.traded_at, req.image_filename, req.setup, req.ideal_risk_amount,
+        req.traded_at, req.image_filename, req.setup, req.ideal_risk_amount, req.account_id, balance,
     )
     return {"id": trade_id}
 
@@ -678,11 +719,50 @@ def create_manual_trade(req: ManualTradeRequest):
 @app.put("/api/manual-trades/{trade_id}")
 def update_manual_trade(trade_id: int, req: ManualTradeRequest):
     _validate_manual_trade(req)
+    # The account-balance snapshot is a one-time calculation: recomputed only when the trade
+    # actually moves to a different account (where the old account's balance is meaningless), never
+    # on an ordinary edit. db.update_manual_trade COALESCEs None onto the existing value.
+    existing = db.get_manual_trade(trade_id)
+    moved = existing and existing["account_id"] != req.account_id
+    balance = db.account_balance_at(req.account_id, req.traded_at) if moved and req.account_id else None
     db.update_manual_trade(
         trade_id, req.symbol.strip().upper(), req.direction, req.quantity, req.entry_price,
         req.exit_price, req.stop_loss, req.target, req.is_open, req.result, req.emotion, req.tags,
-        req.notes, req.traded_at, req.setup, req.ideal_risk_amount,
+        req.notes, req.traded_at, req.setup, req.ideal_risk_amount, req.account_id, balance,
     )
+    return {"ok": True}
+
+
+@app.get("/api/trade-accounts")
+def trade_accounts():
+    return db.list_trade_accounts()
+
+
+@app.post("/api/trade-accounts")
+def create_trade_account(req: TradeAccountRequest):
+    if not req.name.strip():
+        raise HTTPException(status_code=422, detail="account name is required")
+    account_id = db.create_trade_account(
+        req.name.strip(), req.strategy, req.strategy_explanation, req.opening_balance,
+        req.max_position_size, req.max_position_size_type, req.max_position_count,
+    )
+    return {"id": account_id}
+
+
+@app.put("/api/trade-accounts/{account_id}")
+def update_trade_account(account_id: int, req: TradeAccountRequest):
+    if not req.name.strip():
+        raise HTTPException(status_code=422, detail="account name is required")
+    db.update_trade_account(
+        account_id, req.name.strip(), req.strategy, req.strategy_explanation, req.opening_balance,
+        req.max_position_size, req.max_position_size_type, req.max_position_count,
+    )
+    return {"ok": True}
+
+
+@app.delete("/api/trade-accounts/{account_id}")
+def delete_trade_account(account_id: int):
+    db.delete_trade_account(account_id)
     return {"ok": True}
 
 
@@ -772,7 +852,9 @@ def balance_adjustments():
 def create_balance_adjustment(req: BalanceAdjustmentRequest):
     if req.type not in {"add", "subtract"}:
         raise HTTPException(status_code=422, detail="type must be 'add' or 'subtract'")
-    adjustment_id = db.create_balance_adjustment(req.amount, req.type, req.reason, req.notes, req.adjusted_at)
+    adjustment_id = db.create_balance_adjustment(
+        req.amount, req.type, req.reason, req.notes, req.adjusted_at, req.account_id
+    )
     return {"id": adjustment_id}
 
 
@@ -785,6 +867,7 @@ def delete_balance_adjustment(adjustment_id: int):
 MANUAL_TRADE_EXPORT_FIELDS = [
     "id", "symbol", "direction", "setup", "quantity", "entry_price", "exit_price", "stop_loss",
     "target", "ideal_risk_amount", "is_open", "result", "emotion", "tags", "notes", "traded_at",
+    "account_id", "account_balance_at_trade",
 ]
 
 

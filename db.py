@@ -252,6 +252,25 @@ CREATE TABLE IF NOT EXISTS auto_backtest_scripts (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Trading accounts the manual journal's trades belong to. One strategy per account by design -
+-- comparing strategies means comparing accounts, so an account is always a single coherent
+-- "this is the system I'm running with this money" unit, never a mixed bag.
+-- max_position_size_type: 'currency' (absolute ₹) or 'percentage' (of the account's balance at
+-- the time of the trade). Both caps are advisory - they surface a warning on the trade form
+-- rather than rejecting the trade, since the journal records what you actually did, not what the
+-- rules said you should have done.
+CREATE TABLE IF NOT EXISTS trade_accounts (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  strategy TEXT,
+  strategy_explanation TEXT,
+  opening_balance REAL NOT NULL DEFAULT 0,
+  max_position_size REAL,
+  max_position_size_type TEXT NOT NULL DEFAULT 'currency',
+  max_position_count INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Manually logged trades for the Manual backtest tab - a personal trade journal, not tied to
 -- price_history/NSE at all (entry/exit/P&L are exactly what the user typed in, not computed from
 -- market data). P&L, R:R, and return% are deliberately NOT stored here - they're derived from
@@ -281,18 +300,29 @@ CREATE TABLE IF NOT EXISTS manual_trades (
 CREATE INDEX IF NOT EXISTS manual_trades_traded_at_idx ON manual_trades (traded_at DESC);
 ALTER TABLE manual_trades ADD COLUMN IF NOT EXISTS setup TEXT;
 ALTER TABLE manual_trades ADD COLUMN IF NOT EXISTS ideal_risk_amount REAL;
+ALTER TABLE manual_trades ADD COLUMN IF NOT EXISTS account_id INTEGER
+  REFERENCES trade_accounts(id) ON DELETE SET NULL;
+-- The ONE derived value this table does store, deliberately breaking the rule above: the account
+-- wallet balance at the moment the trade was taken. It's a point-in-time fact, not a function of
+-- this row - re-deriving it later would silently change every past trade's account-return% the
+-- moment a deposit is backdated or an older trade is edited. Written once at trade creation and
+-- never recomputed (see db.account_balance_at).
+ALTER TABLE manual_trades ADD COLUMN IF NOT EXISTS account_balance_at_trade REAL;
+CREATE INDEX IF NOT EXISTS manual_trades_account_idx ON manual_trades (account_id);
 
--- Manual corrections to the running account-balance equity curve (deposits/withdrawals/broker
--- true-ups that aren't trades themselves) - see docs/manual-backtesting-improvement-plan.md.
+-- Deposits and withdrawals against an account's wallet, plus manual corrections to the running
+-- balance curve (broker true-ups that aren't trades themselves).
 CREATE TABLE IF NOT EXISTS balance_adjustments (
   id SERIAL PRIMARY KEY,
   amount REAL NOT NULL,
-  type TEXT NOT NULL, -- 'add' | 'subtract'
+  type TEXT NOT NULL, -- 'add' (deposit) | 'subtract' (withdrawal)
   reason TEXT,
   notes TEXT,
   adjusted_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+ALTER TABLE balance_adjustments ADD COLUMN IF NOT EXISTS account_id INTEGER
+  REFERENCES trade_accounts(id) ON DELETE CASCADE;
 
 -- Daily usage-time + "did they analyze/review today" signals for the consistency/streak feature
 -- (Profile modal). "traded" is deliberately NOT a column here - it's derived live from
@@ -1146,17 +1176,87 @@ def delete_auto_backtest_script(script_id):
         conn.execute("DELETE FROM auto_backtest_scripts WHERE id = %s", (script_id,))
 
 
+def list_trade_accounts():
+    with connect() as conn:
+        return conn.execute("SELECT * FROM trade_accounts ORDER BY created_at").fetchall()
+
+
+def create_trade_account(name, strategy, strategy_explanation, opening_balance,
+                          max_position_size, max_position_size_type, max_position_count):
+    with connect() as conn:
+        row = conn.execute(
+            "INSERT INTO trade_accounts (name, strategy, strategy_explanation, opening_balance, "
+            "max_position_size, max_position_size_type, max_position_count) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (name, strategy, strategy_explanation, opening_balance, max_position_size,
+             max_position_size_type, max_position_count),
+        ).fetchone()
+    return row["id"]
+
+
+def update_trade_account(account_id, name, strategy, strategy_explanation, opening_balance,
+                          max_position_size, max_position_size_type, max_position_count):
+    with connect() as conn:
+        conn.execute(
+            "UPDATE trade_accounts SET name = %s, strategy = %s, strategy_explanation = %s, "
+            "opening_balance = %s, max_position_size = %s, max_position_size_type = %s, "
+            "max_position_count = %s WHERE id = %s",
+            (name, strategy, strategy_explanation, opening_balance, max_position_size,
+             max_position_size_type, max_position_count, account_id),
+        )
+
+
+def delete_trade_account(account_id):
+    """Trades survive - their account_id is nulled by the FK (ON DELETE SET NULL), so deleting an
+    account never destroys journal history. Its deposits/withdrawals do cascade away, since they
+    only ever meant anything relative to that account's wallet."""
+    with connect() as conn:
+        conn.execute("DELETE FROM trade_accounts WHERE id = %s", (account_id,))
+
+
+def account_balance_at(account_id, at):
+    """The account's wallet balance as of `at` (ISO string, or None for now): opening balance, plus
+    every deposit/withdrawal, plus the realized P&L of every trade already closed by then.
+
+    Called once per trade at creation time and snapshotted onto the row - see the
+    account_balance_at_trade column comment for why this is never recomputed afterwards."""
+    with connect() as conn:
+        account = conn.execute(
+            "SELECT opening_balance FROM trade_accounts WHERE id = %s", (account_id,)
+        ).fetchone()
+        if not account:
+            return None
+        row = conn.execute(
+            "SELECT COALESCE(("
+            "  SELECT SUM(CASE WHEN type = 'add' THEN amount ELSE -amount END) "
+            "  FROM balance_adjustments WHERE account_id = %s AND adjusted_at <= COALESCE(%s, now())"
+            "), 0) AS adjusted, COALESCE(("
+            # Long: (exit - entry) * qty. Short: the same with the sign flipped - mirrors
+            # tradePnl() in frontend/src/lib/manualTrades.js.
+            "  SELECT SUM((CASE WHEN direction = 'short' THEN -1 ELSE 1 END) "
+            "             * (exit_price - entry_price) * quantity) "
+            "  FROM manual_trades WHERE account_id = %s AND exit_price IS NOT NULL "
+            "    AND traded_at < COALESCE(%s, now())"
+            "), 0) AS realized",
+            (account_id, at, account_id, at),
+        ).fetchone()
+    return round(account["opening_balance"] + row["adjusted"] + row["realized"], 2)
+
+
 def create_manual_trade(symbol, direction, quantity, entry_price, exit_price, stop_loss, target,
                          is_open, result, emotion, tags, notes, traded_at, image_filename=None,
-                         setup=None, ideal_risk_amount=None):
+                         setup=None, ideal_risk_amount=None, account_id=None,
+                         account_balance_at_trade=None):
     with connect() as conn:
         row = conn.execute(
             "INSERT INTO manual_trades (symbol, direction, quantity, entry_price, exit_price, "
             "stop_loss, target, is_open, result, emotion, tags, notes, traded_at, image_filename, "
-            "setup, ideal_risk_amount) VALUES "
-            "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, now()), %s, %s, %s) RETURNING id",
+            "setup, ideal_risk_amount, account_id, account_balance_at_trade) VALUES "
+            "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, now()), %s, %s, %s, %s, %s) "
+            "RETURNING id",
             (symbol, direction, quantity, entry_price, exit_price, stop_loss, target, is_open,
-             result, emotion, tags, notes, traded_at, image_filename, setup, ideal_risk_amount),
+             result, emotion, tags, notes, traded_at, image_filename, setup, ideal_risk_amount,
+             account_id, account_balance_at_trade),
         ).fetchone()
     return row["id"]
 
@@ -1173,15 +1273,20 @@ def get_manual_trade(trade_id):
 
 def update_manual_trade(trade_id, symbol, direction, quantity, entry_price, exit_price, stop_loss,
                          target, is_open, result, emotion, tags, notes, traded_at, setup=None,
-                         ideal_risk_amount=None):
+                         ideal_risk_amount=None, account_id=None, account_balance_at_trade=None):
+    """account_balance_at_trade is COALESCEd, not overwritten with None: an ordinary edit (fixing an
+    exit price, adding a tag) must leave the original snapshot alone. The caller passes a fresh
+    value only when the trade actually moves to a different account - see api.update_manual_trade."""
     with connect() as conn:
         conn.execute(
             "UPDATE manual_trades SET symbol = %s, direction = %s, quantity = %s, entry_price = %s, "
             "exit_price = %s, stop_loss = %s, target = %s, is_open = %s, result = %s, emotion = %s, "
             "tags = %s, notes = %s, traded_at = COALESCE(%s, traded_at), setup = %s, "
-            "ideal_risk_amount = %s WHERE id = %s",
+            "ideal_risk_amount = %s, account_id = %s, "
+            "account_balance_at_trade = COALESCE(%s, account_balance_at_trade) WHERE id = %s",
             (symbol, direction, quantity, entry_price, exit_price, stop_loss, target, is_open,
-             result, emotion, tags, notes, traded_at, setup, ideal_risk_amount, trade_id),
+             result, emotion, tags, notes, traded_at, setup, ideal_risk_amount, account_id,
+             account_balance_at_trade, trade_id),
         )
 
 
@@ -1310,17 +1415,19 @@ def set_trading_goals(goals):
     _set_setting("trading_goals", json.dumps(goals))
 
 
-def create_balance_adjustment(amount, adj_type, reason, notes, adjusted_at):
+def create_balance_adjustment(amount, adj_type, reason, notes, adjusted_at, account_id=None):
     with connect() as conn:
         row = conn.execute(
-            "INSERT INTO balance_adjustments (amount, type, reason, notes, adjusted_at) VALUES "
-            "(%s, %s, %s, %s, COALESCE(%s, now())) RETURNING id",
-            (amount, adj_type, reason, notes, adjusted_at),
+            "INSERT INTO balance_adjustments (amount, type, reason, notes, adjusted_at, account_id) "
+            "VALUES (%s, %s, %s, %s, COALESCE(%s, now()), %s) RETURNING id",
+            (amount, adj_type, reason, notes, adjusted_at, account_id),
         ).fetchone()
     return row["id"]
 
 
 def list_balance_adjustments():
+    """Every account's, unfiltered - the frontend already holds the whole list to draw the balance
+    curve and filters by the selected account there, same as it does for trades."""
     with connect() as conn:
         return conn.execute("SELECT * FROM balance_adjustments ORDER BY adjusted_at DESC").fetchall()
 

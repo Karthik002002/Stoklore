@@ -28,11 +28,14 @@ import {
   tradeRR,
   tradeReturnPct,
 } from '@/lib/manualTrades'
+import { accountBalance, capWarnings, tradesForAccount } from '@/lib/tradeAccounts'
 import {
   createManualTrade,
   deleteManualTrade,
+  getBalanceAdjustments,
   getManualBacktestSettings,
   getManualTrades,
+  getTradeAccounts,
   updateManualTrade,
   uploadManualTradeImage,
 } from '@/services/api'
@@ -40,7 +43,7 @@ import ManualGoals from './ManualGoals'
 import ManualOverview from './ManualOverview'
 import ManualStatistics from './ManualStatistics'
 
-function emptyForm() {
+function emptyForm(accountId = null) {
   return {
     tradedAt: '',
     symbol: '',
@@ -58,8 +61,13 @@ function emptyForm() {
     emotion: '',
     tags: [],
     imageFile: null,
+    accountId,
   }
 }
+
+// "no account" needs a real value in a Select - empty string renders as the placeholder instead of
+// a selectable option, so this stands in for null on the way in and out.
+const NO_ACCOUNT = 'none'
 
 // datetime-local wants "YYYY-MM-DDTHH:mm" in local time - Date's own ISO getter is UTC, so this
 // is built from the local getters instead.
@@ -87,22 +95,41 @@ function formFromTrade(t) {
     emotion: t.emotion ?? '',
     tags: t.tags ?? [],
     imageFile: null,
+    accountId: t.account_id ?? null,
   }
 }
 
 const numeric = (v) => (v === '' || v == null ? null : Number(v))
 
-function TradeFormDialog({ open, onOpenChange, trade, onSaved }) {
+function TradeFormDialog({ open, onOpenChange, trade, onSaved, defaultAccountId, trades }) {
   const [form, setForm] = useState(emptyForm)
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const { data: backtestSettings } = useQuery({
     queryKey: ['manualBacktestSettings'],
     queryFn: getManualBacktestSettings,
   })
+  const { data: accounts = [] } = useQuery({ queryKey: ['tradeAccounts'], queryFn: getTradeAccounts })
+  const { data: adjustments = [] } = useQuery({
+    queryKey: ['balanceAdjustments'],
+    queryFn: getBalanceAdjustments,
+  })
 
   useEffect(() => {
-    if (open) setForm(trade ? formFromTrade(trade) : emptyForm())
-  }, [open, trade])
+    if (open) setForm(trade ? formFromTrade(trade) : emptyForm(defaultAccountId ?? null))
+  }, [open, trade, defaultAccountId])
+
+  const account = accounts.find((a) => a.id === form.accountId) ?? null
+  // Advisory caps: what this position would cost against what the account allows, and how many
+  // positions are already open on it (excluding this one when editing).
+  const warnings = capWarnings(account, {
+    positionValue: (numeric(form.quantity) ?? 0) * (numeric(form.entryPrice) ?? 0),
+    openCount: tradesForAccount(trades, form.accountId).filter((t) => t.is_open && t.id !== trade?.id).length,
+    balance: accountBalance(
+      account,
+      tradesForAccount(trades, form.accountId),
+      adjustments.filter((a) => a.account_id === form.accountId),
+    ),
+  })
 
   const set = (key) => (value) => setForm((f) => ({ ...f, [key]: value }))
 
@@ -138,6 +165,7 @@ function TradeFormDialog({ open, onOpenChange, trade, onSaved }) {
         tags: form.tags,
         notes: trade?.notes ?? null,
         traded_at: form.tradedAt ? new Date(form.tradedAt).toISOString() : null,
+        account_id: form.accountId,
       }
       let id
       if (trade) {
@@ -178,6 +206,33 @@ function TradeFormDialog({ open, onOpenChange, trade, onSaved }) {
                 <SymbolCombobox value={form.symbol} onChange={set('symbol')} className="w-full" />
               </div>
             </div>
+
+            <div className="space-y-1">
+              <label className="text-xs text-muted-foreground">Account</label>
+              <Select
+                value={form.accountId == null ? NO_ACCOUNT : String(form.accountId)}
+                onValueChange={(v) => set('accountId')(v === NO_ACCOUNT ? null : Number(v))}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_ACCOUNT}>No account</SelectItem>
+                  {accounts.map((a) => (
+                    <SelectItem key={a.id} value={String(a.id)}>
+                      {a.name}
+                      {a.strategy ? ` · ${a.strategy}` : ''}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {warnings.map((w) => (
+              <p key={w} className="rounded-md bg-amber-500/10 px-2 py-1.5 text-xs text-amber-600">
+                {w}
+              </p>
+            ))}
 
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
@@ -603,6 +658,7 @@ function toUpdatePayload(t) {
     tags: t.tags,
     notes: t.notes,
     traded_at: t.traded_at,
+    account_id: t.account_id,
   }
 }
 
@@ -665,8 +721,34 @@ function BulkEditDialog({ open, onOpenChange, trades, onSaved }) {
   )
 }
 
+// The selected account lives in the URL (?account=3), so a per-strategy view is shareable and
+// survives a reload - same pattern as Holdings' broker picker. No selection = every account at once.
+function AccountSelect({ accounts, account, onChange }) {
+  return (
+    <Select
+      value={account == null ? ALL_ACCOUNTS : String(account)}
+      onValueChange={(v) => onChange(v === ALL_ACCOUNTS ? undefined : Number(v))}
+    >
+      <SelectTrigger size="sm" className="w-52">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={ALL_ACCOUNTS}>All accounts</SelectItem>
+        {accounts.map((a) => (
+          <SelectItem key={a.id} value={String(a.id)}>
+            {a.name}
+            {a.strategy ? ` · ${a.strategy}` : ''}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
+const ALL_ACCOUNTS = 'all'
+
 export default function ManualBacktesting() {
-  const { view } = useSearch({ from: '/backtesting' })
+  const { view, account } = useSearch({ from: '/backtesting' })
   const navigate = useNavigate({ from: '/backtesting' })
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingTrade, setEditingTrade] = useState(null)
@@ -676,12 +758,16 @@ export default function ManualBacktesting() {
   const [selected, setSelected] = useState(() => new Set())
   const queryClient = useQueryClient()
 
-  const { data: trades = [] } = useQuery({ queryKey: ['manualTrades'], queryFn: getManualTrades })
+  const { data: allTrades = [] } = useQuery({ queryKey: ['manualTrades'], queryFn: getManualTrades })
+  const { data: accounts = [] } = useQuery({ queryKey: ['tradeAccounts'], queryFn: getTradeAccounts })
   const { data: backtestSettings } = useQuery({
     queryKey: ['manualBacktestSettings'],
     queryFn: getManualBacktestSettings,
   })
 
+  // Filtered in the client rather than by a per-account fetch: the list is small, the whole set is
+  // already cached for the trade form's cap checks, and "All accounts" then costs nothing.
+  const trades = useMemo(() => tradesForAccount(allTrades, account), [allTrades, account])
   const filteredTrades = useMemo(
     () => applyFilters(trades, filters, backtestSettings?.risk_deviation_tolerance_pct ?? 10),
     [trades, filters, backtestSettings],
@@ -720,7 +806,7 @@ export default function ManualBacktesting() {
 
   return (
     <div className="space-y-4">
-      <Tabs value={view} onValueChange={(next) => navigate({ search: { view: next } })}>
+      <Tabs value={view} onValueChange={(next) => navigate({ search: (prev) => ({ ...prev, view: next }) })}>
         <div className="flex items-center justify-between">
           <TabsList>
             <TabsTab value="overview">Overview</TabsTab>
@@ -730,6 +816,11 @@ export default function ManualBacktesting() {
             <TabsIndicator />
           </TabsList>
           <div className="flex items-center gap-2">
+            <AccountSelect
+              accounts={accounts}
+              account={account}
+              onChange={(next) => navigate({ search: (prev) => ({ ...prev, account: next }) })}
+            />
             <Button size="sm" variant="outline" render={<a href="/api/manual-trades/export?format=csv" />}>
               <DownloadIcon className="size-4" />
               Export CSV
@@ -749,7 +840,7 @@ export default function ManualBacktesting() {
           </div>
         </div>
         <TabsPanel value="overview">
-          <ManualOverview trades={trades} />
+          <ManualOverview trades={trades} accountId={account} />
         </TabsPanel>
         <TabsPanel value="trades" className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -787,6 +878,8 @@ export default function ManualBacktesting() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         trade={editingTrade}
+        defaultAccountId={account}
+        trades={allTrades}
         onSaved={() => queryClient.invalidateQueries({ queryKey: ['manualTrades'] })}
       />
       <BulkTradesDialog

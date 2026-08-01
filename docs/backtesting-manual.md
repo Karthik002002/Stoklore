@@ -27,6 +27,10 @@
   you define, per day/week/month.
 - **Bar Replay** button opens the bar-by-bar replay tool ([docs](bar-replay.md))
   — trades you log there land in this same journal, tagged `replay`.
+- The **account picker** (top right, next to Export CSV) scopes all four
+  sub-tabs to one trading account, or "All accounts". The choice lives in the
+  URL (`?account=3`), so a per-strategy view is shareable and survives a
+  reload. Accounts themselves are managed in **Settings › Trade accounts**.
 
 ## How it works
 
@@ -64,13 +68,51 @@ when, say, all your logged trades are from a Bar Replay session set years
 in the past. A "Today" button is still there to get back to the real
 current month.
 
+### Trade accounts: one strategy, one wallet, one frozen balance per trade
+
+An account is a *system being run with a pot of money* — **one strategy each**,
+by design. Comparing two strategies means comparing two accounts, so an account
+never holds a mixed bag that can't be judged as a whole. Managed under
+**Settings › Trade accounts**: name, strategy, strategy explanation, opening
+balance, and its deposits/withdrawals.
+
+- **Deposits and withdrawals** reuse the same `balance_adjustments` table the
+  Overview tab's wallet dialog already wrote to, now tagged with `account_id`.
+  Both surfaces write the same ledger — the settings tab is per-account, the
+  Overview dialog tags whatever account is currently selected.
+- **`account_balance_at_trade` is the one derived value this schema stores**,
+  deliberately breaking the "never persist a computed number" rule the rest of
+  the journal follows. It's a point-in-time *fact*, not a function of the row:
+  re-deriving it later would silently rewrite every past trade's account-return%
+  the moment a deposit is backdated or an older trade is edited. The server
+  computes it once (`db.account_balance_at` — opening balance + adjustments +
+  realized P&L of everything closed before that moment) and freezes it.
+  Editing a trade leaves it alone; it's only recomputed if the trade actually
+  **moves to a different account**, where the old account's balance is
+  meaningless.
+- That snapshot is what **account return %** divides by — "what did this trade
+  do to the account", as opposed to the existing return %, which is against the
+  position's own cost. Available as a Statistics metric, a Compare axis, and
+  two entries in Overall statistics.
+- **Max position size** (₹ or % of balance) and **max open positions** are
+  **advisory**: they raise a warning on the trade form and never reject a trade.
+  The journal records what you actually did, not what the rules said you should
+  have done — a blocked entry would just go unlogged, which is worse.
+- **Deleting an account keeps its trades** (`ON DELETE SET NULL` — they become
+  unassigned), but its deposits/withdrawals cascade away, since those only ever
+  meant anything relative to that account's wallet.
+- Trades are filtered **in the client**, not by a per-account fetch: the list is
+  small, the full set is already cached for the trade form's cap checks, and
+  "All accounts" then costs nothing.
+
 ### Statistics tab: one dimension/metric engine, not one function per chart
 
 `frontend/src/lib/tradeStats.js` is a small reduction engine — a
 `DIMENSIONS` lookup (symbol, setup, tag, emotion, direction, day of week,
 session, hour, month, year, price range, quantity range, R-multiple bucket)
 crossed with a `METRICS` lookup (net/avg P&L, win rate, count, volume,
-turnover, avg R/expectancy, profit factor, avg return %, avg planned R:R).
+turnover, avg R/expectancy, profit factor, avg return %, avg planned R:R, avg
+account return %).
 Every "metric by dimension" chart on the tab (`ManualStatistics.jsx`) is the
 same `seriesFor(trades, dimension, metric)` call with different keys —
 adding a row to either lookup makes every chart that reads it pick it up,

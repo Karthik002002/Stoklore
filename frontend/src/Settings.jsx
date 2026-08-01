@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { BrokerLogo } from '@/BrokerLogo'
+import TradeAccountsTab from '@/TradeAccountsTab'
 import SourceSelect from '@/components/SourceSelect'
 import StockMasterCombobox from '@/components/StockMasterCombobox'
 import TagInput from '@/components/TagInput'
@@ -1050,6 +1051,7 @@ export default function Settings() {
             <TabsTab value="stocks">Manage stocks</TabsTab>
             <TabsTab value="activity">Activity</TabsTab>
             <TabsTab value="backtesting">Backtesting</TabsTab>
+            <TabsTab value="accounts">Trade accounts</TabsTab>
           </TabsList>
           <div className="min-w-0 flex-1 overflow-y-auto pr-1">
             <TabsPanel value="model">
@@ -1078,6 +1080,9 @@ export default function Settings() {
             </TabsPanel>
             <TabsPanel value="backtesting">
               <ManualBacktestTab />
+            </TabsPanel>
+            <TabsPanel value="accounts">
+              <TradeAccountsTab />
             </TabsPanel>
           </div>
         </Tabs>

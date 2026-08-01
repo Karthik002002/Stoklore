@@ -31,6 +31,7 @@ import {
   deleteBalanceAdjustment,
   getBalanceAdjustments,
   getManualBacktestSettings,
+  getTradeAccounts,
 } from '@/services/api'
 import { GoalsSummary } from './ManualGoals'
 
@@ -532,7 +533,7 @@ function MonthlyReturnsGrid({ monthlyByMonth }) {
   )
 }
 
-function BalanceAdjusterDialog({ open, onOpenChange, adjustments }) {
+function BalanceAdjusterDialog({ open, onOpenChange, adjustments, accountId }) {
   const queryClient = useQueryClient()
   const [amount, setAmount] = useState('')
   const [type, setType] = useState('add')
@@ -550,6 +551,7 @@ function BalanceAdjusterDialog({ open, onOpenChange, adjustments }) {
         type,
         reason: reason.trim() || null,
         adjusted_at: date ? new Date(date).toISOString() : null,
+        account_id: accountId ?? null,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['balanceAdjustments'] })
@@ -642,18 +644,28 @@ function BalanceAdjusterDialog({ open, onOpenChange, adjustments }) {
   )
 }
 
-export default function ManualOverview({ trades }) {
+export default function ManualOverview({ trades, accountId }) {
   const [adjusterOpen, setAdjusterOpen] = useState(false)
   const { data: backtestSettings } = useQuery({
     queryKey: ['manualBacktestSettings'],
     queryFn: getManualBacktestSettings,
   })
-  const { data: adjustments = [] } = useQuery({
+  const { data: allAdjustments = [] } = useQuery({
     queryKey: ['balanceAdjustments'],
     queryFn: getBalanceAdjustments,
   })
+  const { data: accounts = [] } = useQuery({ queryKey: ['tradeAccounts'], queryFn: getTradeAccounts })
   const tolerancePct = backtestSettings?.risk_deviation_tolerance_pct ?? 10
-  const openingBalance = backtestSettings?.opening_balance ?? 0
+
+  // With an account selected the balance curve starts from that account's own wallet and only
+  // counts its deposits/withdrawals; across all accounts it falls back to the global opening
+  // balance in Settings > Backtesting, which is what this curve meant before accounts existed.
+  const account = accounts.find((a) => a.id === accountId) ?? null
+  const adjustments = useMemo(
+    () => (accountId == null ? allAdjustments : allAdjustments.filter((a) => a.account_id === accountId)),
+    [allAdjustments, accountId],
+  )
+  const openingBalance = account ? account.opening_balance : (backtestSettings?.opening_balance ?? 0)
 
   const closed = useMemo(() => trades.filter((t) => t.exit_price != null), [trades])
 
@@ -1044,7 +1056,12 @@ export default function ManualOverview({ trades }) {
 
       <CalendarHeatmap dailyByDay={dailyByDay} latestDay={sortedDays.at(-1)?.[0] ?? null} />
 
-      <BalanceAdjusterDialog open={adjusterOpen} onOpenChange={setAdjusterOpen} adjustments={adjustments} />
+      <BalanceAdjusterDialog
+        open={adjusterOpen}
+        onOpenChange={setAdjusterOpen}
+        adjustments={adjustments}
+        accountId={accountId}
+      />
     </div>
   )
 }

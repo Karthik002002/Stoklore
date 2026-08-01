@@ -214,6 +214,24 @@ export const analyzeBulkTradeImage = (file, model) => {
   return fetch(`/api/manual-trades/bulk/analyze${qs}`, { method: 'POST', body: form }).then(json)
 }
 
+export const getTradeAccounts = () => fetch('/api/trade-accounts').then(json)
+
+export const createTradeAccount = (account) =>
+  fetch('/api/trade-accounts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(account),
+  }).then(json)
+
+export const updateTradeAccount = (id, account) =>
+  fetch(`/api/trade-accounts/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(account),
+  }).then(json)
+
+export const deleteTradeAccount = (id) => fetch(`/api/trade-accounts/${id}`, { method: 'DELETE' }).then(json)
+
 export const getManualBacktestSettings = () => fetch('/api/settings/manual-backtest').then(json)
 
 export const setManualBacktestSettings = (settings) =>

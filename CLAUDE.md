@@ -9,6 +9,31 @@
 
 - Don't start a dev server or do browser/preview render checks for UI changes. Ship the code change and stop.
 
+# Touching the database
+
+`DATABASE_URL` points at the user's **real, live journal** — `manual_trades`, `watchlists`,
+`balance_adjustments` and the rest hold data they typed in by hand and cannot retype. There is no
+PITR (`archive_mode=off`) and no automatic dump. A wrong `DELETE` is permanent.
+
+**This already happened once**: a verification script inserted 3 test trades, then "cleaned up"
+with `DELETE ... WHERE symbol IN ('TCS','INFY','WIPRO') AND account_id IS NULL`. That predicate
+matched 22 rows — every pre-existing trade in those symbols, because the `account_id` column had
+just been added and was NULL everywhere. The whole journal was destroyed. Rules that follow from it:
+
+- **Never write to the live DB to test something.** Verify against a scratch database
+  (`createdb crawler_scratch`, point `DATABASE_URL` at it, drop it after) or with a transaction
+  that is always rolled back. Reading the live DB is fine.
+- **Delete only by primary key, only ids this session created.** Capture the id returned from the
+  INSERT and delete that exact id. Never delete by a content predicate (symbol, date, name, a NULL
+  column) — a predicate matches rows you didn't create.
+- **Count before you delete.** Run the `SELECT` form of the predicate first, print the count, and
+  confirm it equals the number of rows you inserted. If it doesn't match, stop.
+- **Read the numbers your own script prints.** "deleted 22" after inserting 3 is a failure, not a
+  pass. Never let a `PASSED` line print after an unchecked destructive step.
+- A newly added column is NULL for every existing row. Never use `<new_column> IS NULL` to mean
+  "the rows I just made".
+- Same care for `DROP`, `TRUNCATE`, `UPDATE` without a key, and destructive `psql -c` one-liners.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

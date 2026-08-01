@@ -14,6 +14,9 @@ frontend/dist
 # manual-trade screenshot uploads (api.py) - local-only, never shared/committed
 uploads/
 
+# rolling pg_dump backups (backup.py) - contains the whole journal, never committed
+backups/
+
 # local-only: LiteLLM proxy connection + guardrails config (ports, model list, env var names
 # specific to this machine's setup) - never shared/committed, each dev configures their own
 litellm.config.yaml

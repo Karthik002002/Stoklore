@@ -21,6 +21,7 @@ export default function CloseTradeDialog({
   reason,
   leg,
   chartImage,
+  accountId,
   onClosed,
 }) {
   const [result, setResult] = useState(null)
@@ -82,6 +83,7 @@ export default function CloseTradeDialog({
         // the overview's calendar) regardless of which historical period was being replayed.
         traded_at: new Date().toISOString(),
         image_filename: null,
+        account_id: accountId ?? null,
       })
       // The chart snapshot (see BarReplay's captureScreenshot) is taken at close time, before
       // this dialog even opens - same upload-after-create flow as the manual trade form's own

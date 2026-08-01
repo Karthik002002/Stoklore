@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useHotkey } from '@tanstack/react-hotkeys'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
   ActivityIcon,
@@ -26,6 +26,7 @@ import { inr } from '@/lib/format'
 import { aggregateBars, REPLAY_SPEEDS, REPLAY_TIMEFRAMES } from '@/lib/replay'
 import { useMaxHistoryCollector } from '@/lib/useMaxHistoryCollector'
 import { usePageTitle } from '@/lib/usePageTitle'
+import { getTradeAccounts } from '@/services/api'
 import CloseTradeDialog from './CloseTradeDialog'
 import FloatingPanel from './FloatingPanel'
 import IndicatorControls from './IndicatorControls'
@@ -37,6 +38,10 @@ import { useBarReplayStore } from './store'
 import TradingPanel from './TradingPanel'
 
 const numeric = (v) => (v === '' || v == null ? null : Number(v))
+// "no account" needs a real value in a Select - empty string renders as the placeholder instead
+// of a selectable option, so this stands in for null on the way in and out (matches
+// ManualBacktesting.jsx's NO_ACCOUNT).
+const NO_ACCOUNT = 'none'
 const round2 = (v) => Math.round(v * 100) / 100
 
 const FIELD_LABEL = { stopLoss: 'Stop loss', target: 'Target' }
@@ -61,6 +66,7 @@ export default function BarReplay() {
   const indicators = useBarReplayStore((s) => s.indicators)
   const speedMs = useBarReplayStore((s) => s.speedMs)
   const chartSettings = useBarReplayStore((s) => s.settings)
+  const accountId = useBarReplayStore((s) => s.accountId)
   const changeSymbol = useBarReplayStore((s) => s.setSymbol)
   const changeTimeframe = useBarReplayStore((s) => s.setTimeframe)
   const setBarIndex = useBarReplayStore((s) => s.setBarIndex)
@@ -68,7 +74,10 @@ export default function BarReplay() {
   const setIndicators = useBarReplayStore((s) => s.setIndicators)
   const setSpeedMs = useBarReplayStore((s) => s.setSpeedMs)
   const setChartSettings = useBarReplayStore((s) => s.setSettings)
+  const setAccountId = useBarReplayStore((s) => s.setAccountId)
   const restartStore = useBarReplayStore((s) => s.restart)
+
+  const { data: accounts = [] } = useQuery({ queryKey: ['tradeAccounts'], queryFn: getTradeAccounts })
 
   const [startDate, setStartDate] = useState('')
   const [dateDraft, setDateDraft] = useState('')
@@ -426,6 +435,23 @@ export default function BarReplay() {
 
         <FloatingPanel title="Setup" icon={SettingsIcon}>
           <SymbolCombobox value={symbol ?? ''} onChange={changeSymbol} className="w-full" />
+          <Select
+            value={accountId == null ? NO_ACCOUNT : String(accountId)}
+            onValueChange={(v) => setAccountId(v === NO_ACCOUNT ? null : Number(v))}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Account" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_ACCOUNT}>No account</SelectItem>
+              {accounts.map((a) => (
+                <SelectItem key={a.id} value={String(a.id)}>
+                  {a.name}
+                  {a.strategy ? ` · ${a.strategy}` : ''}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select value={timeframe} onValueChange={changeTimeframe}>
             <SelectTrigger className="w-full">
               <SelectValue>{(v) => REPLAY_TIMEFRAMES.find((t) => t.value === v)?.label ?? v}</SelectValue>
@@ -603,6 +629,7 @@ export default function BarReplay() {
         reason={activeClose?.reason}
         leg={activeClose?.leg ?? null}
         chartImage={activeClose?.chartImage}
+        accountId={accountId}
         onClosed={() => {
           queryClient.invalidateQueries({ queryKey: ['manualTrades'] })
           const { order, leg, reason } = activeClose

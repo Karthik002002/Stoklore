@@ -4,7 +4,34 @@ import { Select as SelectPrimitive } from '@base-ui/react/select'
 import { cn } from '@/lib/utils'
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from 'lucide-react'
 
-const Select = SelectPrimitive.Root
+// Base UI's <Select.Value> shows the raw selected value ("2", "daily") unless the root is given
+// an `items` map of {value, label} - it can't derive a label from <Select.Item> children on its
+// own, since SelectContent's items aren't mounted in the DOM while the popup is closed. Rather
+// than every call site hand-maintaining a parallel items list (or every consumer needing its own
+// <SelectValue>{(v) => ...}</SelectValue> workaround), this walks the JSX tree passed as children
+// once per render, pulls {value, label} out of every <SelectItem>, and feeds that to the root -
+// so <SelectValue /> shows the item's label everywhere, by default, with zero per-caller wiring.
+// An explicit `items` prop (or an explicit SelectValue children function) still wins over this.
+function collectItemLabels(children, items) {
+  React.Children.forEach(children, (child) => {
+    if (!React.isValidElement(child)) return
+    if (child.type === SelectItem) {
+      items.push({ value: child.props.value, label: child.props.children })
+      return
+    }
+    if (child.props?.children != null) collectItemLabels(child.props.children, items)
+  })
+  return items
+}
+
+function Select({ items, children, ...props }) {
+  const derivedItems = React.useMemo(() => items ?? collectItemLabels(children, []), [items, children])
+  return (
+    <SelectPrimitive.Root items={derivedItems} {...props}>
+      {children}
+    </SelectPrimitive.Root>
+  )
+}
 
 function SelectGroup({ className, ...props }) {
   return (

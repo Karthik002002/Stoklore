@@ -27,6 +27,18 @@ import {
   winStreaks,
 } from '@/lib/manualTrades'
 import {
+  ACHIEVABLE_WIN_RATE,
+  breakevenWinRate,
+  compoundingDivergence,
+  drawdownProbabilities,
+  expectancyGrid,
+  expectancyR,
+  GRID_WIN_RATES,
+  riskPaths,
+  streakSurvival,
+  SWEET_SPOT,
+} from '@/lib/tradeMath'
+import {
   createBalanceAdjustment,
   deleteBalanceAdjustment,
   getBalanceAdjustments,
@@ -533,6 +545,350 @@ function MonthlyReturnsGrid({ monthlyByMonth }) {
   )
 }
 
+// --- Risk & expectancy modelling -------------------------------------------------------------
+// These six views are forward-looking (what your numbers *imply*), not more reductions of trades
+// already taken - the math lives in lib/tradeMath.js. They're drawn as inline SVG rather than
+// through MiniChart/lightweight-charts on purpose: every axis here is a trade count or an R
+// multiple, and lightweight-charts' x-axis is a date scale, so feeding it trade indices means
+// fighting it for no gain.
+
+const PLOT = { w: 420, h: 200, padL: 34, padR: 8, padT: 10, padB: 22 }
+
+// One small multi-series line plot. `bands` shade an x-range (the losing streak, the sweet spot),
+// `markers` drop a labeled dot (where the user's own numbers actually sit).
+function Plot({ series, bands = [], markers = [], xTicks, yTicks, formatY = (v) => v, footer }) {
+  const all = series.flatMap((s) => s.points)
+  if (all.length === 0) return <p className="text-sm text-muted-foreground">Not enough data yet.</p>
+
+  const xs = all.map((p) => p.x)
+  const ys = all.map((p) => p.value)
+  const x0 = Math.min(...xs)
+  const x1 = Math.max(...xs)
+  const y0 = Math.min(...ys, ...(yTicks ?? []))
+  const y1 = Math.max(...ys, ...(yTicks ?? []))
+  const sx = (x) => PLOT.padL + ((x - x0) / (x1 - x0 || 1)) * (PLOT.w - PLOT.padL - PLOT.padR)
+  const sy = (y) => PLOT.h - PLOT.padB - ((y - y0) / (y1 - y0 || 1)) * (PLOT.h - PLOT.padT - PLOT.padB)
+
+  return (
+    <div>
+      <svg viewBox={`0 0 ${PLOT.w} ${PLOT.h}`} className="h-52 w-full" role="img">
+        {bands.map((b) => (
+          <rect
+            key={`${b.from}-${b.to}`}
+            x={sx(b.from)}
+            y={PLOT.padT}
+            width={Math.max(sx(b.to) - sx(b.from), 1)}
+            height={PLOT.h - PLOT.padT - PLOT.padB}
+            fill={b.color}
+          />
+        ))}
+        {(yTicks ?? []).map((t) => (
+          <g key={t}>
+            <line
+              x1={PLOT.padL}
+              x2={PLOT.w - PLOT.padR}
+              y1={sy(t)}
+              y2={sy(t)}
+              stroke={COLORS.grid}
+              strokeDasharray={t === 0 || t === 100 ? '3 3' : undefined}
+            />
+            <text x={4} y={sy(t) + 3} fontSize="8" fill={COLORS.text}>
+              {formatY(t)}
+            </text>
+          </g>
+        ))}
+        {(xTicks ?? []).map((t) => (
+          <text key={t} x={sx(t)} y={PLOT.h - 6} fontSize="8" fill={COLORS.text} textAnchor="middle">
+            {t}
+          </text>
+        ))}
+        {series.map((s) => (
+          <polyline
+            key={s.label}
+            fill="none"
+            stroke={s.color}
+            strokeWidth="1.75"
+            strokeDasharray={s.dashed ? '5 3' : undefined}
+            points={s.points.map((p) => `${sx(p.x)},${sy(p.value)}`).join(' ')}
+          />
+        ))}
+        {markers.map((m) => (
+          <g key={m.label}>
+            <circle cx={sx(m.x)} cy={sy(m.value)} r="3.5" fill={m.color} />
+            <text
+              x={sx(m.x)}
+              y={sy(m.value) - 6}
+              fontSize="8"
+              fill={m.color}
+              textAnchor="middle"
+              fontWeight="600"
+            >
+              {m.label}
+            </text>
+          </g>
+        ))}
+      </svg>
+      {footer}
+    </div>
+  )
+}
+
+function Legend({ items }) {
+  return (
+    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+      {items.map((i) => (
+        <span key={i.label} className="flex items-center gap-1.5">
+          <span className="h-0.5 w-4 rounded-full" style={{ background: i.color }} />
+          {i.label}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function ModelCard({ title, hint, children }) {
+  return (
+    <div className="rounded-xl border bg-card p-4">
+      <p className="text-sm font-medium">{title}</p>
+      {hint && <p className="mt-0.5 mb-2 text-xs text-muted-foreground">{hint}</p>}
+      {children}
+    </div>
+  )
+}
+
+// `1` Expectancy heatmap - win rate x payoff, shaded by expectancy in R, with the user's own
+// cell ringed. CSS grid, same approach as MonthlyReturnsGrid, no charting library involved.
+function ExpectancyGridCard({ winRate, payoff }) {
+  const rows = useMemo(() => expectancyGrid(), [])
+  const maxAbs = 4
+  const userCol = GRID_WIN_RATES.reduce(
+    (best, w, i) => (Math.abs(w - winRate) < Math.abs(GRID_WIN_RATES[best] - winRate) ? i : best),
+    0,
+  )
+  return (
+    <ModelCard
+      title="Expectancy by win rate × payoff"
+      hint="Expectancy in R per trade. Anything at or below 0 loses money no matter how it feels — your own numbers are ringed."
+    >
+      <div className="overflow-x-auto">
+        <div className="min-w-[380px]">
+          <div className="grid grid-cols-[2.5rem_repeat(8,1fr)] gap-0.5 text-[10px]">
+            <div />
+            {GRID_WIN_RATES.map((w) => (
+              <div key={w} className="text-center text-muted-foreground">
+                {Math.round(w * 100)}%
+              </div>
+            ))}
+            {[...rows].reverse().map((row) => {
+              const isUserRow =
+                Math.abs(row.payoff - payoff) === Math.min(...rows.map((r) => Math.abs(r.payoff - payoff)))
+              return (
+                <Fragment key={row.payoff}>
+                  <div className="flex items-center justify-end pr-1 text-muted-foreground">
+                    {row.payoff}R
+                  </div>
+                  {row.cells.map((c, i) => (
+                    <div
+                      key={c.winRate}
+                      title={`${Math.round(c.winRate * 100)}% win rate at ${row.payoff}R → ${c.value}R per trade`}
+                      className={`rounded py-1.5 text-center tabular-nums ${
+                        isUserRow && i === userCol ? 'ring-2 ring-primary ring-offset-1 ring-offset-card' : ''
+                      }`}
+                      style={{
+                        background:
+                          c.value >= 0
+                            ? `color-mix(in srgb, var(--color-up) ${Math.min((c.value / maxAbs) * 100, 90)}%, transparent)`
+                            : `color-mix(in srgb, var(--color-down) ${Math.min((Math.abs(c.value) / 1) * 60, 90)}%, transparent)`,
+                      }}
+                    >
+                      {c.value > 0 ? '+' : ''}
+                      {c.value}
+                    </div>
+                  ))}
+                </Fragment>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        At {Math.round(payoff * 100) / 100}R you need to win more than{' '}
+        <span className="font-medium text-foreground">
+          {Math.round(breakevenWinRate(payoff) * 1000) / 10}%
+        </span>{' '}
+        just to break even.
+      </p>
+    </ModelCard>
+  )
+}
+
+// `2` Worst case, run forward: your own longest losing streak happening again from here.
+function StreakSurvivalCard({ winRate, payoff, riskPct, streakLen }) {
+  const sim = useMemo(
+    () => streakSurvival({ winRate, payoff, riskPct, streakLen, trades: 75 }),
+    [winRate, payoff, riskPct, streakLen],
+  )
+  return (
+    <ModelCard
+      title="Surviving your longest losing streak"
+      hint={`${streakLen} losses back to back at ${riskPct}% risk, then trading on at your own expectancy.`}
+    >
+      <Plot
+        series={[{ label: 'Account', points: sim.points, color: COLORS.text }]}
+        bands={[
+          { from: 0, to: streakLen, color: 'rgba(239, 68, 68, 0.12)' },
+          { from: streakLen, to: 75, color: 'rgba(34, 197, 94, 0.10)' },
+        ]}
+        xTicks={[0, 15, 30, 45, 60, 75]}
+        yTicks={[Math.floor(sim.trough / 10) * 10, 100, Math.ceil(sim.points.at(-1).value / 10) * 10]}
+        formatY={(v) => `${v}%`}
+      />
+      <p className="mt-1 text-xs text-muted-foreground">
+        Bottoms out at <span className="font-medium text-down">{Math.round(sim.trough * 10) / 10}%</span> of
+        the account.{' '}
+        {sim.recoveredAt
+          ? `Back to breakeven ${sim.recoveredAt - streakLen} trades after the streak ends.`
+          : 'At this expectancy it never gets back to breakeven — the edge, not the streak, is the problem.'}
+      </p>
+    </ModelCard>
+  )
+}
+
+// `3` One trade sequence, three position sizes.
+const RISK_LEVELS = [0.5, 1, 2]
+const RISK_COLORS = ['#22c55e', '#3b82f6', '#ef4444']
+
+function RiskPathsCard({ winRate, payoff }) {
+  const paths = useMemo(
+    () => riskPaths({ winRate, payoff, riskPcts: RISK_LEVELS, trades: 100 }),
+    [winRate, payoff],
+  )
+  return (
+    <ModelCard
+      title="Same trades, different position size"
+      hint="One simulated sequence at your win rate and payoff, sized three ways — only the risk per trade differs."
+    >
+      <Plot
+        series={paths.map((p, i) => ({
+          label: `${p.riskPct}%`,
+          points: p.points,
+          color: RISK_COLORS[i],
+          dashed: i === 1,
+        }))}
+        xTicks={[0, 20, 40, 60, 80, 100]}
+        yTicks={[0, 100, 200, 300]}
+        formatY={(v) => `${v}%`}
+      />
+      <Legend items={RISK_LEVELS.map((r, i) => ({ label: `${r}% risk`, color: RISK_COLORS[i] }))} />
+    </ModelCard>
+  )
+}
+
+// `4` Bigger targets get hit less often - an empirical rule of thumb, with the user's point on it.
+function AchievableWinRateCard({ winRate, payoff }) {
+  const points = ACHIEVABLE_WIN_RATE.map((p) => ({ x: p.payoff, value: p.winRate }))
+  const breakeven = ACHIEVABLE_WIN_RATE.map((p) => ({
+    x: p.payoff,
+    value: Math.round(breakevenWinRate(p.payoff) * 1000) / 10,
+  }))
+  return (
+    <ModelCard
+      title="Achievable win rate vs target size"
+      hint="Rule of thumb, not a computed fit: the further the target, the less often it's reached. Below the dashed line the payoff can't pay for the losers."
+    >
+      <Plot
+        series={[
+          { label: 'Typically achievable', points, color: COLORS.text },
+          { label: 'Breakeven', points: breakeven, color: COLORS.down, dashed: true },
+        ]}
+        bands={[{ from: SWEET_SPOT.from, to: SWEET_SPOT.to, color: 'rgba(34, 197, 94, 0.12)' }]}
+        markers={[
+          {
+            label: `you: ${Math.round(payoff * 10) / 10}R, ${Math.round(winRate * 1000) / 10}%`,
+            x: Math.min(Math.max(payoff, 1), 10),
+            value: Math.round(winRate * 1000) / 10,
+            color: '#3b82f6',
+          },
+        ]}
+        xTicks={[1, 2, 3, 4, 5, 6, 8, 10]}
+        yTicks={[0, 20, 40, 60, 80]}
+        formatY={(v) => `${v}%`}
+      />
+      <Legend
+        items={[
+          { label: 'Typically achievable', color: COLORS.text },
+          { label: 'Breakeven win rate', color: COLORS.down },
+          { label: 'Sweet spot (3R–6R)', color: 'rgba(34, 197, 94, 0.5)' },
+        ]}
+      />
+    </ModelCard>
+  )
+}
+
+// `5` The same percentage, won or lost repeatedly, does not cancel out.
+function CompoundingCard({ gainPct, lossPct }) {
+  const { gains, losses } = useMemo(
+    () => compoundingDivergence({ gainPct, lossPct, trades: 100 }),
+    [gainPct, lossPct],
+  )
+  return (
+    <ModelCard
+      title="Why drawdowns cost more than they look"
+      hint={`Your average win (${Math.round(gainPct * 100) / 100}%) and average loss (${Math.round(lossPct * 100) / 100}%) of the account, compounded 100 times each.`}
+    >
+      <Plot
+        series={[
+          { label: 'Winning', points: gains, color: COLORS.up },
+          { label: 'Losing', points: losses, color: COLORS.down },
+        ]}
+        xTicks={[0, 20, 40, 60, 80, 100]}
+        yTicks={[-60, -30, 0, 30, 60]}
+        formatY={(v) => `${v}%`}
+      />
+      <p className="mt-1 text-xs text-muted-foreground">
+        Losses compound toward −100% but never past it; gains have no ceiling. That asymmetry is why
+        protecting the downside beats chasing the upside.
+      </p>
+    </ModelCard>
+  )
+}
+
+// `6` Risk of a 50% drawdown by position size - Monte Carlo, see tradeMath.js for why not a formula.
+const DD_RISK_LEVELS = [0.5, 1, 2, 5]
+
+function DrawdownRiskCard({ winRate, payoff }) {
+  const rows = useMemo(
+    () => drawdownProbabilities({ winRate, payoff, riskPcts: DD_RISK_LEVELS }),
+    [winRate, payoff],
+  )
+  return (
+    <ModelCard
+      title="Chance of a 50% drawdown"
+      hint="2,000 simulated runs of 500 trades each, at your win rate and payoff. A 50% drawdown needs a 100% gain to undo."
+    >
+      <div className="space-y-2">
+        {rows.map((r) => (
+          <div key={r.riskPct} className="flex items-center gap-2">
+            <span className="w-12 shrink-0 text-xs font-medium tabular-nums">{r.riskPct}%</span>
+            <div className="h-4 flex-1 overflow-hidden rounded bg-muted">
+              <div
+                className={`h-full ${r.probability >= 50 ? 'bg-down' : r.probability >= 15 ? 'bg-amber-500' : 'bg-up'}`}
+                style={{ width: `${Math.max(r.probability, 1)}%` }}
+              />
+            </div>
+            <span className="w-10 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+              {r.probability}%
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Risk per trade → probability of ruin-level drawdown.
+      </p>
+    </ModelCard>
+  )
+}
+
 function BalanceAdjusterDialog({ open, onOpenChange, adjustments, accountId }) {
   const queryClient = useQueryClient()
   const [amount, setAmount] = useState('')
@@ -849,6 +1205,50 @@ export default function ManualOverview({ trades, accountId }) {
       })
   }, [riskTrades])
 
+  // --- Inputs for the forward-looking models (lib/tradeMath.js) -------------------------------
+  // Everything below is derived from what the user actually did, with clamps so one degenerate
+  // trade can't produce a nonsense curve. Payoff prefers R multiples (which account for the
+  // planned risk) and falls back to the plain ₹ ratio when no trade carries an "Ideal risk ₹".
+  const model = useMemo(() => {
+    const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi)
+    const avgWin = wins.length ? grossProfit / wins.length : 0
+    const avgLossAbs = losses.length ? grossLoss / losses.length : 0
+
+    const payoffFromR = avgWinningR != null && avgLosingR ? avgWinningR / Math.abs(avgLosingR) : null
+    const payoffFromCash = avgLossAbs > 0 ? avgWin / avgLossAbs : null
+    const payoff = clamp(payoffFromR ?? payoffFromCash ?? 2, 0.2, 10)
+
+    // Risk per trade as a % of the account: the planned risk if it's being logged, otherwise what
+    // an average loss actually costs.
+    const plannedRisk = riskTrades.length
+      ? riskTrades.reduce((s, t) => s + t.ideal_risk_amount, 0) / riskTrades.length
+      : null
+    const base = openingBalance > 0 ? openingBalance : null
+    const riskPct = base ? clamp(((plannedRisk ?? avgLossAbs) / base) * 100, 0.1, 10) : 1
+
+    return {
+      winRate: clamp(winRate / 100, 0.01, 0.99),
+      payoff: Math.round(payoff * 100) / 100,
+      riskPct: Math.round(riskPct * 100) / 100,
+      // A trader with no losing streak yet still needs to see what one would do - 5 is a floor,
+      // not a claim about their history.
+      streakLen: Math.max(streaks.longest, 5),
+      gainPct: base ? clamp((avgWin / base) * 100, 0.01, 20) : 1,
+      lossPct: base ? clamp((avgLossAbs / base) * 100, 0.01, 20) : 1,
+    }
+  }, [
+    winRate,
+    wins.length,
+    losses.length,
+    grossProfit,
+    grossLoss,
+    avgWinningR,
+    avgLosingR,
+    riskTrades,
+    openingBalance,
+    streaks.longest,
+  ])
+
   const balanceEquityData = useMemo(() => {
     const byDay = new Map(sortedDays.map(([day, e]) => [day, e.pnl]))
     adjustments.forEach((a) => {
@@ -1052,6 +1452,61 @@ export default function ManualOverview({ trades, accountId }) {
           <ConcentrationCard title="Loss concentration" trades={losingTrades} tone="down" />
           <TagLossCard losingTrades={losingTrades} />
         </div>
+      </div>
+
+      <div className="space-y-3 rounded-xl border bg-card p-4">
+        <div>
+          <h3 className="text-sm font-semibold">Risk &amp; expectancy</h3>
+          <p className="text-xs text-muted-foreground">
+            The only forward-looking section here — everything above measures trades you already took, these
+            ask what your numbers imply about the ones you haven't. Driven by your actual win rate ({winRate}
+            %), payoff ({model.payoff}R) and risk per trade ({model.riskPct}%).
+          </p>
+        </div>
+
+        {closed.length < 5 ? (
+          <p className="text-sm text-muted-foreground">
+            Needs at least 5 closed trades — below that the win rate and payoff are too noisy to model
+            anything useful from.
+          </p>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <StatCard
+                label="Expectancy / trade"
+                value={`${Math.round(expectancyR(model.winRate, model.payoff) * 100) / 100}R`}
+                valueClassName={expectancyR(model.winRate, model.payoff) >= 0 ? 'text-up' : 'text-down'}
+              />
+              <StatCard
+                label="Breakeven win rate"
+                value={`${Math.round(breakevenWinRate(model.payoff) * 1000) / 10}%`}
+                sub={`you: ${winRate}%`}
+              />
+              <StatCard label="Payoff ratio" value={`${model.payoff}R`} />
+              <StatCard label="Risk / trade" value={`${model.riskPct}%`} />
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <ExpectancyGridCard winRate={model.winRate} payoff={model.payoff} />
+              <StreakSurvivalCard
+                winRate={model.winRate}
+                payoff={model.payoff}
+                riskPct={model.riskPct}
+                streakLen={model.streakLen}
+              />
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <RiskPathsCard winRate={model.winRate} payoff={model.payoff} />
+              <AchievableWinRateCard winRate={model.winRate} payoff={model.payoff} />
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <CompoundingCard gainPct={model.gainPct} lossPct={model.lossPct} />
+              <DrawdownRiskCard winRate={model.winRate} payoff={model.payoff} />
+            </div>
+          </>
+        )}
       </div>
 
       <CalendarHeatmap dailyByDay={dailyByDay} latestDay={sortedDays.at(-1)?.[0] ?? null} />

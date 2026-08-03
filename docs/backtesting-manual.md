@@ -20,7 +20,8 @@
   **Export CSV**.
 - The **Overview** tab shows P&L stats, daily win/loss and cumulative P&L
   charts, a calendar heatmap (opens on the month of your most recent trade,
-  not necessarily this month), and a goals-progress strip (see Goals below).
+  not necessarily this month), a goals-progress strip (see Goals below), and
+  a **Risk & expectancy** section (see below).
 - The **Statistics** tab (see below) is a deeper, TradesViz-style drill-down
   across many angles, all driven by the same closed trades.
 - The **Goals** tab (see below) scores your trades against targets/limits
@@ -60,6 +61,58 @@ fill in, rather than the whole import failing.
 `profitFactor` is gross profit ÷ gross loss (`null` if you have no losing
 trades yet — dividing by zero would be misleading, not infinite-good).
 `avgPnl` is total P&L ÷ number of closed trades.
+
+### Risk & expectancy: the one forward-looking section
+
+Everything else on Overview reduces trades you already took. This section
+(bottom of the tab, needs **5+ closed trades**) goes the other way: it takes
+three numbers off your real history — win rate, payoff ratio, and risk per
+trade — and asks what they imply about trades you haven't taken yet. The math
+is `frontend/src/lib/tradeMath.js`, pure and dependency-free
+(`node src/lib/tradeMath.selfcheck.mjs` to verify it).
+
+The three inputs, and where they come from:
+
+- **Win rate** — wins ÷ closed trades, same as the stat card above.
+- **Payoff ratio** — average winning R ÷ average losing R when trades carry
+  an "Ideal risk ₹", otherwise the plain average-win-₹ ÷ average-loss-₹.
+- **Risk per trade** — average planned risk (or, without one, what an average
+  loss actually costs) as a % of the account's opening balance.
+
+All three are clamped to sane ranges so one degenerate trade can't produce a
+nonsense curve.
+
+The six views:
+
+1. **Expectancy by win rate × payoff** — a heatmap of expectancy in R for
+   every combination, with your own cell ringed. The sign flip across the
+   grid is the breakeven boundary (`1 / (1 + payoff)`).
+2. **Surviving your longest losing streak** — your actual longest losing
+   streak (floored at 5) replayed from today at your risk size, then trading
+   on at your own expectancy. Reports the trough and how many trades until
+   breakeven — or says plainly that it never recovers, which means the edge
+   is the problem, not the streak.
+3. **Same trades, different position size** — one simulated sequence, sized
+   0.5% / 1% / 2%. The curves share the identical win/loss sequence, so they
+   differ by amplitude only.
+4. **Achievable win rate vs target size** — an *empirical rule of thumb*
+   (labelled as such in the UI, not a computed fit) that bigger targets get
+   hit less often, plotted against the breakeven win rate, with your own
+   point marked and a 3R–6R sweet spot band.
+5. **Why drawdowns cost more than they look** — your average win % and loss %
+   compounded 100 times each. Losses approach −100% and never pass it; gains
+   have no ceiling.
+6. **Chance of a 50% drawdown** — probability by risk per trade, over 2,000
+   simulated runs of 500 trades. **Simulated, not derived**: the tempting
+   closed form (probability of a long enough *losing streak*) is wrong here
+   by an order of magnitude, because real drawdowns come from choppy mixed
+   sequences rather than clean runs of losses. On a chart whose whole job is
+   to show that 5% risk is dangerous, that error points the wrong way.
+
+Every simulation uses a seeded PRNG (`rng()`, mulberry32) with a fixed seed,
+so the curves are identical on every render — `Math.random()` would reshuffle
+them on any parent re-render, which reads as the numbers being unstable
+rather than as one sample.
 
 **The calendar heatmap defaults to today's month, then jumps once** to the
 month containing your most recent trade the moment trade data actually

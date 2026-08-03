@@ -542,6 +542,29 @@ def get_daily_bars(symbol, start=None, period="1y"):
     ]
 
 
+def get_intraday_bars(symbol, period, interval):
+    """Intraday OHLCV bars as plain dicts, via yfinance - the fallback path for minute_data.py
+    when the HuggingFace minute dataset doesn't cover a symbol. Yahoo only serves a shallow window
+    for sub-daily intervals (~60d), nowhere near the dataset's 2022-onward depth.
+
+    `date` is the IST calendar day (what Bar Replay's date-jump/start-date pickers match on) and
+    `time` the IST-shifted unix seconds lightweight-charts plots - same two-field shape
+    minute_data.get_minute_bars returns, and the same pre-shift trick _chart_bars uses."""
+    ticker = _ticker(f"{symbol}.NS")
+    df = ticker.history(period=period, interval=interval)
+    return [
+        {
+            "date": ts.date().isoformat(),
+            "time": int(ts.timestamp()) + int(ts.utcoffset().total_seconds()),
+            "open": round(row["Open"], 2), "high": round(row["High"], 2),
+            "low": round(row["Low"], 2), "close": round(row["Close"], 2),
+            "volume": int(row["Volume"]),
+        }
+        for ts, row in df.iterrows()
+        if row[["Open", "High", "Low", "Close"]].notna().all()
+    ]
+
+
 def get_corporate_actions(symbol, since_days=30):
     """Returns list of {action_type, date, detail} for a symbol's recent dividends/splits and
     upcoming earnings dates. action_type is 'dividend' | 'split' | 'earnings'.

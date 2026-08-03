@@ -145,7 +145,10 @@ const ReplayChart = forwardRef(function ReplayChart(
       autoSize: true,
       layout: { background: { color: 'transparent' }, textColor: COLORS.text, attributionLogo: false },
       grid: { vertLines: { visible: false }, horzLines: { color: COLORS.grid } },
-      timeScale: { borderVisible: false },
+      // timeVisible puts the clock on the axis for intraday timeframes; it's ignored for the
+      // day-keyed ones, so it can stay on unconditionally. Bar times are pre-shifted to IST
+      // (see minute_data.py) and the chart renders UTC, so this reads as market-local time.
+      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
       rightPriceScale: { borderVisible: false },
       localization: { priceFormatter: (p) => `₹${p.toFixed(2)}` },
     })
@@ -383,17 +386,20 @@ const ReplayChart = forwardRef(function ReplayChart(
   useEffect(() => {
     const candles = candleSeriesRef.current
     if (!candles || bars.length === 0) return
+    // b.time, not b.date: for daily timeframes the two are the same "YYYY-MM-DD" business day,
+    // but intraday bars carry a unix timestamp there (b.date stays the calendar day, which is
+    // what the date-jump pickers match on). See lib/replay.js.
     candles.setData(
-      bars.map((b) => ({ time: b.date, open: b.open, high: b.high, low: b.low, close: b.close })),
+      bars.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })),
     )
     volumeSeriesRef.current?.setData(
       bars.map((b) => ({
-        time: b.date,
+        time: b.time,
         value: b.volume,
         color: b.close >= b.open ? fade(settings.bodyUpColor, 0.5) : fade(settings.bodyDownColor, 0.5),
       })),
     )
-    const indicatorBars = bars.map((b) => ({ time: b.date, close: b.close }))
+    const indicatorBars = bars.map((b) => ({ time: b.time, close: b.close }))
     indicators.forEach((ind) => {
       const series = indicatorSeriesRef.current.get(ind.key)
       if (!series) return

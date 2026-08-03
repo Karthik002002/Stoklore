@@ -2,13 +2,17 @@ import { useState } from 'react'
 import { useHotkey } from '@tanstack/react-hotkeys'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
+import { toast } from 'sonner'
 import {
   ArrowRightIcon,
   ClapperboardIcon,
   FlaskConicalIcon,
   LayoutDashboardIcon,
+  MoonIcon,
   NewspaperIcon,
+  RefreshCwIcon,
   SettingsIcon,
+  SunIcon,
   TrendingUpIcon,
   UserRoundIcon,
   WalletIcon,
@@ -23,6 +27,7 @@ import {
   CommandList,
 } from '@/components/ui/command'
 import { Spinner } from '@/components/ui/spinner'
+import { useTheme } from '@/lib/theme'
 import { openProfile } from './Profile'
 import { addStock, searchStocks } from '@/services/api'
 
@@ -31,19 +36,30 @@ const PAGES = [
   { icon: NewspaperIcon, label: 'Events', to: '/events' },
   { icon: TrendingUpIcon, label: 'Top news', to: '/top-news' },
   { icon: WalletIcon, label: 'Holdings', to: '/holdings' },
+  { icon: FlaskConicalIcon, label: 'Backtesting', to: '/backtesting' },
 ]
 
+// Matches ManualBacktesting's real `view` tabs (router.jsx's backtestingRoute) - the old 'tab'
+// param here pointed at the disabled Auto/Manual switcher and did nothing.
 const BACKTEST_TABS = [
-  // { label: 'Backtesting > Auto', tab: 'auto' }, // Auto backtesting disabled for now - see Backtesting.jsx
-  { label: 'Backtesting > Manual', tab: 'manual' },
+  { label: 'Backtesting > Overview', view: 'overview' },
+  { label: 'Backtesting > Trades', view: 'trades' },
+  { label: 'Backtesting > Statistics', view: 'statistics' },
+  { label: 'Backtesting > Goals', view: 'goals' },
 ]
 
+// Mirrors Settings.jsx's TabsTab list exactly.
 const SETTINGS_TABS = [
   { label: 'Settings > Model', tab: 'model' },
   { label: 'Settings > LiteLLM', tab: 'litellm' },
   { label: 'Settings > Cogencis', tab: 'cogencis' },
   { label: 'Settings > Broker', tab: 'broker' },
   { label: 'Settings > Watch rules', tab: 'rules' },
+  { label: 'Settings > Collect data', tab: 'data' },
+  { label: 'Settings > Manage stocks', tab: 'stocks' },
+  { label: 'Settings > Activity', tab: 'activity' },
+  { label: 'Settings > Backtesting', tab: 'backtesting' },
+  { label: 'Settings > Trade accounts', tab: 'accounts' },
 ]
 
 // Global Cmd/Ctrl+K palette: pages + Backtesting/Settings tabs by default, or "@SYMBOL" to
@@ -54,6 +70,7 @@ export default function CommandPalette() {
   const [query, setQuery] = useState('')
   const [stockError, setStockError] = useState(null)
   const navigate = useNavigate()
+  const { theme, toggle: toggleTheme } = useTheme()
 
   useHotkey('Mod+K', () => setOpen((o) => !o))
 
@@ -106,6 +123,22 @@ export default function CommandPalette() {
   const openProfileModal = () => {
     openProfile()
     close()
+  }
+
+  const toggleThemeAndClose = () => {
+    toggleTheme()
+    close()
+  }
+
+  const reload = async () => {
+    close()
+    try {
+      const res = await fetch('/api/cache/clear', { method: 'POST' })
+      if (!res.ok) throw new Error('Failed to clear cache')
+      window.location.reload()
+    } catch (err) {
+      toast.error(err.message)
+    }
   }
 
   return (
@@ -165,9 +198,9 @@ export default function CommandPalette() {
               <CommandGroup heading="Backtesting">
                 {BACKTEST_TABS.map((t) => (
                   <CommandItem
-                    key={t.tab}
+                    key={t.view}
                     value={t.label}
-                    onSelect={() => goTo('/backtesting', { tab: t.tab })}
+                    onSelect={() => goTo('/backtesting', { view: t.view })}
                   >
                     <FlaskConicalIcon className="size-4" />
                     {t.label}
@@ -185,6 +218,16 @@ export default function CommandPalette() {
                     {s.label}
                   </CommandItem>
                 ))}
+              </CommandGroup>
+              <CommandGroup heading="General">
+                <CommandItem value="Reload" onSelect={reload}>
+                  <RefreshCwIcon className="size-4" />
+                  Reload (clear cache)
+                </CommandItem>
+                <CommandItem value="Toggle theme" onSelect={toggleThemeAndClose}>
+                  {theme === 'dark' ? <SunIcon className="size-4" /> : <MoonIcon className="size-4" />}
+                  {theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                </CommandItem>
               </CommandGroup>
             </>
           )}

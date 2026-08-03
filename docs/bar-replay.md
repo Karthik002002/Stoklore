@@ -8,8 +8,12 @@ paper-trade it.
 ## Using it
 
 **Setup**
-1. Pick a symbol and timeframe (1D/1W/1M) in the Setup panel.
-2. Click **Collect max data** if you haven't already for that symbol.
+1. Pick a symbol and timeframe in the Setup panel — anything from **1 minute
+   to 1 month**: `1m` / `5m` / `15m` / `1H` / `4H` / `1D` / `1W` / `1Mo`.
+2. `1D`/`1W`/`1Mo` need **Collect max data** first (if you haven't already
+   for that symbol). The intraday timeframes (`1m`–`4H`) fetch themselves —
+   nothing to collect, just pick one (see [How it works](#how-it-works) for
+   where that data comes from and how long the first fetch takes).
 3. Optionally set a start date, then **Start replay**.
 
 **Playback**
@@ -89,9 +93,34 @@ paper-trade it.
 ## How it works
 
 Everything here is client-side — `frontend/src/features/bar-replay/`.
-There's no "replay" concept on the backend at all; it's just the app's
-regular `price_history_max` data (the same one-time "Collect max history"
-pull used elsewhere) plus a chart that only reveals bars up to a cursor.
+There's no "replay" concept on the backend at all; it's just bars from one
+of two sources (below) plus a chart that only reveals them up to a cursor.
+
+### Two data sources, one per timeframe half
+
+- **`1D`/`1W`/`1Mo`** — the app's regular `price_history_max` data (the same
+  one-time "Collect max history" pull used elsewhere), rolled up client-side
+  by `lib/replay.js`'s `aggregateBars`.
+- **`1m`/`5m`/`15m`/`1H`/`4H`** — `GET /api/prices/{symbol}/intraday`, backed
+  by **`minute_data.py`**, which reads a public HuggingFace dataset,
+  [`xxparthparekhxx/indian-stock-market-minute-data`](https://huggingface.co/datasets/xxparthparekhxx/indian-stock-market-minute-data)
+  (2,535 NSE symbols, 2022-01 → 2026-01, ~715M minute rows). Nothing is
+  downloaded up front: DuckDB reads the dataset's remote parquet shards
+  directly over HTTP with predicate pushdown (`WHERE symbol = ...`), so a
+  symbol's first request pulls only its own rows (~11s for a full symbol,
+  ~6MB) into a local cache (`local_data/minute/<SYMBOL>.parquet`, gitignored)
+  and every later request — any timeframe, any date — resamples that local
+  file in well under a second. A symbol the dataset doesn't cover falls back
+  to `scraper.get_intraday_bars` (yfinance), which is far shallower
+  (~60 days) but keeps replay working instead of showing nothing.
+  - `4H`/`1H`/etc. buckets are anchored to NSE's 09:15 IST open, not
+    midnight, so a session's candles land on 09:15/10:15/…/15:15 rather than
+    an odd partial bucket at the open.
+  - Each request is capped to the newest 30,000 bars (`MAX_BARS` in
+    `minute_data.py`) — at `1m` that's roughly the most recent ~80 sessions,
+    growing per timeframe (the same "finer timeframe, shorter window"
+    tradeoff any charting platform makes rather than shipping the full
+    47MB/375k-row history to the browser on every timeframe switch).
 
 ### Session state: one Zustand store, not the URL
 

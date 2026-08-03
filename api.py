@@ -26,6 +26,7 @@ import db
 import events
 import kite
 import llm
+import minute_data
 import price_sources
 import prices
 import rules
@@ -375,6 +376,21 @@ def max_history(symbol: str):
     """Full collected history, or an empty list if "Collect max history" was never triggered for
     this symbol - the frontend hides the max-history section entirely in that case."""
     return db.list_max_history(symbol.upper())
+
+
+# Bar Replay's intraday timeframes. Sync (not the background-job + status-poll shape the daily
+# max-history collection uses) because only the very first request per symbol is slow - it pulls
+# that symbol out of the remote dataset into a local parquet (~11s) and everything after reads
+# that cache in well under a second. Declared `def`, so FastAPI runs it in the threadpool and the
+# one slow call doesn't block the event loop.
+@app.get("/api/prices/{symbol}/intraday")
+def intraday_history(symbol: str, interval: str = "15m"):
+    try:
+        return minute_data.get_minute_bars(symbol, interval)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"intraday fetch failed: {e}") from e
 
 
 # Allows the app to be reached through a Cloudflare Quick Tunnel (random *.trycloudflare.com

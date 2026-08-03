@@ -43,6 +43,12 @@ export const getMaxHistory = (symbol) => fetch(`/api/prices/${symbol}/max`).then
 
 export const getMaxHistoryStatus = (symbol) => fetch(`/api/prices/${symbol}/max/status`).then(json)
 
+// Bar Replay's intraday timeframes (15m/1H/4H) - returns {bars, source}. The first call for a
+// symbol is slow (the backend extracts it from the remote minute dataset into a local cache),
+// every later one is fast. See minute_data.py.
+export const getIntradayBars = (symbol, interval) =>
+  fetch(`/api/prices/${symbol}/intraday?interval=${encodeURIComponent(interval)}`).then(json)
+
 // `source` picks which price_sources plugin (backend) actually fetches the data - see
 // GET /api/prices/sources for the live list instead of hardcoding names here.
 export const getPriceSources = () => fetch('/api/prices/sources').then(json)

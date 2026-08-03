@@ -16,6 +16,9 @@ scrapling[fetchers]==0.4.12
 curl_cffi==0.15.0
 
 pandas==3.0.3
+# Reads the HuggingFace minute dataset's remote parquet shards with predicate pushdown over HTTP
+# range requests (see minute_data.py) - a per-symbol extract instead of a 10.5GB download.
+duckdb==1.5.5
 transformers==5.14.1
 torch==2.13.0
 

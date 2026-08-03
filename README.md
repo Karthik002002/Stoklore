@@ -15,7 +15,8 @@ leaving your laptop unless you tell it to.
 
 **Scraping** · **Local LLM chat with tool calling** · **Watchlists & events** ·
 **Price history & EMA crossover** · **Sentiment analysis** ·
-**Broker-synced holdings** · **Backtesting**
+**Broker-synced holdings** · **Backtesting** ·
+**Bar Replay from 1 minute to 1 month**
 
 </div>
 
@@ -410,6 +411,14 @@ A `/backtest/replay` page (linked from Backtesting → Manual): step through a
 stock's real history one bar at a time and paper-trade it, like TradingView's
 Bar Replay.
 
+> **Every timeframe from 1 minute to 1 month** — `1m` / `5m` / `15m` / `1H` /
+> `4H` / `1D` / `1W` / `1Mo`. The intraday ones (`1m`–`4H`) are powered by a
+> public HuggingFace dataset of **2,535 NSE symbols' minute bars, 2022–2026**
+> (~715M rows), streamed on demand with DuckDB — no multi-GB download, just
+> a per-symbol extract (~11s, once) cached locally, with a yfinance fallback
+> for anything the dataset doesn't carry. See [How it works](docs/bar-replay.md#how-it-works)
+> for the details.
+
 - **Playback** — step forward/back, play/pause at 0.5×–4×, or jump to a date.
   Shortcuts: `B`/`S` buy/sell, `Shift+↓` play/pause, `Shift+→` step forward
 - **Trading** — Market or Limit orders with optional stop-loss/target;
@@ -467,7 +476,7 @@ Bar Replay.
 | Scraping   | `scraper.py` — NSE India API + `yfinance`                          |
 | Analysis   | `llm.py` — Ollama / OmniRoute / LiteLLM (chat + tool calling), `nomic-embed-text` for embeddings; `sentiment.py` — local FinRoBERTa classifier |
 | Events     | `events.py` — watchlist-scoped news/price/volume/corporate-action scan |
-| Prices     | `prices.py` — incremental daily OHLCV sync (1y + full-history tiers) + EMA crossover math |
+| Prices     | `prices.py` — incremental daily OHLCV sync (1y + full-history tiers) + EMA crossover math; `minute_data.py` — intraday bars (1m–4H) for Bar Replay, streamed on demand from a HuggingFace minute dataset via DuckDB, yfinance fallback |
 | Brokers    | `broker.py` (Dhan v2) + `kite.py` (Kite Connect v3) — read-only holdings/margin, normalized to one shape |
 | Backtests  | Manual: `backtest.py` — long-only EMA-crossover backtest over stored `price_history` (not yet wired into the UI). Auto: user-written Pine Script run client-side via `pinets` (PineTS) against `price_history`/`price_history_max`, saved as templates in `auto_backtest_scripts` |
 | Storage    | Postgres + pgvector (`db.py`)                                      |
@@ -591,6 +600,8 @@ git config core.hooksPath .githooks
 - [Langfuse](https://langfuse.com/) — self-hosted LLM tracing
 - [FinRoBERTa](https://huggingface.co/soleimanian/financial-roberta-large-sentiment) — local financial sentiment classifier
 - [yfinance](https://github.com/ranaroussi/yfinance) — OHLCV price history
+- [xxparthparekhxx/indian-stock-market-minute-data](https://huggingface.co/datasets/xxparthparekhxx/indian-stock-market-minute-data) — NSE minute-bar dataset powering Bar Replay's intraday timeframes
+- [DuckDB](https://duckdb.org/) — streams that dataset's remote parquet shards with predicate pushdown, no bulk download
 - [NSE India](https://www.nseindia.com/) — market movers, per-stock financials
 - [Cogencis](https://www.cogencis.com/) — general market news feed
 - [Dhan](https://dhanhq.co/) & [Kite Connect](https://kite.trade/) — broker holdings sync

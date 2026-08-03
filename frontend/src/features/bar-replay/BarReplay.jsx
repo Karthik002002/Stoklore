@@ -21,10 +21,10 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { inr } from '@/lib/format'
-import { aggregateBars, REPLAY_SPEEDS, REPLAY_TIMEFRAMES } from '@/lib/replay'
+import { aggregateBars, isIntraday, REPLAY_SPEEDS, REPLAY_TIMEFRAMES } from '@/lib/replay'
 import { useMaxHistoryCollector } from '@/lib/useMaxHistoryCollector'
 import { usePageTitle } from '@/lib/usePageTitle'
-import { getTradeAccounts } from '@/services/api'
+import { getIntradayBars, getTradeAccounts } from '@/services/api'
 import CloseTradeDialog from './CloseTradeDialog'
 import DateJumpMenu from './DateJumpMenu'
 import FloatingPanel from './FloatingPanel'
@@ -117,10 +117,30 @@ export default function BarReplay() {
     collect,
   } = useMaxHistoryCollector(symbol)
 
-  const allBars = useMemo(
-    () => (maxHistory ? aggregateBars(maxHistory, timeframe) : []),
-    [maxHistory, timeframe],
-  )
+  // 15m/1H/4H come from the minute dataset instead of the daily price_history_max this page
+  // otherwise runs on (see lib/replay.js). Slow only on a symbol's first fetch - the backend
+  // caches the extract - so it gets its own long-lived query rather than blocking the daily path.
+  const intraday = isIntraday(timeframe)
+  const { data: intradayData, isFetching: intradayLoading } = useQuery({
+    queryKey: ['intradayBars', symbol, timeframe],
+    queryFn: () => getIntradayBars(symbol, timeframe),
+    enabled: !!symbol && intraday,
+    staleTime: Infinity,
+    retry: false,
+  })
+
+  // Both paths hand ReplayChart the same {date, time, ...} shape: `date` is the calendar day the
+  // date-jump/start-date pickers match on, `time` is what lightweight-charts plots. Daily bars
+  // are keyed by day either way, so their `time` is just the date string.
+  const allBars = useMemo(() => {
+    if (intraday) return intradayData?.bars ?? []
+    if (!maxHistory) return []
+    return aggregateBars(maxHistory, timeframe).map((b) => ({ ...b, time: b.date }))
+  }, [intraday, intradayData, maxHistory, timeframe])
+
+  // The "Collect max data" gate only applies to the daily timeframes - intraday fetches its own
+  // bars and needs no prior collection.
+  const barsReady = intraday ? allBars.length > 0 : hasMaxData
   const started = barIndex != null && allBars.length > 0
   const currentIndex = started ? Math.min(barIndex, allBars.length - 1) : null
   const visibleBars = started ? allBars.slice(0, currentIndex + 1) : []
@@ -464,24 +484,44 @@ export default function BarReplay() {
               ))}
             </SelectContent>
           </Select>
-          <SourceSelect sources={sources} value={source} onChange={setSource} className="w-full" />
-          <Button
-            size="sm"
-            variant="outline"
-            className="w-full"
-            disabled={!symbol || maxStatus?.running || hasMaxData}
-            onClick={() => collect.mutate()}
-          >
-            {maxStatus?.running ? <Spinner className="size-4" /> : <DatabaseIcon className="size-4" />}
-            Collect max data
-          </Button>
-          {symbol && !hasMaxData && (
-            <p className="text-xs text-muted-foreground">
-              {maxStatus?.running ? 'Collecting full history…' : 'Needed before replay can start.'}
+          {/* The source picker and "Collect max data" only drive the daily price_history_max
+              path - an intraday timeframe fetches its own bars and has nothing to collect. */}
+          {!intraday && (
+            <>
+              <SourceSelect sources={sources} value={source} onChange={setSource} className="w-full" />
+              <Button
+                size="sm"
+                variant="outline"
+                className="w-full"
+                disabled={!symbol || maxStatus?.running || hasMaxData}
+                onClick={() => collect.mutate()}
+              >
+                {maxStatus?.running ? <Spinner className="size-4" /> : <DatabaseIcon className="size-4" />}
+                Collect max data
+              </Button>
+              {symbol && !hasMaxData && (
+                <p className="text-xs text-muted-foreground">
+                  {maxStatus?.running ? 'Collecting full history…' : 'Needed before replay can start.'}
+                </p>
+              )}
+              {maxStatus?.error && <p className="text-xs text-destructive">{maxStatus.error}</p>}
+            </>
+          )}
+          {intraday && intradayLoading && (
+            <p className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Spinner className="size-3" /> Fetching {timeframe} bars — the first load of a symbol takes a
+              few seconds.
             </p>
           )}
-          {maxStatus?.error && <p className="text-xs text-destructive">{maxStatus.error}</p>}
-          {symbol && hasMaxData && !started && (
+          {intraday && !intradayLoading && symbol && allBars.length === 0 && (
+            <p className="text-xs text-destructive">No intraday bars available for {symbol}.</p>
+          )}
+          {intraday && intradayData?.source === 'yfinance' && (
+            <p className="text-xs text-muted-foreground">
+              Not in the minute dataset — showing Yahoo’s shallower intraday history.
+            </p>
+          )}
+          {symbol && barsReady && !started && (
             <div className="space-y-2 border-t pt-2">
               <label className="text-xs text-muted-foreground">Start date</label>
               <DateJumpMenu
@@ -501,14 +541,14 @@ export default function BarReplay() {
           )}
         </FloatingPanel>
 
-        {symbol && hasMaxData && (
+        {symbol && barsReady && (
           <FloatingPanel title="Indicators" icon={ActivityIcon} defaultOpen={false}>
             <IndicatorControls indicators={indicators} onChange={setIndicators} />
           </FloatingPanel>
         )}
       </div>
 
-      {symbol && hasMaxData && started && (
+      {symbol && barsReady && started && (
         <div className="absolute top-4 right-[5%] z-10 w-72">
           <FloatingPanel title="Trade" icon={WalletIcon}>
             <TradingPanel

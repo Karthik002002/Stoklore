@@ -1,16 +1,23 @@
-// Timeframe list for Bar Replay's picker. 1D/1W/1M are all derivable from the daily bars this
-// app actually syncs (price_history_max) - no new data source needed for those. Intraday entries
-// are listed (not hidden) so the picker's architecture visibly supports them, but marked
-// unavailable since this app only ever syncs daily OHLCV - they light up automatically the day
-// intraday syncing exists, no UI rework needed.
+// Timeframe list for Bar Replay's picker, fine -> coarse. The two halves come from completely
+// different sources: 1D/1W/1Mo are rolled up from the daily bars this app syncs itself
+// (price_history_max, via aggregateBars below), while everything marked `intraday` is fetched
+// from GET /api/prices/{symbol}/intraday, backed by the HuggingFace minute dataset with a
+// yfinance fallback (see minute_data.py). isIntraday is what BarReplay switches on.
+//
+// The monthly value is '1Mo', not '1M' - '1m' (one minute) is a real timeframe here now, and two
+// values differing only by case is a footgun waiting for the first careless lowercasing.
 export const REPLAY_TIMEFRAMES = [
+  { value: '1m', label: '1 min', available: true, intraday: true },
+  { value: '5m', label: '5 min', available: true, intraday: true },
+  { value: '15m', label: '15 min', available: true, intraday: true },
+  { value: '1H', label: '1 Hour', available: true, intraday: true },
+  { value: '4H', label: '4 Hour', available: true, intraday: true },
   { value: '1D', label: '1 Day', available: true },
   { value: '1W', label: '1 Week', available: true },
-  { value: '1M', label: '1 Month', available: true },
-  { value: '15m', label: '15 min', available: false },
-  { value: '1H', label: '1 Hour', available: false },
-  { value: '4H', label: '4 Hour', available: false },
+  { value: '1Mo', label: '1 Month', available: true },
 ]
+
+export const isIntraday = (timeframe) => REPLAY_TIMEFRAMES.some((t) => t.value === timeframe && t.intraday)
 
 export const REPLAY_SPEEDS = [
   { value: 2000, label: '0.5x' },

@@ -52,13 +52,19 @@ export const useBarReplayStore = create(
     }),
     {
       name: 'barReplay.store',
-      version: 2,
+      version: 3,
       // v0 -> v1: a position's stop-loss and target were single `stopLoss`/`target` numbers;
       // they're now `stopLosses`/`targets`, lists of {id, price, qty} legs (see orderEngine.js)
       // so one trade can carry a laddered exit on either side - a plain single-SL/single-target
       // order just becomes a one-leg list covering the full quantity, so nothing about existing
       // sessions' behavior changes.
       migrate: (persisted, version) => {
+        // v2 -> v3: the monthly timeframe was renamed '1M' -> '1Mo' when '1m' (one minute) became
+        // a real timeframe - see lib/replay.js. Without this a persisted '1M' session would show
+        // a blank entry in the picker until the user reselected one.
+        if (version < 3 && persisted?.timeframe === '1M') {
+          persisted.timeframe = '1Mo'
+        }
         // v1 -> v2: accountId is new - defaults to null (unassigned), same as every trade logged
         // before accounts existed.
         if (version < 2 && persisted && persisted.accountId === undefined) {

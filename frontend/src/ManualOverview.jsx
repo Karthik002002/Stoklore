@@ -1,11 +1,14 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AreaSeries, HistogramSeries, createChart } from 'lightweight-charts'
 import { ChevronLeftIcon, ChevronRightIcon, Trash2Icon, WalletIcon } from 'lucide-react'
 import { toast } from 'sonner'
+import { TextField } from '@/components/form'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
+import { balanceAdjustmentSchema } from '@/lib/schemas'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { fmt, formatDate, inr } from '@/lib/format'
 import {
@@ -891,29 +894,30 @@ function DrawdownRiskCard({ winRate, payoff }) {
 
 function BalanceAdjusterDialog({ open, onOpenChange, adjustments, accountId }) {
   const queryClient = useQueryClient()
-  const [amount, setAmount] = useState('')
-  const [type, setType] = useState('add')
-  const [reason, setReason] = useState('')
-  const [date, setDate] = useState('')
+  const form = useForm({
+    resolver: zodResolver(balanceAdjustmentSchema),
+    defaultValues: { amount: '', type: 'add', reason: '', date: '' },
+  })
+  const type = form.watch('type')
 
   useEffect(() => {
-    if (open) setDate(new Date().toISOString().slice(0, 10))
-  }, [open])
+    if (open) form.reset({ amount: '', type: 'add', reason: '', date: new Date().toISOString().slice(0, 10) })
+  }, [open, form])
 
   const create = useMutation({
-    mutationFn: () =>
+    mutationFn: (values) =>
       createBalanceAdjustment({
-        amount: Number(amount),
-        type,
-        reason: reason.trim() || null,
-        adjusted_at: date ? new Date(date).toISOString() : null,
+        amount: values.amount,
+        type: values.type,
+        reason: values.reason,
+        adjusted_at: values.date ? new Date(values.date).toISOString() : null,
         account_id: accountId ?? null,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['balanceAdjustments'] })
       toast.success('Balance adjustment added')
-      setAmount('')
-      setReason('')
+      // Type and date survive - logging several adjustments in a row shouldn't re-ask for both.
+      form.reset({ ...form.getValues(), amount: '', reason: '' })
     },
     onError: (e) => toast.error(e.message),
   })
@@ -930,71 +934,66 @@ function BalanceAdjusterDialog({ open, onOpenChange, adjustments, accountId }) {
         <DialogHeader>
           <DialogTitle>Balance adjustments</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3">
+        <form onSubmit={form.handleSubmit((values) => create.mutate(values))} className="space-y-3">
           <div className="grid grid-cols-2 gap-2">
-            <Input
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="Amount ₹"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <TextField form={form} name="amount" type="number" step="0.01" min="0" placeholder="Amount ₹" />
+            <TextField form={form} name="date" type="date" />
           </div>
+          {/* Two buttons rather than a Select - it's a binary choice and the sign matters enough
+              to be visible without opening anything. setValue keeps it inside the form state. */}
           <div className="flex gap-2">
             <Button
+              type="button"
               size="sm"
               variant={type === 'add' ? 'default' : 'outline'}
               className="flex-1"
-              onClick={() => setType('add')}
+              onClick={() => form.setValue('type', 'add')}
             >
               Deposit / correction (+)
             </Button>
             <Button
+              type="button"
               size="sm"
               variant={type === 'subtract' ? 'default' : 'outline'}
               className="flex-1"
-              onClick={() => setType('subtract')}
+              onClick={() => form.setValue('type', 'subtract')}
             >
               Withdrawal / fee (−)
             </Button>
           </div>
-          <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (optional)" />
-          <Button
-            className="w-full"
-            disabled={!amount || Number(amount) <= 0 || create.isPending}
-            onClick={() => create.mutate()}
-          >
+          <TextField form={form} name="reason" placeholder="Reason (optional)" />
+          <Button type="submit" className="w-full" disabled={create.isPending}>
             Add adjustment
           </Button>
+        </form>
 
-          {adjustments.length > 0 && (
-            <div className="max-h-48 space-y-1.5 overflow-y-auto border-t pt-3">
-              {adjustments.map((a) => (
-                <div key={a.id} className="flex items-center justify-between text-sm">
-                  <span>
-                    <span className={a.type === 'add' ? 'text-up' : 'text-down'}>
-                      {a.type === 'add' ? '+' : '−'}
-                      {inr(a.amount)}
-                    </span>{' '}
-                    <span className="text-muted-foreground">
-                      {a.reason || '—'} · {formatDate(a.adjusted_at)}
-                    </span>
+        {/* Outside the <form>: it's a list of already-saved rows, and a <button> inside a form
+            defaults to type="submit" - leaving these here would make every delete also submit. */}
+        {adjustments.length > 0 && (
+          <div className="max-h-48 space-y-1.5 overflow-y-auto border-t pt-3">
+            {adjustments.map((a) => (
+              <div key={a.id} className="flex items-center justify-between text-sm">
+                <span>
+                  <span className={a.type === 'add' ? 'text-up' : 'text-down'}>
+                    {a.type === 'add' ? '+' : '−'}
+                    {inr(a.amount)}
+                  </span>{' '}
+                  <span className="text-muted-foreground">
+                    {a.reason || '—'} · {formatDate(a.adjusted_at)}
                   </span>
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label="Delete adjustment"
-                    onClick={() => remove.mutate(a.id)}
-                  >
-                    <Trash2Icon className="size-3.5" />
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+                </span>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="Delete adjustment"
+                  onClick={() => remove.mutate(a.id)}
+                >
+                  <Trash2Icon className="size-3.5" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   )

@@ -1,12 +1,15 @@
 import { useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
+import { SelectField, TextField } from '@/components/form'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { fmt, inr } from '@/lib/format'
+import { goalSchema } from '@/lib/schemas'
 import {
   currentPeriodProgress,
   evaluateGoals,
@@ -88,82 +91,30 @@ function Gauge({ pct, size = 52 }) {
 
 const BLANK = { metric: 'netPnl', operator: 'gt', target: '', mode: 'continuous', label: '' }
 
-function AddGoalForm({ period, onAdd, saving }) {
-  const [draft, setDraft] = useState(BLANK)
-  const set = (patch) => setDraft((d) => ({ ...d, ...patch }))
+const asOptions = (record) => Object.entries(record).map(([value, v]) => ({ value, label: v.label }))
 
-  const submit = (e) => {
-    e.preventDefault()
-    const target = Number(draft.target)
-    if (draft.target === '' || Number.isNaN(target)) {
-      toast.error('Enter a numeric target')
-      return
-    }
-    onAdd({
-      id: crypto.randomUUID(),
-      metric: draft.metric,
-      operator: draft.operator,
-      target,
-      period,
-      mode: draft.mode,
-      label: draft.label.trim() || null,
-    })
-    setDraft(BLANK)
+function AddGoalForm({ period, onAdd, saving }) {
+  const form = useForm({ resolver: zodResolver(goalSchema), defaultValues: BLANK })
+
+  const submit = (values) => {
+    onAdd({ id: crypto.randomUUID(), ...values, period })
+    form.reset(BLANK)
   }
 
   return (
-    <form onSubmit={submit} className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-3">
-      <span className="text-sm text-muted-foreground">Keep my {PERIODS[period].label.toLowerCase()}</span>
-      <Select value={draft.metric} onValueChange={(metric) => set({ metric })}>
-        <SelectTrigger size="sm" className="w-48">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {Object.entries(GOAL_METRICS).map(([key, m]) => (
-            <SelectItem key={key} value={key}>
-              {m.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select value={draft.operator} onValueChange={(operator) => set({ operator })}>
-        <SelectTrigger size="sm" className="w-28">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {Object.entries(OPERATORS).map(([key, o]) => (
-            <SelectItem key={key} value={key}>
-              {o.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Input
-        value={draft.target}
-        onChange={(e) => set({ target: e.target.value })}
-        placeholder="Target"
-        inputMode="decimal"
-        className="w-28"
-      />
-      <Select value={draft.mode} onValueChange={(mode) => set({ mode })}>
-        <SelectTrigger size="sm" className="w-40">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {Object.entries(MODES).map(([key, m]) => (
-            <SelectItem key={key} value={key}>
-              {m.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Input
-        value={draft.label}
-        onChange={(e) => set({ label: e.target.value })}
-        placeholder="Name (optional)"
-        className="w-44"
-      />
-      <Button type="submit" size="sm" disabled={saving}>
+    <form
+      onSubmit={form.handleSubmit(submit)}
+      className="flex flex-wrap items-start gap-2 rounded-xl border bg-card p-3"
+    >
+      <span className="mt-1.5 text-sm text-muted-foreground">
+        Keep my {PERIODS[period].label.toLowerCase()}
+      </span>
+      <SelectField form={form} name="metric" options={asOptions(GOAL_METRICS)} className="w-48" />
+      <SelectField form={form} name="operator" options={asOptions(OPERATORS)} className="w-28" />
+      <TextField form={form} name="target" placeholder="Target" inputMode="decimal" className="w-28" />
+      <SelectField form={form} name="mode" options={asOptions(MODES)} className="w-40" />
+      <TextField form={form} name="label" placeholder="Name (optional)" className="w-44" />
+      <Button type="submit" size="sm" disabled={saving} className="mt-0.5">
         Add goal
       </Button>
     </form>

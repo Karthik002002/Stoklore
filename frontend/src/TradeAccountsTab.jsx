@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react'
+import { Controller, useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { PlusIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
+import { Field, SelectField, TextAreaField, TextField } from '@/components/form'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { formatDate, inr } from '@/lib/format'
+import { balanceAdjustmentSchema, tradeAccountSchema } from '@/lib/schemas'
 import { accountBalance, positionSizeCap, tradesForAccount } from '@/lib/tradeAccounts'
 import {
   createBalanceAdjustment,
@@ -28,7 +32,10 @@ const BLANK = {
   max_position_count: '',
 }
 
-const numeric = (v) => (v === '' || v == null ? null : Number(v))
+const ADJUSTMENT_TYPE_OPTIONS = [
+  { value: 'add', label: 'Deposit' },
+  { value: 'subtract', label: 'Withdrawal' },
+]
 
 const formFrom = (a) => ({
   name: a.name,
@@ -40,36 +47,23 @@ const formFrom = (a) => ({
   max_position_count: a.max_position_count != null ? String(a.max_position_count) : '',
 })
 
-function Field({ label, hint, children }) {
-  return (
-    <div className="space-y-1">
-      <label className="text-xs text-muted-foreground">{label}</label>
-      {children}
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-    </div>
-  )
-}
+const SIZE_TYPE_OPTIONS = [
+  { value: 'currency', label: '₹' },
+  { value: 'percentage', label: '% of balance' },
+]
 
 function AccountForm({ account, onDone }) {
   const queryClient = useQueryClient()
-  const [form, setForm] = useState(() => (account ? formFrom(account) : BLANK))
-  const set = (key) => (value) => setForm((f) => ({ ...f, [key]: value }))
+  const form = useForm({
+    resolver: zodResolver(tradeAccountSchema),
+    defaultValues: account ? formFrom(account) : BLANK,
+  })
 
-  useEffect(() => setForm(account ? formFrom(account) : BLANK), [account])
+  useEffect(() => form.reset(account ? formFrom(account) : BLANK), [account, form])
 
   const save = useMutation({
-    mutationFn: () => {
-      const payload = {
-        name: form.name.trim(),
-        strategy: form.strategy.trim() || null,
-        strategy_explanation: form.strategy_explanation.trim() || null,
-        opening_balance: Number(form.opening_balance || 0),
-        max_position_size: numeric(form.max_position_size),
-        max_position_size_type: form.max_position_size_type,
-        max_position_count: numeric(form.max_position_count),
-      }
-      return account ? updateTradeAccount(account.id, payload) : createTradeAccount(payload)
-    },
+    mutationFn: (payload) =>
+      account ? updateTradeAccount(account.id, payload) : createTradeAccount(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tradeAccounts'] })
       toast.success(account ? 'Account updated' : 'Account created')
@@ -79,46 +73,41 @@ function AccountForm({ account, onDone }) {
   })
 
   return (
-    <div className="space-y-3 rounded-xl border bg-card p-3">
+    <form
+      onSubmit={form.handleSubmit((values) => save.mutate(values))}
+      className="space-y-3 rounded-xl border bg-card p-3"
+    >
       <div className="grid grid-cols-2 gap-2">
-        <Field label="Account name">
-          <Input
-            value={form.name}
-            onChange={(e) => set('name')(e.target.value)}
-            placeholder="e.g. Swing account"
-          />
-        </Field>
-        <Field label="Opening balance (wallet)">
-          <Input
-            type="number"
-            step="0.01"
-            value={form.opening_balance}
-            onChange={(e) => set('opening_balance')(e.target.value)}
-          />
-        </Field>
+        <TextField form={form} name="name" label="Account name" placeholder="e.g. Swing account" />
+        <TextField
+          form={form}
+          name="opening_balance"
+          label="Opening balance (wallet)"
+          type="number"
+          step="0.01"
+        />
       </div>
 
-      <Field label="Strategy" hint="One strategy per account - a mixed account can't be judged as a system.">
-        <Input
-          value={form.strategy}
-          onChange={(e) => set('strategy')(e.target.value)}
-          placeholder="e.g. EMA pullback continuation"
-        />
-      </Field>
+      <TextField
+        form={form}
+        name="strategy"
+        label="Strategy"
+        placeholder="e.g. EMA pullback continuation"
+        hint="One strategy per account - a mixed account can't be judged as a system."
+      />
 
-      <Field label="Strategy explanation">
-        <textarea
-          value={form.strategy_explanation}
-          onChange={(e) => set('strategy_explanation')(e.target.value)}
-          rows={3}
-          placeholder="Entry trigger, invalidation, what makes this setup valid…"
-          className="w-full rounded-md border bg-transparent px-3 py-2 text-sm"
-        />
-      </Field>
+      <TextAreaField
+        form={form}
+        name="strategy_explanation"
+        label="Strategy explanation"
+        rows={3}
+        placeholder="Entry trigger, invalidation, what makes this setup valid…"
+      />
 
       <div className="grid grid-cols-2 gap-2">
         <Field
           label="Max position size"
+          error={form.formState.errors.max_position_size}
           hint="Warns on the trade form when exceeded; never blocks the trade."
         >
           <div className="flex gap-2">
@@ -126,41 +115,49 @@ function AccountForm({ account, onDone }) {
               type="number"
               step="0.01"
               min="0"
-              value={form.max_position_size}
-              onChange={(e) => set('max_position_size')(e.target.value)}
               placeholder="No cap"
+              {...form.register('max_position_size')}
             />
-            <Select value={form.max_position_size_type} onValueChange={set('max_position_size_type')}>
-              <SelectTrigger className="w-28">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="currency">₹</SelectItem>
-                <SelectItem value="percentage">% of balance</SelectItem>
-              </SelectContent>
-            </Select>
+            <Controller
+              control={form.control}
+              name="max_position_size_type"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger className="w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SIZE_TYPE_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
           </div>
         </Field>
-        <Field label="Max open positions" hint="How many trades may be open on this account at once.">
-          <Input
-            type="number"
-            min="0"
-            value={form.max_position_count}
-            onChange={(e) => set('max_position_count')(e.target.value)}
-            placeholder="No cap"
-          />
-        </Field>
+        <TextField
+          form={form}
+          name="max_position_count"
+          label="Max open positions"
+          type="number"
+          min="0"
+          placeholder="No cap"
+          hint="How many trades may be open on this account at once."
+        />
       </div>
 
       <div className="flex gap-2">
-        <Button size="sm" disabled={!form.name.trim() || save.isPending} onClick={() => save.mutate()}>
+        <Button type="submit" size="sm" disabled={save.isPending}>
           {account ? 'Save changes' : 'Create account'}
         </Button>
-        <Button size="sm" variant="ghost" onClick={onDone}>
+        <Button type="button" size="sm" variant="ghost" onClick={onDone}>
           Cancel
         </Button>
       </div>
-    </div>
+    </form>
   )
 }
 
@@ -168,27 +165,28 @@ function AccountForm({ account, onDone }) {
 // dialog uses - tagged with account_id so each account's wallet stands on its own.
 function Transactions({ accountId, adjustments }) {
   const queryClient = useQueryClient()
-  const [amount, setAmount] = useState('')
-  const [type, setType] = useState('add')
-  const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
-  const [reason, setReason] = useState('')
+  const form = useForm({
+    resolver: zodResolver(balanceAdjustmentSchema),
+    defaultValues: { amount: '', type: 'add', date: new Date().toISOString().slice(0, 10), reason: '' },
+  })
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['balanceAdjustments'] })
 
   const create = useMutation({
-    mutationFn: () =>
+    mutationFn: (values) =>
       createBalanceAdjustment({
-        amount: Number(amount),
-        type,
-        reason: reason.trim() || null,
-        adjusted_at: date ? new Date(date).toISOString() : null,
+        amount: values.amount,
+        type: values.type,
+        reason: values.reason,
+        adjusted_at: values.date ? new Date(values.date).toISOString() : null,
         account_id: accountId,
       }),
-    onSuccess: () => {
+    onSuccess: (_data, values) => {
       invalidate()
-      setAmount('')
-      setReason('')
-      toast.success(type === 'add' ? 'Deposit recorded' : 'Withdrawal recorded')
+      // Keep the type and date - recording several deposits in a row shouldn't mean re-picking
+      // both each time.
+      form.reset({ ...form.getValues(), amount: '', reason: '' })
+      toast.success(values.type === 'add' ? 'Deposit recorded' : 'Withdrawal recorded')
     },
     onError: (e) => toast.error(e.message),
   })
@@ -198,40 +196,26 @@ function Transactions({ accountId, adjustments }) {
   return (
     <div className="space-y-2 border-t pt-3">
       <p className="text-xs font-medium">Transactions</p>
-      <div className="flex flex-wrap items-center gap-2">
-        <Select value={type} onValueChange={setType}>
-          <SelectTrigger size="sm" className="w-32">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="add">Deposit</SelectItem>
-            <SelectItem value="subtract">Withdrawal</SelectItem>
-          </SelectContent>
-        </Select>
-        <Input
+      <form
+        onSubmit={form.handleSubmit((values) => create.mutate(values))}
+        className="flex flex-wrap items-start gap-2"
+      >
+        <SelectField form={form} name="type" options={ADJUSTMENT_TYPE_OPTIONS} className="w-32" />
+        <TextField
+          form={form}
+          name="amount"
           type="number"
           step="0.01"
           min="0"
           placeholder="Amount ₹"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
           className="w-28"
         />
-        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-36" />
-        <Input
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          placeholder="Reason (optional)"
-          className="w-44"
-        />
-        <Button
-          size="sm"
-          disabled={!amount || Number(amount) <= 0 || create.isPending}
-          onClick={() => create.mutate()}
-        >
+        <TextField form={form} name="date" type="date" className="w-36" />
+        <TextField form={form} name="reason" placeholder="Reason (optional)" className="w-44" />
+        <Button type="submit" size="sm" disabled={create.isPending}>
           Add
         </Button>
-      </div>
+      </form>
       {adjustments.length > 0 && (
         <div className="max-h-36 space-y-1 overflow-y-auto">
           {adjustments.map((a) => (

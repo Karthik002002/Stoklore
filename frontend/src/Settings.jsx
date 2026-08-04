@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { IconSettings } from '@tabler/icons-react'
@@ -20,6 +22,8 @@ import SourceSelect from '@/components/SourceSelect'
 import StockMasterCombobox from '@/components/StockMasterCombobox'
 import TagInput from '@/components/TagInput'
 import { Badge } from '@/components/ui/badge'
+import { TextAreaField, TextField } from '@/components/form'
+import { watchRuleSchema } from '@/lib/schemas'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -42,7 +46,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
-import { Textarea } from '@/components/ui/textarea'
 import {
   addStock,
   checkWatchRule,
@@ -424,12 +427,16 @@ function WatchRulesTab() {
   const queryClient = useQueryClient()
   const { data: rules } = useQuery({ queryKey: ['watchRules'], queryFn: getWatchRules })
 
-  const [name, setName] = useState('')
-  const [text, setText] = useState('')
+  // Only `results` stays on useState - it's fetched check output keyed by rule id, not form input.
   const [results, setResults] = useState({})
 
+  const form = useForm({
+    resolver: zodResolver(watchRuleSchema),
+    defaultValues: { name: '', criteria: '' },
+  })
+
   const create = useMutation({
-    mutationFn: createWatchRule,
+    mutationFn: ({ name, criteria }) => createWatchRule({ name, text: criteria }),
     onSuccess: ({ criteria }) => {
       queryClient.invalidateQueries({ queryKey: ['watchRules'] })
       const parts = []
@@ -439,8 +446,7 @@ function WatchRulesTab() {
       if (criteria.no_negative_events_days != null)
         parts.push(`no negative events in ${criteria.no_negative_events_days}d`)
       toast.success('Watch rule saved', { description: parts.join(' · ') })
-      setName('')
-      setText('')
+      form.reset()
     },
     onError: (e) => toast.error(e.message),
   })
@@ -459,19 +465,13 @@ function WatchRulesTab() {
     }
   }
 
-  const submit = (e) => {
-    e.preventDefault()
-    if (!name.trim() || !text.trim() || create.isPending) return
-    create.mutate({ name: name.trim(), text: text.trim() })
-  }
-
   return (
     <div className="space-y-4">
-      <form onSubmit={submit} className="space-y-2">
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Rule name, e.g. buy dip" />
-        <Textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
+      <form onSubmit={form.handleSubmit((values) => create.mutate(values))} className="space-y-2">
+        <TextField form={form} name="name" placeholder="Rule name, e.g. buy dip" />
+        <TextAreaField
+          form={form}
+          name="criteria"
           placeholder="P/E under 25 AND no negative-sentiment event in last 14 days AND EMA20 above EMA50"
           rows={3}
         />
@@ -482,7 +482,7 @@ function WatchRulesTab() {
           <code>/rule name</code> checks every watchlisted stock while <code>/rule name SYMBOL</code> checks
           just one.
         </p>
-        <Button type="submit" size="sm" disabled={!name.trim() || !text.trim() || create.isPending}>
+        <Button type="submit" size="sm" disabled={create.isPending}>
           {create.isPending ? 'Parsing…' : 'Add rule'}
         </Button>
       </form>

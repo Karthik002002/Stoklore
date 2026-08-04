@@ -178,7 +178,12 @@ export default function BulkTradesDialog({ open, onOpenChange, onSaved }) {
             result:
               exitPrice == null
                 ? null
-                : autoResult({ direction: r.direction, entry_price: entryPrice, exit_price: exitPrice }),
+                : autoResult({
+                    direction: r.direction,
+                    quantity: numeric(r.quantity),
+                    entry_price: entryPrice,
+                    exit_price: exitPrice,
+                  }),
             emotion: null,
             tags: ['bulk-import'],
             notes: null,

@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Controller, useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { ClapperboardIcon, DownloadIcon, ImagesIcon, PlusIcon, Trash2Icon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import BulkTradesDialog from './BulkTradesDialog'
+import { Field, SelectField, TagField, TextField } from '@/components/form'
 import ImageLightbox from '@/components/ImageLightbox'
 import SymbolCombobox from '@/components/SymbolCombobox'
-import TagInput from '@/components/TagInput'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -20,6 +22,7 @@ import {
   autoResult,
   EMOTIONS,
   expectedR,
+  NEUTRAL_PNL_BAND,
   NSE_SESSIONS,
   RESULT_META,
   riskStatus,
@@ -28,6 +31,7 @@ import {
   tradeRR,
   tradeReturnPct,
 } from '@/lib/manualTrades'
+import { tradeSchema } from '@/lib/schemas'
 import { accountBalance, capWarnings, tradesForAccount } from '@/lib/tradeAccounts'
 import {
   createManualTrade,
@@ -101,8 +105,18 @@ function formFromTrade(t) {
 
 const numeric = (v) => (v === '' || v == null ? null : Number(v))
 
+const DIRECTION_OPTIONS = [
+  { value: 'long', label: 'Buy (Long)' },
+  { value: 'short', label: 'Sell (Short)' },
+]
+const RESULT_OPTIONS = [
+  { value: 'profit', label: 'Profit' },
+  { value: 'loss', label: 'Loss' },
+  { value: 'neutral', label: 'Neutral' },
+]
+const EMOTION_OPTIONS = EMOTIONS.map((e) => ({ value: e, label: e }))
+
 function TradeFormDialog({ open, onOpenChange, trade, onSaved, defaultAccountId, trades }) {
-  const [form, setForm] = useState(emptyForm)
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const { data: backtestSettings } = useQuery({
     queryKey: ['manualBacktestSettings'],
@@ -114,58 +128,76 @@ function TradeFormDialog({ open, onOpenChange, trade, onSaved, defaultAccountId,
     queryFn: getBalanceAdjustments,
   })
 
-  useEffect(() => {
-    if (open) setForm(trade ? formFromTrade(trade) : emptyForm(defaultAccountId ?? null))
-  }, [open, trade, defaultAccountId])
+  const form = useForm({ resolver: zodResolver(tradeSchema), defaultValues: emptyForm() })
 
-  const account = accounts.find((a) => a.id === form.accountId) ?? null
+  useEffect(() => {
+    if (open) form.reset(trade ? formFromTrade(trade) : emptyForm(defaultAccountId ?? null))
+  }, [open, trade, defaultAccountId, form])
+
+  // Live values the rest of the dialog reacts to (cap warnings, the auto-computed result, whether
+  // the exit field is disabled). watch() re-renders on change the same way the old useState did.
+  const [accountId, quantity, entryPrice, exitPrice, direction, isOpen, resultManual, result] = form.watch([
+    'accountId',
+    'quantity',
+    'entryPrice',
+    'exitPrice',
+    'direction',
+    'isOpen',
+    'resultManual',
+    'result',
+  ])
+
+  const account = accounts.find((a) => a.id === accountId) ?? null
   // Advisory caps: what this position would cost against what the account allows, and how many
   // positions are already open on it (excluding this one when editing).
   const warnings = capWarnings(account, {
-    positionValue: (numeric(form.quantity) ?? 0) * (numeric(form.entryPrice) ?? 0),
-    openCount: tradesForAccount(trades, form.accountId).filter((t) => t.is_open && t.id !== trade?.id).length,
+    positionValue: (numeric(quantity) ?? 0) * (numeric(entryPrice) ?? 0),
+    openCount: tradesForAccount(trades, accountId).filter((t) => t.is_open && t.id !== trade?.id).length,
     balance: accountBalance(
       account,
-      tradesForAccount(trades, form.accountId),
-      adjustments.filter((a) => a.account_id === form.accountId),
+      tradesForAccount(trades, accountId),
+      adjustments.filter((a) => a.account_id === accountId),
     ),
   })
 
-  const set = (key) => (value) => setForm((f) => ({ ...f, [key]: value }))
-
+  // Unlike the Bar Replay close dialog (where the exit price is fixed before the dialog opens),
+  // entry/exit/quantity are all live here - so an auto-computed result would keep overwriting a
+  // hand-picked one. `resultManual` latches once the user chooses, and stops the recompute.
   const computedResult = autoResult({
-    direction: form.direction,
-    quantity: numeric(form.quantity),
-    entry_price: numeric(form.entryPrice),
-    exit_price: form.isOpen ? null : numeric(form.exitPrice),
+    direction,
+    quantity: numeric(quantity),
+    entry_price: numeric(entryPrice),
+    exit_price: isOpen ? null : numeric(exitPrice),
   })
-  const effectiveResult = form.resultManual ? form.result : computedResult
+  const effectiveResult = resultManual ? result : computedResult
 
-  const valid =
-    form.symbol.trim() &&
-    numeric(form.quantity) > 0 &&
-    numeric(form.entryPrice) > 0 &&
-    (form.isOpen || numeric(form.exitPrice) != null)
+  const accountOptions = [
+    { value: NO_ACCOUNT, label: 'No account' },
+    ...accounts.map((a) => ({
+      value: String(a.id),
+      label: `${a.name}${a.strategy ? ` · ${a.strategy}` : ''}`,
+    })),
+  ]
 
   const save = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (values) => {
       const payload = {
-        symbol: form.symbol.trim().toUpperCase(),
-        direction: form.direction,
-        setup: form.setup.trim() || null,
-        quantity: numeric(form.quantity),
-        entry_price: numeric(form.entryPrice),
-        exit_price: form.isOpen ? null : numeric(form.exitPrice),
-        stop_loss: numeric(form.stopLoss),
-        target: numeric(form.target),
-        ideal_risk_amount: numeric(form.idealRiskAmount),
-        is_open: form.isOpen,
-        result: form.isOpen ? null : effectiveResult,
-        emotion: form.emotion || null,
-        tags: form.tags,
+        symbol: values.symbol,
+        direction: values.direction,
+        setup: values.setup,
+        quantity: values.quantity,
+        entry_price: values.entryPrice,
+        exit_price: values.isOpen ? null : values.exitPrice,
+        stop_loss: values.stopLoss,
+        target: values.target,
+        ideal_risk_amount: values.idealRiskAmount,
+        is_open: values.isOpen,
+        result: values.isOpen ? null : values.resultManual ? values.result : computedResult,
+        emotion: values.emotion || null,
+        tags: values.tags,
         notes: trade?.notes ?? null,
-        traded_at: form.tradedAt ? new Date(form.tradedAt).toISOString() : null,
-        account_id: form.accountId,
+        traded_at: values.tradedAt ? new Date(values.tradedAt).toISOString() : null,
+        account_id: values.accountId,
       }
       let id
       if (trade) {
@@ -174,7 +206,7 @@ function TradeFormDialog({ open, onOpenChange, trade, onSaved, defaultAccountId,
       } else {
         id = (await createManualTrade(payload)).id
       }
-      if (form.imageFile) await uploadManualTradeImage(id, form.imageFile)
+      if (values.imageFile) await uploadManualTradeImage(id, values.imageFile)
     },
     onSuccess: () => {
       toast.success(trade ? 'Trade updated' : 'Trade added')
@@ -191,42 +223,28 @@ function TradeFormDialog({ open, onOpenChange, trade, onSaved, defaultAccountId,
           <DialogHeader>
             <DialogTitle>{trade ? 'Edit trade' : 'Add trade'}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
+          <form onSubmit={form.handleSubmit((values) => save.mutate(values))} className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Date</label>
-                <Input
-                  type="datetime-local"
-                  value={form.tradedAt}
-                  onChange={(e) => set('tradedAt')(e.target.value)}
+              <TextField form={form} name="tradedAt" label="Date" type="datetime-local" />
+              <Field label="Symbol" error={form.formState.errors.symbol}>
+                <Controller
+                  control={form.control}
+                  name="symbol"
+                  render={({ field }) => (
+                    <SymbolCombobox value={field.value} onChange={field.onChange} className="w-full" />
+                  )}
                 />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Symbol</label>
-                <SymbolCombobox value={form.symbol} onChange={set('symbol')} className="w-full" />
-              </div>
+              </Field>
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Account</label>
-              <Select
-                value={form.accountId == null ? NO_ACCOUNT : String(form.accountId)}
-                onValueChange={(v) => set('accountId')(v === NO_ACCOUNT ? null : Number(v))}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NO_ACCOUNT}>No account</SelectItem>
-                  {accounts.map((a) => (
-                    <SelectItem key={a.id} value={String(a.id)}>
-                      {a.name}
-                      {a.strategy ? ` · ${a.strategy}` : ''}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <SelectField
+              form={form}
+              name="accountId"
+              label="Account"
+              options={accountOptions}
+              nullValue={NO_ACCOUNT}
+              parse={Number}
+            />
 
             {warnings.map((w) => (
               <p key={w} className="rounded-md bg-amber-500/10 px-2 py-1.5 text-xs text-amber-600">
@@ -235,36 +253,17 @@ function TradeFormDialog({ open, onOpenChange, trade, onSaved, defaultAccountId,
             ))}
 
             <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Direction</label>
-                <Select value={form.direction} onValueChange={set('direction')}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="long">Buy (Long)</SelectItem>
-                    <SelectItem value="short">Sell (Short)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Quantity</label>
-                <Input
-                  type="number"
-                  min="0"
-                  value={form.quantity}
-                  onChange={(e) => set('quantity')(e.target.value)}
-                />
-              </div>
+              <SelectField form={form} name="direction" label="Direction" options={DIRECTION_OPTIONS} />
+              <TextField form={form} name="quantity" label="Quantity" type="number" min="0" />
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Setup</label>
-                <Input
+              <div>
+                <TextField
+                  form={form}
+                  name="setup"
+                  label="Setup"
                   list="setup-suggestions"
-                  value={form.setup}
-                  onChange={(e) => set('setup')(e.target.value)}
                   placeholder="e.g. Breakout"
                 />
                 <datalist id="setup-suggestions">
@@ -273,134 +272,97 @@ function TradeFormDialog({ open, onOpenChange, trade, onSaved, defaultAccountId,
                   ))}
                 </datalist>
               </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Ideal risk ₹</label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={form.idealRiskAmount}
-                  onChange={(e) => set('idealRiskAmount')(e.target.value)}
-                  placeholder="Planned risk for this setup"
-                />
-              </div>
+              <TextField
+                form={form}
+                name="idealRiskAmount"
+                label="Ideal risk ₹"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Planned risk for this setup"
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Entry ₹</label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={form.entryPrice}
-                  onChange={(e) => set('entryPrice')(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Exit ₹{form.isOpen ? ' (open)' : ''}</label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={form.exitPrice}
-                  disabled={form.isOpen}
-                  onChange={(e) => set('exitPrice')(e.target.value)}
-                />
-              </div>
+              <TextField form={form} name="entryPrice" label="Entry ₹" type="number" step="0.01" />
+              <TextField
+                form={form}
+                name="exitPrice"
+                label={`Exit ₹${isOpen ? ' (open)' : ''}`}
+                type="number"
+                step="0.01"
+                disabled={isOpen}
+              />
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Stop loss ₹</label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={form.stopLoss}
-                  onChange={(e) => set('stopLoss')(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Target ₹</label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={form.target}
-                  onChange={(e) => set('target')(e.target.value)}
-                />
-              </div>
+              <TextField form={form} name="stopLoss" label="Stop loss ₹" type="number" step="0.01" />
+              <TextField form={form} name="target" label="Target ₹" type="number" step="0.01" />
             </div>
 
             <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={form.isOpen}
-                onChange={(e) => setForm((f) => ({ ...f, isOpen: e.target.checked }))}
-              />
+              <input type="checkbox" {...form.register('isOpen')} />
               Trade still open (exit not required)
             </label>
 
-            {!form.isOpen && (
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Result</label>
-                <Select
-                  value={effectiveResult ?? ''}
-                  onValueChange={(v) => setForm((f) => ({ ...f, result: v, resultManual: true }))}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="—" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="profit">Profit</SelectItem>
-                    <SelectItem value="loss">Loss</SelectItem>
-                    <SelectItem value="neutral">Neutral</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            {!isOpen && (
+              <SelectField
+                form={form}
+                name="result"
+                label="Result"
+                options={RESULT_OPTIONS}
+                placeholder="—"
+                // Shows the auto-computed result until the user picks one, then latches to theirs.
+                value={effectiveResult}
+                onSelect={() => form.setValue('resultManual', true)}
+                hint={
+                  resultManual
+                    ? 'Set by hand — no longer follows the P&L.'
+                    : `From P&L (±${inr(NEUTRAL_PNL_BAND)} of flat counts as neutral).`
+                }
+              />
             )}
 
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Emotion</label>
-              <Select value={form.emotion} onValueChange={set('emotion')}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="How did it feel?" />
-                </SelectTrigger>
-                <SelectContent>
-                  {EMOTIONS.map((e) => (
-                    <SelectItem key={e} value={e}>
-                      {e}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <SelectField
+              form={form}
+              name="emotion"
+              label="Emotion"
+              options={EMOTION_OPTIONS}
+              placeholder="How did it feel?"
+            />
 
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Tags (setup, mistakes, anything)</label>
-              <TagInput value={form.tags} onChange={set('tags')} />
-            </div>
+            <TagField form={form} name="tags" label="Tags (setup, mistakes, anything)" />
 
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Trade screenshot</label>
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/webp,image/gif"
-                onChange={(e) => set('imageFile')(e.target.files?.[0] ?? null)}
-                className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:text-foreground"
+            <Field label="Trade screenshot">
+              <Controller
+                control={form.control}
+                name="imageFile"
+                render={({ field }) => (
+                  <>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      onChange={(e) => field.onChange(e.target.files?.[0] ?? null)}
+                      className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:text-foreground"
+                    />
+                    {trade?.image_url && !field.value && (
+                      <img
+                        src={trade.image_url}
+                        alt="Trade"
+                        className="mt-2 max-h-32 cursor-pointer rounded-lg border"
+                        onClick={() => setLightboxOpen(true)}
+                      />
+                    )}
+                  </>
+                )}
               />
-              {trade?.image_url && !form.imageFile && (
-                <img
-                  src={trade.image_url}
-                  alt="Trade"
-                  className="mt-2 max-h-32 cursor-pointer rounded-lg border"
-                  onClick={() => setLightboxOpen(true)}
-                />
-              )}
-            </div>
+            </Field>
 
-            <Button className="w-full" disabled={!valid || save.isPending} onClick={() => save.mutate()}>
+            <Button type="submit" className="w-full" disabled={save.isPending}>
               {save.isPending && <Spinner className="size-4" />}
               {trade ? 'Save changes' : 'Add trade'}
             </Button>
-          </div>
+          </form>
         </DialogContent>
       </Dialog>
       <ImageLightbox src={trade?.image_url} open={lightboxOpen} onOpenChange={setLightboxOpen} />

@@ -1,16 +1,24 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import TagInput from '@/components/TagInput'
+import { SelectField, TagField, TextAreaField } from '@/components/form'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
-import { Textarea } from '@/components/ui/textarea'
 import { inr } from '@/lib/format'
-import { autoResult, EMOTIONS, tradePnl } from '@/lib/manualTrades'
+import { autoResult, EMOTIONS, NEUTRAL_PNL_BAND, tradePnl } from '@/lib/manualTrades'
+import { closeTradeSchema } from '@/lib/schemas'
 import { createManualTrade, uploadManualTradeImage } from '@/services/api'
 import { CLOSE_REASON_LABEL } from './orderEngine'
+
+const RESULT_OPTIONS = [
+  { value: 'profit', label: 'Profit' },
+  { value: 'loss', label: 'Loss' },
+  { value: 'neutral', label: 'Neutral' },
+]
+const EMOTION_OPTIONS = EMOTIONS.map((e) => ({ value: e, label: e }))
 
 export default function CloseTradeDialog({
   open,
@@ -24,21 +32,10 @@ export default function CloseTradeDialog({
   accountId,
   onClosed,
 }) {
-  const [result, setResult] = useState(null)
-  const [resultManual, setResultManual] = useState(false)
-  const [emotion, setEmotion] = useState('')
-  const [tags, setTags] = useState([])
-  const [notes, setNotes] = useState('')
-
-  useEffect(() => {
-    if (open) {
-      setResult(null)
-      setResultManual(false)
-      setEmotion('')
-      setTags([])
-      setNotes('')
-    }
-  }, [open])
+  const form = useForm({
+    resolver: zodResolver(closeTradeSchema),
+    defaultValues: { result: null, emotion: null, tags: [], notes: '' },
+  })
 
   // A laddered stop-loss/target leg only closes its own slice of the position, not the order's
   // full quantity - falls back to the order's (remaining) quantity for a plain full/manual close.
@@ -50,10 +47,7 @@ export default function CloseTradeDialog({
   // (no reason to attribute to either) - informational only, same as before laddering existed.
   const stopLossPrice = reason === 'stop_loss' ? leg?.price : (order?.stopLosses?.[0]?.price ?? null)
   const targetPrice = reason === 'target' ? leg?.price : (order?.targets?.[0]?.price ?? null)
-  const computedResult = order
-    ? autoResult({ direction: order.direction, entry_price: order.entryPrice, exit_price: exitPrice })
-    : null
-  const effectiveResult = resultManual ? result : computedResult
+
   const pnl = order
     ? tradePnl({
         direction: order.direction,
@@ -63,8 +57,26 @@ export default function CloseTradeDialog({
       })
     : null
 
+  // `quantity` matters here: autoResult multiplies by it to get ₹ P&L, and the neutral band is in
+  // rupees. Omitting it (as this dialog used to) makes tradePnl return NaN, which classified
+  // every single replay trade as "neutral" regardless of how it actually went.
+  const computedResult = order
+    ? autoResult({
+        direction: order.direction,
+        quantity,
+        entry_price: order.entryPrice,
+        exit_price: exitPrice,
+      })
+    : null
+
+  // Seed the Result field with what the P&L says the moment the dialog opens. The user can still
+  // override it before saving; nothing recomputes underneath them afterwards.
+  useEffect(() => {
+    if (open) form.reset({ result: computedResult, emotion: null, tags: [], notes: '' })
+  }, [open, computedResult, form])
+
   const save = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (values) => {
       const { id } = await createManualTrade({
         symbol,
         direction: order.direction,
@@ -74,10 +86,10 @@ export default function CloseTradeDialog({
         stop_loss: stopLossPrice,
         target: targetPrice,
         is_open: false,
-        result: effectiveResult,
-        emotion: emotion || null,
-        tags: [...tags, 'replay'],
-        notes: notes || null,
+        result: values.result,
+        emotion: values.emotion || null,
+        tags: [...values.tags, 'replay'],
+        notes: values.notes || null,
         // The replay bar's date is simulated history, not when this trade was actually journaled -
         // logging it under the real wall-clock time keeps the journal's dates meaningful (e.g. for
         // the overview's calendar) regardless of which historical period was being replayed.
@@ -112,7 +124,7 @@ export default function CloseTradeDialog({
             )}
           </DialogTitle>
         </DialogHeader>
-        <div className="space-y-3">
+        <form onSubmit={form.handleSubmit((values) => save.mutate(values))} className="space-y-3">
           {reason && reason !== 'manual' && (
             <p className="text-xs font-medium text-muted-foreground">{CLOSE_REASON_LABEL[reason]}</p>
           )}
@@ -120,67 +132,47 @@ export default function CloseTradeDialog({
             <span>
               {quantity} @ {inr(order.entryPrice)} → {inr(exitPrice)}
             </span>
-            <span className={`font-semibold tabular-nums ${pnl >= 0 ? 'text-up' : 'text-down'}`}>
+            <span
+              className={`font-semibold tabular-nums ${
+                computedResult === 'neutral' ? '' : pnl >= 0 ? 'text-up' : 'text-down'
+              }`}
+            >
               {inr(pnl)}
             </span>
           </div>
 
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Result</label>
-            <Select
-              value={effectiveResult ?? ''}
-              onValueChange={(v) => {
-                setResult(v)
-                setResultManual(true)
-              }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="—" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="profit">Profit</SelectItem>
-                <SelectItem value="loss">Loss</SelectItem>
-                <SelectItem value="neutral">Neutral</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <SelectField
+            form={form}
+            name="result"
+            label="Result"
+            options={RESULT_OPTIONS}
+            placeholder="—"
+            hint={`Set from P&L — within ±${inr(NEUTRAL_PNL_BAND)} of flat counts as neutral. Override if you disagree.`}
+          />
 
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Emotion</label>
-            <Select value={emotion} onValueChange={setEmotion}>
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="How did it feel?" />
-              </SelectTrigger>
-              <SelectContent>
-                {EMOTIONS.map((e) => (
-                  <SelectItem key={e} value={e}>
-                    {e}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <SelectField
+            form={form}
+            name="emotion"
+            label="Emotion"
+            options={EMOTION_OPTIONS}
+            placeholder="How did it feel?"
+          />
 
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Tags</label>
-            <TagInput value={tags} onChange={setTags} />
-          </div>
+          <TagField form={form} name="tags" label="Tags" />
 
-          <div className="space-y-1">
-            <label className="text-xs text-muted-foreground">Notes</label>
-            <Textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              rows={3}
-              placeholder="What happened, what would you do differently…"
-            />
-          </div>
+          <TextAreaField
+            form={form}
+            name="notes"
+            label="Notes"
+            rows={3}
+            placeholder="What happened, what would you do differently…"
+          />
 
-          <Button className="w-full" disabled={save.isPending} onClick={() => save.mutate()}>
+          <Button type="submit" className="w-full" disabled={save.isPending}>
             {save.isPending && <Spinner className="size-4" />}
             Log trade
           </Button>
-        </div>
+        </form>
       </DialogContent>
     </Dialog>
   )

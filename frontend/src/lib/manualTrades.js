@@ -22,11 +22,22 @@ export function tradeRR(t) {
   return Math.round((reward / risk) * 100) / 100
 }
 
-export function autoResult(t) {
+// A trade that lands within this many rupees of flat is "neutral" rather than a token win/loss -
+// scratching out at +₹12 is not a winning trade, and counting it as one flatters the win rate and
+// every stat built on it. Exact-zero P&L (the old rule) essentially never happens, so before this
+// band nothing was ever classified neutral.
+export const NEUTRAL_PNL_BAND = 20
+
+export function autoResult(t, band = NEUTRAL_PNL_BAND) {
+  // The band is in rupees, so the classification is only meaningful with a real quantity. Left
+  // ungated, a missing one silently produces a flat trade rather than an unknown one: `undefined`
+  // multiplies to NaN (which fails both comparisons below and fell through to 'neutral'), while
+  // `null` and `''` both coerce to 0 and land dead-centre in the band. Unknown means unknown.
+  if (!(Number(t.quantity) > 0)) return null
   const pnl = tradePnl(t)
-  if (pnl == null) return null
-  if (pnl > 0) return 'profit'
-  if (pnl < 0) return 'loss'
+  if (pnl == null || !Number.isFinite(pnl)) return null
+  if (pnl > band) return 'profit'
+  if (pnl < -band) return 'loss'
   return 'neutral'
 }
 

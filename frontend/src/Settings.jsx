@@ -1052,6 +1052,7 @@ export default function Settings() {
             <TabsTab value="activity">Activity</TabsTab>
             <TabsTab value="backtesting">Backtesting</TabsTab>
             <TabsTab value="accounts">Trade accounts</TabsTab>
+            <TabsTab value="paper-accounts">Paper accounts</TabsTab>
           </TabsList>
           <div className="min-w-0 flex-1 overflow-y-auto pr-1">
             <TabsPanel value="model">
@@ -1082,7 +1083,10 @@ export default function Settings() {
               <ManualBacktestTab />
             </TabsPanel>
             <TabsPanel value="accounts">
-              <TradeAccountsTab />
+              <TradeAccountsTab kind="journal" />
+            </TabsPanel>
+            <TabsPanel value="paper-accounts">
+              <TradeAccountsTab kind="paper" />
             </TabsPanel>
           </div>
         </Tabs>

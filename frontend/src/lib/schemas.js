@@ -67,8 +67,15 @@ export const tradeSchema = z
     tags: z.array(z.string()),
     notes: optionalText,
     tradedAt: z.string().nullish(),
+    // Optional. Supplying it unlocks MAE/MFE on the trade (the backend needs a window to measure
+    // the excursion over); leaving it blank just means those two metrics stay unavailable.
+    exitedAt: z.string().nullish(),
     accountId: z.number().nullable(),
     imageFile: z.any().nullish(),
+  })
+  .refine((v) => !v.exitedAt || !v.tradedAt || v.exitedAt >= v.tradedAt, {
+    path: ['exitedAt'],
+    message: "Close date can't be before the trade was opened",
   })
   // A closed trade needs an exit price. Cross-field, so it lives here rather than on either field
   // alone - this is the one rule the old hand-rolled `valid` check already enforced.
@@ -136,3 +143,40 @@ export const goalSchema = z.object({
   mode: z.string().min(1),
   label: optionalText,
 })
+
+// --- Paper trading order ticket ------------------------------------------------------------------
+// A leg is one rung of a laddered exit: a price and the slice of the position it closes. One leg
+// covering the whole quantity is the ordinary single-stop/single-target case, so there's no
+// separate shape for it.
+const exitLeg = z.object({
+  id: z.string(),
+  price: positiveNumber('Exit price'),
+  qty: positiveNumber('Exit quantity'),
+})
+
+export const paperOrderSchema = z
+  .object({
+    accountId: z.number({ message: 'Pick an account' }),
+    symbol: z.string().trim().min(1, 'Symbol is required').toUpperCase(),
+    direction: z.enum(['long', 'short']),
+    orderType: z.enum(['market', 'limit']),
+    quantity: positiveNumber('Quantity'),
+    limitPrice: optionalNumber('Limit price'),
+    stopLosses: z.array(exitLeg),
+    targets: z.array(exitLeg),
+    notes: optionalText,
+  })
+  .refine((v) => v.orderType !== 'limit' || v.limitPrice != null, {
+    path: ['limitPrice'],
+    message: 'A limit order needs a limit price',
+  })
+  // Ladder legs may cover LESS than the position (the uncovered slice simply has no protection,
+  // exactly as if no stop had been set) but never more - that would close more shares than exist.
+  .refine((v) => v.stopLosses.reduce((s, l) => s + (l.qty || 0), 0) <= v.quantity, {
+    path: ['stopLosses'],
+    message: "Stop-loss legs add up to more than the position's quantity",
+  })
+  .refine((v) => v.targets.reduce((s, l) => s + (l.qty || 0), 0) <= v.quantity, {
+    path: ['targets'],
+    message: "Target legs add up to more than the position's quantity",
+  })

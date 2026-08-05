@@ -10,6 +10,7 @@ import threading
 import time
 import uuid
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import Literal
 
 import requests
@@ -28,13 +29,20 @@ import kite
 import llm
 import minute_data
 import price_sources
+import paper
 import prices
 import rules
 import scraper
+import trade_context
 import sentiment
 import stocks_master
 
 app = FastAPI()
+
+# The exchange's calendar, used wherever a timestamp has to be reduced to "which trading day was
+# this" - price_history is keyed by plain date, so anything matching a timestamptz against it has
+# to pick a timezone explicitly rather than let the server's locale decide.
+IST = ZoneInfo("Asia/Kolkata")
 db.init_schema()
 
 # Manual-trade screenshot uploads - local disk only, matches the app's "nothing leaves your
@@ -50,6 +58,9 @@ def _startup():
     llm.configure_litellm(db.get_litellm_base_url(), db.get_litellm_api_key())
     threading.Thread(target=_auto_event_scan_loop, daemon=True).start()
     backup.start()
+    # Watches open paper positions against live prices and fires simulated exits. Idempotent, and
+    # idles outside market hours - see paper.py.
+    paper.start(paper_price)
 
 
 # Every mutating request marks the database dirty; backup.py's background thread turns that into
@@ -532,6 +543,13 @@ class ManualTradeRequest(BaseModel):
     setup: str | None = None  # freeform strategy/setup label, e.g. "Breakout" - see manual-backtesting plan
     ideal_risk_amount: float | None = None  # planned risk in rupees, for Expected-R / risk-deviation
     account_id: int | None = None  # which trade_accounts row this belongs to; None = unassigned
+    # When the position was actually closed. Optional - without it MAE/MFE can't be bounded, so
+    # those two metrics are left out of the snapshot rather than guessed at.
+    exited_at: str | None = None
+    # Which market date the trade refers to, defaulting to traded_at. The two differ for Bar
+    # Replay, which journals under real wall-clock time while the trade itself happened in replayed
+    # history - without this, a 2022 replay would be scored against today's chart.
+    market_at: str | None = None
 
 
 class TradeAccountRequest(BaseModel):
@@ -720,6 +738,80 @@ def manual_trades(request: Request):
     return trades
 
 
+def _market_date(value):
+    """The IST calendar date an ISO timestamp falls on, as a date object. traded_at is a
+    timestamptz while price_history.date is a plain date, so the two have to be reconciled
+    explicitly - left to the DB, a trade logged just after midnight IST lands on the wrong bar."""
+    if not value:
+        return datetime.now(IST).date()
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.date()
+    return parsed.astimezone(IST).date()
+
+
+def _trade_context(req):
+    """The one-time snapshot stored on a trade: what the chart looked like at entry, plus MAE/MFE
+    when the exit date is known. DB-only, so the N parallel POSTs the bulk-import dialog fires stay
+    fast. Returns None for a symbol with no local bars, which is normal and not an error -
+    price_history only covers symbols that have been synced.
+
+    `market_at` rather than `traded_at` is what the bars are looked up against: Bar Replay journals
+    its trades under the real wall-clock time (deliberately - see CloseTradeDialog), so scoring a
+    2022 replay against traded_at would silently measure today's market instead."""
+    entry_date = _market_date(req.market_at or req.traded_at)
+    if entry_date is None:
+        return None
+    symbol = req.symbol.strip().upper()
+    before, source = db.bars_before(symbol, entry_date, trade_context.LOOKBACK)
+    if not before:
+        return None
+
+    exit_date = _market_date(req.exited_at) if req.exited_at else None
+    holding = db.bars_between(symbol, entry_date, exit_date) if exit_date else []
+    return trade_context.compute(
+        before, holding, req.direction, req.entry_price, req.stop_loss, source
+    )
+
+
+def _fill_once_context(existing, req):
+    """What (if anything) the snapshot should become on an edit. Returns None to leave it alone -
+    db.update_manual_trade COALESCEs, so None is "don't touch".
+
+    Fill-once is per-half, not per-row, because the two halves become knowable at different times:
+
+    - No snapshot at all (or the symbol had no bars then and does now) -> compute the whole thing.
+    - Entry context stored but no excursion, and an exit date has now arrived -> compute ONLY the
+      excursion and merge it onto the stored entry context. Recomputing the entry half here would
+      re-read bars that may since have been split-adjusted, quietly rewriting a point-in-time fact
+      the user already has - so the original is carried across untouched.
+    - Everything already present -> None. An ordinary edit never recomputes anything.
+
+    Logging a trade open and closing it later is the ordinary workflow, so without the second case
+    that entire path would never get MAE/MFE at all.
+    """
+    stored = existing.get("trade_context") if existing else None
+    if not stored:
+        return _trade_context(req)
+    if "mae_pct" in stored or not req.exited_at:
+        return None
+
+    entry_date = _market_date(req.market_at or req.traded_at)
+    exit_date = _market_date(req.exited_at)
+    if entry_date is None or exit_date is None:
+        return None
+    holding = db.bars_between(req.symbol.strip().upper(), entry_date, exit_date)
+    if not holding:
+        return None
+    return {
+        **stored,
+        **trade_context.excursion(holding, req.direction, req.entry_price, req.stop_loss),
+    }
+
+
 @app.post("/api/manual-trades")
 def create_manual_trade(req: ManualTradeRequest):
     _validate_manual_trade(req)
@@ -728,6 +820,7 @@ def create_manual_trade(req: ManualTradeRequest):
         req.symbol.strip().upper(), req.direction, req.quantity, req.entry_price, req.exit_price,
         req.stop_loss, req.target, req.is_open, req.result, req.emotion, req.tags, req.notes,
         req.traded_at, req.image_filename, req.setup, req.ideal_risk_amount, req.account_id, balance,
+        req.exited_at, _trade_context(req),
     )
     return {"id": trade_id}
 
@@ -741,26 +834,211 @@ def update_manual_trade(trade_id: int, req: ManualTradeRequest):
     existing = db.get_manual_trade(trade_id)
     moved = existing and existing["account_id"] != req.account_id
     balance = db.account_balance_at(req.account_id, req.traded_at) if moved and req.account_id else None
+    context = _fill_once_context(existing, req)
     db.update_manual_trade(
         trade_id, req.symbol.strip().upper(), req.direction, req.quantity, req.entry_price,
         req.exit_price, req.stop_loss, req.target, req.is_open, req.result, req.emotion, req.tags,
         req.notes, req.traded_at, req.setup, req.ideal_risk_amount, req.account_id, balance,
+        req.exited_at, context,
     )
     return {"ok": True}
 
 
+# --- Paper trading -----------------------------------------------------------------------------
+# Open positions live in paper_positions; the moment one closes it becomes a manual_trades row
+# tagged 'paper' under its paper account, so the Overview/Statistics/Goals machinery applies to
+# paper trades with no parallel implementation. See paper.py.
+
+
+class PaperLegRequest(BaseModel):
+    id: str
+    price: float
+    qty: float
+
+
+class PaperOrderRequest(BaseModel):
+    account_id: int
+    symbol: str
+    direction: str  # "long" | "short"
+    order_type: Literal["market", "limit"] = "market"
+    quantity: float
+    limit_price: float | None = None  # required for a limit order; ignored for a market one
+    # Laddered exits: each leg covers part of the quantity, so "50% at target 1, the rest at
+    # target 2" is two legs. Same shape Bar Replay uses.
+    stop_losses: list[PaperLegRequest] = []
+    targets: list[PaperLegRequest] = []
+    notes: str | None = None
+
+
+class PaperModifyRequest(BaseModel):
+    stop_losses: list[PaperLegRequest] = []
+    targets: list[PaperLegRequest] = []
+
+
+class PaperCloseRequest(BaseModel):
+    quantity: float | None = None  # partial close; omitted = the whole remaining position
+
+
+def paper_price(symbol):
+    """Latest price for a symbol, via the same TTL cache the rest of the app uses so the poller
+    and the UI can't disagree about what 'now' is. Returns None when the quote fails - the caller
+    treats that as "no update this tick" rather than an error."""
+    try:
+        quote = _cached(symbol, "quote", 1, lambda: scraper.get_quote(symbol))
+    except Exception:
+        return None
+    price = (quote or {}).get("currentPrice")
+    return float(price) if price is not None else None
+
+
+@app.get("/api/paper/accounts")
+def paper_accounts():
+    return db.list_trade_accounts(kind="paper")
+
+
+@app.post("/api/paper/accounts")
+def create_paper_account(req: TradeAccountRequest):
+    account_id = db.create_trade_account(
+        req.name.strip(), req.strategy, req.strategy_explanation, req.opening_balance,
+        req.max_position_size, req.max_position_size_type, req.max_position_count, kind="paper",
+    )
+    return {"id": account_id}
+
+
+@app.get("/api/paper/positions")
+def paper_positions(account_id: int | None = None):
+    """Open positions, each marked to the latest price. `pnl` is unrealized and null for a resting
+    limit order that hasn't filled - it has no exposure yet, and reporting 0 would read as
+    'flat' rather than 'not started'."""
+    out = []
+    for p in db.list_paper_positions(account_id):
+        price = paper_price(p["symbol"])
+        row = dict(p)
+        row["current_price"] = price
+        row["pnl"] = paper.unrealized_pnl(p, price)
+        row["pnl_pct"] = (
+            round(row["pnl"] / (p["entry_price"] * p["quantity"]) * 100, 2)
+            if row["pnl"] is not None and p["entry_price"] and p["quantity"]
+            else None
+        )
+        row["value"] = round(price * p["quantity"], 2) if price is not None else None
+        out.append(row)
+    return out
+
+
+@app.post("/api/paper/orders")
+def create_paper_order(req: PaperOrderRequest):
+    if req.direction not in DIRECTIONS:
+        raise HTTPException(status_code=422, detail="direction must be 'long' or 'short'")
+    if req.quantity <= 0:
+        raise HTTPException(status_code=422, detail="quantity must be greater than 0")
+
+    legs = [leg.model_dump() for leg in req.stop_losses] + [leg.model_dump() for leg in req.targets]
+    if any(leg["qty"] <= 0 for leg in legs):
+        raise HTTPException(status_code=422, detail="every exit leg needs a quantity above 0")
+    for side, name in ((req.stop_losses, "stop-loss"), (req.targets, "target")):
+        covered = sum(leg.qty for leg in side)
+        if covered > req.quantity:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{name} legs cover {covered} of {req.quantity} - more than the position size",
+            )
+
+    symbol = req.symbol.strip().upper()
+    if req.order_type == "limit":
+        if req.limit_price is None:
+            raise HTTPException(status_code=422, detail="a limit order needs a limit price")
+        entry, status, opened_at = req.limit_price, "pending", None
+    else:
+        entry = paper_price(symbol)
+        if entry is None:
+            raise HTTPException(status_code=502, detail=f"no live price available for '{symbol}'")
+        status, opened_at = "open", datetime.now(IST).isoformat()
+
+    # A level on the wrong side of entry would trigger on the very next tick - that's a typo, not
+    # a plan. Unlike the journal (which records history that already happened, and so must accept
+    # whatever the user says happened), this is an order being placed now.
+    for leg in req.stop_losses:
+        if leg.price >= entry if req.direction == "long" else leg.price <= entry:
+            raise HTTPException(
+                status_code=422, detail="stop-loss must be below entry for a long, above for a short"
+            )
+    for leg in req.targets:
+        if leg.price <= entry if req.direction == "long" else leg.price >= entry:
+            raise HTTPException(
+                status_code=422, detail="target must be above entry for a long, below for a short"
+            )
+
+    position_id = db.create_paper_position(
+        req.account_id, symbol, req.direction, req.order_type, status, req.quantity, entry,
+        [leg.model_dump() for leg in req.stop_losses], [leg.model_dump() for leg in req.targets],
+        req.notes, opened_at,
+    )
+    return {"id": position_id, "entry_price": entry, "status": status}
+
+
+@app.put("/api/paper/positions/{position_id}")
+def modify_paper_position(position_id: int, req: PaperModifyRequest):
+    position = db.get_paper_position(position_id)
+    if not position:
+        raise HTTPException(status_code=404, detail="no such paper position")
+    db.update_paper_position(
+        position_id,
+        stop_losses=[leg.model_dump() for leg in req.stop_losses],
+        targets=[leg.model_dump() for leg in req.targets],
+    )
+    return {"ok": True}
+
+
+@app.post("/api/paper/positions/{position_id}/close")
+def close_paper_position(position_id: int, req: PaperCloseRequest):
+    position = db.get_paper_position(position_id)
+    if not position:
+        raise HTTPException(status_code=404, detail="no such paper position")
+    price = paper_price(position["symbol"])
+    if price is None:
+        raise HTTPException(status_code=502, detail="no live price available to close against")
+    trade_ids = paper.close_position(position, price, req.quantity)
+    return {"closed_at": price, "trade_ids": trade_ids}
+
+
+@app.get("/api/paper/status")
+def paper_status():
+    """Engine heartbeat - drives the UI's live/stale pulse. `market_open` is what tells the user
+    a stale timestamp is expected rather than a broken poller."""
+    return {**paper.state, "market_open": paper.market_is_open(), "poll_seconds": paper.POLL_SECONDS}
+
+
+@app.post("/api/paper/poll")
+def paper_poll_now():
+    """Force one sweep. The loop only runs during market hours; this is how the UI refreshes on
+    demand outside them, and how a test drives the engine without waiting."""
+    triggered = paper.poll_once(paper_price)
+    return {"triggered": triggered, "last_poll": paper.state["last_poll"]}
+
+
+ACCOUNT_KINDS = {"journal", "paper"}
+
+
 @app.get("/api/trade-accounts")
-def trade_accounts():
-    return db.list_trade_accounts()
+def trade_accounts(kind: str = "journal"):
+    """`kind` defaults to journal so existing callers are unaffected. The two kinds never mix in
+    one list - a paper account showing up in the journal's account picker would let a hand-logged
+    trade be filed against a simulated wallet."""
+    if kind not in ACCOUNT_KINDS:
+        raise HTTPException(status_code=422, detail=f"kind must be one of {sorted(ACCOUNT_KINDS)}")
+    return db.list_trade_accounts(kind=kind)
 
 
 @app.post("/api/trade-accounts")
-def create_trade_account(req: TradeAccountRequest):
+def create_trade_account(req: TradeAccountRequest, kind: str = "journal"):
     if not req.name.strip():
         raise HTTPException(status_code=422, detail="account name is required")
+    if kind not in ACCOUNT_KINDS:
+        raise HTTPException(status_code=422, detail=f"kind must be one of {sorted(ACCOUNT_KINDS)}")
     account_id = db.create_trade_account(
         req.name.strip(), req.strategy, req.strategy_explanation, req.opening_balance,
-        req.max_position_size, req.max_position_size_type, req.max_position_count,
+        req.max_position_size, req.max_position_size_type, req.max_position_count, kind=kind,
     )
     return {"id": account_id}
 
@@ -778,6 +1056,19 @@ def update_trade_account(account_id: int, req: TradeAccountRequest):
 
 @app.delete("/api/trade-accounts/{account_id}")
 def delete_trade_account(account_id: int):
+    # Closed trades survive an account deletion (manual_trades.account_id is ON DELETE SET NULL,
+    # so journal history is never destroyed) - but paper_positions is ON DELETE CASCADE, because a
+    # simulated open position means nothing without the wallet it belongs to. That asymmetry would
+    # make this endpoint silently discard live positions, so it refuses instead and says how many.
+    open_positions = db.list_paper_positions(account_id)
+    if open_positions:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{len(open_positions)} open paper position(s) on this account - close them first. "
+                "Deleting the account would discard them."
+            ),
+        )
     db.delete_trade_account(account_id)
     return {"ok": True}
 

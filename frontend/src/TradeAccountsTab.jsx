@@ -52,7 +52,7 @@ const SIZE_TYPE_OPTIONS = [
   { value: 'percentage', label: '% of balance' },
 ]
 
-function AccountForm({ account, onDone }) {
+function AccountForm({ account, onDone, kind }) {
   const queryClient = useQueryClient()
   const form = useForm({
     resolver: zodResolver(tradeAccountSchema),
@@ -62,10 +62,14 @@ function AccountForm({ account, onDone }) {
   useEffect(() => form.reset(account ? formFrom(account) : BLANK), [account, form])
 
   const save = useMutation({
+    // `kind` is only sent on create - an account never changes kind afterwards, and letting an
+    // edit flip a journal account into a paper one (or back) would reassign every trade filed
+    // under it to a different mode.
     mutationFn: (payload) =>
-      account ? updateTradeAccount(account.id, payload) : createTradeAccount(payload),
+      account ? updateTradeAccount(account.id, payload) : createTradeAccount(payload, kind),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tradeAccounts'] })
+      queryClient.invalidateQueries({ queryKey: ['tradeAccounts', kind] })
+      queryClient.invalidateQueries({ queryKey: ['paperAccounts'] })
       toast.success(account ? 'Account updated' : 'Account created')
       onDone()
     },
@@ -245,7 +249,7 @@ function Transactions({ accountId, adjustments }) {
   )
 }
 
-function AccountCard({ account, trades, adjustments, onEdit }) {
+function AccountCard({ account, trades, adjustments, onEdit, kind }) {
   const queryClient = useQueryClient()
   const mine = tradesForAccount(trades, account.id)
   const myAdjustments = adjustments.filter((a) => a.account_id === account.id)
@@ -255,10 +259,14 @@ function AccountCard({ account, trades, adjustments, onEdit }) {
   const remove = useMutation({
     mutationFn: () => deleteTradeAccount(account.id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tradeAccounts'] })
+      queryClient.invalidateQueries({ queryKey: ['tradeAccounts', kind] })
+      queryClient.invalidateQueries({ queryKey: ['paperAccounts'] })
       queryClient.invalidateQueries({ queryKey: ['manualTrades'] })
       toast.success('Account deleted - its trades were kept, now unassigned')
     },
+    // The backend refuses (409) while open paper positions still reference the account, since
+    // those would cascade away with it. Surfacing that message is the whole point of not
+    // swallowing the error here.
     onError: (e) => toast.error(e.message),
   })
 
@@ -320,11 +328,31 @@ function AccountCard({ account, trades, adjustments, onEdit }) {
   )
 }
 
-export default function TradeAccountsTab() {
+// Both Settings tabs - "Trade accounts" and "Paper accounts" - render this same component with a
+// different `kind`. The two account types are identical in every way that matters here (a name, a
+// strategy, a wallet, deposits/withdrawals, position caps); only which trades count against them
+// differs, and that's already keyed on account_id. A parallel component would have been the same
+// 380 lines with one string changed.
+const COPY = {
+  journal: {
+    blurb:
+      'Each account holds one strategy and its own wallet. Trades logged under an account snapshot ' +
+      'its balance at that moment, so account-return% never shifts when you deposit later.',
+    empty: 'No accounts yet — create one to group your trades by strategy.',
+  },
+  paper: {
+    blurb:
+      'Each paper account is a separate simulated wallet for live-price practice, kept entirely ' +
+      'apart from your hand-logged journal accounts. Deposits and withdrawals work the same way.',
+    empty: 'No paper accounts yet — create one to start paper trading.',
+  },
+}
+
+export default function TradeAccountsTab({ kind = 'journal' }) {
   const [editing, setEditing] = useState(null) // account object, 'new', or null
   const { data: accounts = [], isLoading } = useQuery({
-    queryKey: ['tradeAccounts'],
-    queryFn: getTradeAccounts,
+    queryKey: ['tradeAccounts', kind],
+    queryFn: () => getTradeAccounts(kind),
   })
   const { data: trades = [] } = useQuery({ queryKey: ['manualTrades'], queryFn: getManualTrades })
   const { data: adjustments = [] } = useQuery({
@@ -333,14 +361,12 @@ export default function TradeAccountsTab() {
   })
 
   if (isLoading) return <p className="text-sm text-muted-foreground">Loading…</p>
+  const copy = COPY[kind] ?? COPY.journal
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
-          Each account holds one strategy and its own wallet. Trades logged under an account snapshot its
-          balance at that moment, so account-return% never shifts when you deposit later.
-        </p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-muted-foreground">{copy.blurb}</p>
         {editing !== 'new' && (
           <Button size="sm" className="shrink-0" onClick={() => setEditing('new')}>
             <PlusIcon className="size-4" />
@@ -349,21 +375,20 @@ export default function TradeAccountsTab() {
         )}
       </div>
 
-      {editing === 'new' && <AccountForm onDone={() => setEditing(null)} />}
+      {editing === 'new' && <AccountForm kind={kind} onDone={() => setEditing(null)} />}
 
       {accounts.length === 0 && editing !== 'new' && (
-        <p className="py-8 text-center text-sm text-muted-foreground">
-          No accounts yet — create one to group your trades by strategy.
-        </p>
+        <p className="py-8 text-center text-sm text-muted-foreground">{copy.empty}</p>
       )}
 
       {accounts.map((account) =>
         editing?.id === account.id ? (
-          <AccountForm key={account.id} account={account} onDone={() => setEditing(null)} />
+          <AccountForm key={account.id} account={account} kind={kind} onDone={() => setEditing(null)} />
         ) : (
           <AccountCard
             key={account.id}
             account={account}
+            kind={kind}
             trades={trades}
             adjustments={adjustments}
             onEdit={() => setEditing(account)}

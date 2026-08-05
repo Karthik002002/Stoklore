@@ -30,6 +30,8 @@ export default function CloseTradeDialog({
   leg,
   chartImage,
   accountId,
+  entryDate,
+  exitDate,
   onClosed,
 }) {
   const form = useForm({
@@ -94,6 +96,11 @@ export default function CloseTradeDialog({
         // logging it under the real wall-clock time keeps the journal's dates meaningful (e.g. for
         // the overview's calendar) regardless of which historical period was being replayed.
         traded_at: new Date().toISOString(),
+        // ...which is exactly why the replayed dates have to be sent separately. The backend reads
+        // the bars around `market_at` (not `traded_at`) for the entry-context snapshot, so without
+        // these a trade replayed from 2022 would be scored against today's chart.
+        market_at: entryDate ?? null,
+        exited_at: exitDate ?? null,
         image_filename: null,
         account_id: accountId ?? null,
       })

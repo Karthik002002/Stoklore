@@ -222,10 +222,12 @@ export const analyzeBulkTradeImage = (file, model) => {
   return fetch(`/api/manual-trades/bulk/analyze${qs}`, { method: 'POST', body: form }).then(json)
 }
 
-export const getTradeAccounts = () => fetch('/api/trade-accounts').then(json)
+// `kind` is 'journal' (hand-logged trades) or 'paper' (live simulation). Defaults to journal, so
+// every existing caller keeps behaving exactly as before.
+export const getTradeAccounts = (kind = 'journal') => fetch(`/api/trade-accounts?kind=${kind}`).then(json)
 
-export const createTradeAccount = (account) =>
-  fetch('/api/trade-accounts', {
+export const createTradeAccount = (account, kind = 'journal') =>
+  fetch(`/api/trade-accounts?kind=${kind}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(account),
@@ -308,3 +310,47 @@ export const importStocksMaster = (file) => {
 
 export const deleteStockMaster = (symbol) =>
   fetch(`/api/stocks-master/${symbol}`, { method: 'DELETE' }).then(json)
+
+// --- Paper trading ---------------------------------------------------------------------------
+// Open positions come from paper_positions; closed ones are ordinary manual_trades tagged
+// 'paper', so history/statistics reuse getManualTrades rather than a paper-specific endpoint.
+
+export const getPaperAccounts = () => fetch('/api/paper/accounts').then(json)
+
+export const createPaperAccount = (payload) =>
+  fetch('/api/paper/accounts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).then(json)
+
+export const getPaperPositions = (accountId) =>
+  fetch(`/api/paper/positions${accountId != null ? `?account_id=${accountId}` : ''}`).then(json)
+
+export const createPaperOrder = (payload) =>
+  fetch('/api/paper/orders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).then(json)
+
+export const modifyPaperPosition = (id, payload) =>
+  fetch(`/api/paper/positions/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).then(json)
+
+export const closePaperPosition = (id, quantity) =>
+  fetch(`/api/paper/positions/${id}/close`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ quantity: quantity ?? null }),
+  }).then(json)
+
+// Engine heartbeat - drives the live/stale pulse on the Holdings tab.
+export const getPaperStatus = () => fetch('/api/paper/status').then(json)
+
+// Force one sweep. The backend loop only runs during market hours, so this is what refreshes
+// prices on demand outside them.
+export const pollPaperEngine = () => fetch('/api/paper/poll', { method: 'POST' }).then(json)

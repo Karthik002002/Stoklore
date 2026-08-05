@@ -270,6 +270,12 @@ CREATE TABLE IF NOT EXISTS trade_accounts (
   max_position_count INTEGER,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- 'journal' (hand-logged trades, the Manual Backtesting tab) or 'paper' (live-price simulation,
+-- the Paper Trading page). A discriminator rather than a second accounts table: an account is the
+-- same thing either way - a name, a strategy, a wallet, and position caps - and every balance and
+-- cap function here already works per-account, so splitting the table would mean duplicating all
+-- of it. Callers filter by kind; the two never share an account, so the balances stay separate.
+ALTER TABLE trade_accounts ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'journal';
 
 -- Manually logged trades for the Manual backtest tab - a personal trade journal, not tied to
 -- price_history/NSE at all (entry/exit/P&L are exactly what the user typed in, not computed from
@@ -309,6 +315,42 @@ ALTER TABLE manual_trades ADD COLUMN IF NOT EXISTS account_id INTEGER
 -- never recomputed (see db.account_balance_at).
 ALTER TABLE manual_trades ADD COLUMN IF NOT EXISTS account_balance_at_trade REAL;
 CREATE INDEX IF NOT EXISTS manual_trades_account_idx ON manual_trades (account_id);
+-- When the position was actually closed, as opposed to traded_at (when it was opened/journaled).
+-- Optional: without it MAE/MFE can't be bounded, so those two metrics are simply not computed.
+ALTER TABLE manual_trades ADD COLUMN IF NOT EXISTS exited_at TIMESTAMPTZ;
+-- The second point-in-time snapshot, for the same reason as account_balance_at_trade above: what
+-- the chart looked like when this trade was taken (trend, volatility regime, how extended the
+-- entry was) plus how far it ran either way. Bars get split-adjusted and revised, so re-deriving
+-- this later would silently rewrite the history the user is trying to learn from. Written once at
+-- creation, or once on the edit that first supplies an exit - never overwritten. One JSONB blob
+-- rather than a column per feature: the feature set will change, and this way that costs no DDL.
+-- See trade_context.py.
+ALTER TABLE manual_trades ADD COLUMN IF NOT EXISTS trade_context JSONB;
+
+-- OPEN paper-trading positions only. A position leaves this table the moment it fully closes -
+-- its realized outcome is written to manual_trades (tagged 'paper', under the paper account), so
+-- closed paper trades are journal trades and every existing statistic - win rate, realized P&L,
+-- equity curve, drawdown, R-multiples - applies to them with no parallel implementation.
+--
+-- stop_losses/targets are JSONB lists of {id, price, qty} legs, the exact shape Bar Replay's
+-- orderEngine.js already uses, so partial/laddered exits mean the same thing in both places. A
+-- leg triggering closes only its own slice; the position stays open at the reduced size.
+CREATE TABLE IF NOT EXISTS paper_positions (
+  id SERIAL PRIMARY KEY,
+  account_id INTEGER NOT NULL REFERENCES trade_accounts(id) ON DELETE CASCADE,
+  symbol TEXT NOT NULL,
+  direction TEXT NOT NULL,          -- 'long' | 'short'
+  order_type TEXT NOT NULL,         -- 'market' | 'limit'
+  status TEXT NOT NULL,             -- 'pending' (resting limit) | 'open' (filled)
+  quantity REAL NOT NULL,           -- remaining size; shrinks as ladder legs fill
+  entry_price REAL NOT NULL,        -- limit price while pending, fill price once open
+  stop_losses JSONB NOT NULL DEFAULT '[]'::jsonb,
+  targets JSONB NOT NULL DEFAULT '[]'::jsonb,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  opened_at TIMESTAMPTZ            -- when it actually filled; null while pending
+);
+CREATE INDEX IF NOT EXISTS paper_positions_account_idx ON paper_positions (account_id);
 
 -- Deposits and withdrawals against an account's wallet, plus manual corrections to the running
 -- balance curve (broker true-ups that aren't trades themselves).
@@ -870,6 +912,44 @@ def price_series(symbol, limit=100):
     return list(reversed(rows))
 
 
+def bars_before(symbol, date, limit=100):
+    """The `limit` most recent bars strictly BEFORE `date`, oldest-first, plus which table they
+    came from: ("price_history_max" | "price_history" | None).
+
+    Every other reader here goes forward from a date (price_history_since) or takes the newest N
+    (list_price_history, price_series) - trade_context needs the window ending just before an
+    entry, which is neither. price_history_max is preferred because price_history is only a
+    rolling 1y window and won't reach 100 bars back for an older trade; it exists only for symbols
+    where the user ran "Collect max history", hence the fallback. Returns ([], None) for a symbol
+    with no local bars at all, which is normal - price_history only covers synced symbols.
+    """
+    sql = (
+        "SELECT date, open, high, low, close, volume FROM {table} "
+        "WHERE symbol = %s AND date < %s ORDER BY date DESC LIMIT %s"
+    )
+    with connect() as conn:
+        for table in ("price_history_max", "price_history"):
+            rows = conn.execute(sql.format(table=table), (symbol, date, limit)).fetchall()
+            if rows:
+                return list(reversed(rows)), table
+    return [], None
+
+
+def bars_between(symbol, start, end):
+    """Bars from `start` through `end` inclusive, oldest-first - the holding window MAE/MFE needs.
+    Same table preference as bars_before."""
+    sql = (
+        "SELECT date, open, high, low, close, volume FROM {table} "
+        "WHERE symbol = %s AND date >= %s AND date <= %s ORDER BY date"
+    )
+    with connect() as conn:
+        for table in ("price_history_max", "price_history"):
+            rows = conn.execute(sql.format(table=table), (symbol, start, end)).fetchall()
+            if rows:
+                return rows
+    return []
+
+
 def insert_max_bars(symbol, bars):
     """Same upsert shape as insert_price_bars, targeting price_history_max instead."""
     if not bars:
@@ -1176,20 +1256,28 @@ def delete_auto_backtest_script(script_id):
         conn.execute("DELETE FROM auto_backtest_scripts WHERE id = %s", (script_id,))
 
 
-def list_trade_accounts():
+def list_trade_accounts(kind="journal"):
+    """Accounts of one kind - 'journal' (hand-logged) or 'paper' (live simulation). Defaults to
+    journal so every existing caller keeps its current behaviour; pass kind=None for both."""
+    sql = "SELECT * FROM trade_accounts"
+    params = ()
+    if kind is not None:
+        sql += " WHERE kind = %s"
+        params = (kind,)
     with connect() as conn:
-        return conn.execute("SELECT * FROM trade_accounts ORDER BY created_at").fetchall()
+        return conn.execute(sql + " ORDER BY created_at", params).fetchall()
 
 
 def create_trade_account(name, strategy, strategy_explanation, opening_balance,
-                          max_position_size, max_position_size_type, max_position_count):
+                          max_position_size, max_position_size_type, max_position_count,
+                          kind="journal"):
     with connect() as conn:
         row = conn.execute(
             "INSERT INTO trade_accounts (name, strategy, strategy_explanation, opening_balance, "
-            "max_position_size, max_position_size_type, max_position_count) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            "max_position_size, max_position_size_type, max_position_count, kind) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (name, strategy, strategy_explanation, opening_balance, max_position_size,
-             max_position_size_type, max_position_count),
+             max_position_size_type, max_position_count, kind),
         ).fetchone()
     return row["id"]
 
@@ -1212,6 +1300,70 @@ def delete_trade_account(account_id):
     only ever meant anything relative to that account's wallet."""
     with connect() as conn:
         conn.execute("DELETE FROM trade_accounts WHERE id = %s", (account_id,))
+
+
+# --- Paper trading positions ------------------------------------------------------------------
+# Only OPEN (and resting-limit) positions live here. A fully closed one is deleted and its outcome
+# written to manual_trades instead - see the paper_positions table comment.
+
+
+def list_paper_positions(account_id=None):
+    sql = "SELECT * FROM paper_positions"
+    params = ()
+    if account_id is not None:
+        sql += " WHERE account_id = %s"
+        params = (account_id,)
+    with connect() as conn:
+        return conn.execute(sql + " ORDER BY created_at DESC", params).fetchall()
+
+
+def get_paper_position(position_id):
+    with connect() as conn:
+        return conn.execute("SELECT * FROM paper_positions WHERE id = %s", (position_id,)).fetchone()
+
+
+def paper_position_symbols():
+    """Distinct symbols with something to monitor - the engine's poll list. A query rather than a
+    scan of every position, so an idle account costs one cheap round trip per tick."""
+    with connect() as conn:
+        rows = conn.execute("SELECT DISTINCT symbol FROM paper_positions").fetchall()
+    return [r["symbol"] for r in rows]
+
+
+def create_paper_position(account_id, symbol, direction, order_type, status, quantity, entry_price,
+                          stop_losses, targets, notes=None, opened_at=None):
+    with connect() as conn:
+        row = conn.execute(
+            "INSERT INTO paper_positions (account_id, symbol, direction, order_type, status, "
+            "quantity, entry_price, stop_losses, targets, notes, opened_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (account_id, symbol, direction, order_type, status, quantity, entry_price,
+             Jsonb(stop_losses or []), Jsonb(targets or []), notes, opened_at),
+        ).fetchone()
+    return row["id"]
+
+
+def update_paper_position(position_id, **fields):
+    """Partial update - only the named columns are touched. The engine uses this to shrink a
+    position after a partial exit and to fill a resting limit, both of which change two or three
+    columns and must leave the rest alone."""
+    allowed = {"status", "quantity", "entry_price", "stop_losses", "targets", "notes", "opened_at"}
+    sets, params = [], []
+    for key, value in fields.items():
+        if key not in allowed:
+            raise ValueError(f"cannot update paper_positions.{key}")
+        sets.append(f"{key} = %s")
+        params.append(Jsonb(value) if key in ("stop_losses", "targets") else value)
+    if not sets:
+        return
+    params.append(position_id)
+    with connect() as conn:
+        conn.execute(f"UPDATE paper_positions SET {', '.join(sets)} WHERE id = %s", params)
+
+
+def delete_paper_position(position_id):
+    with connect() as conn:
+        conn.execute("DELETE FROM paper_positions WHERE id = %s", (position_id,))
 
 
 def account_balance_at(account_id, at):
@@ -1246,17 +1398,20 @@ def account_balance_at(account_id, at):
 def create_manual_trade(symbol, direction, quantity, entry_price, exit_price, stop_loss, target,
                          is_open, result, emotion, tags, notes, traded_at, image_filename=None,
                          setup=None, ideal_risk_amount=None, account_id=None,
-                         account_balance_at_trade=None):
+                         account_balance_at_trade=None, exited_at=None, trade_context=None):
     with connect() as conn:
         row = conn.execute(
             "INSERT INTO manual_trades (symbol, direction, quantity, entry_price, exit_price, "
             "stop_loss, target, is_open, result, emotion, tags, notes, traded_at, image_filename, "
-            "setup, ideal_risk_amount, account_id, account_balance_at_trade) VALUES "
-            "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, now()), %s, %s, %s, %s, %s) "
+            "setup, ideal_risk_amount, account_id, account_balance_at_trade, exited_at, "
+            "trade_context) VALUES "
+            "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, now()), %s, %s, %s, %s, "
+            "%s, %s, %s) "
             "RETURNING id",
             (symbol, direction, quantity, entry_price, exit_price, stop_loss, target, is_open,
              result, emotion, tags, notes, traded_at, image_filename, setup, ideal_risk_amount,
-             account_id, account_balance_at_trade),
+             account_id, account_balance_at_trade, exited_at,
+             Jsonb(trade_context) if trade_context is not None else None),
         ).fetchone()
     return row["id"]
 
@@ -1273,20 +1428,28 @@ def get_manual_trade(trade_id):
 
 def update_manual_trade(trade_id, symbol, direction, quantity, entry_price, exit_price, stop_loss,
                          target, is_open, result, emotion, tags, notes, traded_at, setup=None,
-                         ideal_risk_amount=None, account_id=None, account_balance_at_trade=None):
+                         ideal_risk_amount=None, account_id=None, account_balance_at_trade=None,
+                         exited_at=None, trade_context=None):
     """account_balance_at_trade is COALESCEd, not overwritten with None: an ordinary edit (fixing an
     exit price, adding a tag) must leave the original snapshot alone. The caller passes a fresh
-    value only when the trade actually moves to a different account - see api.update_manual_trade."""
+    value only when the trade actually moves to a different account - see api.update_manual_trade.
+
+    trade_context follows the same fill-once rule for the same reason, with one difference worth
+    knowing: the caller passes a value only when the stored one is still NULL. Logging a trade open
+    and closing it later is ordinary, and without that the whole open-then-close workflow would
+    never get MAE/MFE. Filling a blank once is still "computed once", not "recomputed on edit"."""
     with connect() as conn:
         conn.execute(
             "UPDATE manual_trades SET symbol = %s, direction = %s, quantity = %s, entry_price = %s, "
             "exit_price = %s, stop_loss = %s, target = %s, is_open = %s, result = %s, emotion = %s, "
             "tags = %s, notes = %s, traded_at = COALESCE(%s, traded_at), setup = %s, "
             "ideal_risk_amount = %s, account_id = %s, "
-            "account_balance_at_trade = COALESCE(%s, account_balance_at_trade) WHERE id = %s",
+            "account_balance_at_trade = COALESCE(%s, account_balance_at_trade), "
+            "exited_at = %s, trade_context = COALESCE(%s, trade_context) WHERE id = %s",
             (symbol, direction, quantity, entry_price, exit_price, stop_loss, target, is_open,
              result, emotion, tags, notes, traded_at, setup, ideal_risk_amount, account_id,
-             account_balance_at_trade, trade_id),
+             account_balance_at_trade, exited_at,
+             Jsonb(trade_context) if trade_context is not None else None, trade_id),
         )
 
 

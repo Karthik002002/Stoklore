@@ -46,10 +46,12 @@ import {
 import ManualGoals from './ManualGoals'
 import ManualOverview from './ManualOverview'
 import ManualStatistics from './ManualStatistics'
+import TradeDetailDialog from './TradeDetailDialog'
 
 function emptyForm(accountId = null) {
   return {
     tradedAt: '',
+    exitedAt: '',
     symbol: '',
     direction: 'long',
     setup: '',
@@ -84,6 +86,7 @@ function toDatetimeLocal(iso) {
 function formFromTrade(t) {
   return {
     tradedAt: toDatetimeLocal(t.traded_at),
+    exitedAt: t.exited_at ? toDatetimeLocal(t.exited_at) : '',
     symbol: t.symbol,
     direction: t.direction,
     setup: t.setup ?? '',
@@ -197,6 +200,9 @@ function TradeFormDialog({ open, onOpenChange, trade, onSaved, defaultAccountId,
         tags: values.tags,
         notes: trade?.notes ?? null,
         traded_at: values.tradedAt ? new Date(values.tradedAt).toISOString() : null,
+        // Only meaningful on a closed trade; sending it for an open one would let the backend
+        // measure an excursion over a position that hasn't finished.
+        exited_at: !values.isOpen && values.exitedAt ? new Date(values.exitedAt).toISOString() : null,
         account_id: values.accountId,
       }
       let id
@@ -225,7 +231,7 @@ function TradeFormDialog({ open, onOpenChange, trade, onSaved, defaultAccountId,
           </DialogHeader>
           <form onSubmit={form.handleSubmit((values) => save.mutate(values))} className="space-y-3">
             <div className="grid grid-cols-2 gap-2">
-              <TextField form={form} name="tradedAt" label="Date" type="datetime-local" />
+              <TextField form={form} name="tradedAt" label="Opened" type="datetime-local" />
               <Field label="Symbol" error={form.formState.errors.symbol}>
                 <Controller
                   control={form.control}
@@ -306,6 +312,16 @@ function TradeFormDialog({ open, onOpenChange, trade, onSaved, defaultAccountId,
             </label>
 
             {!isOpen && (
+              <TextField
+                form={form}
+                name="exitedAt"
+                label="Closed"
+                type="datetime-local"
+                hint="Optional — unlocks MAE/MFE (how far the trade ran either way) in its detail view."
+              />
+            )}
+
+            {!isOpen && (
               <SelectField
                 form={form}
                 name="result"
@@ -370,7 +386,11 @@ function TradeFormDialog({ open, onOpenChange, trade, onSaved, defaultAccountId,
   )
 }
 
-function TradesTable({ trades, onEdit, onDelete, selected, onToggleSelect, onToggleSelectAll }) {
+// Row click opens the read-only detail view, not the edit form. Editing is one click further in
+// (a button inside that modal) because reviewing a trade is the common action and editing one is
+// the rare one - the old behaviour meant every glance at a trade opened a form full of live
+// inputs over the top of it.
+function TradesTable({ trades, onOpen, onDelete, selected, onToggleSelect, onToggleSelectAll }) {
   const [lightboxSrc, setLightboxSrc] = useState(null)
   if (trades.length === 0) {
     return <p className="text-sm text-muted-foreground">No trades match - add one above or clear filters.</p>
@@ -416,7 +436,7 @@ function TradesTable({ trades, onEdit, onDelete, selected, onToggleSelect, onTog
             const returnPct = tradeReturnPct(t)
             const resultMeta = t.result ? RESULT_META[t.result] : null
             return (
-              <TableRow key={t.id} className="cursor-pointer" onClick={() => onEdit(t)}>
+              <TableRow key={t.id} className="cursor-pointer" onClick={() => onOpen(t)}>
                 <TableCell onClick={(e) => e.stopPropagation()}>
                   <input
                     type="checkbox"
@@ -714,6 +734,10 @@ export default function ManualBacktesting() {
   const navigate = useNavigate({ from: '/backtesting' })
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingTrade, setEditingTrade] = useState(null)
+  // The trade whose detail view is open. Separate from `editingTrade` rather than one shared
+  // "selected trade" - opening the editor from inside the detail modal has to close one and open
+  // the other, and a single piece of state can't express that transition.
+  const [detailTrade, setDetailTrade] = useState(null)
   const [bulkOpen, setBulkOpen] = useState(false)
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
   const [filters, setFilters] = useState(EMPTY_FILTERS)
@@ -747,6 +771,7 @@ export default function ManualBacktesting() {
     setDialogOpen(true)
   }
   const openEdit = (trade) => {
+    setDetailTrade(null)
     setEditingTrade(trade)
     setDialogOpen(true)
   }
@@ -821,7 +846,7 @@ export default function ManualBacktesting() {
           </div>
           <TradesTable
             trades={filteredTrades}
-            onEdit={openEdit}
+            onOpen={setDetailTrade}
             onDelete={(id) => remove.mutate(id)}
             selected={selected}
             onToggleSelect={toggleSelect}
@@ -835,6 +860,15 @@ export default function ManualBacktesting() {
           <ManualGoals trades={trades} />
         </TabsPanel>
       </Tabs>
+
+      <TradeDetailDialog
+        open={!!detailTrade}
+        onOpenChange={(next) => !next && setDetailTrade(null)}
+        // Re-read from the live list so the modal reflects an edit made from inside it, rather
+        // than the snapshot captured when the row was clicked.
+        trade={detailTrade ? (allTrades.find((t) => t.id === detailTrade.id) ?? detailTrade) : null}
+        onEdit={openEdit}
+      />
 
       <TradeFormDialog
         open={dialogOpen}

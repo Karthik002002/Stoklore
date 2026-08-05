@@ -1,5 +1,6 @@
 import { Link, Outlet } from '@tanstack/react-router'
 import {
+  IconChartCandle,
   IconFlask,
   IconLayoutDashboard,
   IconNews,
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
   { to: '/top-news', icon: IconTrendingUp, label: 'Top news' },
   { to: '/holdings', icon: IconWallet, label: 'Holdings' },
   { to: '/backtesting', icon: IconFlask, label: 'Backtesting' },
+  { to: '/paper', icon: IconChartCandle, label: 'Paper Trading' },
 ]
 
 // Icon-rail nav item: TanStack Router's Link auto-applies an "active" class on route match

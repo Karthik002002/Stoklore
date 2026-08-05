@@ -25,6 +25,12 @@ import {
   winStreaks,
 } from './manualTrades.js'
 import { accountReturnPct } from './tradeAccounts.js'
+import { extensionBucket, rangePosBucket, trendAlignmentBucket, volRegimeBucket } from './tradeContext.js'
+
+// Trades logged before entry-context capture existed, or on a symbol with no local price history.
+// Given its own bucket rather than dropped: a dimension that quietly excludes most of the journal
+// makes the surviving buckets look far better sampled than they are.
+export const NOT_CAPTURED = 'Not captured'
 
 export const closedTrades = (trades) => (trades ?? []).filter((t) => t.exit_price != null)
 
@@ -140,6 +146,38 @@ export const DIMENSIONS = {
     label: 'R-multiple',
     of: (t) => (expectedRBucket(t) == null ? 'No risk set' : `${expectedRBucket(t)}R`),
     order: R_ORDER,
+  },
+  // --- Market context at entry (trade_context, captured once at creation - see trade_context.py)
+  // These read a stored snapshot rather than deriving anything, and only exist on trades logged
+  // after the feature shipped. `NOT_CAPTURED` keeps those visible as their own bucket instead of
+  // silently vanishing from the chart, which would make the remaining buckets look far better
+  // sampled than they are.
+  trendAlignment: {
+    label: 'Trend alignment',
+    of: (t) => trendAlignmentBucket(t) ?? NOT_CAPTURED,
+    order: ['With trend', 'Against trend', 'Sideways market', NOT_CAPTURED],
+  },
+  volRegime: {
+    label: 'Volatility regime',
+    of: (t) => volRegimeBucket(t) ?? NOT_CAPTURED,
+    order: ['Low volatility', 'Normal volatility', 'High volatility', NOT_CAPTURED],
+  },
+  extension: {
+    label: 'Entry extension',
+    of: (t) => extensionBucket(t) ?? NOT_CAPTURED,
+    order: [
+      'Early (below mean)',
+      'At the mean',
+      'Mildly extended',
+      'Extended',
+      'Very extended (3+ ATR)',
+      NOT_CAPTURED,
+    ],
+  },
+  rangePos: {
+    label: 'Range position',
+    of: (t) => rangePosBucket(t) ?? NOT_CAPTURED,
+    order: ['Bottom of range', 'Mid range', 'Top of range', 'Breakout (above range)', NOT_CAPTURED],
   },
 }
 

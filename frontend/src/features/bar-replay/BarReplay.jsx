@@ -657,6 +657,15 @@ export default function BarReplay() {
         leg={activeClose?.leg ?? null}
         chartImage={activeClose?.chartImage}
         accountId={accountId}
+        // The replayed period this trade actually happened in. It is NOT the same as when the
+        // trade gets journaled (that's wall-clock now, see CloseTradeDialog) - without these the
+        // backend would score a 2022 replay against today's chart.
+        entryDate={
+          activeClose?.order?.entryBarIndex != null
+            ? (allBars[activeClose.order.entryBarIndex]?.date ?? null)
+            : null
+        }
+        exitDate={lastBar?.date ?? null}
         onClosed={() => {
           queryClient.invalidateQueries({ queryKey: ['manualTrades'] })
           const { order, leg, reason } = activeClose

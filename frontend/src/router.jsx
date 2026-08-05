@@ -5,6 +5,7 @@ import Backtesting from './Backtesting'
 import BarReplay from './features/bar-replay'
 import EventsFeed from './EventsFeed'
 import Holdings from './Holdings'
+import PaperTrading from './paper/PaperTrading'
 import StockDetail from './StockDetail'
 import StocksList from './StocksList'
 import TopNews from './TopNews'
@@ -20,6 +21,7 @@ const SETTINGS_TABS = [
   'activity',
   'backtesting',
   'accounts',
+  'paper-accounts',
 ]
 
 // Lives on the root route (not a leaf) since the Settings dialog is mounted in App.jsx's layout,
@@ -83,6 +85,20 @@ const backtestingRoute = createRoute({
   component: Backtesting,
 })
 
+// Live-price paper trading. Its own top-level route rather than a Backtesting tab: this is
+// simulated money moving right now, and having it one click from the historical journal makes the
+// two easy to confuse. `account` is in the URL for the same reason it is on /backtesting - a
+// per-account view should survive a reload.
+const paperRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/paper',
+  validateSearch: (search) => ({
+    view: ['overview', 'holdings', 'trades'].includes(search.view) ? search.view : 'overview',
+    account: Number.isFinite(Number(search.account)) && search.account ? Number(search.account) : undefined,
+  }),
+  component: PaperTrading,
+})
+
 const autoBacktestDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/backtest/auto/$scriptId',
@@ -105,6 +121,7 @@ const routeTree = rootRoute.addChildren([
   topNewsRoute,
   holdingsRoute,
   backtestingRoute,
+  paperRoute,
   autoBacktestDetailRoute,
   barReplayRoute,
 ])

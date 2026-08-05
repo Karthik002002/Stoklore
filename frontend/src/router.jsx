@@ -9,6 +9,7 @@ import PaperTrading from './paper/PaperTrading'
 import StockDetail from './StockDetail'
 import StocksList from './StocksList'
 import TopNews from './TopNews'
+import TradeSimulation from './TradeSimulation'
 
 const SETTINGS_TABS = [
   'model',
@@ -99,6 +100,27 @@ const paperRoute = createRoute({
   component: PaperTrading,
 })
 
+// Monte Carlo over a trade log. Its own top-level route rather than a fifth Backtesting tab: the
+// /backtesting tabs all describe trades that happened, this one projects trades that haven't - and
+// it runs over paper accounts too, which that page's account picker deliberately excludes.
+//
+// Two independent selections, not one: `account` is the Single tab's one account (no "all accounts"
+// option - pooling two strategies describes a trader who doesn't exist), and `accounts` is the
+// Multiple tab's comma-separated list, each still simulated on its own. Keeping them separate means
+// switching tabs doesn't destroy the other tab's selection. `view` is the inner tab under Multiple:
+// 'comparison' or a stringified account id.
+const simulationRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/simulation',
+  validateSearch: (search) => ({
+    mode: search.mode === 'multiple' ? 'multiple' : 'single',
+    account: Number.isFinite(Number(search.account)) && search.account ? Number(search.account) : undefined,
+    accounts: typeof search.accounts === 'string' && search.accounts ? search.accounts : undefined,
+    view: typeof search.view === 'string' && search.view ? search.view : undefined,
+  }),
+  component: TradeSimulation,
+})
+
 const autoBacktestDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/backtest/auto/$scriptId',
@@ -122,6 +144,7 @@ const routeTree = rootRoute.addChildren([
   holdingsRoute,
   backtestingRoute,
   paperRoute,
+  simulationRoute,
   autoBacktestDetailRoute,
   barReplayRoute,
 ])

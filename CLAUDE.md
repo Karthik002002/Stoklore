@@ -1,3 +1,9 @@
+# Git & GitHub
+
+- **Never push to GitHub unless explicitly asked.** All changes are local only. You control when/if code goes to GitHub.
+- Commits can be made if requested, but ask first.
+- No `git push`, `git push --force`, or any remote operations without explicit permission.
+
 # Response style
 
 - Terse, code-first. Lead with the diff/code, not a preamble restating the request.
@@ -33,6 +39,34 @@ just been added and was NULL everywhere. The whole journal was destroyed. Rules 
 - A newly added column is NULL for every existing row. Never use `<new_column> IS NULL` to mean
   "the rows I just made".
 - Same care for `DROP`, `TRUNCATE`, `UPDATE` without a key, and destructive `psql -c` one-liners.
+
+## Trade Log Simulation (`/simulation`)
+
+Monte Carlo over your own trade history, not asset returns. Two independent modes:
+
+- **Single** — one account in depth. URL: `?account=ID&mode=single`
+- **Multiple** — n accounts compared. Each runs separately (never pooled). Inner tabs: Comparison + one per account. URL: `?mode=multiple&accounts=1,2,3&view=comparison|account-id`
+
+**Engine** (`frontend/src/lib/tradeSimulation.js`):
+- Pure functions, no React, no network. Synchronous, single-threaded.
+- `simulate()` — runs the whole thing. ~1M iterations in single-digit ms.
+- Bootstrap (with replacement) and shuffle (without replacement) models.
+- Position sizing: as-logged, fixed-₹ risk, or fixed-% of equity.
+- `dailyTotals()` + `pearson()` + `correlationMatrix()` — correlates accounts on realised daily P&L (stationary, not simulated curves).
+- Self-check: `node frontend/src/lib/tradeSimulation.selfcheck.mjs` (passing).
+
+**Important:** correlation is computed on daily P&L over shared trading days only. Days one account didn't trade are dropped (not zero-filled), and cells with <10 shared days are greyed out in the UI. Correlating two equity curves would report ~0.99 for any two profitable strategies (both drift up = time passing, not agreement).
+
+**Backend:** zero changes. Reuses `getManualTrades()` and `getTradeAccounts('journal'|'paper')`. Paper exits are written to `manual_trades` tagged 'paper', so both logs are one client-side filter apart.
+
+**URL state:**
+- Single: `account` (required for this tab)
+- Multiple: `accounts` (comma-separated IDs), `view` ('comparison' or stringified account ID for per-account tab)
+- Shared: `mode` ('single' or 'multiple'), config saved to `localStorage` as `tradeSimulation.preset`
+
+**Exports:** CSV (percentile summary + per-run data in Single; every metric per percentile + correlation matrix in Multiple), PDF (browser's print-to-PDF, nav/config drops out via `.no-print`), preset (localStorage).
+
+**Docs:** [docs/trade-simulation.md](docs/trade-simulation.md) — full usage manual, correlation explanation, limits.
 
 ## graphify
 

@@ -1,6 +1,7 @@
 import { Link, Outlet } from '@tanstack/react-router'
 import {
   IconChartCandle,
+  IconChartHistogram,
   IconFlask,
   IconLayoutDashboard,
   IconNews,
@@ -28,6 +29,7 @@ const NAV_ITEMS = [
   { to: '/holdings', icon: IconWallet, label: 'Holdings' },
   { to: '/backtesting', icon: IconFlask, label: 'Backtesting' },
   { to: '/paper', icon: IconChartCandle, label: 'Paper Trading' },
+  { to: '/simulation', icon: IconChartHistogram, label: 'Trade Simulation' },
 ]
 
 // Icon-rail nav item: TanStack Router's Link auto-applies an "active" class on route match
@@ -88,7 +90,7 @@ function App() {
   return (
     <TooltipProvider>
       <div className="flex min-h-screen ">
-        <aside className="sticky top-0 flex h-screen w-14 shrink-0 flex-col items-center gap-1 border-r bg-background py-4">
+        <aside className="no-print sticky top-0 flex h-screen w-14 shrink-0 flex-col items-center gap-1 border-r bg-background py-4">
           <Link
             to="/"
             aria-label="NSE Research"

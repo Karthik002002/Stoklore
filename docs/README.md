@@ -17,5 +17,6 @@ why it exists, see the main [README](../README.md) — these docs are the
 - [Backtesting — Manual (Trade Journal)](backtesting-manual.md)
 - [Bar Replay](bar-replay.md)
 - [Paper Trading](paper-trading.md)
+- [Trade Log Simulation & Stress Testing](trade-simulation.md)
 - [Scraping & Anti-Block Transport](scraping.md)
 - [Database Backups](backups.md)

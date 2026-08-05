@@ -86,3 +86,11 @@
     @apply tracking-wider uppercase;
     }
 }
+
+/* "Export PDF" is window.print() - the browser's own print-to-PDF, rather than a PDF library and a
+   second layout to keep in sync with the real one. `.no-print` drops the chrome (nav rail, config
+   inputs, the buttons themselves); the rest is the page as rendered, charts included. */
+@media print {
+  .no-print { display: none !important; }
+  .rounded-xl { break-inside: avoid; }
+}

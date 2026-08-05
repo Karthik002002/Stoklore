@@ -634,6 +634,24 @@ git config core.hooksPath .githooks
 
 </div>
 
+## 🤖 AI Collaboration Disclosure
+
+I'm the sole dev on this project, and I lean on AI assistants (LLMs) to move faster — mostly for the parts that don't need a human brain the first time around.
+
+**How AI is used here:**
+* Generating boilerplate code and routine scripts.
+* Writing and formatting documentation.
+* Brainstorming algorithms and debugging assistance.
+
+**Human Oversight:**
+I review, refactor, and test AI-generated code before it ships — not blindly copy-pasted, just used to move faster.
+
+<div align="right">
+
+[![][back-to-top]](#readme-top)
+
+</div>
+
 ## ✨ Credits
 
 **Design & product inspiration:**

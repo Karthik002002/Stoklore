@@ -313,6 +313,19 @@ forward instead of resetting every bar).
   Settings — never a full chart rebuild, so changing a color doesn't reset
   your zoom either.
 
+### Replayed dates vs. wall-clock dates
+
+A replay trade is journaled under the **real wall-clock time** (`traded_at`),
+deliberately — that's what keeps the journal's calendar and goals meaningful
+regardless of which historical period was being replayed. Which is exactly why
+the replayed dates have to be sent *separately*: `CloseTradeDialog` also
+carries `market_at` (the bar the position was entered on) and `exited_at` (the
+bar it closed on). The backend reads the price bars around `market_at`, not
+`traded_at`, for the
+[entry-context snapshot](backtesting-manual.md#trade_context-a-point-in-time-snapshot-captured-once)
+— without these, a trade replayed from 2022 would be scored against today's
+chart.
+
 ### Screenshot on close
 
 `ReplayChart` exposes a `captureScreenshot()` method via `useImperativeHandle`,

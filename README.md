@@ -16,7 +16,7 @@ leaving your laptop unless you tell it to.
 **Scraping** · **Local LLM chat with tool calling** · **Watchlists & events** ·
 **Price history & EMA crossover** · **Sentiment analysis** ·
 **Broker-synced holdings** · **Backtesting** ·
-**Bar Replay from 1 minute to 1 month**
+**Bar Replay from 1 minute to 1 month** · **Live-price paper trading**
 
 </div>
 
@@ -39,13 +39,14 @@ leaving your laptop unless you tell it to.
   - [`10` Holdings (Broker Sync)](#10-holdings-broker-sync)
   - [`11` Backtesting](#11-backtesting)
   - [`12` Bar Replay](#12-bar-replay)
+  - [`13` Paper Trading](#13-paper-trading)
   - [`*` What's more](#-whats-more)
 - [🧱 Stack](#-stack)
 - [🚀 Running It](#-running-it)
 - [🧩 Adding a Custom Skill](#-adding-a-custom-skill)
 - [⌨️ CLI Scan](#️-cli-scan)
 - [🧹 Formatting & Pre-commit](#-formatting--pre-commit)
-- [🙏 Credits](#-credits)
+- [✨ Credits](#-credits)
 
 ####
 
@@ -77,8 +78,9 @@ to guard rails you can see and control.
 - **Watchlists**: bookmark any tracked stock into named lists, move a stock
   between lists, filter the table by tab
 - A minimal icon-rail sidebar nav (hover tooltips, active-route highlight) —
-  Stocks dashboard, Events feed, Top news, Holdings, Backtesting, Settings,
-  theme toggle, and a **Reload** button that clears the shared cache on demand
+  Stocks dashboard, Events feed, Top news, Holdings, Backtesting, Paper
+  Trading, Settings, theme toggle, and a **Reload** button that clears the
+  shared cache on demand
 
 <div align="right">
 
@@ -390,7 +392,16 @@ OHLCV, no backend execution involved:
   configurable in Settings), and min/max expected-R
 - **Trades table** — P&L ₹, R:R, and return % computed client-side per row
   (`tradeStats`/`manualTrades` lib), with an image lightbox for attached
-  screenshots
+  screenshots. Clicking a row opens a **read-only trade detail view** (editing
+  is one button further in): the trade, an execution scorecard (risk deviation,
+  target capture, stop overrun), MAE/MFE, and the market conditions at entry
+- **Market context captured once per trade** (`trade_context.py`) — trend
+  (20/50 EMA), volatility regime (ATR percentile), how extended the entry was
+  in ATRs off the 20-EMA, position in the 100-bar range, volume vs average,
+  plus **MAE/MFE** in % and R once a close date is known. Computed from local
+  bars at creation and frozen on the row — never recomputed, because bars get
+  split-adjusted and revised behind you. Also four new Statistics dimensions
+  ("do I only lose when I chase?")
 - **Export CSV** (`GET /api/manual-trades/export?format=csv`) and a direct
   link into **Bar Replay** (see [`12` Bar Replay](#12-bar-replay))
 
@@ -444,6 +455,47 @@ Bar Replay.
 
 </div>
 
+### `13` Paper Trading
+
+A `/paper` page: place orders against **live prices** and let a backend engine
+fill, stop out, and journal them while you're away. Bar Replay simulates the
+past; this simulates right now. Its own top-level route rather than a
+Backtesting tab — this is simulated money moving in real time, and sitting it
+one click from the historical journal makes the two easy to confuse.
+
+- **Its own wallet** — paper accounts (`trade_accounts.kind = 'paper'`) are
+  managed in Settings → Paper accounts and never mix with journal accounts, so
+  a hand-logged trade can't be filed against a simulated wallet
+- **Market and limit orders** with **laddered stop-loss/target legs** — each
+  rung carries its own quantity, so "half at target 1, the rest at target 2"
+  closes exactly that slice and leaves the position open at the reduced size.
+  Same `{id, price, qty}` leg shape Bar Replay uses
+- **A background poller** (`paper.py`, 20s, idles outside 09:15–15:30 IST)
+  quotes every symbol with an open position through the app's existing TTL
+  quote cache and fires what the price reached — so exits happen with the tab
+  closed. A **Refresh prices** button forces one sweep on demand
+- **Honest-but-pessimistic fills** — polling can jump clean past a level
+  between samples, so a stop that gapped through fills at the *worse observed
+  price*, never the level you set. For a practice tool, erring against the
+  trader is the right direction
+- **Live/stale/market-closed heartbeat** badge driven by the engine's own poll
+  interval, and a price cell that flashes only when the price actually moved
+- **Overview**: net portfolio value, unrealized/realized P&L, win rate,
+  available cash, max drawdown, and a realized equity curve
+- Every exit is journaled into the **same `manual_trades` table** (tagged
+  `paper` + `Hit SL`/`Hit Target`/`Manual Close`), so the journal's Statistics
+  and Goals work on paper trades with no parallel implementation
+- Deleting a paper account with open positions is **refused (409)** rather
+  than silently cascading them away
+
+Full details: [docs/paper-trading.md](docs/paper-trading.md).
+
+<div align="right">
+
+[![][back-to-top]](#readme-top)
+
+</div>
+
 ### `*` What's more
 
 - Corporate-action, price-move, and volume-spike detection reuse the exact
@@ -479,6 +531,7 @@ Bar Replay.
 | Prices     | `prices.py` — incremental daily OHLCV sync (1y + full-history tiers) + EMA crossover math; `minute_data.py` — intraday bars (1m–4H) for Bar Replay, streamed on demand from a HuggingFace minute dataset via DuckDB, yfinance fallback |
 | Brokers    | `broker.py` (Dhan v2) + `kite.py` (Kite Connect v3) — read-only holdings/margin, normalized to one shape |
 | Backtests  | Manual: `backtest.py` — long-only EMA-crossover backtest over stored `price_history` (not yet wired into the UI). Auto: user-written Pine Script run client-side via `pinets` (PineTS) against `price_history`/`price_history_max`, saved as templates in `auto_backtest_scripts` |
+| Paper      | `paper.py` — background poller (20s, market hours only) that marks open `paper_positions` against live quotes and fires laddered simulated exits into the manual journal; `trade_context.py` — one-time entry-context + MAE/MFE snapshot stored on every trade |
 | Storage    | Postgres + pgvector (`db.py`)                                      |
 | API        | FastAPI (`api.py`) — chat streams over the AI SDK UI Message Stream protocol; 14 explicit agent tools (`AGENT_TOOLS`/`REAL_TOOL_IMPLS`) |
 | Frontend   | React + Vite, shadcn/ui, AI Elements, `@ai-sdk/react`, lightweight-charts, `pinets` (in-browser Pine Script v5 runtime) (`frontend/`) |
@@ -581,7 +634,7 @@ git config core.hooksPath .githooks
 
 </div>
 
-## 🙏 Credits
+## ✨ Credits
 
 **Design & product inspiration:**
 

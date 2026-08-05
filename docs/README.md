@@ -16,5 +16,6 @@ why it exists, see the main [README](../README.md) — these docs are the
 - [Backtesting — Auto](backtesting-auto.md) *(currently disabled, see the doc)*
 - [Backtesting — Manual (Trade Journal)](backtesting-manual.md)
 - [Bar Replay](bar-replay.md)
+- [Paper Trading](paper-trading.md)
 - [Scraping & Anti-Block Transport](scraping.md)
 - [Database Backups](backups.md)

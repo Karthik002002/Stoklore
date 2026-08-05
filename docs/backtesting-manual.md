@@ -12,6 +12,13 @@
   optional screenshot). Result (profit/loss/neutral) auto-computes from
   entry/exit/direction, but overriding it by hand stops it from silently
   recomputing on further edits. Tick "still open" to skip the exit price.
+  A closed trade also gets an optional **Closed** date next to **Opened** —
+  optional, but it's what unlocks MAE/MFE ("how far it ran") in the detail
+  view, since the excursion needs a holding window to measure over.
+- **Clicking a row opens the trade's detail view** (read-only), not the edit
+  form — reviewing a trade is the common action, editing it the rare one, so
+  editing is one click further in (the **Edit** button inside that modal).
+  See [Trade detail](#trade-detail-what-the-trade-did-vs-what-you-did) below.
 - **Bulk Trades** to import several trades at once from screenshots — each
   image is analyzed and its fields pre-filled for you to confirm.
 - The **Trades** tab lists every trade with a filter bar (setup, NSE
@@ -27,7 +34,8 @@
 - The **Goals** tab (see below) scores your trades against targets/limits
   you define, per day/week/month.
 - **Bar Replay** button opens the bar-by-bar replay tool ([docs](bar-replay.md))
-  — trades you log there land in this same journal, tagged `replay`.
+  — trades you log there land in this same journal, tagged `replay`. Live-price
+  [Paper Trading](paper-trading.md) trades land here too, tagged `paper`.
 - The **account picker** (top right, next to Export CSV) scopes all four
   sub-tabs to one trading account, or "All accounts". The choice lives in the
   URL (`?account=3`), so a per-strategy view is shareable and survives a
@@ -121,6 +129,69 @@ when, say, all your logged trades are from a Bar Replay session set years
 in the past. A "Today" button is still there to get back to the real
 current month.
 
+### Trade detail: what the trade did vs what you did
+
+Clicking a row opens `TradeDetailDialog` — a read-only review of one trade in
+four sections:
+
+- **The trade** — entry/exit/stop/target, opened and closed timestamps,
+  planned R:R, result in R.
+- **Execution** — risk taken vs planned, risk deviation %, target capture %,
+  stop overrun %. All of it independent of whether the trade made money.
+- **How far it ran** — MAE/MFE (below).
+- **Market at entry** — the entry-context snapshot (below), rendered as
+  sentences rather than raw numbers: "+3.81 ATR from the 20-EMA — well past the
+  mean, chasing a move that had already happened."
+
+The modal re-reads the trade from the live list rather than the snapshot
+captured when the row was clicked, so an edit made from inside it is reflected
+immediately.
+
+### `trade_context`: a point-in-time snapshot, captured once
+
+`trade_context.py` computes one JSON blob at trade creation and stores it on
+the row (`manual_trades.trade_context`). It is **never recomputed on read** —
+same reasoning as `account_balance_at_trade` below: it's a point-in-time fact,
+and bars get split-adjusted and revised behind you, so recomputing later would
+silently rewrite the history you're trying to learn from. Everything is read
+from the local DB (`db.bars_before` / `db.bars_between`, preferring
+`price_history_max` and falling back to the rolling 1y `price_history`) — no
+network, which is what keeps the bulk-import dialog's N parallel POSTs usable.
+
+Two halves, knowable at different times:
+
+- **Entry context**, from the ~100 daily bars *strictly before* entry: trend
+  (20/50 EMA), volatility regime (ATR percentile, 20/80 split), how extended
+  the entry was (signed ATRs from the 20-EMA — positive always means "entered
+  in the direction the move had already gone", so it reads the same for a
+  short), position in the 100-bar range (deliberately **not** clamped to
+  [0, 1]: >1 is a breakout, and clamping would erase exactly the interesting
+  distinction), volume vs its 20-day average, and `with_trend`.
+- **MAE / MFE** (Maximum Adverse / Favourable Excursion) over the holding
+  window: the heat the trade took before it worked, and the best it ever
+  offered before you closed it. Expressed both as a % of entry and in **R**
+  against the stop distance, since percentages aren't comparable across symbols
+  but R multiples are. Needs an exit date — without one these keys are simply
+  **absent**, not zero (`mae_pct: 0` is a real and very different finding, so
+  the UI branches on key presence throughout).
+
+**Fill-once is per-half, not per-row.** Logging a trade open and closing it
+later is the ordinary workflow, so on edit: no snapshot at all → compute the
+whole thing; entry context stored but no excursion and an exit date has now
+arrived → compute **only** the excursion and merge it onto the stored entry
+context (re-reading the entry bars could pick up a split adjustment and rewrite
+a fact you already have); everything present → touch nothing.
+
+Under 30 prior bars, the snapshot stores `{bars_used, context_insufficient}`
+rather than a partial payload — a dict carrying `trend` but no `vol_regime`
+reads exactly like a real one at a glance. The detail view explains the gap
+("Only 12 prior bars were available…") instead of showing blanks. Excursion is
+still attached in that case, since MAE/MFE doesn't depend on the lookback.
+
+```bash
+.venv/bin/python trade_context.selfcheck.py
+```
+
 ### Trade accounts: one strategy, one wallet, one frozen balance per trade
 
 An account is a *system being run with a pot of money* — **one strategy each**,
@@ -162,8 +233,10 @@ balance, and its deposits/withdrawals.
 
 `frontend/src/lib/tradeStats.js` is a small reduction engine — a
 `DIMENSIONS` lookup (symbol, setup, tag, emotion, direction, day of week,
-session, hour, month, year, price range, quantity range, R-multiple bucket)
-crossed with a `METRICS` lookup (net/avg P&L, win rate, count, volume,
+session, hour, month, year, price range, quantity range, R-multiple bucket,
+plus four **market-context** dimensions read off the stored `trade_context`
+snapshot — trend alignment, volatility regime, entry extension, range
+position) crossed with a `METRICS` lookup (net/avg P&L, win rate, count, volume,
 turnover, avg R/expectancy, profit factor, avg return %, avg planned R:R, avg
 account return %).
 Every "metric by dimension" chart on the tab (`ManualStatistics.jsx`) is the
@@ -201,6 +274,12 @@ nothing per-chart to wire up.
   Shade intensity is normalized against the darkest cell *in the current
   view*, so color isn't comparable across different months — hover a cell
   for its exact values.
+- **The market-context dimensions** ("do I only lose when I chase?") bucket
+  coarsely on purpose — slicing 100 trades across many fine buckets finds
+  patterns that are pure noise. Trades logged before the feature shipped, or on
+  a symbol with no local price history, land in an explicit **Not captured**
+  bucket rather than being dropped: a dimension that quietly excludes most of
+  the journal makes the surviving buckets look far better sampled than they are.
 - Every panel here operates on `closedTrades(trades)` only — an open
   position has no P&L yet, so it's excluded from every chart rather than
   counted as a zero.
@@ -218,9 +297,9 @@ a stale percentage on screen.
 - **Metrics a goal can track** are the Statistics tab's `METRICS` (so a
   goal can never disagree with the chart of the same name) plus
   goal-specific ones: winning/losing trade count, gross loss, max drawdown,
-  largest risk taken (entry-to-stop ₹, since this journal doesn't store
-  intra-trade prices for a true MAE-based risk goal the way TradesViz
-  does), and stop violations.
+  largest risk taken (entry-to-stop ₹ — MAE is now captured per trade in
+  `trade_context`, but goals still score against planned risk, not realized
+  heat), and stop violations.
 - **Operator** is "at least" (`gt`) for targets or "at most" (`lt`) for
   limits. **Mode** is either `continuous` (partial credit — e.g. ₹4,000 of
   a ₹5,000 target scores 80%) or `binary` (met or not, no partial credit).

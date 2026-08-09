@@ -50,6 +50,15 @@ const INITIAL_VISIBLE_BARS = 200
 // dragging - see the drag-to-adjust effect below.
 const DRAG_HIT_PX = 6
 
+// Signed percentage of `exit_price` away from entry, in the position's own direction (so a target
+// reads + and a stop reads - for a short exactly as for a long). Shared by the price-line labels
+// and the floating pills, which must never disagree about a level's distance.
+function pctFromEntry(trade) {
+  const pct = tradeReturnPct(trade)
+  if (pct == null) return '—'
+  return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
+}
+
 // Draw long/short tool - disabled for now, kept for later (see the other commented-out pieces
 // in this file: the pan/zoom effect, the draw branches in the pointer effect, the render below,
 // and the DrawZone component at the bottom).
@@ -87,6 +96,11 @@ const ReplayChart = forwardRef(function ReplayChart(
     onAdjustOrder,
     addLevelMode,
     onPlaceLevel,
+    onArmAddLevel,
+    onRemoveLevel,
+    onRequestClose,
+    view,
+    onViewChange,
     settings = DEFAULT_CHART_SETTINGS,
     // drawMode,
     // drawings = [],
@@ -96,6 +110,7 @@ const ReplayChart = forwardRef(function ReplayChart(
   ref,
 ) {
   const containerRef = useRef(null)
+  const overlayRef = useRef(null)
   const chartRef = useRef(null)
   const candleSeriesRef = useRef(null)
   const volumeSeriesRef = useRef(null)
@@ -118,6 +133,13 @@ const ReplayChart = forwardRef(function ReplayChart(
   addLevelModeRef.current = addLevelMode
   const onPlaceLevelRef = useRef(onPlaceLevel)
   onPlaceLevelRef.current = onPlaceLevel
+  // Read by the first-data effect and the sampler below, both of which must see the *current*
+  // view without re-running (re-running the sampler would restart its interval on every render,
+  // and re-running the data effect would re-frame the chart under the user mid-session).
+  const viewRef = useRef(view)
+  viewRef.current = view
+  const onViewChangeRef = useRef(onViewChange)
+  onViewChangeRef.current = onViewChange
   // const drawModeRef = useRef(drawMode)
   // drawModeRef.current = drawMode
   // const onDrawCompleteRef = useRef(onDrawComplete)
@@ -373,20 +395,25 @@ const ReplayChart = forwardRef(function ReplayChart(
       next.set(ind.key, series)
     })
     indicatorSeriesRef.current = next
+    // Pane heights come from the persisted view, so a dragged-taller RSI pane survives a reload
+    // (and an added/removed oscillator) instead of snapping back to the 3:1 default.
     const oscillatorPane = chart.panes()[OSCILLATOR_PANE]
     if (oscillatorPane) {
-      chart.panes()[0].setStretchFactor(3)
-      oscillatorPane.setStretchFactor(1)
+      const [priceStretch, oscillatorStretch] = view?.paneStretch ?? [3, 1]
+      chart.panes()[0].setStretchFactor(priceStretch)
+      oscillatorPane.setStretchFactor(oscillatorStretch)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [indicators, resetKey, settings.rsiLevels, settings.bodyUpColor, settings.bodyDownColor])
 
   // Data updates - runs on every bar step, but only ever calls .setData() on already-existing
-  // series, never recreates the chart. The initial view only fires once per resetKey (first data
-  // after a symbol/timeframe change or fresh replay start), never on subsequent steps - and shows
-  // just the most recent INITIAL_VISIBLE_BARS bars rather than fitContent()'ing the entire
-  // history (which, starting deep into a symbol's history, would zoom out to cram thousands of
-  // candles into view instead of a readable recent window).
+  // series, never recreates the chart. The initial framing only fires once per resetKey (first
+  // data after a symbol/timeframe change or fresh replay start), never on subsequent steps.
+  //
+  // A persisted zoom window wins if there is one, so a reload lands exactly where you left off.
+  // Otherwise it shows the most recent INITIAL_VISIBLE_BARS bars rather than fitContent()'ing the
+  // entire history (which, starting deep into a symbol's history, would zoom out to cram thousands
+  // of candles into view instead of a readable recent window).
   useEffect(() => {
     const candles = candleSeriesRef.current
     if (!candles || bars.length === 0) return
@@ -410,7 +437,10 @@ const ReplayChart = forwardRef(function ReplayChart(
       series.setData(INDICATOR_TYPES[ind.type].compute(indicatorBars, ind.period))
     })
     if (!hasFitRef.current) {
-      if (bars.length > INITIAL_VISIBLE_BARS) {
+      const saved = viewRef.current?.logicalRange
+      if (saved) {
+        chartRef.current?.timeScale().setVisibleLogicalRange(saved)
+      } else if (bars.length > INITIAL_VISIBLE_BARS) {
         chartRef.current
           ?.timeScale()
           .setVisibleLogicalRange({ from: bars.length - INITIAL_VISIBLE_BARS, to: bars.length - 1 })
@@ -425,26 +455,20 @@ const ReplayChart = forwardRef(function ReplayChart(
   }, [bars, indicators, resetKey, settings.rsiLevels, settings.bodyUpColor, settings.bodyDownColor])
 
   // Entry/SL/target lines for every order (pending limits get a dotted amber entry line, filled
-  // positions get a dashed gray one) - redrawn whenever the order list changes, or a new bar
-  // reveals a fresh close, so the entry line's label can show the position's live return. Keyed
-  // by `orderId:role` so the drag effect above can reposition a single line without a full redraw.
+  // positions get a dashed gray one). Keyed by `orderId:role` so the drag effect above can
+  // reposition a single line without a full redraw.
+  //
+  // Every line is deliberately title-less: lightweight-charts draws a price line's title hard
+  // against the price scale, where it collides with the axis labels and gets clipped. The floating
+  // pills (PositionPills below) carry all the text instead, sitting 80% along the line where
+  // there's room for it - so the line here is only the line.
   useEffect(() => {
     const candles = candleSeriesRef.current
     if (!candles) return
     orderLinesRef.current.forEach((line) => candles.removePriceLine(line))
     const next = new Map()
-    const lastClose = bars.length ? bars[bars.length - 1].close : null
     orders.forEach((order) => {
       const pending = order.status === 'pending'
-      let entryTitle = pending ? 'Limit' : 'Entry'
-      if (!pending && lastClose != null) {
-        const pct = tradeReturnPct({
-          direction: order.direction,
-          entry_price: order.entryPrice,
-          exit_price: lastClose,
-        })
-        if (pct != null) entryTitle = `${order.quantity}  ${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
-      }
       next.set(
         `${order.id}:entry`,
         candles.createPriceLine({
@@ -452,11 +476,11 @@ const ReplayChart = forwardRef(function ReplayChart(
           color: pending ? '#eab308' : '#9ca3af',
           lineWidth: 1,
           lineStyle: pending ? 3 : 2,
-          title: entryTitle,
+          title: '',
         }),
       )
       const slLegs = order.stopLosses ?? []
-      slLegs.forEach((leg, i) => {
+      slLegs.forEach((leg) => {
         next.set(
           `${order.id}:stopLoss:${leg.id}`,
           candles.createPriceLine({
@@ -464,12 +488,12 @@ const ReplayChart = forwardRef(function ReplayChart(
             color: COLORS.down,
             lineWidth: 1,
             lineStyle: 2,
-            title: slLegs.length > 1 ? `SL${i + 1} ${leg.qty}` : 'SL',
+            title: '',
           }),
         )
       })
       const targetLegs = order.targets ?? []
-      targetLegs.forEach((leg, i) => {
+      targetLegs.forEach((leg) => {
         next.set(
           `${order.id}:target:${leg.id}`,
           candles.createPriceLine({
@@ -477,13 +501,74 @@ const ReplayChart = forwardRef(function ReplayChart(
             color: COLORS.up,
             lineWidth: 1,
             lineStyle: 2,
-            title: targetLegs.length > 1 ? `T${i + 1} ${leg.qty}` : 'Target',
+            title: '',
           }),
         )
       })
     })
     orderLinesRef.current = next
-  }, [orders, resetKey, bars])
+    // No longer redraws on every `bars` change: the lines are title-less now, so a new bar can't
+    // change anything about them. The live return moved to the pills, which re-render on their own.
+  }, [orders, resetKey])
+
+  // Samples the chart's framing (zoom window + pane heights) back into the persisted store, so a
+  // reload restores it. Only writes when something actually moved - a no-op tick must not churn
+  // the store or localStorage.
+  //
+  // ponytail: a 500ms poll rather than event subscriptions. The time scale does emit
+  // subscribeVisibleLogicalRangeChange, but dragging a pane separator emits nothing at all, so
+  // half of this would need polling regardless; one timer covering both beats a subscription plus
+  // a timer. 500ms only loses the last half-second of framing on a hard reload.
+  useEffect(() => {
+    const id = setInterval(() => {
+      const chart = chartRef.current
+      if (!chart) return
+      const range = chart.timeScale().getVisibleLogicalRange()
+      const panes = chart.panes()
+      const stretch = panes.length > OSCILLATOR_PANE ? panes.map((p) => p.getStretchFactor()) : null
+
+      const prev = viewRef.current ?? {}
+      const movedRange =
+        range && (range.from !== prev.logicalRange?.from || range.to !== prev.logicalRange?.to)
+      const movedPanes = stretch && String(stretch) !== String(prev.paneStretch)
+      if (!movedRange && !movedPanes) return
+
+      onViewChangeRef.current?.({
+        ...(movedRange ? { logicalRange: { from: range.from, to: range.to } } : {}),
+        ...(movedPanes ? { paneStretch: stretch } : {}),
+      })
+    }, 500)
+    return () => clearInterval(id)
+  }, [])
+
+  // Keeps every floating pill sitting on its own price line. The pills are HTML over a canvas, so
+  // nothing tells React when the price scale moves - panning, zooming, autoscaling to a new bar
+  // and dragging a level all shift the mapping without any prop changing.
+  //
+  // ponytail: one rAF loop writing style.top directly, running only while a position is open. It
+  // re-reads coordinates ~60x/s instead of reacting to actual scale changes, and skips React
+  // entirely so it costs a transform, not a render. If that ever shows up in a profile, swap it
+  // for the chart's own subscribeVisibleLogicalRangeChange plus a ResizeObserver.
+  useEffect(() => {
+    if (orders.length === 0) return
+    let raf = 0
+    const tick = () => {
+      const series = candleSeriesRef.current
+      const root = overlayRef.current
+      if (series && root) {
+        for (const el of root.querySelectorAll('[data-price]')) {
+          const y = series.priceToCoordinate(Number(el.dataset.price))
+          // Off-scale (scrolled out of the visible price range) hides rather than clamps - a pill
+          // pinned to the top edge would claim a level is there when it isn't.
+          el.style.visibility = y == null ? 'hidden' : 'visible'
+          if (y != null) el.style.top = `${y}px`
+        }
+      }
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [orders.length])
 
   // Live preview lines while the order ticket is open (dotted, distinct from confirmed orders'
   // lines above) - updates as the user edits the dialog, before anything is actually placed.
@@ -534,6 +619,25 @@ const ReplayChart = forwardRef(function ReplayChart(
           Pick a symbol and start replay.
         </div>
       )}
+
+      {/* Floating controls sitting on their own price lines (TradingView's on-chart position
+          widget). Rendered as HTML rather than through the chart, because lightweight-charts'
+          price-line titles are plain text - they can show the % but can't hold a button. The
+          canvas underneath still owns dragging; these only add the actions. */}
+      <div ref={overlayRef} className="pointer-events-none absolute inset-0 z-10">
+        {orders.map((order) => (
+          <PositionPills
+            key={order.id}
+            order={order}
+            lastClose={bars.length ? bars[bars.length - 1].close : null}
+            addLevelMode={addLevelMode}
+            onArmAddLevel={onArmAddLevel}
+            onRemoveLevel={onRemoveLevel}
+            onRequestClose={onRequestClose}
+          />
+        ))}
+      </div>
+
       {/* Draw long/short tool - disabled for now, kept for later.
       {drawPreview && <DrawZone zone={drawPreview} candles={candleSeriesRef.current} />}
       {drawings.map((zone) => (
@@ -550,6 +654,99 @@ const ReplayChart = forwardRef(function ReplayChart(
 })
 
 export default ReplayChart
+
+// One pill per price line, centred 80% of the way along it (`data-price` is what the rAF loop
+// above reads for its vertical position). Deliberately NOT at the right end: that is where the
+// price scale lives, so a pill there sits half under the axis labels and gets clipped.
+//
+// `pointer-events-auto` per-pill, since the overlay wrapper is pointer-events-none - the chart
+// must keep receiving the drags and clicks that land anywhere else.
+const PILL =
+  'absolute left-[80%] -translate-x-1/2 -translate-y-1/2 pointer-events-auto flex items-center ' +
+  'rounded border bg-background/90 text-[11px] whitespace-nowrap tabular-nums shadow-sm backdrop-blur-sm'
+
+function PillButton({ label, title, onClick, className = '' }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      className={`px-1.5 py-0.5 hover:bg-muted ${className}`}
+    >
+      {label}
+    </button>
+  )
+}
+
+function PositionPills({ order, lastClose, addLevelMode, onArmAddLevel, onRemoveLevel, onRequestClose }) {
+  const pending = order.status === 'pending'
+  const pct = (price) =>
+    pctFromEntry({ direction: order.direction, entry_price: order.entryPrice, exit_price: price })
+  const isArmed = (kind) => addLevelMode?.orderId === order.id && addLevelMode.kind === kind
+  // A side is only offered a new level while some quantity on it is still unprotected - matching
+  // BarReplay's placeLevel, which covers exactly the remainder and no-ops once it's zero.
+  const covered = (legs) => (legs ?? []).reduce((s, l) => s + l.qty, 0)
+  const canAdd = (legs) => covered(legs) < order.quantity
+
+  return (
+    <>
+      {/* Entry line: the position's own controls - add a target, add a stop, close out - plus the
+          live return, which is the only one of these numbers that moves on its own. */}
+      <div data-price={order.entryPrice} className={`${PILL} border-primary/60`}>
+        {!pending && canAdd(order.targets) && (
+          <PillButton
+            label="TP"
+            title="Add target - then click the chart"
+            onClick={() => onArmAddLevel?.(order.id, 'target')}
+            className={isArmed('target') ? 'bg-up/25 text-up' : 'text-up'}
+          />
+        )}
+        {!pending && canAdd(order.stopLosses) && (
+          <PillButton
+            label="SL"
+            title="Add stop loss - then click the chart"
+            onClick={() => onArmAddLevel?.(order.id, 'stopLoss')}
+            className={isArmed('stopLoss') ? 'bg-down/25 text-down' : 'text-down'}
+          />
+        )}
+        <span className="border-x px-1.5 py-0.5 font-medium">
+          {pending ? `Limit ${order.quantity}` : `${order.quantity}  ${pct(lastClose)}`}
+        </span>
+        <PillButton label="✕" title="Close position" onClick={() => onRequestClose?.(order)} />
+      </div>
+
+      {/* One pill per leg on each ladder. Removing a leg only drops its protection - it never
+          closes any part of the position (see BarReplay's removeLevel). */}
+      {(order.targets ?? []).map((leg, i, arr) => (
+        <div key={leg.id} data-price={leg.price} className={`${PILL} border-up/60 text-up`}>
+          <span className="px-1.5 py-0.5">
+            {arr.length > 1 ? `T${i + 1}` : 'T'} {leg.qty} {pct(leg.price)}
+          </span>
+          <PillButton
+            label="✕"
+            title={`Remove target ${i + 1}`}
+            onClick={() => onRemoveLevel?.(order.id, 'target', leg.id)}
+            className="border-l"
+          />
+        </div>
+      ))}
+      {(order.stopLosses ?? []).map((leg, i, arr) => (
+        <div key={leg.id} data-price={leg.price} className={`${PILL} border-down/60 text-down`}>
+          <span className="px-1.5 py-0.5">
+            {arr.length > 1 ? `SL${i + 1}` : 'SL'} {leg.qty} {pct(leg.price)}
+          </span>
+          <PillButton
+            label="✕"
+            title={`Remove stop loss ${i + 1}`}
+            onClick={() => onRemoveLevel?.(order.id, 'stopLoss', leg.id)}
+            className="border-l"
+          />
+        </div>
+      ))}
+    </>
+  )
+}
 
 // Green/red zone box for the "Draw long/short" tool (colored purely by tool direction - long:
 // green above entry, red below; short: flipped - not by which way the pointer moved, matching

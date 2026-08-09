@@ -12,6 +12,7 @@ import CloseTradeDialog from './CloseTradeDialog'
 import OrderTicketDialog from './OrderTicketDialog'
 import { processBarForOrders } from './orderEngine'
 import ReplayChart from './ReplayChart'
+import ReplayCommandDialog from './ReplayCommandDialog'
 import SettingsDialog from './SettingsDialog'
 import { useBarReplayStore } from './store'
 
@@ -40,6 +41,7 @@ export default function BarReplay() {
   const indicators = useBarReplayStore((s) => s.indicators)
   const speedMs = useBarReplayStore((s) => s.speedMs)
   const chartSettings = useBarReplayStore((s) => s.settings)
+  const view = useBarReplayStore((s) => s.view)
   const accountId = useBarReplayStore((s) => s.accountId)
   const changeSymbol = useBarReplayStore((s) => s.setSymbol)
   const changeTimeframe = useBarReplayStore((s) => s.setTimeframe)
@@ -48,6 +50,7 @@ export default function BarReplay() {
   const setIndicators = useBarReplayStore((s) => s.setIndicators)
   const setSpeedMs = useBarReplayStore((s) => s.setSpeedMs)
   const setChartSettings = useBarReplayStore((s) => s.setSettings)
+  const setView = useBarReplayStore((s) => s.setView)
   const setAccountId = useBarReplayStore((s) => s.setAccountId)
   const restartStore = useBarReplayStore((s) => s.restart)
 
@@ -72,6 +75,8 @@ export default function BarReplay() {
   // than just losing track of an unconfirmed close.
   const [closeQueue, setCloseQueue] = useState([])
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // 'symbol' | 'timeframe' | null - which centred quick-switcher is open (see ReplayCommandDialog).
+  const [commandMode, setCommandMode] = useState(null)
   // Armed by PositionsList's "Add stop loss"/"Add target" toggle on an already-open position -
   // { orderId, kind: 'stopLoss' | 'target' } while waiting for the next chart click to place the
   // new level there, null otherwise. Placing directly on the chart (see placeLevel below) instead
@@ -380,6 +385,11 @@ export default function BarReplay() {
   const hotkeysEnabled = started && !orderDraft
   useHotkey('b', () => openOrderTicket('long'), { enabled: hotkeysEnabled })
   useHotkey('s', () => openOrderTicket('short'), { enabled: hotkeysEnabled })
+  // Symbol and timeframe switchers. Not gated on `started` like the trading keys above - swapping
+  // instruments is the main thing you do *before* a replay is running. Mod+K stays the global
+  // palette (CommandPalette), so these take the single keys TradingView uses for the same jobs.
+  useHotkey('/', () => setCommandMode('symbol'), { enabled: !orderDraft })
+  useHotkey('t', () => setCommandMode('timeframe'), { enabled: !orderDraft })
   // TradingView's own bar-replay bindings: Shift+Down plays/pauses, Shift+Right steps one bar.
   useHotkey('shift+down', () => setPlaying((p) => !p), { enabled: hotkeysEnabled && (!atEnd || playing) })
   useHotkey('shift+right', () => setBarIndex(currentIndex + 1), { enabled: hotkeysEnabled && !atEnd })
@@ -401,6 +411,13 @@ export default function BarReplay() {
           onAdjustOrder={adjustOrder}
           addLevelMode={addLevelMode}
           onPlaceLevel={placeLevel}
+          // Same three handlers the Positions popover uses - the on-chart pills are just a second
+          // surface onto them, so a level added or dropped from either place is the same action.
+          onArmAddLevel={armAddLevel}
+          onRemoveLevel={removeLevel}
+          onRequestClose={requestClose}
+          view={view}
+          onViewChange={setView}
           settings={chartSettings}
           // drawMode={drawMode}
           // drawings={drawings}
@@ -465,6 +482,14 @@ export default function BarReplay() {
           onArmAddLevel: armAddLevel,
           onRemoveLevel: removeLevel,
         }}
+      />
+
+      <ReplayCommandDialog
+        mode={commandMode}
+        onOpenChange={(next) => !next && setCommandMode(null)}
+        timeframe={timeframe}
+        onSymbol={changeSymbol}
+        onTimeframe={changeTimeframe}
       />
 
       <SettingsDialog

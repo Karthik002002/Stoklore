@@ -13,7 +13,7 @@ import yfinance as yf
 from bs4 import BeautifulSoup
 from ddgs import DDGS
 
-import netfetch
+from app.core import netfetch
 
 NSE_BASE = "https://www.nseindia.com"
 

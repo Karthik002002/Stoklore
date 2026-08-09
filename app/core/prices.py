@@ -5,9 +5,9 @@ gap since the latest stored date - so scanning many symbols never re-downloads a
 """
 from datetime import date, datetime, timedelta
 
-import db
-import price_sources
-import scraper
+from app.core import db
+from app.core import price_sources
+from app.core import scraper
 
 
 def sync_symbol(symbol):

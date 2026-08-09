@@ -3,8 +3,8 @@ from datetime import datetime
 
 from fastapi import HTTPException
 
-import db
-import paper
+from app.core import db
+from app.core import paper
 
 from app.core.config import DIRECTIONS, IST
 from app.schemas import (

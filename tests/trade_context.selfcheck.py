@@ -1,12 +1,19 @@
 """Self-check for trade_context's math and its degradation paths. Plain asserts, no framework:
 
-    .venv/bin/python trade_context.selfcheck.py
+    .venv/bin/python tests/trade_context.selfcheck.py
 
 The degradation cases matter as much as the arithmetic here: a half-filled snapshot that reads
 like a real one is worse than no snapshot, because it silently pollutes the very analysis this
 feature exists to support.
 """
-import trade_context as tc
+import sys
+from pathlib import Path
+
+# Run as a script, so the repo root has to go on sys.path before importing app.* - the package
+# is not installed, it just sits at the repo root.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app.core import trade_context as tc
 
 
 def bar(date, o, h, l, c, v=1000):

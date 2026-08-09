@@ -9,7 +9,7 @@ is far more sensitive to prompt size than a hosted model.
 - Asking about a stock with a lot of scraped history (`scrape_stock` returns a full markdown
   report - news + financials - not a short snippet).
 - A long-running chat session. Every turn resends up to the last 20 messages
-  (`MAX_HISTORY_MESSAGES` in `api.py`) including prior tool results, so a session full of
+  (`MAX_HISTORY_MESSAGES` in `app/main.py` + `app/routers/`) including prior tool results, so a session full of
   `scrape_stock`/`get_movers`/`scrape_url` calls keeps growing until that window caps it.
 - Broad tool results: `get_movers`, `search_reports`, or `web_search` returning many rows/hits in
   one call.

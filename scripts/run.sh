@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
-cd "$(dirname "$0")"
+# Repo root, not this script's own dir - uvicorn resolves `app.main:app` from the working
+# directory, and app/routers/system.py writes local_data/scraped.json relative to it.
+cd "$(dirname "$0")/.."
 
 brew services start postgresql@17
 
@@ -18,31 +20,31 @@ pg_isready >/dev/null 2>&1 || { echo "Postgres didn't come up after 30s" >&2; ex
 
 # curl -s -o /dev/null http://localhost:11434 || { echo "ollama is not running - start it with 'ollama serve'" >&2; exit 1; }
 
-# api.py runs the movers scan itself in a background thread on startup (see _startup() in
-# api.py) so the server and frontend come up immediately instead of blocking here.
+# app/main.py runs the movers scan itself in a background thread on startup (see _startup()
+# there) so the server and frontend come up immediately instead of blocking here.
 
 trap 'kill $(jobs -p) 2>/dev/null' EXIT
-.venv/bin/uvicorn api:app --port 8010 --reload &
+.venv/bin/uvicorn app.main:app --port 8010 --reload &
 (cd frontend && npm run dev -- --port 5180) &
 
 # Always the same fixed port - litellm.config.example.yaml documents Proxy URL as
 # http://localhost:4000, and a stale process from a previous run silently squatting on a
 # different port (instead of failing loudly) is what caused this to drift before. Run kill.sh
 # first if this port is still held by an old run.
-if [ -f litellm.config.yaml ]; then
-  .venv/bin/litellm --config litellm.config.yaml --port 4000 &
+if [ -f config/litellm.config.yaml ]; then
+  .venv/bin/litellm --config config/litellm.config.yaml --port 4000 &
 else
-  echo "litellm.config.yaml not found - skipping LiteLLM proxy (cp litellm.config.example.yaml litellm.config.yaml to set it up)" >&2
+  echo "config/litellm.config.yaml not found - skipping LiteLLM proxy (cp config/litellm.config.example.yaml config/litellm.config.yaml to set it up)" >&2
 fi
 
-# Langfuse (self-hosted, see docker-compose.langfuse.yml) - the LLM tracing backend the
+# Langfuse (self-hosted, see config/docker-compose.langfuse.yml) - the LLM tracing backend the
 # litellm/langfuse callback above sends to. Runs as containers, not a job for this script's
 # `wait` below - `up -d` starts them detached and returns immediately. First boot pulls several
 # images and runs DB migrations, so the web UI (http://localhost:3000) takes a minute to answer.
 if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
-  docker compose -f docker-compose.langfuse.yml up -d
+  docker compose -f config/docker-compose.langfuse.yml up -d
 else
-  echo "Docker not available - skipping Langfuse (start Docker Desktop, or see docker-compose.langfuse.yml)" >&2
+  echo "Docker not available - skipping Langfuse (start Docker Desktop, or see config/docker-compose.langfuse.yml)" >&2
 fi
 
 wait

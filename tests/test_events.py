@@ -1,10 +1,17 @@
 """Self-check for the watchlist event scan: all 4 event types insert once, re-scan inserts zero."""
+import sys
+from pathlib import Path
+
+# Run as a script, so the repo root has to go on sys.path before importing app.* - the package
+# is not installed, it just sits at the repo root.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from datetime import datetime, timezone
 
-import db
-import events
-import scraper
-import sentiment
+from app.core import db
+from app.core import events
+from app.core import scraper
+from app.core import sentiment
 
 SYMBOL = "ZZZEVENTTEST"
 

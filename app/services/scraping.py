@@ -5,10 +5,10 @@ from datetime import datetime, timezone
 import requests
 from fastapi import HTTPException
 
-import db
-import llm
-import scraper
-import sentiment
+from app.core import db
+from app.core import llm
+from app.core import scraper
+from app.core import sentiment
 
 def _embed_or_none(markdown):
     """Embeddings always need local Ollama regardless of the active chat model - if it's not

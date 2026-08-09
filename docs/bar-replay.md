@@ -102,7 +102,7 @@ of two sources (below) plus a chart that only reveals them up to a cursor.
   one-time "Collect max history" pull used elsewhere), rolled up client-side
   by `lib/replay.js`'s `aggregateBars`.
 - **`1m`/`5m`/`15m`/`1H`/`4H`** — `GET /api/prices/{symbol}/intraday`, backed
-  by **`minute_data.py`**, which reads a public HuggingFace dataset,
+  by **`app/core/minute_data.py`**, which reads a public HuggingFace dataset,
   [`xxparthparekhxx/indian-stock-market-minute-data`](https://huggingface.co/datasets/xxparthparekhxx/indian-stock-market-minute-data)
   (2,535 NSE symbols, 2022-01 → 2026-01, ~715M minute rows). Nothing is
   downloaded up front: DuckDB reads the dataset's remote parquet shards
@@ -117,7 +117,7 @@ of two sources (below) plus a chart that only reveals them up to a cursor.
     midnight, so a session's candles land on 09:15/10:15/…/15:15 rather than
     an odd partial bucket at the open.
   - Each request is capped to the newest 30,000 bars (`MAX_BARS` in
-    `minute_data.py`) — at `1m` that's roughly the most recent ~80 sessions,
+    `app/core/minute_data.py`) — at `1m` that's roughly the most recent ~80 sessions,
     growing per timeframe (the same "finer timeframe, shorter window"
     tradeoff any charting platform makes rather than shipping the full
     47MB/375k-row history to the browser on every timeframe switch).

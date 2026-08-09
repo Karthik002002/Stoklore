@@ -94,7 +94,7 @@ The floating chat isn't just RAG — it's a real tool-calling agent that talks
 directly to Ollama's or an OpenAI-compatible server's native function-calling
 API (no LangChain, no framework):
 
-- **14 explicit tools** (`api.py`, `AGENT_TOOLS`/`REAL_TOOL_IMPLS`) covering
+- **14 explicit tools** (`app/main.py` + `app/routers/`, `AGENT_TOOLS`/`REAL_TOOL_IMPLS`) covering
   live price/EMA/movers lookups, watchlist listing, broker-synced holdings
   (`get_holdings` — "how is my portfolio doing"), semantic report search,
   a live stock scrape+report, background event scans/price syncs, DuckDuckGo
@@ -145,8 +145,8 @@ rails instead of a blanket "trust the model":
   before it re-enters the model's context, with a regex flag for obvious
   override phrasing ("ignore previous instructions", "reveal your system
   prompt", etc.)
-- **LiteLLM proxy-level guardrails** (optional) — `litellm.config.example.yaml`
-  is the tracked template (copy it to `litellm.config.yaml`, which is
+- **LiteLLM proxy-level guardrails** (optional) — `config/litellm.config.example.yaml`
+  is the tracked template (copy it to `config/litellm.config.yaml`, which is
   gitignored/per-developer); guardrails go under a top-level `guardrails:`
   key, not nested under `litellm_settings` — that nested form silently
   routes to LiteLLM's old legacy guardrails schema and crashes on this one
@@ -219,7 +219,7 @@ pip install -r requirements.txt
 
 The model itself (~1.4GB) is *not* bundled — it's downloaded once from
 Hugging Face on first use and cached locally (`~/.cache/huggingface`), not
-at app startup (`sentiment.py` loads it lazily so a fresh `./run.sh` doesn't
+at app startup (`app/core/sentiment.py` loads it lazily so a fresh `./scripts/run.sh` doesn't
 pay that cost unless you actually trigger a sentiment score). First use will
 be slow while it downloads; every call after that runs fully offline.
 
@@ -246,19 +246,19 @@ the Model tab's dropdown lists whatever's actually reachable right now
 (Ollama is always listed; OmniRoute's and LiteLLM's catalogs are queried
 live and degrade quietly if either isn't running).
 
-A `model_name` ending in `/*` (e.g. `openai/*`) in `litellm.config.yaml`
+A `model_name` ending in `/*` (e.g. `openai/*`) in `config/litellm.config.yaml`
 expands into every model in LiteLLM's own bundled catalog for that provider
 (~200 for OpenAI) instead of one pinned id — the app's model-list request
 already passes `?return_wildcard_routes=true`, which is what makes LiteLLM
-expand it at all. `litellm.config.example.yaml` is the tracked starting
-template; `litellm.config.yaml` (gitignored) is where you actually configure
+expand it at all. `config/litellm.config.example.yaml` is the tracked starting
+template; `config/litellm.config.yaml` (gitignored) is where you actually configure
 it, per-developer.
 
-**Optional: Langfuse tracing.** `docker-compose.langfuse.yml` runs a
+**Optional: Langfuse tracing.** `config/docker-compose.langfuse.yml` runs a
 self-hosted Langfuse (its official multi-container stack: Postgres,
-ClickHouse, Redis, MinIO, web + worker) — `run.sh` starts it and `kill.sh`
+ClickHouse, Redis, MinIO, web + worker) — `scripts/run.sh` starts it and `scripts/kill.sh`
 tears it down automatically whenever Docker is running, and skips it quietly
-otherwise. Point `litellm.config.yaml`'s `success_callback`/`failure_callback`
+otherwise. Point `config/litellm.config.yaml`'s `success_callback`/`failure_callback`
 at `["langfuse"]` and set `LANGFUSE_PUBLIC_KEY`/`LANGFUSE_SECRET_KEY`/
 `LANGFUSE_HOST` in `.env` (from a project created at `http://localhost:3000`;
 `cp .env.example .env` for the full list of vars this app reads, including
@@ -395,7 +395,7 @@ OHLCV, no backend execution involved:
   screenshots. Clicking a row opens a **read-only trade detail view** (editing
   is one button further in): the trade, an execution scorecard (risk deviation,
   target capture, stop overrun), MAE/MFE, and the market conditions at entry
-- **Market context captured once per trade** (`trade_context.py`) — trend
+- **Market context captured once per trade** (`app/core/trade_context.py`) — trend
   (20/50 EMA), volatility regime (ATR percentile), how extended the entry was
   in ATRs off the 20-EMA, position in the 100-bar range, volume vs average,
   plus **MAE/MFE** in % and R once a close date is known. Computed from local
@@ -408,7 +408,7 @@ OHLCV, no backend execution involved:
 The original single-strategy backtest (long-only EMA-crossover: buys the
 golden cross, sells the next death cross; Run vs. Save with an optional
 lessons-learned note; results surfaced on a stock's detail page) still lives
-separately in `backtest.py` and `api.py`'s `/api/backtest*` endpoints.
+separately in `app/core/backtest.py` and `app/main.py` + `app/routers/`'s `/api/backtest*` endpoints.
 
 <div align="right">
 
@@ -470,7 +470,7 @@ one click from the historical journal makes the two easy to confuse.
   rung carries its own quantity, so "half at target 1, the rest at target 2"
   closes exactly that slice and leaves the position open at the reduced size.
   Same `{id, price, qty}` leg shape Bar Replay uses
-- **A background poller** (`paper.py`, 20s, idles outside 09:15–15:30 IST)
+- **A background poller** (`app/core/paper.py`, 20s, idles outside 09:15–15:30 IST)
   quotes every symbol with an open position through the app's existing TTL
   quote cache and fires what the price reached — so exits happen with the tab
   closed. A **Refresh prices** button forces one sweep on demand
@@ -499,18 +499,18 @@ Full details: [docs/paper-trading.md](docs/paper-trading.md).
 ### `*` What's more
 
 - Corporate-action, price-move, and volume-spike detection reuse the exact
-  same threshold constants as the `skills/movement.py`/`skills/volume.py`
+  same threshold constants as the `app/skills/movement.py`/`app/skills/volume.py`
   filters used for movers scanning — no duplicated logic
 - Session deletion for chat history, with cascade-delete of its messages
-- `scraper.py`'s article scraper checks a page's `schema.org` JSON-LD
+- `app/core/scraper.py`'s article scraper checks a page's `schema.org` JSON-LD
   (`articleBody`) before falling back to scraping `<p>` tags — many news
   sites (this includes Economic Times/ETEnergyworld) don't put their actual
   article text in `<p>` tags at all, so the old approach picked up
   nav/comment-policy boilerplate instead of the article
-- `kill.sh` kills by port (backend/frontend/LiteLLM/Postgres/Langfuse)
+- `scripts/kill.sh` kills by port (backend/frontend/LiteLLM/Postgres/Langfuse)
   instead of pattern-matching process names, so a stale or reload-spawned
   worker still gets cleaned up
-- `warning.md` — a local-model sizing note: don't run large prompts/long
+- `docs/warning.md` — a local-model sizing note: don't run large prompts/long
   sessions against the local Ollama model, switch to a LiteLLM-routed model
   for anything reading a lot of text at once
 - An animated gradient app-logo mark and a redesigned icon-rail nav
@@ -525,17 +525,17 @@ Full details: [docs/paper-trading.md](docs/paper-trading.md).
 
 | Layer      | Tech                                                              |
 |------------|--------------------------------------------------------------------|
-| Scraping   | `scraper.py` — NSE India API + `yfinance`                          |
-| Analysis   | `llm.py` — Ollama / OmniRoute / LiteLLM (chat + tool calling), `nomic-embed-text` for embeddings; `sentiment.py` — local FinRoBERTa classifier |
-| Events     | `events.py` — watchlist-scoped news/price/volume/corporate-action scan |
-| Prices     | `prices.py` — incremental daily OHLCV sync (1y + full-history tiers) + EMA crossover math; `minute_data.py` — intraday bars (1m–4H) for Bar Replay, streamed on demand from a HuggingFace minute dataset via DuckDB, yfinance fallback |
-| Brokers    | `broker.py` (Dhan v2) + `kite.py` (Kite Connect v3) — read-only holdings/margin, normalized to one shape |
-| Backtests  | Manual: `backtest.py` — long-only EMA-crossover backtest over stored `price_history` (not yet wired into the UI). Auto: user-written Pine Script run client-side via `pinets` (PineTS) against `price_history`/`price_history_max`, saved as templates in `auto_backtest_scripts` |
-| Paper      | `paper.py` — background poller (20s, market hours only) that marks open `paper_positions` against live quotes and fires laddered simulated exits into the manual journal; `trade_context.py` — one-time entry-context + MAE/MFE snapshot stored on every trade |
-| Storage    | Postgres + pgvector (`db.py`)                                      |
-| API        | FastAPI (`api.py`) — chat streams over the AI SDK UI Message Stream protocol; 14 explicit agent tools (`AGENT_TOOLS`/`REAL_TOOL_IMPLS`) |
+| Scraping   | `app/core/scraper.py` — NSE India API + `yfinance`                          |
+| Analysis   | `app/core/llm.py` — Ollama / OmniRoute / LiteLLM (chat + tool calling), `nomic-embed-text` for embeddings; `app/core/sentiment.py` — local FinRoBERTa classifier |
+| Events     | `app/core/events.py` — watchlist-scoped news/price/volume/corporate-action scan |
+| Prices     | `app/core/prices.py` — incremental daily OHLCV sync (1y + full-history tiers) + EMA crossover math; `app/core/minute_data.py` — intraday bars (1m–4H) for Bar Replay, streamed on demand from a HuggingFace minute dataset via DuckDB, yfinance fallback |
+| Brokers    | `app/core/broker.py` (Dhan v2) + `app/core/kite.py` (Kite Connect v3) — read-only holdings/margin, normalized to one shape |
+| Backtests  | Manual: `app/core/backtest.py` — long-only EMA-crossover backtest over stored `price_history` (not yet wired into the UI). Auto: user-written Pine Script run client-side via `pinets` (PineTS) against `price_history`/`price_history_max`, saved as templates in `auto_backtest_scripts` |
+| Paper      | `app/core/paper.py` — background poller (20s, market hours only) that marks open `paper_positions` against live quotes and fires laddered simulated exits into the manual journal; `app/core/trade_context.py` — one-time entry-context + MAE/MFE snapshot stored on every trade |
+| Storage    | Postgres + pgvector (`app/core/db.py`)                                      |
+| API        | FastAPI (`app/main.py` + `app/routers/`) — chat streams over the AI SDK UI Message Stream protocol; 14 explicit agent tools (`AGENT_TOOLS`/`REAL_TOOL_IMPLS`) |
 | Frontend   | React + Vite, shadcn/ui, AI Elements, `@ai-sdk/react`, lightweight-charts, `pinets` (in-browser Pine Script v5 runtime) (`frontend/`) |
-| Tracing    | Langfuse (optional, self-hosted via `docker-compose.langfuse.yml`) — traces every LiteLLM call: prompts, tool calls, latency, cost |
+| Tracing    | Langfuse (optional, self-hosted via `config/docker-compose.langfuse.yml`) — traces every LiteLLM call: prompts, tool calls, latency, cost |
 
 <div align="right">
 
@@ -548,32 +548,32 @@ Full details: [docs/paper-trading.md](docs/paper-trading.md).
 ```bash
 ollama serve   # start Ollama first (if it isn't already running)
 
-./run.sh   # starts Postgres, API (:8010), frontend (:5180) - plus LiteLLM
+./scripts/run.sh   # starts Postgres, API (:8010), frontend (:5180) - plus LiteLLM
            # (:4000) and self-hosted Langfuse if they're set up, see below
-./kill.sh  # stops everything - by port, so a stale process still gets killed
+./scripts/kill.sh  # stops everything - by port, so a stale process still gets killed
 ```
 
 The API starts immediately — it doesn't run any scan on startup. Trigger
 scans manually from the UI (or `POST /api/events/scan` and
-`POST /api/prices/sync`) whenever you want fresh data; a `main.py` CLI scan
+`POST /api/prices/sync`) whenever you want fresh data; a `app/cli.py` CLI scan
 is still available standalone (see below).
 
 Requires Postgres (`postgresql@17` + `pgvector`) and Ollama with `llama3.1`
-and `nomic-embed-text` pulled. See `warning.md` before running large
+and `nomic-embed-text` pulled. See `docs/warning.md` before running large
 prompts/long sessions against the local model.
 
 **Optional: LiteLLM proxy** (for `litellm/*` models) — install with
 `pip install 'litellm[proxy]'` (already in `requirements.txt`), then
-`cp litellm.config.example.yaml litellm.config.yaml` and fill in your
+`cp config/litellm.config.example.yaml config/litellm.config.yaml` and fill in your
 model(s) (the template has step-by-step comments). API key env vars
 (`OPENAI_API_KEY`, `LITELLM_MASTER_KEY`, ...) go in `.env`
 (`cp .env.example .env`) — litellm loads it automatically, no need to
-`export` anything. `run.sh` starts the proxy on port 4000 automatically
-once `litellm.config.yaml` exists; point Settings → LiteLLM at
+`export` anything. `scripts/run.sh` starts the proxy on port 4000 automatically
+once `config/litellm.config.yaml` exists; point Settings → LiteLLM at
 `http://localhost:4000`.
 
-**Optional: Langfuse tracing** — needs Docker running. `run.sh`/`kill.sh`
-start/stop a self-hosted instance (`docker-compose.langfuse.yml`)
+**Optional: Langfuse tracing** — needs Docker running. `scripts/run.sh`/`scripts/kill.sh`
+start/stop a self-hosted instance (`config/docker-compose.langfuse.yml`)
 automatically whenever Docker is available, and skip it quietly otherwise.
 First boot pulls several images and runs migrations, so
 `http://localhost:3000` takes a minute to answer the first time. See
@@ -587,8 +587,8 @@ First boot pulls several images and runs migrations, so
 
 ## 🧩 Adding a Custom Skill
 
-Drop a `.py` file in `skills/` with a `filter(tickers) -> tickers` function,
-then pass `--skills yourfilename` to `main.py`. No registration needed.
+Drop a `.py` file in `app/skills/` with a `filter(tickers) -> tickers` function,
+then pass `--skills yourfilename` to `app/cli.py`. No registration needed.
 
 <div align="right">
 
@@ -598,7 +598,7 @@ then pass `--skills yourfilename` to `main.py`. No registration needed.
 
 ## ⌨️ CLI Scan
 
-`main.py` still runs the original movers-based scan standalone:
+`app/cli.py` still runs the original movers-based scan standalone:
 
 ```bash
 .venv/bin/python main.py --skills movement,volume --limit 10   # NSE movers

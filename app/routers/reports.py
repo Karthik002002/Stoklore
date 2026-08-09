@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-import db
+from app.core import db
 
 router = APIRouter(tags=["reports"])
 

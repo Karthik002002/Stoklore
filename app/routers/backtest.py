@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 from fastapi import HTTPException
 
-import backtest
-import db
+from app.core import backtest
+from app.core import db
 
 from app.schemas import (
     AutoBacktestScriptRequest,

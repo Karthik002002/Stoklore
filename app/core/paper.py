@@ -19,7 +19,7 @@ from datetime import datetime
 
 from zoneinfo import ZoneInfo
 
-import db
+from app.core import db
 
 IST = ZoneInfo("Asia/Kolkata")
 

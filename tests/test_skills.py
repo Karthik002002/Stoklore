@@ -1,6 +1,13 @@
 """Self-check for skill filtering, registry discovery, and Postgres storage/search."""
-import skills
-import db
+import sys
+from pathlib import Path
+
+# Run as a script, so the repo root has to go on sys.path before importing app.* - the package
+# is not installed, it just sits at the repo root.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app import skills
+from app.core import db
 
 TICKERS = [
     {"symbol": "AAA", "changePercent": 8.0, "volume": 1000, "avgVolume": 100},

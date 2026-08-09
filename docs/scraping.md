@@ -2,12 +2,12 @@
 
 [← Back to index](README.md)
 
-Every outbound scrape in this app goes through one module, `netfetch.py`. Nothing
-in `scraper.py`, `moneycontrol_local.py`, or `price_sources/` calls
+Every outbound scrape in this app goes through one module, `app/core/netfetch.py`. Nothing
+in `app/core/scraper.py`, `app/core/moneycontrol_local.py`, or `app/core/price_sources/` calls
 `requests.get` directly any more — so the "don't get blocked" behaviour is
 configured in one place instead of being re-derived at each call site.
 
-**Not routed through it, on purpose:** `broker.py` and `kite.py`. Those are
+**Not routed through it, on purpose:** `app/core/broker.py` and `app/core/kite.py`. Those are
 authenticated Dhan/Kite APIs accessed with your own API keys — official access,
 no bot detection to get past. Throttling or impersonating there would be wrong
 and could break auth.
@@ -37,7 +37,7 @@ export SCRAPER_MIN_INTERVAL=2.5
 ## The layers, and who implements each
 
 Most of this is **not hand-rolled** — `scrapling` (already a dependency) does the
-hard parts, and `netfetch.py` configures it and adds the parts a library can't
+hard parts, and `app/core/netfetch.py` configures it and adds the parts a library can't
 decide for you.
 
 **Browser TLS/JA3 + HTTP2 fingerprint** — `scrapling`'s `impersonate`

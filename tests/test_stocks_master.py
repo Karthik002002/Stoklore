@@ -1,4 +1,11 @@
-from stocks_master import parse_csv
+import sys
+from pathlib import Path
+
+# Run as a script, so the repo root has to go on sys.path before importing app.* - the package
+# is not installed, it just sits at the repo root.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app.core.stocks_master import parse_csv
 
 if __name__ == "__main__":
     csv_bytes = (

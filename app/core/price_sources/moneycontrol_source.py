@@ -10,7 +10,7 @@ silently fetching the wrong stock.
 """
 from datetime import datetime, timezone
 
-import moneycontrol_local
+from app.core import moneycontrol_local
 
 from .errors import SourceError
 

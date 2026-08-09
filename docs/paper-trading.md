@@ -60,7 +60,7 @@ the deeper breakdowns.
 
 ## How it works
 
-`paper.py` is a background thread started at API startup (`paper.start`,
+`app/core/paper.py` is a background thread started at API startup (`paper.start`,
 idempotent so a reload-spawned second call can't race the first on the same
 positions). Every `POLL_SECONDS` (20) it quotes each symbol that has an open
 position through the app's **existing TTL quote cache** — the poller and the UI
@@ -76,7 +76,7 @@ fires exits, so closing the browser doesn't stop anything.
 
 ### Why it isn't Bar Replay's order engine
 
-`paper.py` and `orderEngine.js` are deliberately **not** shared code:
+`app/core/paper.py` and `orderEngine.js` are deliberately **not** shared code:
 
 - Bar Replay matches against a *bar*. It has an OHLC range, so a level is hit
   when `[low, high]` contains it, and a bar entirely past a level counts as
@@ -111,7 +111,7 @@ nothing is left does the position disappear.
 A closed paper position is a `manual_trades` row rather than a paper-specific
 table, so every statistic the journal already computes — equity curve,
 drawdown, R-multiples, goals — applies with no second implementation. The cost
-is one duplicated constant: `NEUTRAL_PNL_BAND` (₹20) exists in both `paper.py`
+is one duplicated constant: `NEUTRAL_PNL_BAND` (₹20) exists in both `app/core/paper.py`
 and `frontend/src/lib/manualTrades.js`, because the engine classifies trades
 server-side while every other path classifies in the browser. A paper trade
 that scratches out at +₹12 has to count "neutral" by the same rule as a

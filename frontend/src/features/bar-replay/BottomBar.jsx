@@ -20,6 +20,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Spinner } from '@/components/ui/spinner'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { inr } from '@/lib/format'
 import { REPLAY_SPEEDS, REPLAY_TIMEFRAMES } from '@/lib/replay'
 import DateJumpMenu from './DateJumpMenu'
@@ -42,6 +43,28 @@ import PositionsList from './PositionsList'
 // a selectable option, so this stands in for null on the way in and out (matches BarReplay's own
 // NO_ACCOUNT, and ManualBacktesting.jsx's).
 const NO_ACCOUNT = 'none'
+
+// Label + optional keyboard shortcut on hover. Same shape as App.jsx's TooltipIcon (a span
+// trigger wrapping whatever it's given), opening upward since the bar is at the bottom of the
+// screen. `data-slot="kbd"` is what TooltipContent styles its key caps from.
+//
+// The shortcuts themselves are registered in BarReplay - this only advertises them, so a key
+// added there must be added here too or it stays invisible.
+function Hint({ label, keys, children }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span className="inline-flex" />}>{children}</TooltipTrigger>
+      <TooltipContent side="top">
+        {label}
+        {keys && (
+          <kbd data-slot="kbd" className="bg-background/20 px-1.5 py-0.5 font-mono text-[10px]">
+            {keys}
+          </kbd>
+        )}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
 
 function SetupPopover({ setup }) {
   const {
@@ -72,13 +95,15 @@ function SetupPopover({ setup }) {
 
   return (
     <Popover>
-      <PopoverTrigger render={<Button variant="ghost" size="sm" className="gap-1.5" />}>
-        <SlidersHorizontalIcon className="size-4" />
-        {symbol ?? 'Pick a symbol'}
-        <Badge variant="outline" className="ml-1 font-mono text-[10px]">
-          {REPLAY_TIMEFRAMES.find((t) => t.value === timeframe)?.label ?? timeframe}
-        </Badge>
-      </PopoverTrigger>
+      <Hint label="Setup — symbol, account, timeframe, data" keys="/  T">
+        <PopoverTrigger render={<Button variant="ghost" size="sm" className="gap-1.5" />}>
+          <SlidersHorizontalIcon className="size-4" />
+          {symbol ?? 'Pick a symbol'}
+          <Badge variant="outline" className="ml-1 font-mono text-[10px]">
+            {REPLAY_TIMEFRAMES.find((t) => t.value === timeframe)?.label ?? timeframe}
+          </Badge>
+        </PopoverTrigger>
+      </Hint>
       <PopoverContent side="top" align="start" className="space-y-2">
         <SymbolCombobox value={symbol ?? ''} onChange={onSymbolChange} className="w-full" />
         <Select
@@ -211,33 +236,39 @@ function PlaybackControls({ playback }) {
 
   return (
     <div className="flex items-center gap-1">
-      <Button
-        size="icon-sm"
-        variant="ghost"
-        aria-label="Step back"
-        disabled={currentIndex === 0}
-        onClick={onStepBack}
-      >
-        <SkipBackIcon className="size-4" />
-      </Button>
-      <Button
-        size="icon-sm"
-        variant="ghost"
-        aria-label={playing ? 'Pause' : 'Play'}
-        disabled={atEnd}
-        onClick={onPlayToggle}
-      >
-        {playing ? <PauseIcon className="size-4" /> : <PlayIcon className="size-4" />}
-      </Button>
-      <Button
-        size="icon-sm"
-        variant="ghost"
-        aria-label="Step forward"
-        disabled={atEnd}
-        onClick={onStepForward}
-      >
-        <SkipForwardIcon className="size-4" />
-      </Button>
+      <Hint label="Step back">
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label="Step back"
+          disabled={currentIndex === 0}
+          onClick={onStepBack}
+        >
+          <SkipBackIcon className="size-4" />
+        </Button>
+      </Hint>
+      <Hint label={playing ? 'Pause' : 'Play'} keys="Shift+↓">
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label={playing ? 'Pause' : 'Play'}
+          disabled={atEnd}
+          onClick={onPlayToggle}
+        >
+          {playing ? <PauseIcon className="size-4" /> : <PlayIcon className="size-4" />}
+        </Button>
+      </Hint>
+      <Hint label="Step forward" keys="Shift+→">
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label="Step forward"
+          disabled={atEnd}
+          onClick={onStepForward}
+        >
+          <SkipForwardIcon className="size-4" />
+        </Button>
+      </Hint>
       <Select value={String(speedMs)} onValueChange={(v) => onSpeedChange(Number(v))}>
         <SelectTrigger size="sm" className="w-[4.5rem]">
           <SelectValue>{(v) => REPLAY_SPEEDS.find((s) => String(s.value) === v)?.label ?? v}</SelectValue>
@@ -276,22 +307,26 @@ function TradeControls({ trade }) {
       <span className="px-1 text-xs whitespace-nowrap text-muted-foreground tabular-nums">
         {lastBar ? inr(lastBar.close) : '—'}
       </span>
-      <Button
-        size="sm"
-        className="bg-up text-white hover:bg-up/90"
-        disabled={!lastBar}
-        onClick={() => onOpenTicket('long')}
-      >
-        Buy <span className="ml-1 text-xs opacity-70">B</span>
-      </Button>
-      <Button
-        size="sm"
-        className="bg-down text-white hover:bg-down/90"
-        disabled={!lastBar}
-        onClick={() => onOpenTicket('short')}
-      >
-        Sell <span className="ml-1 text-xs opacity-70">S</span>
-      </Button>
+      <Hint label="Buy — opens the order ticket" keys="B">
+        <Button
+          size="sm"
+          className="bg-up text-white hover:bg-up/90"
+          disabled={!lastBar}
+          onClick={() => onOpenTicket('long')}
+        >
+          Buy <span className="ml-1 text-xs opacity-70">B</span>
+        </Button>
+      </Hint>
+      <Hint label="Sell — opens the order ticket" keys="S">
+        <Button
+          size="sm"
+          className="bg-down text-white hover:bg-down/90"
+          disabled={!lastBar}
+          onClick={() => onOpenTicket('short')}
+        >
+          Sell <span className="ml-1 text-xs opacity-70">S</span>
+        </Button>
+      </Hint>
       <Popover>
         <PopoverTrigger render={<Button variant="ghost" size="sm" className="gap-1.5" />}>
           <LayersIcon className="size-4" />
@@ -328,7 +363,7 @@ export default function BottomBar({ setup, playback, trade, onOpenSettings }) {
       >
         <ArrowLeftIcon className="size-4" />
       </Link>
-      <Separator orientation="vertical" className="h-6" />
+      <Separator orientation="vertical" className="h-full" />
 
       <SetupPopover setup={setup} />
       {setup.barsReady && setup.symbol && (
@@ -339,7 +374,7 @@ export default function BottomBar({ setup, playback, trade, onOpenSettings }) {
           is just the setup entry point, same as the old floating panels' own gating. */}
       {playback.started && (
         <>
-          <Separator orientation="vertical" className="h-6" />
+          <Separator orientation="vertical" className="h-full" />
           <PlaybackControls playback={playback} />
         </>
       )}
@@ -349,7 +384,7 @@ export default function BottomBar({ setup, playback, trade, onOpenSettings }) {
       {trade.visible && (
         <>
           <TradeControls trade={trade} />
-          <Separator orientation="vertical" className="h-6" />
+          <Separator orientation="vertical" className="h-full" />
         </>
       )}
       <Button size="icon-sm" variant="ghost" aria-label="Chart settings" onClick={onOpenSettings}>

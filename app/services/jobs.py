@@ -9,10 +9,10 @@ import threading
 import time
 from datetime import datetime
 
-import db
-import events
-import price_sources
-import prices
+from app.core import db
+from app.core import events
+from app.core import price_sources
+from app.core import prices
 
 # Populated by the background watchlist event scan (POST /api/events/scan, or the daily automatic
 # one below) - polled by GET /api/events/status so the frontend can show scan progress.

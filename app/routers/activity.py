@@ -4,7 +4,7 @@ from datetime import date, timedelta
 
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 
-import db
+from app.core import db
 
 from app.schemas import ActivityPingRequest, ActivitySettingsRequest
 

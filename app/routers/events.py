@@ -3,7 +3,7 @@ import threading
 
 from fastapi import HTTPException
 
-import db
+from app.core import db
 
 from app.services.jobs import _event_scan_state, _run_event_scan
 

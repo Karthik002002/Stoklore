@@ -4,8 +4,8 @@ import time
 
 from fastapi import HTTPException
 
-import db
-import scraper
+from app.core import db
+from app.core import scraper
 
 router = APIRouter(tags=["top-news"])
 

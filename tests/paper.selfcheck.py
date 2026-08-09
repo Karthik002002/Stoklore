@@ -1,14 +1,20 @@
 """Self-check for the paper engine's trigger logic. Plain asserts, no framework:
 
-    .venv/bin/python paper.selfcheck.py
+    .venv/bin/python tests/paper.selfcheck.py
 
 Only the pure half is exercised - check_position, fill pricing, classification, market hours.
 Everything that writes (apply_fills, close_position) is deliberately excluded: it needs a database,
 and this has to stay runnable without one.
 """
 import datetime
+import sys
+from pathlib import Path
 
-import paper
+# Run as a script, so the repo root has to go on sys.path before importing app.* - the package
+# is not installed, it just sits at the repo root.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app.core import paper
 
 
 def pos(**over):

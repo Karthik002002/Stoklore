@@ -8,7 +8,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-import price_sources
+from app.core import price_sources
 
 class ChatRequest(BaseModel):
     sessionId: str

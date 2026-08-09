@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from fastapi import HTTPException
 
-import backup
+from app.core import backup
 
 router = APIRouter(tags=["backup"])
 

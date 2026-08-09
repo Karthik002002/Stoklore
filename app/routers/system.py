@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 import json
 
-import db
-import scraper
+from app.core import db
+from app.core import scraper
 
 from app.schemas import ScrapeRequest
 
@@ -14,7 +14,7 @@ def clear_cache():
     return {"ok": True}
 
 
-SCRAPE_OUTPUT_FILE = "scraped.json"
+SCRAPE_OUTPUT_FILE = "local_data/scraped.json"
 
 
 @router.post("/api/scrape")

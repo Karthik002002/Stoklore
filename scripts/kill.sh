@@ -1,5 +1,5 @@
 #!/bin/bash
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 
 # Kills whatever's listening on this app's ports - backend (uvicorn), frontend (vite), and the
 # LiteLLM proxy. Port-based instead of pattern-matching process names, so a stale/reload-spawned
@@ -13,11 +13,11 @@ for port in 8010 5180 4000; do
 done
 brew services stop postgresql@17
 
-# Langfuse runs as containers (docker-compose.langfuse.yml), not host processes - `down` stops
+# Langfuse runs as containers (config/docker-compose.langfuse.yml), not host processes - `down` stops
 # and removes them (named volumes, so its data survives to the next `up`). Safe to run even if
 # nothing is up.
 if command -v docker >/dev/null && docker info >/dev/null 2>&1; then
-  docker compose -f docker-compose.langfuse.yml down
+  docker compose -f config/docker-compose.langfuse.yml down
 fi
 
 echo "stopped"

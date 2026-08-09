@@ -1,10 +1,10 @@
 from fastapi import APIRouter
 from fastapi import File, HTTPException, UploadFile
 
-import db
-import prices
-import scraper
-import stocks_master
+from app.core import db
+from app.core import prices
+from app.core import scraper
+from app.core import stocks_master
 
 from app.deps import _cached
 from app.schemas import AddStockRequest

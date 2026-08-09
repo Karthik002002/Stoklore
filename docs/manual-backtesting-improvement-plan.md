@@ -9,7 +9,7 @@ utils, every analytics component, hooks, import/export, validation) — nothing 
 ## Where we already win — don't touch
 
 - **Postgres-backed, not localStorage.** TJ's entire dataset lives in the browser and is one
-  cache-clear from gone; `manual_trades` in our `db.py` already survives that.
+  cache-clear from gone; `manual_trades` in our `app/core/db.py` already survives that.
 - **Native Bar Replay** (bar-by-bar practice trading with an order engine that writes straight
   into `manual_trades`) — TJ has nothing like this; it's pure after-the-fact logging.
 - **Vision-LLM bulk screenshot import** (`llm.analyze_trade_screenshot`) — TJ only has manual
@@ -19,7 +19,7 @@ utils, every analytics component, hooks, import/export, validation) — nothing 
 ## What's worth taking
 
 Ranked by leverage. Everything here is *analysis tooling for a human*, not an AI verdict —
-matches the existing design principle (`AGENT_SYSTEM` in `api.py` never recommends, only reports
+matches the existing design principle (`AGENT_SYSTEM` in `app/main.py` + `app/routers/` never recommends, only reports
 against user-stated criteria).
 
 ### 1. Setup tagging + per-setup performance breakdown (highest leverage)

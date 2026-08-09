@@ -5,7 +5,7 @@ live signal) - more strategies are a later update, not this one.
 """
 import pandas as pd
 
-import db
+from app.core import db
 
 
 def run_ema_crossover(symbol, short, long, from_date=None, to_date=None):

@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from fastapi import HTTPException
 
-import scraper
+from app.core import scraper
 
 from app.deps import _cached
 

@@ -3,7 +3,7 @@
 Lives in services (not the router) because api startup hands this function to paper.start() -
 importing a router from main.py just to reach it would invert the dependency.
 """
-import scraper
+from app.core import scraper
 
 from app.deps import _cached
 

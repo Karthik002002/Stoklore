@@ -87,6 +87,7 @@ function ReloadButton() {
 }
 
 function App() {
+  const isBarReplay = window.location.pathname.includes('/backtest/replay')
   return (
     <TooltipProvider>
       <div className="flex min-h-screen ">
@@ -132,7 +133,7 @@ function App() {
       </div>
 
       <ActivityTracker />
-      <ChatWidget />
+      {!isBarReplay && <ChatWidget />}
       <CommandPalette />
       <Toaster position="top-center" richColors closeButton />
     </TooltipProvider>

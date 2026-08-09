@@ -149,7 +149,7 @@ immediately.
 
 ### `trade_context`: a point-in-time snapshot, captured once
 
-`trade_context.py` computes one JSON blob at trade creation and stores it on
+`app/core/trade_context.py` computes one JSON blob at trade creation and stores it on
 the row (`manual_trades.trade_context`). It is **never recomputed on read** —
 same reasoning as `account_balance_at_trade` below: it's a point-in-time fact,
 and bars get split-adjusted and revised behind you, so recomputing later would

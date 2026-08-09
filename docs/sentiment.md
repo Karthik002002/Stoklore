@@ -18,7 +18,7 @@ just the top one, so `sentiment.analyze()` can pick the actual max itself.
 
 **Lazy loading**: the `transformers` import and the pipeline construction
 both live inside a function wrapped in `@lru_cache(maxsize=1)`. Since
-`api.py` imports `sentiment` unconditionally at startup, that import alone
+`app/main.py` + `app/routers/` imports `sentiment` unconditionally at startup, that import alone
 costs nothing — the ~1.4GB weights only download/load the first time
 `analyze()` is actually called, and the `lru_cache` means every call after
 that reuses the same in-memory pipeline instead of reloading it.

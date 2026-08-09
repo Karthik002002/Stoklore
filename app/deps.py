@@ -3,7 +3,7 @@ scraper call goes through. Imported by routers and services alike - it depends o
 either, which is what keeps it cycle-free."""
 import json
 
-import db
+from app.core import db
 
 def _sse(obj):
     return f"data: {json.dumps(obj)}\n\n"

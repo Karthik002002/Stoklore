@@ -10,12 +10,12 @@ from datetime import date
 import requests
 from fastapi import HTTPException
 
-import db
-import llm
-import prices
-import rules
-import scraper
-import sentiment
+from app.core import db
+from app.core import llm
+from app.core import prices
+from app.core import rules
+from app.core import scraper
+from app.core import sentiment
 
 from app.deps import _cached
 from app.services.holdings import _get_holdings

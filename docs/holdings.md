@@ -28,7 +28,7 @@ happens again the next trading day).
 
 **Both brokers' raw API responses get normalized into one shared shape**
 (`{available_balance, holdings: [{symbol, isin, qty, avg_price, ...}]}`)
-independently, inside `broker.py`/`kite.py` themselves — the endpoint that
+independently, inside `app/core/broker.py`/`app/core/kite.py` themselves — the endpoint that
 serves `/api/holdings` doesn't know or care which broker it's talking to
 beyond picking which client to call; it never branches on response shape.
 

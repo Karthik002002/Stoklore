@@ -1,10 +1,10 @@
 """CLI: scan NSE India movers, filter via skills, analyze with local Qwythos, store in Postgres."""
 import argparse
 
-import db
-import llm
-import scraper
-import skills
+from app.core import db
+from app.core import llm
+from app.core import scraper
+from app import skills
 
 
 def analyze_ticker(symbol, model):

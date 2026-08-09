@@ -2,7 +2,7 @@
 Was the only source before price_sources existed; kept as its own plugin (rather than a hardcoded
 special case) so the registry in __init__.py doesn't need to treat it differently from any
 alternate source added later."""
-import scraper
+from app.core import scraper
 
 from .errors import SourceError
 

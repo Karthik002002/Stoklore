@@ -1,9 +1,9 @@
 from fastapi import APIRouter
 from fastapi import HTTPException
 
-import db
-import llm
-import rules
+from app.core import db
+from app.core import llm
+from app.core import rules
 
 from app.schemas import WatchRuleRequest
 

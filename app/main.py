@@ -7,10 +7,10 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-import backup
-import db
-import llm
-import paper
+from app.core import backup
+from app.core import db
+from app.core import llm
+from app.core import paper
 
 from app.core.config import UPLOAD_DIR
 from app.routers import router

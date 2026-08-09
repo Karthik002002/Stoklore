@@ -1,10 +1,10 @@
 """Scans watchlisted symbols for news/price/volume/corporate-action events - no LLM, cheap+fast."""
 from datetime import date
 
-import db
-import scraper
-import sentiment
-import skills
+from app.core import db
+from app.core import scraper
+from app.core import sentiment
+from app import skills
 
 _movement = skills.load_skill("movement")  # reuse |%change| >= 5 threshold
 _volume = skills.load_skill("volume")      # reuse volume >= 2x avg threshold

@@ -2,7 +2,14 @@
 on expandable row labels, the summary <div> nested *inside* the announcement link, and concall
 rows (a date label plus several links, unlike every other document group's one-link rows).
 No network: parses a fixture cut down from a real company page."""
-import scraper
+import sys
+from pathlib import Path
+
+# Run as a script, so the repo root has to go on sys.path before importing app.* - the package
+# is not installed, it just sits at the repo root.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from app.core import scraper
 
 FIXTURE = """
 <h1>Test Company Ltd</h1>

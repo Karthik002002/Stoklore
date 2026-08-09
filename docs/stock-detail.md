@@ -24,7 +24,7 @@ reads `price_history`; the full-history view only renders once
 [Dashboard](dashboard.md#how-it-works) for how each table gets populated).
 
 **EMA Crossover panel** — `GET /api/prices/{symbol}/ema-crossover?short=..&long=..`
-→ `prices.ema_crossover(symbol, short, long)` (`prices.py:84`). It pulls
+→ `prices.ema_crossover(symbol, short, long)` (`app/core/prices.py:84`). It pulls
 `long + 250` closes from `price_history`, computes both EMAs with pandas'
 `.ewm(span=n, adjust=False).mean()`, and looks at `shortEma - longEma`:
 - crossed from `<=0` to `>0` on the latest bar → **bullish** (golden cross)

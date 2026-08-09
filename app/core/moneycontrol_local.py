@@ -12,7 +12,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-import netfetch
+from app.core import netfetch
 
 PRICEAPI_URL = "https://priceapi.moneycontrol.com/techCharts/indianMarket/stock/history"
 # Only the endpoint-specific bits - the User-Agent and the rest of the browser header set come

@@ -1,9 +1,16 @@
 """Self-check for price_history sync: backfill, incremental gap-fill, idempotency, EMA crossover."""
+import sys
+from pathlib import Path
+
+# Run as a script, so the repo root has to go on sys.path before importing app.* - the package
+# is not installed, it just sits at the repo root.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from datetime import date, timedelta
 
-import db
-import prices
-import scraper
+from app.core import db
+from app.core import prices
+from app.core import scraper
 
 SYMBOL = "ZZZPRICETEST"
 

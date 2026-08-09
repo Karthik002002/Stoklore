@@ -4,8 +4,8 @@ import os
 from fastapi import HTTPException
 from fastapi.responses import RedirectResponse
 
-import db
-import kite
+from app.core import db
+from app.core import kite
 
 router = APIRouter(tags=["kite-auth"])
 

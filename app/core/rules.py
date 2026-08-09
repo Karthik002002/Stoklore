@@ -3,9 +3,9 @@ act" without the app giving investment advice: the user sets the bar, this just 
 it's currently met."""
 from datetime import date, timedelta
 
-import db
-import prices
-import scraper
+from app.core import db
+from app.core import prices
+from app.core import scraper
 
 
 def evaluate(rule, symbol):

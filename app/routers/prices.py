@@ -3,10 +3,10 @@ import threading
 
 from fastapi import HTTPException
 
-import db
-import minute_data
-import price_sources
-import prices
+from app.core import db
+from app.core import minute_data
+from app.core import price_sources
+from app.core import prices
 
 from app.schemas import BulkMaxCollectRequest
 from app.services.jobs import (

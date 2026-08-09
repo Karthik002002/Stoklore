@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 from fastapi import HTTPException
 
-import db
+from app.core import db
 
 from app.schemas import SentimentRequest
 from app.services.scraping import _analyze_url

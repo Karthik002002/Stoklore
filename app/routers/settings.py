@@ -1,8 +1,8 @@
 from fastapi import APIRouter
 from fastapi import HTTPException
 
-import db
-import llm
+from app.core import db
+from app.core import llm
 
 from app.schemas import (
     ActiveBrokerRequest,

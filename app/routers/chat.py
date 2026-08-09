@@ -5,10 +5,10 @@ import uuid
 
 from fastapi.responses import StreamingResponse
 
-import db
-import llm
-import rules
-import scraper
+from app.core import db
+from app.core import llm
+from app.core import rules
+from app.core import scraper
 
 from app.deps import _sse
 from app.schemas import ChatRequest

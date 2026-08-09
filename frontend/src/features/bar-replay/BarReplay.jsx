@@ -1,46 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useHotkey } from '@tanstack/react-hotkeys'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
-import {
-  ActivityIcon,
-  ArrowLeftIcon,
-  DatabaseIcon,
-  PauseIcon,
-  PlayIcon,
-  RotateCcwIcon,
-  SettingsIcon,
-  SkipBackIcon,
-  SkipForwardIcon,
-  WalletIcon,
-} from 'lucide-react'
 import { toast } from 'sonner'
-import SourceSelect from '@/components/SourceSelect'
-import SymbolCombobox from '@/components/SymbolCombobox'
-import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
 import { inr } from '@/lib/format'
-import { aggregateBars, isIntraday, REPLAY_SPEEDS, REPLAY_TIMEFRAMES } from '@/lib/replay'
+import { aggregateBars, isIntraday } from '@/lib/replay'
 import { useMaxHistoryCollector } from '@/lib/useMaxHistoryCollector'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { getIntradayBars, getTradeAccounts } from '@/services/api'
+import BottomBar from './BottomBar'
 import CloseTradeDialog from './CloseTradeDialog'
-import DateJumpMenu from './DateJumpMenu'
-import FloatingPanel from './FloatingPanel'
-import IndicatorControls from './IndicatorControls'
 import OrderTicketDialog from './OrderTicketDialog'
 import { processBarForOrders } from './orderEngine'
 import ReplayChart from './ReplayChart'
 import SettingsDialog from './SettingsDialog'
 import { useBarReplayStore } from './store'
-import TradingPanel from './TradingPanel'
 
 const numeric = (v) => (v === '' || v == null ? null : Number(v))
-// "no account" needs a real value in a Select - empty string renders as the placeholder instead
-// of a selectable option, so this stands in for null on the way in and out (matches
-// ManualBacktesting.jsx's NO_ACCOUNT).
-const NO_ACCOUNT = 'none'
 const round2 = (v) => Math.round(v * 100) / 100
 
 const FIELD_LABEL = { stopLoss: 'Stop loss', target: 'Target' }
@@ -76,7 +51,7 @@ export default function BarReplay() {
   const setAccountId = useBarReplayStore((s) => s.setAccountId)
   const restartStore = useBarReplayStore((s) => s.restart)
 
-  const { data: accounts = [] } = useQuery({ queryKey: ['tradeAccounts'], queryFn: getTradeAccounts })
+  const { data: accounts = [] } = useQuery({ queryKey: ['tradeAccounts'], queryFn: () => getTradeAccounts() })
 
   const [startDate, setStartDate] = useState('')
   const [dateDraft, setDateDraft] = useState('')
@@ -97,7 +72,7 @@ export default function BarReplay() {
   // than just losing track of an unconfirmed close.
   const [closeQueue, setCloseQueue] = useState([])
   const [settingsOpen, setSettingsOpen] = useState(false)
-  // Armed by TradingPanel's "Add stop loss"/"Add target" toggle on an already-open position -
+  // Armed by PositionsList's "Add stop loss"/"Add target" toggle on an already-open position -
   // { orderId, kind: 'stopLoss' | 'target' } while waiting for the next chart click to place the
   // new level there, null otherwise. Placing directly on the chart (see placeLevel below) instead
   // of a price input field - there's already a chart right there showing exactly where price is.
@@ -304,7 +279,7 @@ export default function BarReplay() {
     toast.success(`${FIELD_LABEL[field]} updated to ${inr(rounded)}`)
   }
 
-  // Toggled by TradingPanel's "Add stop loss"/"Add target" button on an already-open position -
+  // Toggled by PositionsList's "Add stop loss"/"Add target" button on an already-open position -
   // arms (or, clicked again on the same order+kind, disarms) waiting for the next chart click to
   // place the new level (see placeLevel below and ReplayChart's addLevelMode handling).
   const armAddLevel = (orderId, kind) =>
@@ -411,223 +386,86 @@ export default function BarReplay() {
   // useHotkey('escape', () => setDrawMode(null), { enabled: !!drawMode })
 
   return (
-    <div className="fixed inset-y-0 right-0 left-16 z-40 bg-background">
-      <ReplayChart
-        ref={replayChartRef}
-        bars={visibleBars}
-        indicators={indicators}
-        orders={orders}
-        previewOrder={previewOrder}
-        resetKey={`${symbol}-${timeframe}`}
-        onAdjustOrder={adjustOrder}
-        addLevelMode={addLevelMode}
-        onPlaceLevel={placeLevel}
-        settings={chartSettings}
-        // drawMode={drawMode}
-        // drawings={drawings}
-        // onDrawComplete={handleDrawComplete}
-        // onConvertDrawing={convertDrawingToOrder}
-      />
-
-      {/* Each cluster below is its own small absolutely-positioned box (explicit z-10), not one
-          full-viewport wrapper - no reliance on pointer-events inheritance racing against the
-          chart's own canvas layers. */}
-      <div className="absolute top-4 left-4 z-10 flex w-72 flex-col gap-3">
-        <div className="flex items-center justify-between gap-2">
-          <Link
-            to="/backtesting"
-            search={{ tab: 'manual' }}
-            className="flex w-fit items-center gap-1.5 rounded-full border bg-card/95 px-3 py-1.5 text-sm text-muted-foreground shadow-lg backdrop-blur-sm hover:text-foreground"
-          >
-            <ArrowLeftIcon className="size-4" /> Back to backtesting
-          </Link>
-          <Button
-            size="icon-sm"
-            variant="outline"
-            className="rounded-full bg-card/95 shadow-lg backdrop-blur-sm"
-            aria-label="Chart settings"
-            onClick={() => setSettingsOpen(true)}
-          >
-            <SettingsIcon className="size-4" />
-          </Button>
-        </div>
-
-        <FloatingPanel title="Setup" icon={SettingsIcon}>
-          <SymbolCombobox value={symbol ?? ''} onChange={changeSymbol} className="w-full" />
-          <Select
-            value={accountId == null ? NO_ACCOUNT : String(accountId)}
-            onValueChange={(v) => setAccountId(v === NO_ACCOUNT ? null : Number(v))}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Account" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={NO_ACCOUNT}>No account</SelectItem>
-              {accounts.map((a) => (
-                <SelectItem key={a.id} value={String(a.id)}>
-                  {a.name}
-                  {a.strategy ? ` · ${a.strategy}` : ''}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={timeframe} onValueChange={changeTimeframe}>
-            <SelectTrigger className="w-full">
-              <SelectValue>{(v) => REPLAY_TIMEFRAMES.find((t) => t.value === v)?.label ?? v}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {REPLAY_TIMEFRAMES.map((t) => (
-                <SelectItem key={t.value} value={t.value} disabled={!t.available}>
-                  {t.label}
-                  {!t.available ? ' (soon)' : ''}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {/* The source picker and "Collect max data" only drive the daily price_history_max
-              path - an intraday timeframe fetches its own bars and has nothing to collect. */}
-          {!intraday && (
-            <>
-              <SourceSelect sources={sources} value={source} onChange={setSource} className="w-full" />
-              <Button
-                size="sm"
-                variant="outline"
-                className="w-full"
-                disabled={!symbol || maxStatus?.running || hasMaxData}
-                onClick={() => collect.mutate()}
-              >
-                {maxStatus?.running ? <Spinner className="size-4" /> : <DatabaseIcon className="size-4" />}
-                Collect max data
-              </Button>
-              {symbol && !hasMaxData && (
-                <p className="text-xs text-muted-foreground">
-                  {maxStatus?.running ? 'Collecting full history…' : 'Needed before replay can start.'}
-                </p>
-              )}
-              {maxStatus?.error && <p className="text-xs text-destructive">{maxStatus.error}</p>}
-            </>
-          )}
-          {intraday && intradayLoading && (
-            <p className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Spinner className="size-3" /> Fetching {timeframe} bars — the first load of a symbol takes a
-              few seconds.
-            </p>
-          )}
-          {intraday && !intradayLoading && symbol && allBars.length === 0 && (
-            <p className="text-xs text-destructive">No intraday bars available for {symbol}.</p>
-          )}
-          {intraday && intradayData?.source === 'yfinance' && (
-            <p className="text-xs text-muted-foreground">
-              Not in the minute dataset — showing Yahoo’s shallower intraday history.
-            </p>
-          )}
-          {symbol && barsReady && !started && (
-            <div className="space-y-2 border-t pt-2">
-              <label className="text-xs text-muted-foreground">Start date</label>
-              <DateJumpMenu
-                bars={allBars}
-                value={startDate}
-                onSelect={setStartDate}
-                placeholder="Start date"
-                triggerClassName="w-full justify-start"
-              />
-              <Button size="sm" className="w-full" onClick={startReplay}>
-                <PlayIcon className="size-4" /> Start replay
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                Leave blank to start roughly midway through history.
-              </p>
-            </div>
-          )}
-        </FloatingPanel>
-
-        {symbol && barsReady && (
-          <FloatingPanel title="Indicators" icon={ActivityIcon} defaultOpen={false}>
-            <IndicatorControls indicators={indicators} onChange={setIndicators} />
-          </FloatingPanel>
-        )}
+    // Chart above, one control bar below - a plain flex column, so the chart's box is whatever
+    // height is left over and nothing ever overlaps the candles. (This page used to float
+    // Setup/Indicators/Trade/Playback cards on top of the chart; see BottomBar.jsx.)
+    <div className="fixed inset-y-0 right-0 left-16 z-40 flex flex-col bg-background">
+      <div className="relative min-h-0 flex-1">
+        <ReplayChart
+          ref={replayChartRef}
+          bars={visibleBars}
+          indicators={indicators}
+          orders={orders}
+          previewOrder={previewOrder}
+          resetKey={`${symbol}-${timeframe}`}
+          onAdjustOrder={adjustOrder}
+          addLevelMode={addLevelMode}
+          onPlaceLevel={placeLevel}
+          settings={chartSettings}
+          // drawMode={drawMode}
+          // drawings={drawings}
+          // onDrawComplete={handleDrawComplete}
+          // onConvertDrawing={convertDrawingToOrder}
+        />
       </div>
 
-      {symbol && barsReady && started && (
-        <div className="absolute top-4 right-[5%] z-10 w-72">
-          <FloatingPanel title="Trade" icon={WalletIcon}>
-            <TradingPanel
-              orders={orders}
-              lastBar={lastBar}
-              onOpenTicket={openOrderTicket}
-              onRequestClose={requestClose}
-              addLevelMode={addLevelMode}
-              onArmAddLevel={armAddLevel}
-              onRemoveLevel={removeLevel}
-              // drawMode={drawMode}
-              // onToggleDraw={toggleDrawMode}
-            />
-          </FloatingPanel>
-        </div>
-      )}
-
-      {started && (
-        <div className="absolute bottom-4 left-1/2 z-10 -translate-x-1/2">
-          <FloatingPanel className="w-fit" title="Playback" icon={PlayIcon}>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Step back"
-                disabled={currentIndex === 0}
-                onClick={() => setBarIndex(currentIndex - 1)}
-              >
-                <SkipBackIcon className="size-4" />
-              </Button>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label={playing ? 'Pause' : 'Play'}
-                disabled={atEnd}
-                onClick={() => setPlaying((p) => !p)}
-              >
-                {playing ? <PauseIcon className="size-4" /> : <PlayIcon className="size-4" />}
-              </Button>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                aria-label="Step forward"
-                disabled={atEnd}
-                onClick={() => setBarIndex(currentIndex + 1)}
-              >
-                <SkipForwardIcon className="size-4" />
-              </Button>
-              <Select value={String(speedMs)} onValueChange={(v) => setSpeedMs(Number(v))}>
-                <SelectTrigger size="sm" className="w-20">
-                  <SelectValue>
-                    {(v) => REPLAY_SPEEDS.find((s) => String(s.value) === v)?.label ?? v}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {REPLAY_SPEEDS.map((s) => (
-                    <SelectItem key={s.value} value={String(s.value)}>
-                      {s.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <DateJumpMenu
-                bars={allBars}
-                value={dateDraft}
-                onSelect={jumpToDate}
-                placeholder="Jump to date"
-                triggerClassName="w-32 text-xs"
-              />
-              <span className="text-xs whitespace-nowrap text-muted-foreground">
-                {currentIndex + 1}/{allBars.length}
-              </span>
-              <Button size="sm" variant="ghost" onClick={restart}>
-                <RotateCcwIcon className="size-4" /> Restart
-              </Button>
-            </div>
-          </FloatingPanel>
-        </div>
-      )}
+      <BottomBar
+        onOpenSettings={() => setSettingsOpen(true)}
+        setup={{
+          symbol,
+          onSymbolChange: changeSymbol,
+          accounts,
+          accountId,
+          onAccountChange: setAccountId,
+          timeframe,
+          onTimeframeChange: changeTimeframe,
+          intraday,
+          intradayLoading,
+          intradayEmpty: intraday && !intradayLoading && !!symbol && allBars.length === 0,
+          intradayFallback: intraday && intradayData?.source === 'yfinance',
+          sources,
+          source,
+          onSourceChange: setSource,
+          onCollect: () => collect.mutate(),
+          collecting: !!maxStatus?.running,
+          collectError: maxStatus?.error,
+          hasMaxData,
+          barsReady,
+          canStart: !!symbol && barsReady && !started,
+          bars: allBars,
+          startDate,
+          onStartDateChange: setStartDate,
+          onStart: startReplay,
+          indicators,
+          onIndicatorsChange: setIndicators,
+        }}
+        playback={{
+          started,
+          playing,
+          atEnd,
+          currentIndex,
+          total: allBars.length,
+          onStepBack: () => setBarIndex(currentIndex - 1),
+          onPlayToggle: () => setPlaying((p) => !p),
+          onStepForward: () => setBarIndex(currentIndex + 1),
+          speedMs,
+          onSpeedChange: setSpeedMs,
+          bars: allBars,
+          dateDraft,
+          onJumpDate: jumpToDate,
+          onRestart: restart,
+        }}
+        trade={{
+          visible: !!symbol && barsReady && started,
+          orders,
+          lastBar,
+          onOpenTicket: openOrderTicket,
+          onRequestClose: requestClose,
+          addLevelMode,
+          onArmAddLevel: armAddLevel,
+          onRemoveLevel: removeLevel,
+        }}
+      />
 
       <SettingsDialog
         open={settingsOpen}

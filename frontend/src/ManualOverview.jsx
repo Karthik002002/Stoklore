@@ -1009,7 +1009,7 @@ export default function ManualOverview({ trades, accountId }) {
     queryKey: ['balanceAdjustments'],
     queryFn: getBalanceAdjustments,
   })
-  const { data: accounts = [] } = useQuery({ queryKey: ['tradeAccounts'], queryFn: getTradeAccounts })
+  const { data: accounts = [] } = useQuery({ queryKey: ['tradeAccounts'], queryFn: () => getTradeAccounts() })
   const tolerancePct = backtestSettings?.risk_deviation_tolerance_pct ?? 10
 
   // With an account selected the balance curve starts from that account's own wallet and only

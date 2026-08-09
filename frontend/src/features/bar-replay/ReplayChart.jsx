@@ -206,7 +206,7 @@ const ReplayChart = forwardRef(function ReplayChart(
   //   chartRef.current?.applyOptions({ handleScroll: !drawMode, handleScale: !drawMode })
   // }, [drawMode])
 
-  // "Add stop loss"/"Add target" on an already-open position (see TradingPanel) arms addLevelMode
+  // "Add stop loss"/"Add target" on an already-open position (see PositionsList) arms addLevelMode
   // and waits for the next chart click to place the new level there - same reasoning as the draw
   // tool above for disabling pan/zoom reactively at arm time rather than inside onPointerDown:
   // the chart's own pan handler sees the same pointerdown before this component's container
@@ -266,7 +266,7 @@ const ReplayChart = forwardRef(function ReplayChart(
         container.style.cursor = 'ns-resize'
         return
       }
-      // Armed by TradingPanel's "Add stop loss"/"Add target" toggle - a click that isn't grabbing
+      // Armed by PositionsList's "Add stop loss"/"Add target" toggle - a click that isn't grabbing
       // an existing line places the new level here instead (see BarReplay's placeLevel).
       if (addLevelModeRef.current) {
         const price = priceAt(e.clientY)
@@ -351,7 +351,11 @@ const ReplayChart = forwardRef(function ReplayChart(
         separatePane ? OSCILLATOR_PANE : 0,
       )
       if (separatePane) {
-        series.priceScale().applyOptions({ autoScale: false })
+        // autoscaleInfoProvider alone pins the pane to 0-100 (the library's documented recipe for a
+        // fixed range). Do NOT also set the price scale's `autoScale: false` - that freezes the
+        // scale at whatever range it holds and disables the autoscaling this provider feeds, so on
+        // a reload (series created while `bars` is still empty, see the data effect's early return)
+        // the range never picks up the provider's 0-100 and the RSI line renders off-screen.
         series.applyOptions({ autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) })
         // Configurable in Settings (store.js's rsiLevels) - not just the usual 30/70,
         // any number of reference lines. >=50 reads as "overbought" (down color), below as
@@ -415,7 +419,10 @@ const ReplayChart = forwardRef(function ReplayChart(
       }
       hasFitRef.current = true
     }
-  }, [bars, indicators, settings.bodyUpColor, settings.bodyDownColor])
+    // Deps must stay a superset of the series-creating effect's: anything that makes that effect
+    // tear down and rebuild the series (rsiLevels, resetKey) has to re-run this one too, or the
+    // freshly created series sit there with no data until the next bar step.
+  }, [bars, indicators, resetKey, settings.rsiLevels, settings.bodyUpColor, settings.bodyDownColor])
 
   // Entry/SL/target lines for every order (pending limits get a dotted amber entry line, filled
   // positions get a dashed gray one) - redrawn whenever the order list changes, or a new bar

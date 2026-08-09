@@ -1,4 +1,3 @@
-// import { TrendingDownIcon, TrendingUpIcon } from 'lucide-react' // Draw long/short tool - disabled for now
 import { XIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -113,82 +112,31 @@ function OrderRow({ order, lastBar, onRequestClose, addLevelMode, onArmAddLevel,
   )
 }
 
-export default function TradingPanel({
+// Just the open/pending positions, rendered inside BottomBar's "Positions" popover. Market price
+// and the Buy/Sell buttons used to live under this list; they're always-visible controls in the
+// bar itself now, so they don't sit one click away behind a popover.
+export default function PositionsList({
   orders,
   lastBar,
-  onOpenTicket,
   onRequestClose,
   addLevelMode,
   onArmAddLevel,
   onRemoveLevel,
-  // drawMode,
-  // onToggleDraw,
 }) {
+  if (orders.length === 0) return <p className="text-sm text-muted-foreground">No open positions.</p>
   return (
     <div className="space-y-2">
-      {orders.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No open positions.</p>
-      ) : (
-        <div className="space-y-2">
-          {orders.map((order) => (
-            <OrderRow
-              key={order.id}
-              order={order}
-              lastBar={lastBar}
-              onRequestClose={() => onRequestClose(order)}
-              addLevelMode={addLevelMode}
-              onArmAddLevel={onArmAddLevel}
-              onRemoveLevel={onRemoveLevel}
-            />
-          ))}
-        </div>
-      )}
-      <div className="space-y-2 border-t pt-2">
-        <p className="text-sm font-medium">Market @ {lastBar ? inr(lastBar.close) : '—'}</p>
-        {/* Draw long/short tool - disabled for now, kept for later.
-        <div className="flex gap-2">
-          <Button
-            variant={drawMode === 'long' ? 'default' : 'outline'}
-            size="sm"
-            className="flex-1"
-            disabled={!lastBar}
-            onClick={() => onToggleDraw('long')}
-          >
-            <TrendingUpIcon className="size-3.5" /> Draw long
-          </Button>
-          <Button
-            variant={drawMode === 'short' ? 'default' : 'outline'}
-            size="sm"
-            className="flex-1"
-            disabled={!lastBar}
-            onClick={() => onToggleDraw('short')}
-          >
-            <TrendingDownIcon className="size-3.5" /> Draw short
-          </Button>
-        </div>
-        {drawMode && (
-          <p className="text-xs text-muted-foreground">
-            Drag on the chart to size the target/stop zone - Esc to cancel.
-          </p>
-        )}
-        */}
-        <div className="flex gap-2">
-          <Button
-            className="flex-1 bg-up text-white hover:bg-up/90"
-            disabled={!lastBar}
-            onClick={() => onOpenTicket('long')}
-          >
-            Buy <span className="ml-1 text-xs opacity-70">B</span>
-          </Button>
-          <Button
-            className="flex-1 bg-down text-white hover:bg-down/90"
-            disabled={!lastBar}
-            onClick={() => onOpenTicket('short')}
-          >
-            Sell <span className="ml-1 text-xs opacity-70">S</span>
-          </Button>
-        </div>
-      </div>
+      {orders.map((order) => (
+        <OrderRow
+          key={order.id}
+          order={order}
+          lastBar={lastBar}
+          onRequestClose={() => onRequestClose(order)}
+          addLevelMode={addLevelMode}
+          onArmAddLevel={onArmAddLevel}
+          onRemoveLevel={onRemoveLevel}
+        />
+      ))}
     </div>
   )
 }

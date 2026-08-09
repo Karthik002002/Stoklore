@@ -125,7 +125,7 @@ function TradeFormDialog({ open, onOpenChange, trade, onSaved, defaultAccountId,
     queryKey: ['manualBacktestSettings'],
     queryFn: getManualBacktestSettings,
   })
-  const { data: accounts = [] } = useQuery({ queryKey: ['tradeAccounts'], queryFn: getTradeAccounts })
+  const { data: accounts = [] } = useQuery({ queryKey: ['tradeAccounts'], queryFn: () => getTradeAccounts() })
   const { data: adjustments = [] } = useQuery({
     queryKey: ['balanceAdjustments'],
     queryFn: getBalanceAdjustments,
@@ -745,7 +745,7 @@ export default function ManualBacktesting() {
   const queryClient = useQueryClient()
 
   const { data: allTrades = [] } = useQuery({ queryKey: ['manualTrades'], queryFn: getManualTrades })
-  const { data: accounts = [] } = useQuery({ queryKey: ['tradeAccounts'], queryFn: getTradeAccounts })
+  const { data: accounts = [] } = useQuery({ queryKey: ['tradeAccounts'], queryFn: () => getTradeAccounts() })
   const { data: backtestSettings } = useQuery({
     queryKey: ['manualBacktestSettings'],
     queryFn: getManualBacktestSettings,

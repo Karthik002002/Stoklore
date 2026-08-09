@@ -14,7 +14,7 @@ import db
 import llm
 import trade_context
 
-from app.core.config import IST, UPLOAD_DIR
+from app.core.config import DIRECTIONS, IST, RESULTS, UPLOAD_DIR
 from app.schemas import (
     BalanceAdjustmentRequest,
     ManualBacktestSettingsRequest,

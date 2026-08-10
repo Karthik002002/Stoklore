@@ -22,10 +22,20 @@ function fade(hex, alpha) {
 
 // Volume lives in the price pane itself, as a separate price scale squashed into the bottom
 // slice of it (TradingView's classic "volume behind the candles" look) rather than its own pane -
-// so it never competes with an oscillator indicator for pane space. Only an oscillator (RSI -
-// anything with `pane: 'separate'`, see lib/indicators.js) gets an actual separate pane, at 1.
+// so it never competes with an oscillator indicator for pane space. Only an oscillator (anything
+// with `pane: 'separate'`, see lib/indicators.js) gets a pane of its own.
 const VOLUME_PRICE_SCALE = 'volume'
-const OSCILLATOR_PANE = 1
+// Oscillator panes start here and run downward, one per distinct oscillator type in use (see the
+// indicator effect - types declare incompatible fixed ranges, so they can't share a price scale).
+const FIRST_OSCILLATOR_PANE = 1
+// Default heights, in lightweight-charts' relative stretch units: the price pane gets 3x whatever
+// each oscillator pane gets. Only used until the user drags a separator, after which the persisted
+// view wins (store.js's `paneHeights`).
+const PRICE_PANE_STRETCH = 3
+const OSCILLATOR_STRETCH = 1
+// Key under which the candle pane's height is stored. Oscillator panes key on their indicator
+// type, and no indicator type is called 'price', so the two can share one map.
+const PRICE_PANE_KEY = 'price'
 
 // Maps the user-configurable chart settings (see store.js) onto lightweight-charts'
 // candlestick series options - shared by the initial creation and the reactive re-apply below.
@@ -49,6 +59,19 @@ const INITIAL_VISIBLE_BARS = 200
 // How close (in px) a pointer-down needs to land next to a stop-loss/target line to grab it for
 // dragging - see the drag-to-adjust effect below.
 const DRAG_HIT_PX = 6
+
+// What the pane at `index` is showing: the candles at 0, otherwise the oscillator type occupying
+// that slot. This is the key persisted heights are stored under, and both the effect that applies
+// them and the sampler that records them go through here so they can't disagree.
+function paneKeyAt(index, oscillatorTypes) {
+  if (index === 0) return PRICE_PANE_KEY
+  return oscillatorTypes[index - FIRST_OSCILLATOR_PANE] ?? `pane${index}`
+}
+
+// Series-map key for one line of one indicator. A single-line indicator passes lineKey = null and
+// keys on its own id alone; a band keys on `id:upper`, `id:middle`, `id:lower`. Both the effect
+// that creates the series and the one that feeds them go through here, so they can't disagree.
+const seriesKey = (indicatorKey, lineKey) => (lineKey ? `${indicatorKey}:${lineKey}` : indicatorKey)
 
 // Signed percentage of `exit_price` away from entry, in the position's own direction (so a target
 // reads + and a stop reads - for a short exactly as for a long). Shared by the price-line labels
@@ -138,6 +161,10 @@ const ReplayChart = forwardRef(function ReplayChart(
   // and re-running the data effect would re-frame the chart under the user mid-session).
   const viewRef = useRef(view)
   viewRef.current = view
+  // Which oscillator type sits in each pane below the price pane, in order. Written by the
+  // indicator effect, read by the height sampler - a ref so the sampler's interval doesn't have to
+  // be torn down and restarted every time the indicator list changes.
+  const oscillatorTypesRef = useRef([])
   const onViewChangeRef = useRef(onViewChange)
   onViewChangeRef.current = onViewChange
   // const drawModeRef = useRef(drawMode)
@@ -348,61 +375,110 @@ const ReplayChart = forwardRef(function ReplayChart(
   }, [resetKey])
 
   // Indicator SERIES objects only change when the indicator list itself changes - not on every
-  // bar step, so their zoom-affecting add/remove doesn't fire during normal replay. Oscillators
-  // (RSI - anything with `pane: 'separate'`, see lib/indicators.js) get their own pane below the
-  // candles via lightweight-charts' multi-pane support, fixed to a 0-100 scale with 30/70
-  // reference lines, rather than overlaying the price series like EMA/SMA do.
+  // bar step, so their zoom-affecting add/remove doesn't fire during normal replay. Overlays
+  // (EMA/SMA, the previous-day levels) draw on the price pane; oscillators (anything with
+  // `pane: 'separate'`, see lib/indicators.js) get their own pane beneath it.
+  //
+  // One pane PER OSCILLATOR TYPE, not one shared pane: each type declares a fixed `range`, and
+  // they don't match - RSI runs 0..100 while CLV and wick asymmetry run -1..1. Sharing a price
+  // scale between those flattens the small-range ones into a line at the bottom. Two RSIs of
+  // different periods do still share a pane, which is the point of keying by type.
   useEffect(() => {
     const chart = chartRef.current
     if (!chart) return
     indicatorSeriesRef.current.forEach((series) => chart.removeSeries(series))
-    const hasOscillator = indicators.some((ind) => INDICATOR_TYPES[ind.type]?.pane === 'separate')
-    if (!hasOscillator && chart.panes().length > OSCILLATOR_PANE) chart.removePane(OSCILLATOR_PANE)
+
+    // Pane index is 1 + the type's position in this list; 0 stays the price pane. Mirrored into a
+    // ref so the height sampler below can turn a pane index back into the type it's showing
+    // without recomputing (or re-running on every indicator change).
+    const oscillatorTypes = [
+      ...new Set(indicators.filter((i) => INDICATOR_TYPES[i.type]?.pane === 'separate').map((i) => i.type)),
+    ]
+    oscillatorTypesRef.current = oscillatorTypes
+    // Drop panes left behind by a removed oscillator, highest first so the surviving indices below
+    // don't shift under us mid-loop.
+    for (let p = chart.panes().length - 1; p > oscillatorTypes.length; p--) chart.removePane(p)
+
     const next = new Map()
     indicators.forEach((ind, i) => {
-      const separatePane = INDICATOR_TYPES[ind.type]?.pane === 'separate'
-      const series = chart.addSeries(
-        LineSeries,
-        {
-          color: INDICATOR_COLORS[i % INDICATOR_COLORS.length],
-          lineWidth: 1,
-          crosshairMarkerVisible: false,
-          lastValueVisible: separatePane,
-          priceLineVisible: false,
-        },
-        separatePane ? OSCILLATOR_PANE : 0,
-      )
-      if (separatePane) {
-        // autoscaleInfoProvider alone pins the pane to 0-100 (the library's documented recipe for a
-        // fixed range). Do NOT also set the price scale's `autoScale: false` - that freezes the
-        // scale at whatever range it holds and disables the autoscaling this provider feeds, so on
-        // a reload (series created while `bars` is still empty, see the data effect's early return)
-        // the range never picks up the provider's 0-100 and the RSI line renders off-screen.
-        series.applyOptions({ autoscaleInfoProvider: () => ({ priceRange: { minValue: 0, maxValue: 100 } }) })
-        // Configurable in Settings (store.js's rsiLevels) - not just the usual 30/70,
-        // any number of reference lines. >=50 reads as "overbought" (down color), below as
-        // "oversold" (up color), same convention as the classic 30/70 pair.
-        settings.rsiLevels.forEach((level) => {
-          series.createPriceLine({
-            price: level,
-            color: level >= 50 ? settings.bodyDownColor : settings.bodyUpColor,
+      const type = INDICATOR_TYPES[ind.type]
+      const separatePane = type?.pane === 'separate'
+      const paneIndex = separatePane ? FIRST_OSCILLATOR_PANE + oscillatorTypes.indexOf(ind.type) : 0
+      // Multi-line types (bands, MACD, stochastic) declare their sub-series; single-line ones get
+      // a synthetic one so this loop is the only code path. The map key carries the line, so the
+      // data effect can address each series independently.
+      const lines = type?.lines ?? [{ key: null }]
+
+      lines.forEach((line, lineIndex) => {
+        const series = chart.addSeries(
+          LineSeries,
+          {
+            color: line.color ?? INDICATOR_COLORS[(i + lineIndex) % INDICATOR_COLORS.length],
             lineWidth: 1,
-            lineStyle: 2,
-            title: String(level),
+            lineStyle: line.lineStyle ?? type?.lineStyle ?? 0,
+            crosshairMarkerVisible: false,
+            // Only the first line of a group gets a value badge on the axis - three bands would
+            // otherwise stack three overlapping labels on one another.
+            lastValueVisible: separatePane && lineIndex === 0,
+            priceLineVisible: false,
+          },
+          paneIndex,
+        )
+
+        // The scale and its reference lines belong to the PANE, so they're configured once per
+        // indicator (on its first line), not once per line.
+        if (separatePane && lineIndex === 0) {
+          // A type with no `range` (MACD, ATR, relative volume) is left to autoscale: it reads in
+          // price units or is otherwise unbounded, so no fixed band could fit every symbol.
+          //
+          // Where there IS a range, autoscaleInfoProvider alone pins the pane to it (the library's
+          // documented recipe). Do NOT also set the price scale's `autoScale: false` - that
+          // freezes the scale at whatever range it holds and disables the autoscaling this
+          // provider feeds, so on a reload (series created while `bars` is still empty, see the
+          // data effect's early return) the range never picks up the provider's values and the
+          // line renders off-screen.
+          if (type.range) {
+            const [minValue, maxValue] = type.range
+            series.applyOptions({
+              autoscaleInfoProvider: () => ({ priceRange: { minValue, maxValue } }),
+            })
+          }
+          // RSI's bands are user-configurable (store.js's rsiLevels); every other oscillator
+          // carries its own in the registry. Colored by which half of its range they sit in - the
+          // upper one reads as the "stretched" side, same convention as the classic 30/70 pair.
+          // An unbounded type has no halves, so its levels stay neutral.
+          const levels = ind.type === 'rsi' ? settings.rsiLevels : (type.levels ?? [])
+          const midpoint = type.range ? (type.range[0] + type.range[1]) / 2 : null
+          levels.forEach((level) => {
+            const color =
+              midpoint == null || level === midpoint
+                ? COLORS.text
+                : level > midpoint
+                  ? settings.bodyDownColor
+                  : settings.bodyUpColor
+            series.createPriceLine({
+              price: level,
+              color,
+              lineWidth: 1,
+              lineStyle: 2,
+              title: String(level),
+            })
           })
-        })
-      }
-      next.set(ind.key, series)
+        }
+        next.set(seriesKey(ind.key, line.key), series)
+      })
     })
     indicatorSeriesRef.current = next
-    // Pane heights come from the persisted view, so a dragged-taller RSI pane survives a reload
-    // (and an added/removed oscillator) instead of snapping back to the 3:1 default.
-    const oscillatorPane = chart.panes()[OSCILLATOR_PANE]
-    if (oscillatorPane) {
-      const [priceStretch, oscillatorStretch] = view?.paneStretch ?? [3, 1]
-      chart.panes()[0].setStretchFactor(priceStretch)
-      oscillatorPane.setStretchFactor(oscillatorStretch)
-    }
+    // Pane heights come from the persisted view, keyed by what each pane SHOWS, so a
+    // dragged-taller RSI pane survives a reload - and stays with RSI when the panes around it are
+    // added or removed. A pane with no saved height falls back to the default, which is why
+    // adding a third oscillator doesn't resize the two already on screen.
+    const heights = view?.paneHeights ?? {}
+    chart.panes().forEach((pane, index) => {
+      const key = paneKeyAt(index, oscillatorTypes)
+      const fallback = index === 0 ? PRICE_PANE_STRETCH : OSCILLATOR_STRETCH
+      pane.setStretchFactor(heights[key] ?? fallback)
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [indicators, resetKey, settings.rsiLevels, settings.bodyUpColor, settings.bodyDownColor])
 
@@ -430,11 +506,20 @@ const ReplayChart = forwardRef(function ReplayChart(
         color: b.close >= b.open ? fade(settings.bodyUpColor, 0.5) : fade(settings.bodyDownColor, 0.5),
       })),
     )
-    const indicatorBars = bars.map((b) => ({ time: b.time, close: b.close }))
+    // Full bars, not a {time, close} projection: the moving averages only read `close`, but the
+    // candle-shape indicators need open/high/low, the volume ones need `volume`, and VWAP and the
+    // previous-day levels need `date` to find the session boundaries.
     indicators.forEach((ind) => {
-      const series = indicatorSeriesRef.current.get(ind.key)
-      if (!series) return
-      series.setData(INDICATOR_TYPES[ind.type].compute(indicatorBars, ind.period))
+      const type = INDICATOR_TYPES[ind.type]
+      if (!type) return
+      // Multi-line types return an object keyed by line; single-line ones return a bare array.
+      const computed = type.compute(bars, ind.period)
+      const lines = type.lines ?? [{ key: null }]
+      lines.forEach((line) => {
+        const series = indicatorSeriesRef.current.get(seriesKey(ind.key, line.key))
+        if (!series) return
+        series.setData((line.key ? computed[line.key] : computed) ?? [])
+      })
     })
     if (!hasFitRef.current) {
       const saved = viewRef.current?.logicalRange
@@ -524,18 +609,25 @@ const ReplayChart = forwardRef(function ReplayChart(
       const chart = chartRef.current
       if (!chart) return
       const range = chart.timeScale().getVisibleLogicalRange()
-      const panes = chart.panes()
-      const stretch = panes.length > OSCILLATOR_PANE ? panes.map((p) => p.getStretchFactor()) : null
+
+      // Keyed by what each pane shows, not by its index - see store.js's paneHeights.
+      const heights = {}
+      chart.panes().forEach((pane, index) => {
+        heights[paneKeyAt(index, oscillatorTypesRef.current)] = pane.getStretchFactor()
+      })
 
       const prev = viewRef.current ?? {}
       const movedRange =
         range && (range.from !== prev.logicalRange?.from || range.to !== prev.logicalRange?.to)
-      const movedPanes = stretch && String(stretch) !== String(prev.paneStretch)
+      const movedPanes = Object.entries(heights).some(([key, value]) => prev.paneHeights?.[key] !== value)
       if (!movedRange && !movedPanes) return
 
       onViewChangeRef.current?.({
         ...(movedRange ? { logicalRange: { from: range.from, to: range.to } } : {}),
-        ...(movedPanes ? { paneStretch: stretch } : {}),
+        // Merged over what's already stored, not replacing it: an oscillator that isn't on the
+        // chart right now keeps its saved height, so re-adding it later brings back the size you
+        // left it at rather than the default.
+        ...(movedPanes ? { paneHeights: { ...prev.paneHeights, ...heights } } : {}),
       })
     }, 500)
     return () => clearInterval(id)

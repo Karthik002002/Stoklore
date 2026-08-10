@@ -15,16 +15,25 @@ export const DEFAULT_CHART_SETTINGS = {
 
 const DEFAULT_INDICATORS = [{ key: 'default-ema20', type: 'ema', period: 20 }]
 
-// How the chart is framed, as opposed to what it shows: `logicalRange` is the zoom/pan window
-// (lightweight-charts' bar-index range, not a price range), `paneStretch` the relative heights of
-// the price pane and the oscillator pane below it, which the user can drag.
+// How the chart is framed, as opposed to what it shows.
 //
+// `logicalRange` is the zoom/pan window (lightweight-charts' bar-index range, not a price range).
 // `logicalRange: null` means "no saved framing" - the chart falls back to its
 // INITIAL_VISIBLE_BARS window (see ReplayChart). It is cleared on a symbol/timeframe change
 // because it counts bars: bar 3200-3400 of one instrument is nowhere near the same place in
-// another. `paneStretch` deliberately survives that - how tall you like the RSI pane is a layout
+// another.
+//
+// `paneHeights` is the dragged height of each pane, in lightweight-charts' relative stretch
+// units, keyed by WHAT THE PANE SHOWS - 'price' for the candles, otherwise the oscillator's
+// indicator type ('rsi', 'macd', ...). Keyed rather than a positional [3, 1, 1] array because
+// pane INDEX is just "which oscillator type came first in the indicator list": drop RSI from a
+// chart that also has MACD and MACD slides from pane 2 to pane 1, inheriting RSI's height under a
+// positional scheme. Keying by type means a height follows the indicator it belongs to, and an
+// indicator you re-add later comes back the size you left it.
+//
+// Deliberately survives a symbol/timeframe change - how tall you like the RSI pane is a layout
 // preference, not something about the instrument.
-const DEFAULT_VIEW = { logicalRange: null, paneStretch: [3, 1] }
+const DEFAULT_VIEW = { logicalRange: null, paneHeights: {} }
 
 // Everything about a Bar Replay session lives in this one store - symbol/timeframe/bar position,
 // open/pending orders, indicators, playback speed, and chart/trading settings - persisted to
@@ -68,13 +77,22 @@ export const useBarReplayStore = create(
     }),
     {
       name: 'barReplay.store',
-      version: 4,
+      version: 5,
       // v0 -> v1: a position's stop-loss and target were single `stopLoss`/`target` numbers;
       // they're now `stopLosses`/`targets`, lists of {id, price, qty} legs (see orderEngine.js)
       // so one trade can carry a laddered exit on either side - a plain single-SL/single-target
       // order just becomes a one-leg list covering the full quantity, so nothing about existing
       // sessions' behavior changes.
       migrate: (persisted, version) => {
+        // v4 -> v5: pane heights moved from a positional `paneStretch` array to `paneHeights`
+        // keyed by what the pane shows. The old array can't be converted - which slot held which
+        // oscillator wasn't recorded - so it's dropped and the panes go back to their defaults.
+        // A layout preference is cheap to redo; silently reapplying it to the wrong indicator is
+        // not.
+        if (version < 5 && persisted) {
+          delete persisted.view?.paneStretch
+          if (persisted.view) persisted.view.paneHeights = {}
+        }
         // v3 -> v4: `view` (zoom window + pane heights) is new. persist's merge is shallow, so a
         // session saved before this existed has no `view` key at all and would read as undefined
         // rather than falling back to DEFAULT_VIEW.

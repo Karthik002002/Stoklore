@@ -16,6 +16,7 @@ why it exists, see the main [README](../README.md) — these docs are the
 - [Backtesting — Auto](backtesting-auto.md) *(currently disabled, see the doc)*
 - [Backtesting — Manual (Trade Journal)](backtesting-manual.md)
 - [Bar Replay](bar-replay.md)
+- [Indicators](indicators.md) — every indicator and how it's calculated
 - [Paper Trading](paper-trading.md)
 - [Trade Log Simulation & Stress Testing](trade-simulation.md)
 - [Scraping & Anti-Block Transport](scraping.md)

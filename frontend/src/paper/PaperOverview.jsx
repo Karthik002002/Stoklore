@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AreaSeries, createChart } from 'lightweight-charts'
 import { useEffect, useRef } from 'react'
+import AllocationDonut from '@/components/AllocationDonut'
 import { inr } from '@/lib/format'
 import { tradePnl, underwaterSeries } from '@/lib/manualTrades'
 import { getBalanceAdjustments } from '@/services/api'
@@ -121,6 +122,24 @@ export default function PaperOverview({ account, trades, positions }) {
     }
   }, [closed, openPositions, account, allAdjustments])
 
+  // Both donuts read *deployed capital* (entry price × qty), not current market value: the
+  // question they answer is "where did I put the money", and marking to market would make a
+  // position look like a bigger bet simply because it went up. Cash is a slice of the capital
+  // chart for the same reason - being 60% in cash is an allocation decision, not an absence of one.
+  const allocation = useMemo(() => {
+    const bySector = new Map()
+    const byStock = openPositions.map((p) => {
+      const cost = p.entry_price * p.quantity
+      const sector = p.sector || 'Unclassified'
+      bySector.set(sector, (bySector.get(sector) ?? 0) + cost)
+      return { label: p.symbol, value: cost }
+    })
+    return {
+      sectors: [...bySector].map(([label, value]) => ({ label, value })),
+      stocks: [...byStock, { label: 'Cash', value: Math.max(stats.cash, 0) }],
+    }
+  }, [openPositions, stats.cash])
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
@@ -149,6 +168,15 @@ export default function PaperOverview({ account, trades, positions }) {
           valueClassName="text-down"
           sub="peak-to-trough, realized"
         />
+      </div>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <AllocationDonut
+          title="Sector allocation"
+          slices={allocation.sectors}
+          note="open positions, at cost"
+        />
+        <AllocationDonut title="Capital allocation" slices={allocation.stocks} note="incl. uninvested cash" />
       </div>
 
       <div className="rounded-xl border bg-card p-4">

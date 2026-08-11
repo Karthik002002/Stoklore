@@ -126,7 +126,7 @@ function App() {
             dense and horizontal, so capping them at a reading-width column wasted most of the
             screen. min-w-0 is what actually lets wide tables scroll inside this flex child
             instead of forcing the whole page to overflow sideways. */}
-        <main className="min-w-0 flex-1 px-2 py-3">
+        <main className={`min-w-0 flex-1 px-2 py-3 `}>
           <GuiltBanner />
           <Outlet />
         </main>

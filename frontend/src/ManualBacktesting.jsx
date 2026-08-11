@@ -867,6 +867,10 @@ export default function ManualBacktesting() {
         // Re-read from the live list so the modal reflects an edit made from inside it, rather
         // than the snapshot captured when the row was clicked.
         trade={detailTrade ? (allTrades.find((t) => t.id === detailTrade.id) ?? detailTrade) : null}
+        // The filtered list, so ↑/↓ steps through exactly the rows on screen rather than trades
+        // the active filters have hidden.
+        trades={filteredTrades}
+        onSelect={setDetailTrade}
         onEdit={openEdit}
       />
 

@@ -1,3 +1,5 @@
+from concurrent.futures import ThreadPoolExecutor
+
 from fastapi import APIRouter
 from fastapi import File, HTTPException, UploadFile
 
@@ -8,6 +10,7 @@ from app.core import stocks_master
 
 from app.deps import _cached
 from app.schemas import AddStockRequest
+from app.services.quotes import MAX_QUOTE_WORKERS
 from app.services.scraping import _cached_news, _live_scrape
 
 router = APIRouter(tags=["stocks"])
@@ -32,13 +35,24 @@ def delete_stock(symbol: str):
 
 @router.get("/api/stocks")
 def stocks():
-    """Tracked symbols with a price cached for 15min - was N live yahoo calls on every poll."""
+    """Tracked symbols with a price cached for 15min - was N live yahoo calls on every poll.
+
+    The cache misses are fetched concurrently rather than one after another: sequentially, a cold
+    cache made this endpoint take N round trips, and the list sat empty in the browser for all of
+    them. A symbol whose fetch fails still comes back with its DB row and a null price.
+    """
     rows = db.list_symbols()
-    for row in rows:
+
+    def priced(row):
         try:
-            row.update(_cached(row["symbol"], "price", 15, lambda s=row["symbol"]: scraper.get_price(s)))
+            return _cached(row["symbol"], "price", 15, lambda s=row["symbol"]: scraper.get_price(s))
         except Exception:
-            row.update({"price": None, "changePercent": None})
+            return {"price": None, "changePercent": None}
+
+    if rows:
+        with ThreadPoolExecutor(max_workers=min(MAX_QUOTE_WORKERS, len(rows))) as pool:
+            for row, price in zip(rows, pool.map(priced, rows)):
+                row.update(price)
     return rows
 
 

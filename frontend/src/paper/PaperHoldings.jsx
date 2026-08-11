@@ -40,6 +40,23 @@ function PriceCell({ price }) {
   )
 }
 
+// The rows above are marked to the last price the backend stored, which it serves without waiting
+// on the feed - so the table needs to say how old that is, and whether a fresh quote is on its
+// way. `price_stale` is the backend's own answer to "I'm refetching this one right now".
+function PriceFooter({ positions, isFetching }) {
+  const stamps = positions.map((p) => p.price_as_of).filter(Boolean)
+  const oldest = stamps.length ? stamps.reduce((a, b) => (a < b ? a : b)) : null
+  const fetching = isFetching || positions.some((p) => p.price_stale)
+
+  return (
+    <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+      {fetching && <Spinner className="size-3" />}
+      {fetching ? 'Fetching latest price data…' : 'Prices up to date'}
+      {oldest && <span>· priced as of {new Date(oldest).toLocaleTimeString()}</span>}
+    </p>
+  )
+}
+
 // Editing a ladder in place. Each row is one leg: a price and the slice of the position it closes.
 function LegEditor({ label, legs, onChange, max }) {
   const covered = legs.reduce((s, l) => s + (Number(l.qty) || 0), 0)
@@ -147,7 +164,7 @@ function ModifyDialog({ position, open, onOpenChange }) {
   )
 }
 
-export default function PaperHoldings({ positions, isFetching }) {
+export default function PaperHoldings({ positions, isFetching, isPending }) {
   const queryClient = useQueryClient()
   const [modifying, setModifying] = useState(null)
 
@@ -160,6 +177,18 @@ export default function PaperHoldings({ positions, isFetching }) {
     },
     onError: (e) => toast.error(e.message),
   })
+
+  // "Nothing here" and "haven't heard back yet" are different answers, and only one of them is
+  // safe to show. The positions come from the DB but the endpoint marks each one to a live price,
+  // so on a slow connection the response is late - and claiming "no open positions" while the
+  // request is still in flight tells the user their book is empty when it isn't.
+  if (isPending) {
+    return (
+      <p className="flex items-center justify-center gap-2 rounded-xl border bg-card py-16 text-center text-sm text-muted-foreground">
+        <Spinner className="size-4" /> Loading positions…
+      </p>
+    )
+  }
 
   if (positions.length === 0) {
     return (
@@ -245,11 +274,7 @@ export default function PaperHoldings({ positions, isFetching }) {
           </TableBody>
         </Table>
       </div>
-      {isFetching && (
-        <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Spinner className="size-3" /> Refreshing prices…
-        </p>
-      )}
+      <PriceFooter positions={positions} isFetching={isFetching} />
       <ModifyDialog
         position={modifying}
         open={!!modifying}

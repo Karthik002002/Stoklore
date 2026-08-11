@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { RefreshCwIcon, SettingsIcon } from 'lucide-react'
 import { toast } from 'sonner'
@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
 import { usePageTitle } from '@/lib/usePageTitle'
-import { timeAgo } from '@/lib/format'
+import { timeAgoShort } from '@/lib/format'
 import {
   getManualTrades,
   getPaperAccounts,
@@ -35,7 +35,9 @@ function feedState(status) {
   const age = (Date.now() - new Date(status.last_poll).getTime()) / 1000
   return age < status.poll_seconds * 3
     ? { label: 'Live', tone: 'live' }
-    : { label: `Stale (${timeAgo(status.last_poll)})`, tone: 'stale' }
+    : // timeAgoShort, not timeAgo: the latter's smallest unit is a day, so every stale poll read
+      // "today" - a poll interval is measured in seconds.
+      { label: `Stale (${timeAgoShort(status.last_poll)})`, tone: 'stale' }
 }
 
 export default function PaperTrading() {
@@ -49,11 +51,23 @@ export default function PaperTrading() {
   const accountId = account ?? accounts[0]?.id ?? null
   const selected = accounts.find((a) => a.id === accountId) ?? null
 
-  const { data: positions = [], isFetching } = useQuery({
+  // `isPending` is threaded down so the tables can tell "still asking" from "genuinely empty" -
+  // the endpoint marks every position to a live price before it answers, so a slow feed used to
+  // render "No open paper positions" over a book that was perfectly well populated.
+  //
+  // keepPreviousData covers the other half: switching accounts changes the query key, and without
+  // it the table would blank out on every switch instead of holding the old rows for the moment
+  // the new ones take to arrive.
+  const {
+    data: positions = [],
+    isFetching,
+    isPending,
+  } = useQuery({
     queryKey: ['paperPositions', accountId],
     queryFn: () => getPaperPositions(accountId),
     enabled: accountId != null,
     refetchInterval: REFRESH_MS,
+    placeholderData: keepPreviousData,
   })
 
   const { data: status } = useQuery({
@@ -168,7 +182,7 @@ export default function PaperTrading() {
           <PaperOverview account={selected} trades={trades} positions={positions} />
         </TabsPanel>
         <TabsPanel value="holdings">
-          <PaperHoldings positions={positions} isFetching={isFetching} />
+          <PaperHoldings positions={positions} isFetching={isFetching} isPending={isPending} />
         </TabsPanel>
         <TabsPanel value="trades">
           <PaperTrades accountId={accountId} trades={trades} />

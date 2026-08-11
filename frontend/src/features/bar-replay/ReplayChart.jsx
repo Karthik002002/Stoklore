@@ -4,6 +4,7 @@ import { CandlestickSeries, HistogramSeries, LineSeries, createChart } from 'lig
 import { compact } from '@/lib/format'
 import { INDICATOR_COLORS, INDICATOR_TYPES } from '@/lib/indicators'
 import { tradeReturnPct } from '@/lib/manualTrades'
+import { riskReward } from './orderEngine'
 import { DEFAULT_CHART_SETTINGS } from './store'
 
 const COLORS = { up: '#22c55e', down: '#ef4444', text: '#9ca3af', grid: 'rgba(148, 163, 184, 0.15)' }
@@ -780,6 +781,12 @@ function PositionPills({ order, lastClose, addLevelMode, onArmAddLevel, onRemove
   // BarReplay's placeLevel, which covers exactly the remainder and no-ops once it's zero.
   const covered = (legs) => (legs ?? []).reduce((s, l) => s + l.qty, 0)
   const canAdd = (legs) => covered(legs) < order.quantity
+  const { rr } = riskReward({
+    direction: order.direction,
+    entryPrice: order.entryPrice,
+    stopLosses: order.stopLosses,
+    targets: order.targets,
+  })
 
   return (
     <>
@@ -805,6 +812,14 @@ function PositionPills({ order, lastClose, addLevelMode, onArmAddLevel, onRemove
         <span className="border-x px-1.5 py-0.5 font-medium">
           {pending ? `Limit ${order.quantity}` : `${order.quantity}  ${pct(lastClose)}`}
         </span>
+        {/* Blended across every leg on both ladders (see orderEngine's riskReward) - the same
+            number the order ticket showed before this was placed. Absent until BOTH a stop and a
+            target exist, since a ratio with one side missing isn't a ratio. */}
+        {rr != null && (
+          <span className="border-r px-1.5 py-0.5 text-muted-foreground" title="Risk / reward">
+            {rr.toFixed(2)}R
+          </span>
+        )}
         <PillButton label="✕" title="Close position" onClick={() => onRequestClose?.(order)} />
       </div>
 

@@ -5,6 +5,8 @@ import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import {
   ArrowRightIcon,
+  CandlestickChartIcon,
+  ChartNoAxesCombinedIcon,
   ClapperboardIcon,
   FlaskConicalIcon,
   LayoutDashboardIcon,
@@ -37,6 +39,8 @@ const PAGES = [
   { icon: TrendingUpIcon, label: 'Top news', to: '/top-news' },
   { icon: WalletIcon, label: 'Holdings', to: '/holdings' },
   { icon: FlaskConicalIcon, label: 'Backtesting', to: '/backtesting' },
+  { icon: CandlestickChartIcon, label: 'Paper Trading', to: '/paper' },
+  { icon: ChartNoAxesCombinedIcon, label: 'Trade Simulation', to: '/simulation' },
 ]
 
 // Matches ManualBacktesting's real `view` tabs (router.jsx's backtestingRoute) - the old 'tab'
@@ -46,6 +50,17 @@ const BACKTEST_TABS = [
   { label: 'Backtesting > Trades', view: 'trades' },
   { label: 'Backtesting > Statistics', view: 'statistics' },
   { label: 'Backtesting > Goals', view: 'goals' },
+]
+
+const PAPER_TABS = [
+  { label: 'Paper Trading > Overview', view: 'overview' },
+  { label: 'Paper Trading > Holdings', view: 'holdings' },
+  { label: 'Paper Trading > Trades', view: 'trades' },
+]
+
+const SIMULATION_MODES = [
+  { label: 'Trade Simulation > Single account', mode: 'single' },
+  { label: 'Trade Simulation > Multiple accounts', mode: 'multiple' },
 ]
 
 // Mirrors Settings.jsx's TabsTab list exactly.
@@ -60,6 +75,7 @@ const SETTINGS_TABS = [
   { label: 'Settings > Activity', tab: 'activity' },
   { label: 'Settings > Backtesting', tab: 'backtesting' },
   { label: 'Settings > Trade accounts', tab: 'accounts' },
+  { label: 'Settings > Paper accounts', tab: 'paper-accounts' },
 ]
 
 // Global Cmd/Ctrl+K palette: pages + Backtesting/Settings tabs by default, or "@SYMBOL" to
@@ -210,6 +226,26 @@ export default function CommandPalette() {
                   <ClapperboardIcon className="size-4" />
                   Bar Replay
                 </CommandItem>
+              </CommandGroup>
+              <CommandGroup heading="Paper Trading">
+                {PAPER_TABS.map((t) => (
+                  <CommandItem key={t.view} value={t.label} onSelect={() => goTo('/paper', { view: t.view })}>
+                    <CandlestickChartIcon className="size-4" />
+                    {t.label}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+              <CommandGroup heading="Trade Simulation">
+                {SIMULATION_MODES.map((m) => (
+                  <CommandItem
+                    key={m.mode}
+                    value={m.label}
+                    onSelect={() => goTo('/simulation', { mode: m.mode })}
+                  >
+                    <ChartNoAxesCombinedIcon className="size-4" />
+                    {m.label}
+                  </CommandItem>
+                ))}
               </CommandGroup>
               <CommandGroup heading="Settings">
                 {SETTINGS_TABS.map((s) => (

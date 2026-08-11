@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { PencilIcon } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { ChevronDownIcon, ChevronUpIcon, PencilIcon } from 'lucide-react'
 import ImageLightbox from '@/components/ImageLightbox'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -71,9 +71,56 @@ function ExcursionBars({ ex }) {
   )
 }
 
-export default function TradeDetailDialog({ open, onOpenChange, trade, onEdit }) {
+// `trades` is the list currently on screen (filtered and in display order), so stepping through
+// the modal walks exactly what the table shows rather than the whole journal. Down goes further
+// down that list - older, since the table is newest-first.
+export default function TradeDetailDialog({ open, onOpenChange, trade, trades = [], onSelect, onEdit }) {
   const [lightboxOpen, setLightboxOpen] = useState(false)
+
+  const index = trade ? trades.findIndex((t) => t.id === trade.id) : -1
+  const step = (delta) => {
+    const next = index >= 0 ? trades[index + delta] : null
+    if (next) onSelect?.(next)
+  }
+  // Read by the keydown listener below, so it can stay bound to `open` alone - rebinding on every
+  // trade change would be churn, and closing over `step` directly would go stale immediately.
+  const stepRef = useRef(step)
+  stepRef.current = step
+
+  // ↑/↓ step through the list. Deliberately a native CAPTURE-phase listener rather than the
+  // useHotkey hook the rest of the app uses, for two reasons, both confirmed by testing this in a
+  // browser rather than assumed:
+  //
+  //   1. The dialog popup stops keydown from bubbling, and useHotkey listens on `document`. With
+  //      the modal focused, document never sees the key - popup-bubble and document-CAPTURE fire,
+  //      document-bubble does not.
+  //   2. useHotkey's `target` option can't reach the popup either: its effect depends only on the
+  //      hotkey string, so it resolves the target exactly once. A ref pointing at a popup that
+  //      mounts later stays null forever, and it silently never registers at all.
+  //
+  // Capture runs before the popup's own handler stops anything, so it always sees the key.
+  // Hooks stay above the `!trade` bail-out below - a conditional hook would break the rules of
+  // hooks the moment the modal closes.
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (event) => {
+      if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return
+      // Never hijack a real text field - the edit form can be layered over this one.
+      const el = event.target
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el?.isContentEditable) {
+        return
+      }
+      event.preventDefault()
+      stepRef.current(event.key === 'ArrowDown' ? 1 : -1)
+    }
+    document.addEventListener('keydown', onKeyDown, true)
+    return () => document.removeEventListener('keydown', onKeyDown, true)
+  }, [open])
+
   if (!trade) return null
+
+  const hasPrev = index > 0
+  const hasNext = index >= 0 && index < trades.length - 1
 
   const pnl = tradePnl(trade)
   const returnPct = tradeReturnPct(trade)
@@ -90,9 +137,11 @@ export default function TradeDetailDialog({ open, onOpenChange, trade, onEdit })
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="flex h-[85%] w-[70%] !max-w-[70%] flex-col overflow-hidden">
+        <DialogContent className="flex h-[90vh] w-[90vw] !max-w-[90vw] flex-col overflow-hidden">
           <DialogHeader className="shrink-0">
-            <DialogTitle className="flex flex-wrap items-center gap-2">
+            {/* pr-10 keeps this row clear of DialogContent's own close button, which is absolutely
+                positioned at top-2 right-2 and otherwise sits on top of Edit. */}
+            <DialogTitle className="flex flex-wrap items-center gap-2 pr-10">
               <span>{trade.symbol}</span>
               <Badge variant="secondary" className="capitalize">
                 {trade.direction}
@@ -104,6 +153,34 @@ export default function TradeDetailDialog({ open, onOpenChange, trade, onEdit })
               )}
               {trade.setup && <Badge variant="outline">{trade.setup}</Badge>}
               <span className="ml-auto flex items-center gap-3">
+                {trades.length > 1 && index >= 0 && (
+                  <span className="flex items-center gap-1">
+                    <Button
+                      size="icon-sm"
+                      variant="outline"
+                      aria-label="Previous trade"
+                      title="Previous trade (↑)"
+                      disabled={!hasPrev}
+                      onClick={() => step(-1)}
+                    >
+                      <ChevronUpIcon className="size-3.5" />
+                    </Button>
+                    <Button
+                      size="icon-sm"
+                      variant="outline"
+                      aria-label="Next trade"
+                      title="Next trade (↓)"
+                      disabled={!hasNext}
+                      onClick={() => step(1)}
+                    >
+                      <ChevronDownIcon className="size-3.5" />
+                    </Button>
+                    <span className="ml-1 text-xs font-normal text-muted-foreground tabular-nums">
+                      {index + 1}/{trades.length}
+                      <span className="ml-1.5 hidden sm:inline">· ↑↓ to move</span>
+                    </span>
+                  </span>
+                )}
                 <span className={`text-lg tabular-nums ${pnl >= 0 ? 'text-up' : 'text-down'}`}>
                   {inr(pnl)}
                 </span>

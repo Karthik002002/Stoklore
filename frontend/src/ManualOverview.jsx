@@ -41,6 +41,7 @@ import {
   streakSurvival,
   SWEET_SPOT,
 } from '@/lib/tradeMath'
+import { holdingComparison, holdingPeriodRows, tradeGapRows } from '@/lib/tradeStats'
 import {
   createBalanceAdjustment,
   deleteBalanceAdjustment,
@@ -1024,6 +1025,12 @@ export default function ManualOverview({ trades, accountId }) {
 
   const closed = useMemo(() => trades.filter((t) => t.exit_price != null), [trades])
 
+  // Timing: holding period and cadence. Both read market time (see tradeStats' clock note) rather
+  // than traded_at, which for a replayed trade is the day it was journaled, not the day it happened.
+  const holdingRows = useMemo(() => holdingPeriodRows(closed), [closed])
+  const gapRows = useMemo(() => tradeGapRows(closed), [closed])
+  const holding = useMemo(() => holdingComparison(closed), [closed])
+
   const pnls = useMemo(() => closed.map(tradePnl), [closed])
   const totalPnl = Math.round(pnls.reduce((s, p) => s + p, 0) * 100) / 100
   const wins = pnls.filter((p) => p > 0)
@@ -1346,6 +1353,55 @@ export default function ManualOverview({ trades, accountId }) {
       <div className="grid gap-4 lg:grid-cols-2">
         <BreakdownCard title="Avg P&L by day of week" rows={dayRows} />
         <BreakdownCard title="Avg P&L by session" rows={sessionRows} />
+      </div>
+
+      <div className="space-y-3 rounded-xl border bg-card p-4">
+        <div>
+          <h3 className="text-sm font-semibold">Timing</h3>
+          <p className="text-xs text-muted-foreground">
+            How long positions are held, and how long you wait between them. The first pair asks whether you
+            cut winners short; the second whether trading more often makes you money.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StatCard
+            label="Median hold · winners"
+            value={holding.winMedian == null ? '—' : `${fmt(holding.winMedian, 1)} bars`}
+          />
+          <StatCard
+            label="Median hold · losers"
+            value={holding.lossMedian == null ? '—' : `${fmt(holding.lossMedian, 1)} bars`}
+          />
+          <StatCard
+            label="Hold edge"
+            value={holding.edge == null ? '—' : `${holding.edge > 0 ? '+' : ''}${fmt(holding.edge, 1)} bars`}
+            valueClassName={holding.edge == null ? '' : holding.edge >= 0 ? 'text-up' : 'text-down'}
+            sub={
+              holding.edge == null
+                ? undefined
+                : holding.edge >= 0
+                  ? 'Winners held longer — the healthy direction'
+                  : 'Winners cut shorter than losers'
+            }
+          />
+          <StatCard
+            label="Trades measured"
+            value={`${holding.covered}/${holding.total}`}
+            sub={holding.covered < holding.total ? 'Rest have no context snapshot' : 'Whole journal covered'}
+          />
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <BreakdownCard title="Avg P&L by holding period" rows={holdingRows} />
+          <BreakdownCard title="Avg P&L by gap since last trade" rows={gapRows} />
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          Holding period is measured in bars, from each trade's stored context snapshot — the only clock that
+          is valid for replayed trades, which are journaled at today's date but exit on their replayed one.
+          The gap is measured between consecutive exits.
+        </p>
       </div>
 
       <div className="space-y-3 rounded-xl border bg-card p-4">

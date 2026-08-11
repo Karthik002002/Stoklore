@@ -13,7 +13,7 @@ from app.schemas import (
     PaperOrderRequest,
     TradeAccountRequest,
 )
-from app.services.quotes import paper_price
+from app.services.quotes import paper_price, paper_quotes
 
 router = APIRouter(tags=["paper-trading"])
 
@@ -33,14 +33,25 @@ def create_paper_account(req: TradeAccountRequest):
 
 @router.get("/api/paper/positions")
 def paper_positions(account_id: int | None = None):
-    """Open positions, each marked to the latest price. `pnl` is unrealized and null for a resting
-    limit order that hasn't filled - it has no exposure yet, and reporting 0 would read as
-    'flat' rather than 'not started'."""
+    """Open positions, each marked to the last known price. `pnl` is unrealized and null for a
+    resting limit order that hasn't filled - it has no exposure yet, and reporting 0 would read as
+    'flat' rather than 'not started'.
+
+    `price_as_of` is when that price was actually fetched and `price_stale` says a fresh quote is
+    on its way - together they let the screen show numbers immediately and still be honest about
+    their age, instead of holding the whole table hostage to a slow feed.
+    """
+    positions = db.list_paper_positions(account_id)
+    quotes = paper_quotes([p["symbol"] for p in positions])
     out = []
-    for p in db.list_paper_positions(account_id):
-        price = paper_price(p["symbol"])
+    for p in positions:
+        quote = quotes.get(p["symbol"]) or {}
+        price = quote.get("price")
         row = dict(p)
         row["current_price"] = price
+        row["sector"] = quote.get("sector")
+        row["price_as_of"] = quote.get("fetched_at")
+        row["price_stale"] = quote.get("stale", price is None)
         row["pnl"] = paper.unrealized_pnl(p, price)
         row["pnl_pct"] = (
             round(row["pnl"] / (p["entry_price"] * p["quantity"]) * 100, 2)

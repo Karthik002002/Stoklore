@@ -3,7 +3,7 @@
 // fail loudly if it regresses, especially the gap-through case (see the comment on levelHit in
 // orderEngine.js for why it exists).
 import assert from 'node:assert'
-import { processBarForOrders } from './orderEngine.js'
+import { processBarForOrders, riskReward } from './orderEngine.js'
 
 // Normal touch - the bar's range includes the stop-loss level itself. Single-leg SL/target
 // covering the whole position (the common case, and how a plain "one stop loss" order looks).
@@ -172,6 +172,106 @@ import { processBarForOrders } from './orderEngine.js'
   assert.equal(triggeredCloses.length, 2)
   assert.deepEqual(triggeredCloses.map((c) => c.leg.id).sort(), ['far', 'near'])
   triggeredCloses.forEach((c) => assert.equal(c.exitPrice, 120))
+}
+
+// --- riskReward -------------------------------------------------------------------------------
+// Feeds both the order ticket (before placing) and the on-chart entry pill (after), so a slip
+// here shows the trader two different R:R numbers for one position.
+
+// Single leg each side, long: risk 5/share over 10 shares, reward 10/share over 10.
+{
+  const rr = riskReward({
+    direction: 'long',
+    entryPrice: 100,
+    stopLosses: [{ price: 95, qty: 10 }],
+    targets: [{ price: 110, qty: 10 }],
+  })
+  assert.equal(rr.risk, 50)
+  assert.equal(rr.reward, 100)
+  assert.equal(rr.rr, 2)
+}
+
+// Short mirrors it exactly - the stop is ABOVE entry and the target below.
+{
+  const rr = riskReward({
+    direction: 'short',
+    entryPrice: 100,
+    stopLosses: [{ price: 105, qty: 10 }],
+    targets: [{ price: 90, qty: 10 }],
+  })
+  assert.equal(rr.risk, 50)
+  assert.equal(rr.reward, 100)
+  assert.equal(rr.rr, 2)
+}
+
+// Ladders blend by quantity: half out at +5, half at +15 is 100 of reward, not 150 (taking the
+// far leg alone) and not 50 (taking the near one).
+{
+  const rr = riskReward({
+    direction: 'long',
+    entryPrice: 100,
+    stopLosses: [{ price: 95, qty: 10 }],
+    targets: [
+      { price: 105, qty: 5 },
+      { price: 115, qty: 5 },
+    ],
+  })
+  assert.equal(rr.reward, 100)
+  assert.equal(rr.rr, 2)
+}
+
+// Uncovered quantity isn't counted - a stop on 4 of 10 shares is 4 shares of risk, not 10.
+{
+  const rr = riskReward({
+    direction: 'long',
+    entryPrice: 100,
+    stopLosses: [{ price: 90, qty: 4 }],
+    targets: [{ price: 110, qty: 10 }],
+  })
+  assert.equal(rr.risk, 40)
+}
+
+// One side missing is not a ratio - rr stays null rather than reporting Infinity or 0.
+{
+  assert.equal(riskReward({ direction: 'long', entryPrice: 100, targets: [{ price: 110, qty: 1 }] }).rr, null)
+  assert.equal(
+    riskReward({ direction: 'long', entryPrice: 100, stopLosses: [{ price: 90, qty: 1 }] }).rr,
+    null,
+  )
+  const none = riskReward({ direction: 'long', entryPrice: 100 })
+  assert.equal(none.risk, null)
+  assert.equal(none.reward, null)
+  assert.equal(none.rr, null)
+}
+
+// A leg on the wrong side of entry contributes 0, never negative - otherwise a mistyped level
+// would silently cancel out a correct one and flatter the ratio.
+{
+  const rr = riskReward({
+    direction: 'long',
+    entryPrice: 100,
+    stopLosses: [
+      { price: 95, qty: 10 },
+      { price: 120, qty: 10 }, // above entry on a long - nonsense, must not subtract
+    ],
+    targets: [{ price: 110, qty: 10 }],
+  })
+  assert.equal(rr.risk, 50)
+}
+
+// Half-typed rows (price or qty still blank) are ignored rather than counted as zero-price legs.
+{
+  const rr = riskReward({
+    direction: 'long',
+    entryPrice: 100,
+    stopLosses: [
+      { price: 95, qty: 10 },
+      { price: null, qty: 5 },
+      { price: 90, qty: null },
+    ],
+    targets: [{ price: 110, qty: 10 }],
+  })
+  assert.equal(rr.risk, 50)
 }
 
 console.log('orderEngine.test.js: all assertions passed')

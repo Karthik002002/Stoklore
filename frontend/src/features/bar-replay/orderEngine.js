@@ -79,6 +79,37 @@ export function processBarForOrders(orders, bar, barIndex) {
   return { nextOrders, triggeredCloses, changed }
 }
 
+// Blended risk and reward across every exit leg, in rupees, plus their ratio.
+//
+// Blended, not "the first stop vs the first target": both sides are ladders, and each leg only
+// covers part of the position (see store.js). Weighting each leg by its own quantity is the only
+// reading that survives a laddered exit - taking leg one alone would report the R:R of a trade
+// the user isn't actually placing.
+//
+// Quantity left uncovered simply isn't counted, matching how an order with no stop at all has no
+// risk figure to show rather than a fake zero. A leg on the wrong side of entry contributes 0
+// instead of negative risk - the caller validates and blocks those separately, and a negative
+// here would silently cancel out a good leg.
+//
+// Shared by the order ticket (before placing) and the on-chart pill (after), so the two can never
+// quote different numbers for the same position.
+export function riskReward({ direction, entryPrice, stopLosses, targets }) {
+  const isLong = direction === 'long'
+  const sum = (legs, forEachLeg) =>
+    (legs ?? []).reduce((total, leg) => {
+      if (leg?.price == null || leg?.qty == null) return total
+      return total + Math.max(forEachLeg(leg.price), 0) * leg.qty
+    }, 0)
+
+  const risk = sum(stopLosses, (price) => (isLong ? entryPrice - price : price - entryPrice))
+  const reward = sum(targets, (price) => (isLong ? price - entryPrice : entryPrice - price))
+  return {
+    risk: risk > 0 ? risk : null,
+    reward: reward > 0 ? reward : null,
+    rr: risk > 0 && reward > 0 ? reward / risk : null,
+  }
+}
+
 export const CLOSE_REASON_LABEL = {
   stop_loss: 'Auto-closed - stop loss hit',
   target: 'Auto-closed - target hit',

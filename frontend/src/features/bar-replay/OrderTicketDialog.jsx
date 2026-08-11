@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { inr } from '@/lib/format'
+import { riskReward } from './orderEngine'
 
 const numeric = (v) => (v === '' || v == null ? null : Number(v))
 
@@ -48,7 +49,15 @@ function LevelRows({ rows, onUpdate, onRemove }) {
 // stop-loss are both optional ladders - one or more price+qty legs, each covering part of the
 // position (see orderEngine.js/store.js) - with a live blended Risk/Reward readout, mirroring
 // TradingView's order panel.
-export default function OrderTicketDialog({ draft, onChange, onCancel, onSubmit, symbol, lastBar }) {
+export default function OrderTicketDialog({
+  draft,
+  onChange,
+  onCancel,
+  onSubmit,
+  symbol,
+  lastBar,
+  accountBalance,
+}) {
   if (!draft) return null
   const marketPrice = lastBar?.close ?? 0
   const isLimit = draft.orderType === 'limit'
@@ -80,11 +89,9 @@ export default function OrderTicketDialog({ draft, onChange, onCancel, onSubmit,
   // Blended risk across every leg (weighted by how much quantity it covers) - unprotected
   // quantity (rows left blank, or qty not yet fully allocated) simply isn't counted, same as
   // today's "no stop loss set at all" having no risk figure to show.
-  const totalRisk = slLegs.reduce(
-    (s, r) => s + Math.max(isLong ? entry - r.price : r.price - entry, 0) * r.qty,
-    0,
-  )
-  const risk = draft.slEnabled && slLegs.length > 0 ? totalRisk : null
+  const risk = draft.slEnabled
+    ? riskReward({ direction: draft.direction, entryPrice: entry, stopLosses: slLegs }).risk
+    : null
   const riskPct = risk != null && entry && qty ? (risk / (entry * qty)) * 100 : null
 
   // --- Take profit ladder (same shape as stop loss, mirrored on the reward side) ------------
@@ -108,14 +115,22 @@ export default function OrderTicketDialog({ draft, onChange, onCancel, onSubmit,
     : null
   const targetError = targetQtyError ?? targetSideError
 
-  const totalReward = targetLegs.reduce(
-    (s, r) => s + Math.max(isLong ? r.price - entry : entry - r.price, 0) * r.qty,
-    0,
-  )
-  const reward = draft.targetEnabled && targetLegs.length > 0 ? totalReward : null
+  const reward = draft.targetEnabled
+    ? riskReward({ direction: draft.direction, entryPrice: entry, targets: targetLegs }).reward
+    : null
   const rewardPct = reward != null && entry && qty ? (reward / (entry * qty)) * 100 : null
 
   const rr = risk > 0 && reward > 0 ? reward / risk : null
+
+  // What the position actually costs, and how much of the account that is. The rupee figure alone
+  // says nothing about whether the size is sane - 50k is a rounding error on one account and the
+  // whole wallet on another - so the percentage is the number worth reading.
+  //
+  // `accountBalance` is null when no account is selected (Bar Replay allows that) or its balance
+  // isn't known yet; the percentage is simply omitted then rather than shown against a guess.
+  const orderValue = entry * qty
+  const valuePctOfAccount = accountBalance > 0 && orderValue > 0 ? (orderValue / accountBalance) * 100 : null
+  const riskPctOfAccount = accountBalance > 0 && risk != null ? (risk / accountBalance) * 100 : null
   const valid = qty > 0 && (!isLimit || numeric(draft.entryPrice) != null) && !targetError && !slError
 
   return (
@@ -257,6 +272,17 @@ export default function OrderTicketDialog({ draft, onChange, onCancel, onSubmit,
 
           <div className="space-y-1 rounded-lg border p-2.5 text-sm">
             <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Order value</span>
+              <span className="font-semibold tabular-nums">
+                {orderValue > 0 ? inr(orderValue) : '—'}
+                {valuePctOfAccount != null && (
+                  <span className="ml-1.5 font-normal text-muted-foreground">
+                    {valuePctOfAccount.toFixed(1)}% of account
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="flex items-center justify-between border-t pt-1">
               <span className="text-muted-foreground">Risk / Reward</span>
               <span className="font-semibold tabular-nums">{rr != null ? rr.toFixed(2) : '—'}</span>
             </div>
@@ -264,6 +290,14 @@ export default function OrderTicketDialog({ draft, onChange, onCancel, onSubmit,
               <span className="text-muted-foreground">Risk</span>
               <span className="text-down tabular-nums">
                 {risk != null && !slError ? `${inr(risk)} (${riskPct.toFixed(2)}%)` : '—'}
+                {/* Against the ACCOUNT, not the position - the percentage a position-sizing rule
+                    is actually written in ("never risk more than 1%"). The one beside it is of
+                    the position's own cost, which says nothing about exposure. */}
+                {riskPctOfAccount != null && !slError && (
+                  <span className="ml-1.5 text-muted-foreground">
+                    {riskPctOfAccount.toFixed(2)}% of account
+                  </span>
+                )}
               </span>
             </div>
             <div className="flex items-center justify-between text-xs">

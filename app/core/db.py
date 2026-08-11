@@ -187,6 +187,22 @@ CREATE TABLE IF NOT EXISTS stock_cache (
   PRIMARY KEY (symbol, kind)
 );
 
+-- Last known price per symbol for the paper-trading screens. Deliberately NOT stock_cache: that
+-- one is a TTL cache that reads as "nothing" once expired and is truncated wholesale by the
+-- "Reload" button, whereas this row's whole job is to still be there afterwards - it's what the
+-- Holdings table marks positions to while a fresh quote is being fetched. Never expires; every
+-- successful quote overwrites it (see services/quotes.paper_price).
+-- `sector` rides along because the quote that carries the price carries it too (scraper's
+-- QUOTE_FIELDS) - storing it here is free, and it's what the paper Overview's sector allocation
+-- reads. It's a property of the listing rather than of this fetch, so an update never clears it.
+CREATE TABLE IF NOT EXISTS paper_price_cache (
+  symbol TEXT PRIMARY KEY,
+  price REAL NOT NULL,
+  sector TEXT,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+ALTER TABLE paper_price_cache ADD COLUMN IF NOT EXISTS sector TEXT;
+
 -- Durable daily OHLCV time series, one row per symbol per trading day. Backfilled once (1y) per
 -- symbol, then only the days after the latest stored date are ever fetched again - this is what
 -- makes indicator computation (EMA crossover etc.) over many symbols cheap: read from here, no
@@ -846,6 +862,37 @@ def set_cached(symbol, kind, data):
 def clear_cache():
     with connect() as conn:
         conn.execute("DELETE FROM stock_cache")
+
+
+def get_paper_prices(symbols):
+    """{symbol: {"price", "sector", "fetched_at"}} for the symbols that have ever been quoted,
+    however long ago. No TTL check on purpose - the caller wants a last-known price to show
+    *while* the fresh one is on its way, and decides for itself whether the timestamp is old
+    enough to act on."""
+    symbols = list(symbols)
+    if not symbols:
+        return {}
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT symbol, price, sector, fetched_at FROM paper_price_cache WHERE symbol = ANY(%s)",
+            (symbols,),
+        ).fetchall()
+    return {
+        r["symbol"]: {"price": float(r["price"]), "sector": r["sector"], "fetched_at": r["fetched_at"]}
+        for r in rows
+    }
+
+
+def set_paper_price(symbol, price, sector=None):
+    # COALESCE, not overwrite: a quote that came back without a sector must not erase the one an
+    # earlier quote already established.
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO paper_price_cache (symbol, price, sector, fetched_at) VALUES (%s, %s, %s, now()) "
+            "ON CONFLICT (symbol) DO UPDATE SET price = excluded.price, "
+            "sector = COALESCE(excluded.sector, paper_price_cache.sector), fetched_at = excluded.fetched_at",
+            (symbol, price, sector),
+        )
 
 
 def latest_price_date(symbol):

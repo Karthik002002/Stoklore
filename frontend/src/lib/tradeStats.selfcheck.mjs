@@ -7,11 +7,16 @@ import {
   comparePoints,
   cumulativeByDay,
   distribution,
+  holdingBars,
+  holdingComparison,
+  holdingDays,
+  holdingPeriodRows,
   overallStats,
   seriesFor,
   shiftCalendarAnchor,
   stopOverrunPct,
   targetCapturePct,
+  tradeGapRows,
   trendSeries,
   whenYouTrade,
 } from './tradeStats.js'
@@ -55,7 +60,11 @@ assert.deepEqual([infy.count, infy.wins, infy.losses], [2, 1, 1], 'win/loss mix 
 
 // Fixed-order dimensions keep their natural axis order, not the metric ranking.
 const byDay = seriesFor(CLOSED, 'dayOfWeek', 'netPnl')
-assert.deepEqual(byDay.map((r) => r.label), ['Monday', 'Tuesday'], 'weekday order preserved')
+assert.deepEqual(
+  byDay.map((r) => r.label),
+  ['Monday', 'Tuesday'],
+  'weekday order preserved',
+)
 
 // A trade with N tags counts once under each; untagged trades land in one bucket.
 const tagged = [trade({ tags: ['breakout', 'gap'] }), trade({ tags: [] })]
@@ -65,7 +74,11 @@ assert.deepEqual(
   ['Untagged', 'breakout', 'gap'],
   'multi-valued dimension fans out',
 )
-assert.equal(byTag.reduce((s, r) => s + r.value, 0), 3, '2 trades, 3 tag memberships')
+assert.equal(
+  byTag.reduce((s, r) => s + r.value, 0),
+  3,
+  '2 trades, 3 tag memberships',
+)
 
 // Metrics that need fields nobody captured return null rather than NaN/0.
 assert.equal(seriesFor([trade({ ideal_risk_amount: null })], 'symbol', 'avgR')[0].value, null)
@@ -80,7 +93,11 @@ assert.ok(
   bins.some((b) => b.from === 0),
   'a bin starts at 0 so small winners and small losers never share one',
 )
-assert.equal(bins.reduce((s, b) => s + b.count, 0), CLOSED.length, 'every trade lands in exactly one bin')
+assert.equal(
+  bins.reduce((s, b) => s + b.count, 0),
+  CLOSED.length,
+  'every trade lands in exactly one bin',
+)
 assert.deepEqual(distribution([], 'pnl'), [], 'no trades -> no bins, no crash')
 
 // --- cumulative + trend ------------------------------------------------------------------------
@@ -95,7 +112,11 @@ assert.deepEqual(
 )
 
 const trend = trendSeries(CLOSED, 'cumulativePnl')
-assert.deepEqual(trend.points.map((p) => p.value), [100, 200, 150], 'cumulative in trade order')
+assert.deepEqual(
+  trend.points.map((p) => p.value),
+  [100, 200, 150],
+  'cumulative in trade order',
+)
 assert.equal(trend.movingAverage.at(-1).value, 150, 'MA over a 10-window = mean of all 3')
 assert.equal(trendSeries([trade({ ideal_risk_amount: null })], 'r').points.length, 0, 'nulls dropped')
 
@@ -109,7 +130,10 @@ assert.equal(grid.cellFor('Sunday', 10), null, 'empty cell is null, not a zero-f
 // --- compare scatter ---------------------------------------------------------------------------
 const points = comparePoints(CLOSED, 'entryPrice', 'pnl')
 assert.equal(points.length, 3)
-assert.deepEqual(points.map((p) => p.win), [true, true, false])
+assert.deepEqual(
+  points.map((p) => p.win),
+  [true, true, false],
+)
 
 // --- overall stats -----------------------------------------------------------------------------
 const stats = overallStats(TRADES)
@@ -147,7 +171,10 @@ assert.equal(find('Avg losing return %'), -5)
 assert.equal(find('Total losing return %'), -5)
 assert.equal(find('Omega ratio'), null, 'no losing day yet (day 2 nets positive)')
 assert.equal(find('Adjusted win/loss ratio'), 4, 'payoff 2 x (win rate 0.667 / loss rate 0.333)')
-assert.deepEqual([find('Avg volume per trade'), find('Max volume per trade'), find('Min volume per trade')], [10, 10, 10])
+assert.deepEqual(
+  [find('Avg volume per trade'), find('Max volume per trade'), find('Min volume per trade')],
+  [10, 10, 10],
+)
 assert.equal(find('Avg trades per month'), 3, 'all 3 closed trades fall in July 2026')
 
 // A span wide enough to annualise honestly turns Calmar back on.
@@ -203,7 +230,10 @@ assert.equal(shiftCalendarAnchor('2026-07-15', 'week', -1), '2026-07-08', 'pages
 // Winner: entry 100, exit 110, target 120 -> captured half the planned move.
 assert.equal(targetCapturePct(trade({})), 50)
 // Shorts measure the same way with the sign flipped.
-assert.equal(targetCapturePct(trade({ direction: 'short', entry_price: 100, exit_price: 90, target: 80 })), 50)
+assert.equal(
+  targetCapturePct(trade({ direction: 'short', entry_price: 100, exit_price: 90, target: 80 })),
+  50,
+)
 // A target on the wrong side of entry is a typo, not a plan.
 assert.equal(targetCapturePct(trade({ target: 90 })), null)
 assert.equal(targetCapturePct(trade({ target: null })), null)
@@ -218,6 +248,73 @@ assert.equal(find('Winners run past target'), 0)
 assert.equal(find('Avg stop overrun (losers)'), 100)
 assert.equal(find('Losses that blew through the stop'), 0, 'the loser stopped out exactly at plan')
 assert.equal(find('Disposition gap (stop overrun − target capture)'), 50, '100% honoured vs 50% captured')
+
+// --- Timing: holding period and cadence ---------------------------------------------------------
+// The whole reason these exist as separate functions: the journal carries two clocks. A Bar Replay
+// trade is journaled at wall-clock now but exits at a REPLAYED date years earlier, so subtracting
+// the two gives a large negative "duration". That must read as unknown, never as a number.
+{
+  const replayed = trade({
+    traded_at: '2026-08-10T20:54:00+05:30',
+    exited_at: '2015-07-20T00:00:00+05:30',
+    trade_context: { excursion_bars: 8 },
+  })
+  assert.equal(holdingDays(replayed), null, 'a backwards clock is unknown, not a negative duration')
+  assert.equal(holdingBars(replayed), 8, 'the bar count is still valid - it is market time')
+
+  const handLogged = trade({
+    traded_at: '2026-01-01T09:30:00+05:30',
+    exited_at: '2026-01-04T15:00:00+05:30',
+  })
+  assert.ok(holdingDays(handLogged) > 3 && holdingDays(handLogged) < 4, 'hand-logged spans ~3.2 days')
+  assert.equal(holdingBars(trade({})), null, 'no context snapshot means no bar count')
+}
+
+// Bucket boundaries: every bucket is [previous max, own max), so a 1-bar trade must land in the
+// first bucket rather than falling through to the second.
+{
+  const held = (bars, exitPrice) => trade({ trade_context: { excursion_bars: bars }, exit_price: exitPrice })
+  const rows = holdingPeriodRows([held(1, 90), held(3, 110), held(25, 110)])
+  assert.deepEqual(
+    rows.map((r) => r.label),
+    ['1 bar', '2-3 bars', '21+ bars'],
+    'boundaries land where the labels claim, and empty buckets are dropped',
+  )
+  assert.equal(rows[0].winRate, 0)
+  assert.equal(rows[1].winRate, 100)
+}
+
+// Cadence is measured between consecutive market closes, chronologically - the journal arrives
+// newest-first, so an unsorted implementation would produce negative gaps.
+{
+  const at = (day) => trade({ exited_at: `2026-03-${day}T10:00:00+05:30`, exit_price: 110 })
+  const rows = tradeGapRows([at('20'), at('11'), at('10'), at('01')]) // newest-first, as the API returns
+  assert.deepEqual(
+    rows.map((r) => r.label),
+    ['1-2 days', '1-4 weeks'],
+    'gaps computed in chronological order: 9d, 1d, 9d',
+  )
+  assert.equal(
+    rows.reduce((s, r) => s + r.count, 0),
+    3,
+    'n trades yield n-1 gaps',
+  )
+}
+
+// The headline comparison, and its coverage denominator (trades with no snapshot are excluded from
+// the medians but still counted in `total`, so the card can say how much of the journal it saw).
+{
+  const held = (bars, exitPrice) => trade({ trade_context: { excursion_bars: bars }, exit_price: exitPrice })
+  const c = holdingComparison([held(10, 110), held(20, 110), held(2, 90), held(4, 90), trade({})])
+  assert.equal(c.winMedian, 15, 'median of the winners')
+  assert.equal(c.lossMedian, 3, 'median of the losers')
+  assert.equal(c.edge, 12, 'winners held 12 bars longer - the healthy direction')
+  assert.equal(c.covered, 4)
+  assert.equal(c.total, 5, 'the snapshot-less trade still counts toward coverage')
+
+  const none = holdingComparison([])
+  assert.equal(none.edge, null, 'no trades, no edge - never NaN')
+}
 
 // Empty journal must not throw or emit NaN anywhere.
 const empty = overallStats([])

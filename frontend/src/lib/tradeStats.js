@@ -501,6 +501,124 @@ export function stopOverrunPct(t) {
   return round((Math.abs(pnl) / risk) * 100, 1)
 }
 
+// --- Timing: how long positions are held, and how long the trader waits between them ------------
+//
+// THE CLOCK PROBLEM. This journal carries two different clocks and they must not be subtracted
+// from each other:
+//
+//   traded_at  - when the trade was OPENED **or journaled**. For a hand-logged trade that is the
+//                real entry. Bar Replay deliberately journals under wall-clock now.
+//   exited_at  - when the position closed, in MARKET time. For a replayed trade that is the
+//                replayed date, which can be years before traded_at.
+//
+// So `exited_at - traded_at` is a real holding period for hand-logged trades and a large NEGATIVE
+// number for replayed ones. The market entry date is never persisted (the backend derives it
+// transiently for the context snapshot and throws it away), so the only duration valid for BOTH
+// kinds is the bar count already stored in the context snapshot.
+
+/** Bars the position was held for, from the stored context snapshot. Market time, so this is the
+ *  one holding period that is valid for Bar Replay trades as well as hand-logged ones. Null when
+ *  the trade predates context capture or its symbol had no local history. */
+export const holdingBars = (t) => t?.trade_context?.excursion_bars ?? null
+
+/** Calendar days from open to close. Only returned when it is actually positive - see the clock
+ *  problem above; a negative result means the two timestamps are on different clocks, which is
+ *  "unknown", not "a trade held for -5882 days". */
+export function holdingDays(t) {
+  if (!t?.traded_at || !t?.exited_at) return null
+  const days = (new Date(t.exited_at) - new Date(t.traded_at)) / 86_400_000
+  return days >= 0 ? round(days, 2) : null
+}
+
+/** The market-time instant a trade finished, for ordering trades against each other. exited_at
+ *  where present (both kinds of trade record it in market time), else traded_at. */
+const marketCloseAt = (t) => new Date(t.exited_at ?? t.traded_at)
+
+// `max` is exclusive and each bucket starts where the previous one ended, so the first must be 2
+// for a 1-bar trade to land in "1 bar" rather than falling through to the next bucket.
+const BAR_BUCKETS = [
+  { label: '1 bar', max: 2 },
+  { label: '2-3 bars', max: 4 },
+  { label: '4-5 bars', max: 6 },
+  { label: '6-10 bars', max: 11 },
+  { label: '11-20 bars', max: 21 },
+  { label: '21+ bars', max: Infinity },
+]
+
+const GAP_BUCKETS = [
+  { label: 'Same day', max: 1 },
+  { label: '1-2 days', max: 3 },
+  { label: '3-7 days', max: 8 },
+  { label: '1-4 weeks', max: 29 },
+  { label: '1 month+', max: Infinity },
+]
+
+/** Groups trades into buckets and returns BreakdownCard's row shape, preserving bucket order (so
+ *  the axis reads short-to-long) and dropping buckets nothing landed in. */
+function bucketRows(pairs, buckets) {
+  return buckets
+    .map(({ label, max }, i) => {
+      const min = i === 0 ? -Infinity : buckets[i - 1].max
+      const group = pairs.filter(([value]) => value >= min && value < max)
+      if (group.length === 0) return null
+      const pnls = group.map(([, t]) => tradePnl(t))
+      return {
+        label,
+        count: group.length,
+        metricValue: round(pnls.reduce((s, p) => s + p, 0) / group.length, 2),
+        winRate: round((pnls.filter((p) => p > 0).length / group.length) * 100, 1),
+      }
+    })
+    .filter(Boolean)
+}
+
+/** Average P&L by how long the position was held. Answers "am I cutting winners short and letting
+ *  losers run?" - the classic pattern where the short-hold buckets are green and the long ones red
+ *  (or, worse, the reverse). */
+export function holdingPeriodRows(trades) {
+  const pairs = closedTrades(trades)
+    .map((t) => [holdingBars(t), t])
+    .filter(([bars]) => bars != null)
+  return bucketRows(pairs, BAR_BUCKETS)
+}
+
+/** Average P&L by how long the trader waited before this trade. Measured exit-to-exit: the market
+ *  entry date isn't stored (see the clock problem), so this is trading CADENCE, not literal flat
+ *  time. Short-gap buckets underperforming is the overtreading/tilt signature - the same thing
+ *  isLikelyRevenge catches per-trade, seen across the whole journal. */
+export function tradeGapRows(trades) {
+  const chrono = closedTrades(trades).sort((a, b) => marketCloseAt(a) - marketCloseAt(b))
+  const pairs = chrono
+    .slice(1)
+    .map((t, i) => [(marketCloseAt(t) - marketCloseAt(chrono[i])) / 86_400_000, t])
+    .filter(([gap]) => Number.isFinite(gap) && gap >= 0)
+  return bucketRows(pairs, GAP_BUCKETS)
+}
+
+const median = (values) => {
+  if (values.length === 0) return null
+  const sorted = [...values].sort((a, b) => a - b)
+  const mid = Math.floor(sorted.length / 2)
+  return sorted.length % 2 ? sorted[mid] : round((sorted[mid - 1] + sorted[mid]) / 2, 2)
+}
+
+/** The headline the two charts above are really about: do winners get held longer than losers?
+ *  `edge` is winners' median minus losers'. Negative is the cut-winners-short signature. */
+export function holdingComparison(trades) {
+  const withBars = closedTrades(trades).filter((t) => holdingBars(t) != null)
+  const winners = withBars.filter((t) => tradePnl(t) > 0).map(holdingBars)
+  const losers = withBars.filter((t) => tradePnl(t) < 0).map(holdingBars)
+  const winMedian = median(winners)
+  const lossMedian = median(losers)
+  return {
+    winMedian,
+    lossMedian,
+    edge: winMedian != null && lossMedian != null ? round(winMedian - lossMedian, 2) : null,
+    covered: withBars.length,
+    total: closedTrades(trades).length,
+  }
+}
+
 // --- Overall statistics (the searchable single-number panel) -----------------------------------
 
 export function overallStats(allTrades) {

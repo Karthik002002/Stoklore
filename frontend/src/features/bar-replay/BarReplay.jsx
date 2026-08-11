@@ -6,7 +6,8 @@ import { inr } from '@/lib/format'
 import { aggregateBars, isIntraday } from '@/lib/replay'
 import { useMaxHistoryCollector } from '@/lib/useMaxHistoryCollector'
 import { usePageTitle } from '@/lib/usePageTitle'
-import { getIntradayBars, getTradeAccounts } from '@/services/api'
+import { accountBalance, tradesForAccount } from '@/lib/tradeAccounts'
+import { getBalanceAdjustments, getIntradayBars, getManualTrades, getTradeAccounts } from '@/services/api'
 import BottomBar from './BottomBar'
 import CloseTradeDialog from './CloseTradeDialog'
 import OrderTicketDialog from './OrderTicketDialog'
@@ -55,6 +56,23 @@ export default function BarReplay() {
   const restartStore = useBarReplayStore((s) => s.restart)
 
   const { data: accounts = [] } = useQuery({ queryKey: ['tradeAccounts'], queryFn: () => getTradeAccounts() })
+  // The selected account's live wallet, so the order ticket can show a position's size as a
+  // percentage of it. Assembled exactly the way ManualBacktesting does it (opening balance +
+  // adjustments + realised P&L, see lib/tradeAccounts) rather than reading opening_balance
+  // directly, which would be wrong the moment the account has taken a single trade.
+  const { data: allJournalTrades = [] } = useQuery({
+    queryKey: ['manualTrades'],
+    queryFn: getManualTrades,
+  })
+  const { data: adjustments = [] } = useQuery({
+    queryKey: ['balanceAdjustments'],
+    queryFn: getBalanceAdjustments,
+  })
+  const balance = accountBalance(
+    accounts.find((a) => a.id === accountId) ?? null,
+    tradesForAccount(allJournalTrades, accountId),
+    adjustments.filter((a) => a.account_id === accountId),
+  )
 
   const [startDate, setStartDate] = useState('')
   const [dateDraft, setDateDraft] = useState('')
@@ -506,6 +524,7 @@ export default function BarReplay() {
         onSubmit={submitOrder}
         symbol={symbol}
         lastBar={lastBar}
+        accountBalance={balance}
       />
 
       <CloseTradeDialog

@@ -3,12 +3,12 @@ import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { ClapperboardIcon, DownloadIcon, ImagesIcon, PlusIcon, Trash2Icon, XIcon } from 'lucide-react'
+import { ClapperboardIcon, DownloadIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
-import BulkTradesDialog from './BulkTradesDialog'
 import { Field, SelectField, TagField, TextField } from '@/components/form'
 import ImageLightbox from '@/components/ImageLightbox'
 import SymbolCombobox from '@/components/SymbolCombobox'
+import TradeFilterDialog, { FilterButton, FilterChips } from '@/components/TradeFilterDialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -21,17 +21,14 @@ import { formatDate, inr } from '@/lib/format'
 import {
   autoResult,
   EMOTIONS,
-  expectedR,
   NEUTRAL_PNL_BAND,
-  NSE_SESSIONS,
   RESULT_META,
-  riskStatus,
-  sessionFor,
   tradePnl,
   tradeRR,
   tradeReturnPct,
 } from '@/lib/manualTrades'
 import { tradeSchema } from '@/lib/schemas'
+import { activeCount, filterTrades, parseFilters, serializeFilters } from '@/lib/tradeFilters'
 import { accountBalance, capWarnings, tradesForAccount } from '@/lib/tradeAccounts'
 import {
   createManualTrade,
@@ -528,98 +525,6 @@ function TradesTable({ trades, onOpen, onDelete, selected, onToggleSelect, onTog
   )
 }
 
-const RISK_STATUS_LABEL = { good: 'Good risk', over: 'Over-risked', under: 'Under-risked' }
-const EMPTY_FILTERS = { setup: '', session: '', riskStatus: '', minR: '', maxR: '' }
-
-function applyFilters(trades, filters, tolerancePct) {
-  const { setup, session, riskStatus: riskFilter, minR, maxR } = filters
-  if (!setup && !session && !riskFilter && !minR && !maxR) return trades
-  return trades.filter((t) => {
-    if (setup && t.setup !== setup) return false
-    if (session && sessionFor(t) !== session) return false
-    if (riskFilter && riskStatus(t, tolerancePct) !== riskFilter) return false
-    const r = expectedR(t)
-    if (minR && (r == null || r < Number(minR))) return false
-    if (maxR && (r == null || r > Number(maxR))) return false
-    return true
-  })
-}
-
-function FilterBar({ trades, filters, onChange }) {
-  const setups = useMemo(() => [...new Set(trades.map((t) => t.setup).filter(Boolean))].sort(), [trades])
-  const active = Object.values(filters).some(Boolean)
-  const set = (key) => (value) => onChange({ ...filters, [key]: value })
-
-  return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-2">
-      <Select value={filters.setup || 'all'} onValueChange={(v) => set('setup')(v === 'all' ? '' : v)}>
-        <SelectTrigger size="sm" className="w-36">
-          <SelectValue placeholder="Setup" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All setups</SelectItem>
-          {setups.map((s) => (
-            <SelectItem key={s} value={s}>
-              {s}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select value={filters.session || 'all'} onValueChange={(v) => set('session')(v === 'all' ? '' : v)}>
-        <SelectTrigger size="sm" className="w-32">
-          <SelectValue placeholder="Session" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All sessions</SelectItem>
-          {NSE_SESSIONS.map((s) => (
-            <SelectItem key={s.name} value={s.name}>
-              {s.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select
-        value={filters.riskStatus || 'all'}
-        onValueChange={(v) => set('riskStatus')(v === 'all' ? '' : v)}
-      >
-        <SelectTrigger size="sm" className="w-36">
-          <SelectValue placeholder="Risk discipline" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">Any risk sizing</SelectItem>
-          {Object.entries(RISK_STATUS_LABEL).map(([key, label]) => (
-            <SelectItem key={key} value={key}>
-              {label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Input
-        type="number"
-        step="0.1"
-        placeholder="Min R"
-        value={filters.minR}
-        onChange={(e) => set('minR')(e.target.value)}
-        className="w-20"
-      />
-      <Input
-        type="number"
-        step="0.1"
-        placeholder="Max R"
-        value={filters.maxR}
-        onChange={(e) => set('maxR')(e.target.value)}
-        className="w-20"
-      />
-      {active && (
-        <Button size="sm" variant="ghost" onClick={() => onChange(EMPTY_FILTERS)}>
-          <XIcon className="size-3.5" />
-          Clear
-        </Button>
-      )}
-    </div>
-  )
-}
-
 // Every field this needs to send back is already on the trade object the list endpoint returns
 // (matches ManualTradeRequest one-to-one) - a PUT replaces the whole row, so unlike a real PATCH
 // every field has to be resent, not just the ones being bulk-changed.
@@ -730,7 +635,7 @@ function AccountSelect({ accounts, account, onChange }) {
 const ALL_ACCOUNTS = 'all'
 
 export default function ManualBacktesting() {
-  const { view, account } = useSearch({ from: '/backtesting' })
+  const { view, account, f } = useSearch({ from: '/backtesting' })
   const navigate = useNavigate({ from: '/backtesting' })
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingTrade, setEditingTrade] = useState(null)
@@ -738,9 +643,8 @@ export default function ManualBacktesting() {
   // "selected trade" - opening the editor from inside the detail modal has to close one and open
   // the other, and a single piece of state can't express that transition.
   const [detailTrade, setDetailTrade] = useState(null)
-  const [bulkOpen, setBulkOpen] = useState(false)
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
-  const [filters, setFilters] = useState(EMPTY_FILTERS)
+  const [filterOpen, setFilterOpen] = useState(false)
   const [selected, setSelected] = useState(() => new Set())
   const queryClient = useQueryClient()
 
@@ -754,9 +658,20 @@ export default function ManualBacktesting() {
   // Filtered in the client rather than by a per-account fetch: the list is small, the whole set is
   // already cached for the trade form's cap checks, and "All accounts" then costs nothing.
   const trades = useMemo(() => tradesForAccount(allTrades, account), [allTrades, account])
+
+  // Filters live in the URL (?f=symbol:x:TCS|tag:x:revenge), so "my numbers without the revenge
+  // trades" is a link rather than a set of clicks to repeat - and a reload doesn't quietly hand
+  // back a different set of statistics than the one being read a moment ago.
+  const filters = useMemo(() => parseFilters(f), [f])
+  const setFilters = (next) =>
+    navigate({ search: (prev) => ({ ...prev, f: serializeFilters(next) }), replace: true })
+
+  const tolerancePct = backtestSettings?.risk_deviation_tolerance_pct ?? 10
+  // Every analysis tab reads this, not `trades` - skipping a stock has to change the equity curve
+  // and the statistics, otherwise "excluded" only means "hidden from the table".
   const filteredTrades = useMemo(
-    () => applyFilters(trades, filters, backtestSettings?.risk_deviation_tolerance_pct ?? 10),
-    [trades, filters, backtestSettings],
+    () => filterTrades(trades, filters, tolerancePct),
+    [trades, filters, tolerancePct],
   )
   const selectedTrades = useMemo(() => trades.filter((t) => selected.has(t.id)), [trades, selected])
 
@@ -816,34 +731,40 @@ export default function ManualBacktesting() {
               <ClapperboardIcon className="size-4" />
               Bar Replay
             </Button>
-            <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)}>
-              <ImagesIcon className="size-4" />
-              Bulk Trades
-            </Button>
+            <FilterButton filters={filters} onOpen={() => setFilterOpen(true)} />
             <Button size="sm" onClick={openAdd}>
               <PlusIcon className="size-4" />
               Add Trade
             </Button>
           </div>
         </div>
+        {/* One filter bar above the tabs, not one per tab - the selection is shared, and a
+            per-tab copy would let two tabs disagree about which trades are being described.
+            Collapses to nothing when no filter is on. */}
+        {activeCount(filters) > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <FilterChips filters={filters} onChange={setFilters} />
+            <span className="text-sm text-muted-foreground">
+              {filteredTrades.length} of {trades.length} trades
+            </span>
+          </div>
+        )}
+
         <TabsPanel value="overview">
-          <ManualOverview trades={trades} accountId={account} />
+          <ManualOverview trades={filteredTrades} accountId={account} />
         </TabsPanel>
         <TabsPanel value="trades" className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <FilterBar trades={trades} filters={filters} onChange={setFilters} />
-            {selected.size > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">{selected.size} selected</span>
-                <Button size="sm" variant="outline" onClick={() => setBulkEditOpen(true)}>
-                  Bulk edit
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-                  Clear
-                </Button>
-              </div>
-            )}
-          </div>
+          {selected.size > 0 && (
+            <div className="flex items-center justify-end gap-2">
+              <span className="text-sm text-muted-foreground">{selected.size} selected</span>
+              <Button size="sm" variant="outline" onClick={() => setBulkEditOpen(true)}>
+                Bulk edit
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+                Clear
+              </Button>
+            </div>
+          )}
           <TradesTable
             trades={filteredTrades}
             onOpen={setDetailTrade}
@@ -854,12 +775,24 @@ export default function ManualBacktesting() {
           />
         </TabsPanel>
         <TabsPanel value="statistics">
-          <ManualStatistics trades={trades} />
+          <ManualStatistics trades={filteredTrades} />
         </TabsPanel>
+        {/* Goals deliberately ignores the filters: a target is measured against what was actually
+            traded, and letting a filter hide the losses would turn progress into a flattering
+            fiction rather than a measurement. */}
         <TabsPanel value="goals">
           <ManualGoals trades={trades} />
         </TabsPanel>
       </Tabs>
+
+      <TradeFilterDialog
+        open={filterOpen}
+        onOpenChange={setFilterOpen}
+        trades={trades}
+        filters={filters}
+        onApply={setFilters}
+        tolerancePct={tolerancePct}
+      />
 
       <TradeDetailDialog
         open={!!detailTrade}
@@ -880,11 +813,6 @@ export default function ManualBacktesting() {
         trade={editingTrade}
         defaultAccountId={account}
         trades={allTrades}
-        onSaved={() => queryClient.invalidateQueries({ queryKey: ['manualTrades'] })}
-      />
-      <BulkTradesDialog
-        open={bulkOpen}
-        onOpenChange={setBulkOpen}
         onSaved={() => queryClient.invalidateQueries({ queryKey: ['manualTrades'] })}
       />
       <BulkEditDialog

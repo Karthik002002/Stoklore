@@ -79,9 +79,15 @@ const backtestingRoute = createRoute({
   path: '/backtesting',
   // `account` is the selected trade account, shared by all four sub-tabs - in the URL so a
   // per-account view is shareable and survives a reload. Undefined = every account at once.
+  //
+  // `f` is the include/exclude trade filter, kept as one opaque string rather than a param per
+  // facet (eight facets × value list + mode would be sixteen). Its grammar and validation live in
+  // lib/tradeFilters.js - parseFilters drops anything it doesn't recognise, so a hand-mangled URL
+  // degrades to fewer filters instead of a crash.
   validateSearch: (search) => ({
     view: ['overview', 'trades', 'statistics', 'goals'].includes(search.view) ? search.view : 'overview',
     account: Number.isFinite(Number(search.account)) && search.account ? Number(search.account) : undefined,
+    f: typeof search.f === 'string' && search.f ? search.f : undefined,
   }),
   component: Backtesting,
 })

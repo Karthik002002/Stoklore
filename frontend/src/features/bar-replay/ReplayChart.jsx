@@ -1,7 +1,6 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { CandlestickSeries, HistogramSeries, LineSeries, createChart } from 'lightweight-charts'
-// import { inr } from '@/lib/format' // only used by the Draw long/short tool, disabled for now
-import { compact } from '@/lib/format'
+import { compact, inr } from '@/lib/format'
 import { INDICATOR_COLORS, INDICATOR_TYPES } from '@/lib/indicators'
 import { tradeReturnPct } from '@/lib/manualTrades'
 import { riskReward } from './orderEngine'
@@ -57,8 +56,8 @@ function candleOptionsFrom(settings) {
 // comment below).
 const INITIAL_VISIBLE_BARS = 200
 
-// How close (in px) a pointer-down needs to land next to a stop-loss/target line to grab it for
-// dragging - see the drag-to-adjust effect below.
+// How close (in px) a pointer-down needs to land next to an entry/stop-loss/target line to grab
+// it for dragging - see the drag-to-adjust effect below.
 const DRAG_HIT_PX = 6
 
 // What the pane at `index` is showing: the candles at 0, otherwise the oscillator type occupying
@@ -83,29 +82,6 @@ function pctFromEntry(trade) {
   return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
 }
 
-// Draw long/short tool - disabled for now, kept for later (see the other commented-out pieces
-// in this file: the pan/zoom effect, the draw branches in the pointer effect, the render below,
-// and the DrawZone component at the bottom).
-// Turns a "Draw long/short" drag into a finished zone: the drag mirrors around the entry click
-// (TradingView's Long/Short Position tool sizes both sides of the click together), and which
-// mirrored price becomes target vs. stop-loss depends only on tool direction - not on which way
-// the pointer actually moved - so the zone is always green-above/red-below for long (flipped for
-// short) regardless of drag direction.
-// function zoneFromDrag(draw, dragPrice, x1) {
-//   const { direction, entryPrice, x0 } = draw
-//   const mirrored = entryPrice - (dragPrice - entryPrice)
-//   const above = Math.max(dragPrice, mirrored)
-//   const below = Math.min(dragPrice, mirrored)
-//   return {
-//     direction,
-//     entryPrice,
-//     target: direction === 'long' ? above : below,
-//     stopLoss: direction === 'long' ? below : above,
-//     x0,
-//     x1,
-//   }
-// }
-
 // Chart/series objects live in refs and persist across bar steps - only `resetKey` (symbol +
 // timeframe) tears down and recreates the chart. Every other update (new bar revealed,
 // indicator data) goes through .setData() on the existing series, so a user's zoom/pan survives
@@ -118,18 +94,15 @@ const ReplayChart = forwardRef(function ReplayChart(
     previewOrder,
     resetKey,
     onAdjustOrder,
-    addLevelMode,
     onPlaceLevel,
-    onArmAddLevel,
     onRemoveLevel,
+    onAdjustLegQty,
     onRequestClose,
+    onMoveToBreakeven,
+    onCancelPending,
     view,
     onViewChange,
     settings = DEFAULT_CHART_SETTINGS,
-    // drawMode,
-    // drawings = [],
-    // onDrawComplete,
-    // onConvertDrawing,
   },
   ref,
 ) {
@@ -142,10 +115,9 @@ const ReplayChart = forwardRef(function ReplayChart(
   const orderLinesRef = useRef(new Map())
   const previewLinesRef = useRef([])
   const hasFitRef = useRef(false)
-  // The live entry/target/stop-loss zone box while a "Draw long/short" drag is in progress (see
-  // the pointer effect below) - null the rest of the time. Plain React state (not a ref) since,
-  // unlike the order-line drag, this needs to actually re-render the overlay div on every move.
-  // const [drawPreview, setDrawPreview] = useState(null)
+  // Right-click context menu state: null when closed, { x, y, price } while open. See the
+  // ContextMenu render at the bottom of this component.
+  const [ctxMenu, setCtxMenu] = useState(null)
 
   // Drag handlers close over ordersRef/onAdjustRef instead of orders/onAdjustOrder directly so
   // the pointer listeners only need attaching once per chart instance, not on every order change.
@@ -153,10 +125,6 @@ const ReplayChart = forwardRef(function ReplayChart(
   ordersRef.current = orders
   const onAdjustRef = useRef(onAdjustOrder)
   onAdjustRef.current = onAdjustOrder
-  const addLevelModeRef = useRef(addLevelMode)
-  addLevelModeRef.current = addLevelMode
-  const onPlaceLevelRef = useRef(onPlaceLevel)
-  onPlaceLevelRef.current = onPlaceLevel
   // Read by the first-data effect and the sampler below, both of which must see the *current*
   // view without re-running (re-running the sampler would restart its interval on every render,
   // and re-running the data effect would re-frame the chart under the user mid-session).
@@ -168,10 +136,6 @@ const ReplayChart = forwardRef(function ReplayChart(
   const oscillatorTypesRef = useRef([])
   const onViewChangeRef = useRef(onViewChange)
   onViewChangeRef.current = onViewChange
-  // const drawModeRef = useRef(drawMode)
-  // drawModeRef.current = drawMode
-  // const onDrawCompleteRef = useRef(onDrawComplete)
-  // onDrawCompleteRef.current = onDrawComplete
 
   // Lets the caller (BarReplay, when a trade closes) grab a snapshot of exactly what's on the
   // chart right now - candles, indicators, RSI pane, order lines - to attach to the journaled
@@ -244,42 +208,17 @@ const ReplayChart = forwardRef(function ReplayChart(
     candleSeriesRef.current?.applyOptions(candleOptionsFrom(settings))
   }, [settings])
 
-  // Draw long/short tool - disabled for now, kept for later.
-  // Disabling pan/zoom has to happen the moment the tool is armed (button click), not reactively
-  // inside onPointerDown below - the chart's own pan handler lives on its canvas, a descendant of
-  // `container`, so it sees the same mousedown before our container-level listener does (bubbling)
-  // and would already start panning with the still-enabled options. Toggling here instead means
-  // handleScroll/handleScale are already off by the time any mousedown happens, so the chart
-  // never starts its own drag - otherwise the visible price/time scale shifts mid-drag and the
-  // zone ends up drawn against a scale that's already moved, effectively vanishing.
-  // useEffect(() => {
-  //   chartRef.current?.applyOptions({ handleScroll: !drawMode, handleScale: !drawMode })
-  // }, [drawMode])
-
-  // "Add stop loss"/"Add target" on an already-open position (see PositionsList) arms addLevelMode
-  // and waits for the next chart click to place the new level there - same reasoning as the draw
-  // tool above for disabling pan/zoom reactively at arm time rather than inside onPointerDown:
-  // the chart's own pan handler sees the same pointerdown before this component's container
-  // listener does (it's on a descendant canvas), so toggling handleScroll/handleScale has to
-  // already be off by the time any click happens, not turned off in response to it.
-  useEffect(() => {
-    chartRef.current?.applyOptions({ handleScroll: !addLevelMode, handleScale: !addLevelMode })
-    if (containerRef.current) containerRef.current.style.cursor = addLevelMode ? 'crosshair' : ''
-  }, [addLevelMode])
-
-  // Drag-to-adjust an existing order's SL/target line: pointerdown near a line grabs it (and
-  // pauses chart pan/zoom so a vertical drag doesn't also scrub the timeline), pointermove
-  // repositions the line live via applyOptions (cheap, no React re-render), pointerup commits the
-  // final price to the caller. Bound once per chart instance (not per order-list change) via refs.
-  // (This effect used to also drive the "Draw long/short" tool - see the commented-out `draw`
-  // branches below if re-enabling it.)
+  // Drag-to-adjust: pointerdown near an entry/SL/target line grabs it (and pauses chart pan/zoom
+  // so a vertical drag doesn't also scrub the timeline), pointermove repositions the line live
+  // via applyOptions (cheap, no React re-render), pointerup commits the final price. Bound once
+  // per chart instance (not per order-list change) via refs. Right-click (contextmenu) also
+  // routes through here to pop the actions menu at the pointer.
   useEffect(() => {
     const container = containerRef.current
     const chart = chartRef.current
     if (!container || !chart) return
 
     let drag = null // { orderId, field, legId? }
-    // let draw = null // { direction, entryPrice, x0 }
 
     const priceAt = (clientY) => {
       const rect = container.getBoundingClientRect()
@@ -288,11 +227,18 @@ const ReplayChart = forwardRef(function ReplayChart(
     const coordFor = (price) => candleSeriesRef.current?.priceToCoordinate(price) ?? null
 
     // A position can have several stop-loss legs AND several target legs (both are ladders, see
-    // orderEngine.js/store.js) - each leg on either side is its own draggable line.
+    // orderEngine.js/store.js) - each leg on either side is its own draggable line. Pending
+    // orders' entry price is draggable too (limit price still un-fired); a filled position's
+    // entry line is history and stays fixed.
     const findHandle = (clientY) => {
       const rect = container.getBoundingClientRect()
       const y = clientY - rect.top
       for (const order of ordersRef.current) {
+        if (order.status === 'pending') {
+          const coord = coordFor(order.entryPrice)
+          if (coord != null && Math.abs(coord - y) <= DRAG_HIT_PX)
+            return { orderId: order.id, field: 'entry' }
+        }
         if (order.status !== 'open') continue
         for (const [field, legs] of [
           ['stopLoss', order.stopLosses ?? []],
@@ -309,69 +255,57 @@ const ReplayChart = forwardRef(function ReplayChart(
     }
 
     const onPointerDown = (e) => {
+      // Right-click is handled by onContextMenu below - do NOT grab a drag for it, or moving
+      // the mouse between right-click and menu selection scrubs a level around.
+      if (e.button !== 0) return
+      // The pills sit ON their own price line, so every click inside one is also inside the
+      // drag hit-zone - without this, clicking a pill's ✕ or focusing its qty input would grab
+      // the line and freeze the chart's pan/zoom underneath.
+      if (overlayRef.current?.contains(e.target)) return
       const handle = findHandle(e.clientY)
       if (handle) {
         drag = handle
         chart.applyOptions({ handleScroll: false, handleScale: false })
         container.style.cursor = 'ns-resize'
-        return
       }
-      // Armed by PositionsList's "Add stop loss"/"Add target" toggle - a click that isn't grabbing
-      // an existing line places the new level here instead (see BarReplay's placeLevel).
-      if (addLevelModeRef.current) {
-        const price = priceAt(e.clientY)
-        if (price != null) onPlaceLevelRef.current?.(price)
-        return
-      }
-      // if (drawModeRef.current) {
-      //   const rect = container.getBoundingClientRect()
-      //   const entryPrice = priceAt(e.clientY)
-      //   if (entryPrice == null) return
-      //   draw = { direction: drawModeRef.current, entryPrice, x0: e.clientX - rect.left }
-      //   setDrawPreview(zoneFromDrag(draw, entryPrice, draw.x0))
-      // }
     }
     const onPointerMove = (e) => {
-      if (drag) {
-        const price = priceAt(e.clientY)
-        if (price == null) return
-        orderLinesRef.current.get(`${drag.orderId}:${drag.field}:${drag.legId}`)?.applyOptions({ price })
-        return
-      }
-      // if (draw) {
-      //   const rect = container.getBoundingClientRect()
-      //   const dragPrice = priceAt(e.clientY)
-      //   if (dragPrice == null) return
-      //   setDrawPreview(zoneFromDrag(draw, dragPrice, e.clientX - rect.left))
-      // }
+      if (!drag) return
+      const price = priceAt(e.clientY)
+      if (price == null) return
+      // Entry-line drag on a pending order: no legId, key by role alone (see the line-drawing
+      // effect below for the matching key format).
+      const key =
+        drag.field === 'entry' ? `${drag.orderId}:entry` : `${drag.orderId}:${drag.field}:${drag.legId}`
+      orderLinesRef.current.get(key)?.applyOptions({ price })
     }
     const onPointerUp = (e) => {
-      if (drag) {
-        const { orderId, field, legId } = drag
-        const price = priceAt(e.clientY)
-        drag = null
-        chart.applyOptions({ handleScroll: true, handleScale: true })
-        container.style.cursor = ''
-        if (price != null) onAdjustRef.current?.(orderId, field, price, legId)
-        return
-      }
-      // if (draw) {
-      //   const dragPrice = priceAt(e.clientY)
-      //   const rect = container.getBoundingClientRect()
-      //   const zone = dragPrice != null ? zoneFromDrag(draw, dragPrice, e.clientX - rect.left) : null
-      //   draw = null
-      //   setDrawPreview(null)
-      //   if (zone && zone.target !== zone.entryPrice) onDrawCompleteRef.current?.(zone)
-      // }
+      if (!drag) return
+      const { orderId, field, legId } = drag
+      const price = priceAt(e.clientY)
+      drag = null
+      chart.applyOptions({ handleScroll: true, handleScale: true })
+      container.style.cursor = ''
+      if (price != null) onAdjustRef.current?.(orderId, field, price, legId)
+    }
+    const onContextMenu = (e) => {
+      e.preventDefault()
+      const rect = container.getBoundingClientRect()
+      const price = priceAt(e.clientY)
+      if (price == null) return
+      // Cursor-relative coords for the menu's absolute positioning inside the chart container.
+      setCtxMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top, price })
     }
 
     container.addEventListener('pointerdown', onPointerDown)
     window.addEventListener('pointermove', onPointerMove)
     window.addEventListener('pointerup', onPointerUp)
+    container.addEventListener('contextmenu', onContextMenu)
     return () => {
       container.removeEventListener('pointerdown', onPointerDown)
       window.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('pointerup', onPointerUp)
+      container.removeEventListener('contextmenu', onContextMenu)
     }
   }, [resetKey])
 
@@ -573,7 +507,9 @@ const ReplayChart = forwardRef(function ReplayChart(
             price: leg.price,
             color: COLORS.down,
             lineWidth: 1,
-            lineStyle: 2,
+            // Pending orders' protective legs sit dotted (matching the dotted entry line) - they
+            // aren't armed yet, they're just where they'll BE once the limit fills.
+            lineStyle: pending ? 1 : 2,
             title: '',
           }),
         )
@@ -586,7 +522,7 @@ const ReplayChart = forwardRef(function ReplayChart(
             price: leg.price,
             color: COLORS.up,
             lineWidth: 1,
-            lineStyle: 2,
+            lineStyle: pending ? 1 : 2,
             title: '',
           }),
         )
@@ -723,25 +659,27 @@ const ReplayChart = forwardRef(function ReplayChart(
             key={order.id}
             order={order}
             lastClose={bars.length ? bars[bars.length - 1].close : null}
-            addLevelMode={addLevelMode}
-            onArmAddLevel={onArmAddLevel}
             onRemoveLevel={onRemoveLevel}
+            onAdjustLegQty={onAdjustLegQty}
             onRequestClose={onRequestClose}
+            onCancelPending={onCancelPending}
+            onMoveToBreakeven={onMoveToBreakeven}
           />
         ))}
       </div>
 
-      {/* Draw long/short tool - disabled for now, kept for later.
-      {drawPreview && <DrawZone zone={drawPreview} candles={candleSeriesRef.current} />}
-      {drawings.map((zone) => (
-        <DrawZone
-          key={zone.id}
-          zone={zone}
-          candles={candleSeriesRef.current}
-          onClick={() => onConvertDrawing?.(zone)}
+      {ctxMenu && (
+        <ContextMenu
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          price={ctxMenu.price}
+          orders={orders}
+          onClose={() => setCtxMenu(null)}
+          onPlaceLevel={onPlaceLevel}
+          onMoveToBreakeven={onMoveToBreakeven}
+          onCancelPending={onCancelPending}
         />
-      ))}
-      */}
+      )}
     </div>
   )
 })
@@ -772,15 +710,59 @@ function PillButton({ label, title, onClick, className = '' }) {
   )
 }
 
-function PositionPills({ order, lastClose, addLevelMode, onArmAddLevel, onRemoveLevel, onRequestClose }) {
+// One leg of either ladder, with its quantity editable in place. Enter (or blur) commits, Escape
+// reverts. `draft` is null whenever the input is showing the committed value, so a REJECTED edit
+// (see orderEngine's setLegQty - the legs on one side can't sum past the position) needs nothing
+// but clearing it: the input snaps straight back to the leg's unchanged qty.
+function LegPill({ order, leg, label, kind, pct, tone, onRemoveLevel, onAdjustLegQty }) {
+  const [draft, setDraft] = useState(null)
+  const commit = () => {
+    const qty = Number(draft)
+    if (draft != null && draft.trim() !== '' && qty !== leg.qty) onAdjustLegQty?.(order.id, kind, leg.id, qty)
+    setDraft(null)
+  }
+  return (
+    <div data-price={leg.price} className={`${PILL} ${tone}`}>
+      <span className="py-0.5 pl-1.5">{label}</span>
+      <input
+        value={draft ?? String(leg.qty)}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur()
+          if (e.key === 'Escape') {
+            setDraft(null)
+            e.currentTarget.blur()
+          }
+        }}
+        onBlur={commit}
+        inputMode="numeric"
+        title={`Quantity (of ${order.quantity}) - Enter to apply`}
+        aria-label={`${label} quantity`}
+        className="mx-1 w-8 rounded bg-transparent py-0.5 text-center tabular-nums outline-none hover:bg-muted focus:bg-muted"
+      />
+      <span className="py-0.5 pr-1.5">{pct(leg.price)}</span>
+      <PillButton
+        label="✕"
+        title={`Remove ${label}`}
+        onClick={() => onRemoveLevel?.(order.id, kind, leg.id)}
+        className="border-l"
+      />
+    </div>
+  )
+}
+
+function PositionPills({
+  order,
+  lastClose,
+  onRemoveLevel,
+  onAdjustLegQty,
+  onRequestClose,
+  onCancelPending,
+  onMoveToBreakeven,
+}) {
   const pending = order.status === 'pending'
   const pct = (price) =>
     pctFromEntry({ direction: order.direction, entry_price: order.entryPrice, exit_price: price })
-  const isArmed = (kind) => addLevelMode?.orderId === order.id && addLevelMode.kind === kind
-  // A side is only offered a new level while some quantity on it is still unprotected - matching
-  // BarReplay's placeLevel, which covers exactly the remainder and no-ops once it's zero.
-  const covered = (legs) => (legs ?? []).reduce((s, l) => s + l.qty, 0)
-  const canAdd = (legs) => covered(legs) < order.quantity
   const { rr } = riskReward({
     direction: order.direction,
     entryPrice: order.entryPrice,
@@ -790,112 +772,146 @@ function PositionPills({ order, lastClose, addLevelMode, onArmAddLevel, onRemove
 
   return (
     <>
-      {/* Entry line: the position's own controls - add a target, add a stop, close out - plus the
-          live return, which is the only one of these numbers that moves on its own. */}
-      <div data-price={order.entryPrice} className={`${PILL} border-primary/60`}>
-        {!pending && canAdd(order.targets) && (
-          <PillButton
-            label="TP"
-            title="Add target - then click the chart"
-            onClick={() => onArmAddLevel?.(order.id, 'target')}
-            className={isArmed('target') ? 'bg-up/25 text-up' : 'text-up'}
-          />
-        )}
-        {!pending && canAdd(order.stopLosses) && (
-          <PillButton
-            label="SL"
-            title="Add stop loss - then click the chart"
-            onClick={() => onArmAddLevel?.(order.id, 'stopLoss')}
-            className={isArmed('stopLoss') ? 'bg-down/25 text-down' : 'text-down'}
-          />
-        )}
-        <span className="border-x px-1.5 py-0.5 font-medium">
+      {/* Entry line: the position's own controls. Pending gets a dashed amber pill matching its
+          entry line's dashed amber; filled positions get the neutral one. */}
+      <div
+        data-price={order.entryPrice}
+        className={`${PILL} ${pending ? 'border-dashed border-amber-500/70 text-amber-600' : 'border-primary/60'}`}
+      >
+        <span className="border-r px-1.5 py-0.5 font-medium">
           {pending ? `Limit ${order.quantity}` : `${order.quantity}  ${pct(lastClose)}`}
         </span>
+        {/* Move-to-breakeven only makes sense once the position has an SL to move. Absent for
+            pending orders (nothing to move to what isn't entered yet) and for open positions
+            without any stop leg. */}
+        {!pending && order.stopLosses?.length > 0 && (
+          <PillButton
+            label="BE"
+            title="Move stop-loss to breakeven"
+            onClick={() => onMoveToBreakeven?.(order.id)}
+          />
+        )}
         {/* Blended across every leg on both ladders (see orderEngine's riskReward) - the same
             number the order ticket showed before this was placed. Absent until BOTH a stop and a
             target exist, since a ratio with one side missing isn't a ratio. */}
         {rr != null && (
-          <span className="border-r px-1.5 py-0.5 text-muted-foreground" title="Risk / reward">
+          <span className="border-l px-1.5 py-0.5 text-muted-foreground" title="Risk / reward">
             {rr.toFixed(2)}R
           </span>
         )}
-        <PillButton label="✕" title="Close position" onClick={() => onRequestClose?.(order)} />
+        <PillButton
+          label="✕"
+          title={pending ? 'Cancel pending order' : 'Close position'}
+          className="border-l"
+          onClick={() => (pending ? onCancelPending?.(order.id) : onRequestClose?.(order))}
+        />
       </div>
 
       {/* One pill per leg on each ladder. Removing a leg only drops its protection - it never
           closes any part of the position (see BarReplay's removeLevel). */}
       {(order.targets ?? []).map((leg, i, arr) => (
-        <div key={leg.id} data-price={leg.price} className={`${PILL} border-up/60 text-up`}>
-          <span className="px-1.5 py-0.5">
-            {arr.length > 1 ? `T${i + 1}` : 'T'} {leg.qty} {pct(leg.price)}
-          </span>
-          <PillButton
-            label="✕"
-            title={`Remove target ${i + 1}`}
-            onClick={() => onRemoveLevel?.(order.id, 'target', leg.id)}
-            className="border-l"
-          />
-        </div>
+        <LegPill
+          key={leg.id}
+          order={order}
+          leg={leg}
+          kind="target"
+          label={arr.length > 1 ? `T${i + 1}` : 'T'}
+          pct={pct}
+          tone="border-up/60 text-up"
+          onRemoveLevel={onRemoveLevel}
+          onAdjustLegQty={onAdjustLegQty}
+        />
       ))}
       {(order.stopLosses ?? []).map((leg, i, arr) => (
-        <div key={leg.id} data-price={leg.price} className={`${PILL} border-down/60 text-down`}>
-          <span className="px-1.5 py-0.5">
-            {arr.length > 1 ? `SL${i + 1}` : 'SL'} {leg.qty} {pct(leg.price)}
-          </span>
-          <PillButton
-            label="✕"
-            title={`Remove stop loss ${i + 1}`}
-            onClick={() => onRemoveLevel?.(order.id, 'stopLoss', leg.id)}
-            className="border-l"
-          />
-        </div>
+        <LegPill
+          key={leg.id}
+          order={order}
+          leg={leg}
+          kind="stopLoss"
+          label={arr.length > 1 ? `SL${i + 1}` : 'SL'}
+          pct={pct}
+          tone="border-down/60 text-down"
+          onRemoveLevel={onRemoveLevel}
+          onAdjustLegQty={onAdjustLegQty}
+        />
       ))}
     </>
   )
 }
 
-// Green/red zone box for the "Draw long/short" tool (colored purely by tool direction - long:
-// green above entry, red below; short: flipped - not by which way the pointer moved, matching
-// TradingView's Long/Short Position tool). Used both for the live in-progress drag (no onClick,
-// pointer-events off so it never blocks the gesture creating it) and for zones that have already
-// been dropped onto the chart (clickable - onClick converts it into an order ticket).
-// function DrawZone({ zone, candles, onClick }) {
-//   if (!candles) return null
-//   const { direction, entryPrice, target, stopLoss, x0, x1 } = zone
-//   const entryY = candles.priceToCoordinate(entryPrice)
-//   const targetY = candles.priceToCoordinate(target)
-//   const stopY = candles.priceToCoordinate(stopLoss)
-//   if (entryY == null || targetY == null || stopY == null) return null
-//   const isLong = direction === 'long'
-//   const upperY = Math.min(targetY, stopY)
-//   const lowerY = Math.max(targetY, stopY)
-//   const rewardPct = (Math.abs(target - entryPrice) / entryPrice) * 100
-//   const riskPct = (Math.abs(stopLoss - entryPrice) / entryPrice) * 100
-//   const left = Math.min(x0, x1)
-//   const width = Math.max(Math.abs(x1 - x0), 100)
-//   const upColor = 'rgba(34, 197, 94, 0.22)'
-//   const downColor = 'rgba(239, 68, 68, 0.22)'
+// Right-click menu at the pointer - the single entry point for adding SL/target legs, moving
+// stops to breakeven, and cancelling pendings. Deliberately not a shadcn ContextMenu component:
+// there's no <ContextMenu> in this UI kit, and this menu is small enough that a bare positioned
+// div with click-outside dismissal is a smaller diff than porting one in.
 //
-//   return (
-//     <div
-//       className={onClick ? 'absolute cursor-pointer' : 'pointer-events-none absolute'}
-//       style={{ left, top: upperY, width, height: lowerY - upperY }}
-//       onClick={onClick}
-//       title={onClick ? 'Click to convert to an order' : undefined}
-//     >
-//       <div
-//         className="absolute inset-x-0 flex items-start justify-center pt-1 text-xs font-medium text-white"
-//         style={{ top: 0, height: entryY - upperY, background: isLong ? upColor : downColor }}
-//       >
-//         {isLong ? `Target ${inr(target)} +${rewardPct.toFixed(2)}%` : `SL ${inr(stopLoss)} -${riskPct.toFixed(2)}%`}
-//       </div>
-//       <div
-//         className="absolute inset-x-0 flex items-end justify-center pb-1 text-xs font-medium text-white"
-//         style={{ top: entryY - upperY, height: lowerY - entryY, background: isLong ? downColor : upColor }}
-//       >
-//         {isLong ? `SL ${inr(stopLoss)} -${riskPct.toFixed(2)}%` : `Target ${inr(target)} +${rewardPct.toFixed(2)}%`}
-//       </div>
-//     </div>
-//   )
-// }
+// One section per order: single-position sessions collapse to one section (the common case),
+// multi-position sessions still work without any nearest-position guessing.
+function ContextMenu({ x, y, price, orders, onClose, onPlaceLevel, onMoveToBreakeven, onCancelPending }) {
+  useEffect(() => {
+    const onKey = (e) => e.key === 'Escape' && onClose()
+    const onClick = () => onClose()
+    // Delay attaching the outside-click listener a tick - otherwise the same click that opened
+    // the menu (contextmenu fires first, then click on many systems) immediately dismisses it.
+    const id = setTimeout(() => window.addEventListener('click', onClick), 0)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      clearTimeout(id)
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('click', onClick)
+    }
+  }, [onClose])
+
+  const openOrders = orders.filter((o) => o.status === 'open')
+  const pendingOrders = orders.filter((o) => o.status === 'pending')
+  const hasAny = openOrders.length + pendingOrders.length > 0
+  if (!hasAny) return null
+
+  const label = (o) => `${o.direction} ${o.quantity} @ ${inr(o.entryPrice)}`
+  return (
+    <div
+      className="absolute z-30 min-w-56 rounded-md border bg-popover p-1 text-sm shadow-md"
+      style={{ left: x, top: y }}
+      // Stop propagation so a click on the menu itself doesn't fire the outside-click dismisser.
+      onClick={(e) => e.stopPropagation()}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <div className="px-2 py-1 text-xs text-muted-foreground">At {inr(price)}</div>
+      {openOrders.map((order) => (
+        <div key={order.id} className="border-t pt-1 first:border-t-0">
+          <div className="px-2 py-0.5 text-[10px] uppercase text-muted-foreground">{label(order)}</div>
+          <MenuItem onClick={() => (onPlaceLevel?.(order.id, 'stopLoss', price), onClose())}>
+            Add stop-loss here
+          </MenuItem>
+          <MenuItem onClick={() => (onPlaceLevel?.(order.id, 'target', price), onClose())}>
+            Add target here
+          </MenuItem>
+          {order.stopLosses?.length > 0 && (
+            <MenuItem onClick={() => (onMoveToBreakeven?.(order.id), onClose())}>
+              Move stop to breakeven
+            </MenuItem>
+          )}
+        </div>
+      ))}
+      {pendingOrders.map((order) => (
+        <div key={order.id} className="border-t pt-1">
+          <div className="px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+            {label(order)} · pending
+          </div>
+          <MenuItem onClick={() => (onCancelPending?.(order.id), onClose())}>Cancel pending</MenuItem>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function MenuItem({ onClick, children }) {
+  return (
+    <button
+      type="button"
+      className="block w-full rounded px-2 py-1 text-left hover:bg-muted"
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  )
+}

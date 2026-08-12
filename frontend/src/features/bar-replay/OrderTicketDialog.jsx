@@ -3,9 +3,41 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { inr } from '@/lib/format'
-import { riskReward } from './orderEngine'
+import { riskReward, sizeByRisk } from './orderEngine'
 
 const numeric = (v) => (v === '' || v == null ? null : Number(v))
+
+// Position-sizing row under the Shares field: type a risk % (e.g. 0.5, 1) and hit "Size" to
+// back-solve the Shares field. Uses the sizer in orderEngine, which itself uses the tightest
+// stop leg as the divisor. Deliberately a manual Apply button (not live-computed into Shares)
+// so a user typing the % doesn't watch Shares wobble mid-keystroke.
+function SizeByRiskRow({ balance, riskPct, onRiskPctChange, onApply }) {
+  const cashRisk = riskPct > 0 ? balance * (riskPct / 100) : null
+  return (
+    <div className="flex items-center gap-1.5 pt-1">
+      <span className="text-xs text-muted-foreground">Size by risk</span>
+      <Input
+        type="number"
+        step="0.1"
+        min="0"
+        value={riskPct ?? ''}
+        onChange={(e) => onRiskPctChange(e.target.value)}
+        placeholder="1.0"
+        className="w-16"
+      />
+      <span className="text-xs text-muted-foreground">%</span>
+      <Button type="button" size="sm" variant="outline" disabled={!(riskPct > 0)} onClick={onApply}>
+        Size
+      </Button>
+      {cashRisk != null && (
+        <span className="ml-auto text-xs tabular-nums text-muted-foreground">= {inrShort(cashRisk)}</span>
+      )}
+    </div>
+  )
+}
+// Compact-inr helper so the "= ₹1,000" tail doesn't overflow a narrow ticket dialog.
+const inrShort = (n) =>
+  n >= 100000 ? `${(n / 100000).toFixed(2)}L` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toFixed(0)
 
 // One row per level of a ladder (stop-loss or target - both work the same way, see
 // orderEngine.js/store.js): a price and how much of the position it covers, with a remove button
@@ -190,6 +222,26 @@ export default function OrderTicketDialog({
               value={draft.qty}
               onChange={(e) => onChange({ qty: e.target.value })}
             />
+            {/* Position-sizing back-solve. Fills the Shares field from account balance × risk %
+                ÷ nearest-stop distance (see orderEngine's sizeByRisk). Only offered when a stop
+                is set and an account balance exists - the two things it can't guess. */}
+            {draft.slEnabled && accountBalance > 0 && (
+              <SizeByRiskRow
+                balance={accountBalance}
+                riskPct={numeric(draft.sizeRiskPct)}
+                onRiskPctChange={(v) => onChange({ sizeRiskPct: v })}
+                onApply={() => {
+                  const qty = sizeByRisk({
+                    balance: accountBalance,
+                    riskPct: numeric(draft.sizeRiskPct),
+                    entryPrice: entry,
+                    direction: draft.direction,
+                    stopLosses: slLegs,
+                  })
+                  if (qty != null) onChange({ qty: String(qty) })
+                }}
+              />
+            )}
           </div>
 
           <div className="space-y-1.5 rounded-lg border p-2.5">
@@ -266,6 +318,21 @@ export default function OrderTicketDialog({
                     </p>
                   )
                 )}
+                {/* Trailing stop is an ATR-scaled ratchet applied to every SL leg on every bar
+                    (see orderEngine's trailStops). Once armed, the leg prices in the rows above
+                    are just the STARTING stops - the engine raises them as price advances. */}
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={!!draft.trailing}
+                    onChange={(e) =>
+                      onChange({
+                        trailing: e.target.checked ? { atrPeriod: 14, atrMult: 2 } : null,
+                      })
+                    }
+                  />
+                  Trail stop: {draft.trailing?.atrMult ?? 2}× ATR{draft.trailing?.atrPeriod ?? 14}
+                </label>
               </>
             )}
           </div>

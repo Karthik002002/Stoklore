@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation } from '@tanstack/react-query'
@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { SelectField, TagField, TextAreaField } from '@/components/form'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { inr } from '@/lib/format'
 import { autoResult, EMOTIONS, NEUTRAL_PNL_BAND, tradePnl } from '@/lib/manualTrades'
@@ -28,6 +29,7 @@ export default function CloseTradeDialog({
   exitPrice,
   reason,
   leg,
+  partialQty,
   chartImage,
   accountId,
   entryDate,
@@ -39,9 +41,21 @@ export default function CloseTradeDialog({
     defaultValues: { result: null, emotion: null, tags: [], notes: '' },
   })
 
+  // For a MANUAL close (no leg attached, no auto-trigger reason) the user can shrink the
+  // quantity to close just a slice - the remainder stays open. Auto-triggered leg closes have a
+  // fixed qty (the leg's own), and any user edit there would misreport what actually happened.
+  // Seeded from the partialQty the caller pre-suggested (via "Close 50" in PositionsList) or
+  // from the order's full remaining qty for a plain "Close all" click.
+  const isManual = reason === 'manual' && !leg
+  const [manualQty, setManualQty] = useState(partialQty ?? order?.quantity ?? 0)
+  useEffect(() => {
+    if (open) setManualQty(partialQty ?? order?.quantity ?? 0)
+  }, [open, partialQty, order?.quantity])
+
   // A laddered stop-loss/target leg only closes its own slice of the position, not the order's
-  // full quantity - falls back to the order's (remaining) quantity for a plain full/manual close.
-  const quantity = leg?.qty ?? order?.quantity
+  // full quantity - falls back to the order's (remaining) quantity for a plain full/manual close,
+  // or the user's manual override when it's a partial.
+  const quantity = leg?.qty ?? (isManual ? manualQty : order?.quantity)
   // Report whichever level actually triggered THIS close as its journaled price - a leg is
   // attached for both stop-loss and target hits now, so it must be gated by `reason`, not just
   // "is there a leg", or a target hit would get misreported as its stop-loss price and vice

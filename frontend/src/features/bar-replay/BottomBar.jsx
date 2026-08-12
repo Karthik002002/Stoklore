@@ -22,10 +22,12 @@ import { Separator } from '@/components/ui/separator'
 import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { inr } from '@/lib/format'
+import { tradePnl } from '@/lib/manualTrades'
 import { REPLAY_SPEEDS, REPLAY_TIMEFRAMES } from '@/lib/replay'
 import DateJumpMenu from './DateJumpMenu'
 import IndicatorControls from './IndicatorControls'
 import PositionsList from './PositionsList'
+import { riskReward } from './orderEngine'
 
 // Every control for a replay session lives in this one bar pinned under the chart - the chart
 // itself is never covered. It replaced a set of floating cards (Setup/Indicators/Trade/Playback)
@@ -298,8 +300,49 @@ function PlaybackControls({ playback }) {
   )
 }
 
+// Portfolio rollup shown IN the bar (not just inside the popover), so unrealized P&L and open
+// risk are visible without a click. Same numbers as PortfolioSummary inside PositionsList - kept
+// as separate render sites (not one component swapped in both places) so the bar's compact chip
+// and the panel's fuller row can style independently.
+function PortfolioChip({ orders, lastBar }) {
+  const openOrders = orders.filter((o) => o.status === 'open')
+  if (openOrders.length === 0 || !lastBar) return null
+  const unrealized = openOrders.reduce(
+    (s, o) =>
+      s +
+      tradePnl({
+        direction: o.direction,
+        entry_price: o.entryPrice,
+        exit_price: lastBar.close,
+        quantity: o.quantity,
+      }),
+    0,
+  )
+  const totalRisk = openOrders.reduce(
+    (s, o) =>
+      s +
+      (riskReward({ direction: o.direction, entryPrice: o.entryPrice, stopLosses: o.stopLosses }).risk ?? 0),
+    0,
+  )
+  return (
+    <span className="px-1.5 text-xs tabular-nums whitespace-nowrap">
+      <span className={unrealized >= 0 ? 'text-up' : 'text-down'}>{inr(unrealized)}</span>
+      {totalRisk > 0 && <span className="ml-2 text-muted-foreground">R {inr(totalRisk)}</span>}
+    </span>
+  )
+}
+
 function TradeControls({ trade }) {
-  const { orders, lastBar, onOpenTicket, onRequestClose, addLevelMode, onArmAddLevel, onRemoveLevel } = trade
+  const {
+    orders,
+    lastBar,
+    onOpenTicket,
+    onRequestClose,
+    onRequestPartialClose,
+    onMoveToBreakeven,
+    onCancelPending,
+    onRemoveLevel,
+  } = trade
   const openCount = orders.length
 
   return (
@@ -307,6 +350,7 @@ function TradeControls({ trade }) {
       <span className="px-1 text-xs whitespace-nowrap text-muted-foreground tabular-nums">
         {lastBar ? inr(lastBar.close) : '—'}
       </span>
+      <PortfolioChip orders={orders} lastBar={lastBar} />
       <Hint label="Buy — opens the order ticket" keys="B">
         <Button
           size="sm"
@@ -342,8 +386,9 @@ function TradeControls({ trade }) {
             orders={orders}
             lastBar={lastBar}
             onRequestClose={onRequestClose}
-            addLevelMode={addLevelMode}
-            onArmAddLevel={onArmAddLevel}
+            onRequestPartialClose={onRequestPartialClose}
+            onMoveToBreakeven={onMoveToBreakeven}
+            onCancelPending={onCancelPending}
             onRemoveLevel={onRemoveLevel}
           />
         </PopoverContent>

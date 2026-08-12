@@ -3,7 +3,14 @@
 // fail loudly if it regresses, especially the gap-through case (see the comment on levelHit in
 // orderEngine.js for why it exists).
 import assert from 'node:assert'
-import { processBarForOrders, riskReward } from './orderEngine.js'
+import {
+  processBarForOrders,
+  riskReward,
+  setLegQty,
+  sizeByRisk,
+  trailStops,
+  withStopsAtBreakeven,
+} from './orderEngine.js'
 
 // Normal touch - the bar's range includes the stop-loss level itself. Single-leg SL/target
 // covering the whole position (the common case, and how a plain "one stop loss" order looks).
@@ -74,7 +81,8 @@ import { processBarForOrders, riskReward } from './orderEngine.js'
   assert.equal(triggeredCloses.length, 0)
 }
 
-// A bar that touches (or gaps past) both stop-loss and target - stop-loss wins.
+// Both stop-loss and target touched by one RED bar (close < open) - the intrabar heuristic
+// says SL was reached first for a long.
 {
   const order = {
     id: '5',
@@ -84,7 +92,56 @@ import { processBarForOrders, riskReward } from './orderEngine.js'
     stopLosses: [{ id: 'l1', price: 95, qty: 5 }],
     targets: [{ id: 't1', price: 105, qty: 5 }],
   }
-  const bar = { open: 100, high: 106, low: 94, close: 96 }
+  const bar = { open: 100, high: 106, low: 94, close: 96 } // red
+  const { triggeredCloses } = processBarForOrders([order], bar, 0)
+  assert.equal(triggeredCloses.length, 1)
+  assert.equal(triggeredCloses[0].reason, 'stop_loss')
+}
+
+// Same double-touch but on a GREEN bar (close > open) - target wins for a long.
+{
+  const order = {
+    id: '5g',
+    status: 'open',
+    direction: 'long',
+    entryPrice: 100,
+    stopLosses: [{ id: 'l1', price: 95, qty: 5 }],
+    targets: [{ id: 't1', price: 105, qty: 5 }],
+  }
+  const bar = { open: 96, high: 106, low: 94, close: 105 } // green
+  const { triggeredCloses } = processBarForOrders([order], bar, 0)
+  assert.equal(triggeredCloses.length, 1)
+  assert.equal(triggeredCloses[0].reason, 'target')
+}
+
+// Short mirrors it - a green bar drifted up, so for a short the STOP (above entry) is what got
+// hit first, not the target below.
+{
+  const order = {
+    id: '5s',
+    status: 'open',
+    direction: 'short',
+    entryPrice: 100,
+    stopLosses: [{ id: 'l1', price: 105, qty: 5 }],
+    targets: [{ id: 't1', price: 95, qty: 5 }],
+  }
+  const bar = { open: 96, high: 106, low: 94, close: 105 } // green
+  const { triggeredCloses } = processBarForOrders([order], bar, 0)
+  assert.equal(triggeredCloses.length, 1)
+  assert.equal(triggeredCloses[0].reason, 'stop_loss')
+}
+
+// Doji (close === open) with both sides hit - conservative fallback: SL wins.
+{
+  const order = {
+    id: '5d',
+    status: 'open',
+    direction: 'long',
+    entryPrice: 100,
+    stopLosses: [{ id: 'l1', price: 95, qty: 5 }],
+    targets: [{ id: 't1', price: 105, qty: 5 }],
+  }
+  const bar = { open: 100, high: 106, low: 94, close: 100 }
   const { triggeredCloses } = processBarForOrders([order], bar, 0)
   assert.equal(triggeredCloses.length, 1)
   assert.equal(triggeredCloses[0].reason, 'stop_loss')
@@ -172,6 +229,41 @@ import { processBarForOrders, riskReward } from './orderEngine.js'
   assert.equal(triggeredCloses.length, 2)
   assert.deepEqual(triggeredCloses.map((c) => c.leg.id).sort(), ['far', 'near'])
   triggeredCloses.forEach((c) => assert.equal(c.exitPrice, 120))
+}
+
+// Freshly-filled limit doesn't also stop out on the same bar - a broker arms exits from the
+// next bar. Without this a limit that fills on a wide bar could immediately trigger its own SL.
+{
+  const order = {
+    id: '10',
+    status: 'pending',
+    direction: 'long',
+    entryPrice: 100,
+    stopLosses: [{ id: 'sl', price: 95, qty: 5 }],
+    targets: [],
+  }
+  const bar = { open: 101, high: 102, low: 94, close: 100 }
+  const { nextOrders, triggeredCloses } = processBarForOrders([order], bar, 42)
+  assert.equal(nextOrders[0].status, 'open')
+  assert.equal(nextOrders[0].entryBarIndex, 42)
+  assert.equal(triggeredCloses.length, 0)
+}
+
+// The very next bar - now that entryBarIndex !== barIndex - can trigger the SL normally.
+{
+  const order = {
+    id: '11',
+    status: 'open',
+    direction: 'long',
+    entryPrice: 100,
+    entryBarIndex: 42,
+    stopLosses: [{ id: 'sl', price: 95, qty: 5 }],
+    targets: [],
+  }
+  const bar = { open: 96, high: 97, low: 93, close: 94 }
+  const { triggeredCloses } = processBarForOrders([order], bar, 43)
+  assert.equal(triggeredCloses.length, 1)
+  assert.equal(triggeredCloses[0].reason, 'stop_loss')
 }
 
 // --- riskReward -------------------------------------------------------------------------------
@@ -272,6 +364,265 @@ import { processBarForOrders, riskReward } from './orderEngine.js'
     targets: [{ price: 110, qty: 10 }],
   })
   assert.equal(rr.risk, 50)
+}
+
+// --- sizeByRisk -------------------------------------------------------------------------------
+
+// 1% of ₹1L = ₹1000 risk / ₹5 per share = 200 shares.
+{
+  const qty = sizeByRisk({
+    balance: 100000,
+    riskPct: 1,
+    entryPrice: 100,
+    direction: 'long',
+    stopLosses: [{ price: 95, qty: 0 }],
+  })
+  assert.equal(qty, 200)
+}
+
+// Nearest-to-entry SL leg sets the divisor - a laddered stop with a tight leg near entry and a
+// looser one further out sizes off the TIGHT one (worst-case per-share loss).
+{
+  const qty = sizeByRisk({
+    balance: 100000,
+    riskPct: 1,
+    entryPrice: 100,
+    direction: 'long',
+    stopLosses: [
+      { price: 95, qty: 0 }, // 5 away
+      { price: 98, qty: 0 }, // 2 away - tighter
+    ],
+  })
+  assert.equal(qty, 500) // 1000 / 2
+}
+
+// Short mirrors: nearest stop above entry (= lowest price) is the tightest.
+{
+  const qty = sizeByRisk({
+    balance: 100000,
+    riskPct: 1,
+    entryPrice: 100,
+    direction: 'short',
+    stopLosses: [
+      { price: 105, qty: 0 },
+      { price: 102, qty: 0 },
+    ],
+  })
+  assert.equal(qty, 500)
+}
+
+// Missing/invalid inputs return null - lets the UI say "size me" is unavailable rather than
+// silently showing 0 shares.
+{
+  assert.equal(
+    sizeByRisk({ balance: 0, riskPct: 1, entryPrice: 100, direction: 'long', stopLosses: [] }),
+    null,
+  )
+  assert.equal(
+    sizeByRisk({ balance: 100000, riskPct: 0, entryPrice: 100, direction: 'long', stopLosses: [] }),
+    null,
+  )
+  assert.equal(
+    sizeByRisk({
+      balance: 100000,
+      riskPct: 1,
+      entryPrice: 100,
+      direction: 'long',
+      stopLosses: [{ price: null }],
+    }),
+    null,
+  )
+  // A stop on the wrong side of entry doesn't count.
+  assert.equal(
+    sizeByRisk({
+      balance: 100000,
+      riskPct: 1,
+      entryPrice: 100,
+      direction: 'long',
+      stopLosses: [{ price: 105 }],
+    }),
+    null,
+  )
+}
+
+// --- withStopsAtBreakeven ---------------------------------------------------------------------
+
+{
+  const order = {
+    id: 'be1',
+    direction: 'long',
+    entryPrice: 100,
+    stopLosses: [
+      { id: 'a', price: 95, qty: 5 },
+      { id: 'b', price: 90, qty: 5 },
+    ],
+    targets: [{ id: 't', price: 110, qty: 10 }],
+  }
+  const moved = withStopsAtBreakeven(order)
+  assert.deepEqual(
+    moved.stopLosses.map((l) => l.price),
+    [100, 100],
+  )
+  // Targets untouched.
+  assert.deepEqual(moved.targets, order.targets)
+}
+
+// No stops = pass-through, not a crash.
+{
+  const order = { id: 'be2', direction: 'long', entryPrice: 100, stopLosses: [], targets: [] }
+  const moved = withStopsAtBreakeven(order)
+  assert.deepEqual(moved.stopLosses, [])
+}
+
+// --- trailStops -------------------------------------------------------------------------------
+// A synthetic run of rising bars for a long trailing 1×ATR - stop should only ratchet UP, never
+// back down when a bar prints a lower high.
+
+{
+  const bars = []
+  for (let i = 0; i < 30; i++) {
+    // Steady uptrend, tight ATR (~1) so numbers stay readable.
+    bars.push({
+      time: i,
+      date: `d${i}`,
+      open: 100 + i,
+      high: 101 + i,
+      low: 99.5 + i,
+      close: 100.5 + i,
+      volume: 0,
+    })
+  }
+  const order = {
+    id: 'tr1',
+    status: 'open',
+    direction: 'long',
+    entryPrice: 100,
+    entryBarIndex: 0,
+    stopLosses: [{ id: 's', price: 95, qty: 10 }],
+    targets: [],
+    trailing: { atrPeriod: 14, atrMult: 2 },
+  }
+  const first = trailStops([order], bars.slice(0, 20))
+  const later = trailStops(first.orders, bars)
+  assert.ok(first.changed, 'first ratchet should raise SL from 95')
+  assert.ok(first.orders[0].stopLosses[0].price > 95, 'SL raised')
+  assert.ok(later.orders[0].stopLosses[0].price >= first.orders[0].stopLosses[0].price, 'never lowered')
+}
+
+// A single bar's dip doesn't lower a prior high's stop - the extreme is the highest high SINCE
+// ENTRY, not just this bar's.
+{
+  const bars = []
+  for (let i = 0; i < 20; i++) {
+    bars.push({
+      time: i,
+      date: `d${i}`,
+      open: 100 + i,
+      high: 101 + i,
+      low: 99.5 + i,
+      close: 100.5 + i,
+      volume: 0,
+    })
+  }
+  // Then one lower bar.
+  bars.push({ time: 20, date: 'd20', open: 118, high: 119, low: 117, close: 117.5, volume: 0 })
+  const order = {
+    id: 'tr2',
+    status: 'open',
+    direction: 'long',
+    entryPrice: 100,
+    entryBarIndex: 0,
+    stopLosses: [{ id: 's', price: 95, qty: 10 }],
+    targets: [],
+    trailing: { atrPeriod: 14, atrMult: 2 },
+  }
+  const highBar = trailStops([order], bars.slice(0, 20))
+  const dipBar = trailStops(highBar.orders, bars)
+  assert.equal(dipBar.orders[0].stopLosses[0].price, highBar.orders[0].stopLosses[0].price)
+}
+
+// Short trails the other way: uses lowest low since entry, adds k*ATR (never raises SL).
+{
+  const bars = []
+  for (let i = 0; i < 30; i++) {
+    bars.push({
+      time: i,
+      date: `d${i}`,
+      open: 200 - i,
+      high: 200.5 - i,
+      low: 199 - i,
+      close: 199.5 - i,
+      volume: 0,
+    })
+  }
+  const order = {
+    id: 'tr3',
+    status: 'open',
+    direction: 'short',
+    entryPrice: 200,
+    entryBarIndex: 0,
+    stopLosses: [{ id: 's', price: 205, qty: 10 }],
+    targets: [],
+    trailing: { atrPeriod: 14, atrMult: 2 },
+  }
+  const trailed = trailStops([order], bars)
+  assert.ok(trailed.orders[0].stopLosses[0].price < 205, 'short SL trailed DOWN from 205')
+}
+
+// An order without a `trailing` config is untouched even in a big move.
+{
+  const bars = [
+    { time: 0, open: 100, high: 200, low: 100, close: 200, volume: 0 },
+    { time: 1, open: 200, high: 210, low: 195, close: 205, volume: 0 },
+  ]
+  const order = {
+    id: 'tr4',
+    status: 'open',
+    direction: 'long',
+    entryPrice: 100,
+    entryBarIndex: 0,
+    stopLosses: [{ id: 's', price: 95, qty: 10 }],
+    targets: [],
+    // No trailing.
+  }
+  const trailed = trailStops([order], bars)
+  assert.equal(trailed.changed, false)
+  assert.equal(trailed.orders[0].stopLosses[0].price, 95)
+}
+
+// setLegQty - the on-chart pill's editable quantity. The total across one side's legs is what
+// matters: raising one leg is fine while the side still fits inside the position, rejected once
+// it doesn't, and the two sides are counted independently of each other.
+{
+  const order = {
+    id: 'q1',
+    status: 'open',
+    direction: 'long',
+    quantity: 10,
+    entryPrice: 100,
+    stopLosses: [{ id: 's1', price: 95, qty: 10 }],
+    targets: [
+      { id: 't1', price: 110, qty: 4 },
+      { id: 't2', price: 120, qty: 4 },
+    ],
+  }
+  // 4 -> 6 keeps the target side at 10, exactly the position size.
+  const ok = setLegQty(order, 'target', 't1', 6)
+  assert.equal(ok.error, undefined)
+  assert.equal(ok.order.targets[0].qty, 6)
+  assert.equal(ok.order.targets[1].qty, 4, 'sibling leg untouched')
+  assert.equal(order.targets[0].qty, 4, 'input order not mutated')
+  // 7 would put the target side at 11 against a position of 10.
+  assert.ok(setLegQty(order, 'target', 't1', 7).error, 'over-covering rejected')
+  assert.equal(setLegQty(order, 'target', 't1', 7).order, undefined)
+  // The stop side has its own budget - the full 10 there is fine despite the targets.
+  assert.equal(setLegQty(order, 'stopLoss', 's1', 10).error, undefined)
+  // Junk input.
+  assert.ok(setLegQty(order, 'target', 't1', 0).error)
+  assert.ok(setLegQty(order, 'target', 't1', -3).error)
+  assert.ok(setLegQty(order, 'target', 't1', 2.5).error)
+  assert.ok(setLegQty(order, 'target', 't1', Number.NaN).error)
+  assert.ok(setLegQty(order, 'target', 'nope', 2).error)
 }
 
 console.log('orderEngine.test.js: all assertions passed')

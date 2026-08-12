@@ -11,7 +11,7 @@ import { getBalanceAdjustments, getIntradayBars, getManualTrades, getTradeAccoun
 import BottomBar from './BottomBar'
 import CloseTradeDialog from './CloseTradeDialog'
 import OrderTicketDialog from './OrderTicketDialog'
-import { processBarForOrders } from './orderEngine'
+import { processBarForOrders, setLegQty, trailStops, withStopsAtBreakeven } from './orderEngine'
 import ReplayChart from './ReplayChart'
 import ReplayCommandDialog from './ReplayCommandDialog'
 import SettingsDialog from './SettingsDialog'
@@ -95,11 +95,6 @@ export default function BarReplay() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   // 'symbol' | 'timeframe' | null - which centred quick-switcher is open (see ReplayCommandDialog).
   const [commandMode, setCommandMode] = useState(null)
-  // Armed by PositionsList's "Add stop loss"/"Add target" toggle on an already-open position -
-  // { orderId, kind: 'stopLoss' | 'target' } while waiting for the next chart click to place the
-  // new level there, null otherwise. Placing directly on the chart (see placeLevel below) instead
-  // of a price input field - there's already a chart right there showing exactly where price is.
-  const [addLevelMode, setAddLevelMode] = useState(null)
   // Imperative handle onto ReplayChart (see its captureScreenshot) - grabbing a snapshot of the
   // chart at close time isn't state the chart needs to re-render for, so a ref fits better than
   // threading a callback prop down just to call it back up.
@@ -151,7 +146,6 @@ export default function BarReplay() {
   useEffect(() => {
     prevIndexRef.current = null
     setCloseQueue([])
-    setAddLevelMode(null)
   }, [symbol, timeframe])
 
   // Runs trigger detection against the single newly-revealed bar whenever currentIndex advances
@@ -167,8 +161,13 @@ export default function BarReplay() {
     if (prev == null || currentIndex <= prev || orders.length === 0) return
     const bar = allBars[currentIndex]
     if (!bar) return
-    const { nextOrders, triggeredCloses, changed } = processBarForOrders(orders, bar, currentIndex)
-    if (changed) setOrders(nextOrders)
+    // Trail BEFORE hit-detection: the SL levels the bar is checked against are the ones the
+    // ratchet raised (or left alone), matching the real-world "your stop is armed at what it
+    // was raised to yesterday" semantics.
+    const trailed = trailStops(orders, allBars.slice(0, currentIndex + 1))
+    const workingOrders = trailed.changed ? trailed.orders : orders
+    const { nextOrders, triggeredCloses, changed } = processBarForOrders(workingOrders, bar, currentIndex)
+    if (changed || trailed.changed) setOrders(nextOrders)
     if (triggeredCloses.length) {
       // Snapshot the chart once for this batch (same bar for all of them) rather than per-order -
       // captureScreenshot is async, so the queue only gets appended to once it resolves.
@@ -236,7 +235,6 @@ export default function BarReplay() {
   const restart = () => {
     setPlaying(false)
     setCloseQueue([])
-    setAddLevelMode(null)
     prevIndexRef.current = null
     restartStore()
   }
@@ -252,6 +250,12 @@ export default function BarReplay() {
       stopLosses: [],
       targetEnabled: false,
       targets: [],
+      // Trailing stop configuration ({ atrPeriod, atrMult }) or null - the engine's trailStops
+      // ratchets SL legs each bar when this is set. See OrderTicketDialog for the UI toggle.
+      trailing: null,
+      // "Size by risk" input in the ticket - a % of account balance the user is willing to lose
+      // to the tightest stop. Back-solves the Shares field on demand (see sizeByRisk).
+      sizeRiskPct: '',
     })
   }
   const updateDraft = (patch) => setOrderDraft((d) => (d ? { ...d, ...patch } : d))
@@ -281,16 +285,28 @@ export default function BarReplay() {
       stopLosses: orderDraft.slEnabled ? legsFrom(orderDraft.stopLosses) : [],
       targets: orderDraft.targetEnabled ? legsFrom(orderDraft.targets) : [],
       entryBarIndex: isLimit ? null : currentIndex,
+      // Only meaningful if the position also has at least one SL leg to trail. Kept on the
+      // order (not on individual legs) since one trail rule ratchets every leg together.
+      trailing: orderDraft.slEnabled ? (orderDraft.trailing ?? null) : null,
     }
     setOrders([...orders, newOrder])
     setOrderDraft(null)
   }
 
-  // Dragging one specific leg's line on the chart (stop-loss or target - both are ladders of
-  // legs now, see orderEngine.js/store.js) commits here: round to paise, patch just that leg's
-  // price, and confirm with a toast since the change has no other visible confirmation.
+  // Dragging one specific leg's line on the chart commits here: round to paise, patch just
+  // that leg's price, and confirm with a toast since the change has no other visible
+  // confirmation. `field: 'entry'` is a pending limit's own entry-price line being dragged; it
+  // takes no legId and updates the order's entryPrice directly (no-op on filled positions -
+  // entry only exists as a movable level while the order is still pending).
   const adjustOrder = (orderId, field, price, legId) => {
     const rounded = round2(price)
+    if (field === 'entry') {
+      setOrders(
+        orders.map((o) => (o.id === orderId && o.status === 'pending' ? { ...o, entryPrice: rounded } : o)),
+      )
+      toast.success(`Entry updated to ${inr(rounded)}`)
+      return
+    }
     const legField = field === 'stopLoss' ? 'stopLosses' : 'targets'
     setOrders(
       orders.map((o) =>
@@ -302,21 +318,31 @@ export default function BarReplay() {
     toast.success(`${FIELD_LABEL[field]} updated to ${inr(rounded)}`)
   }
 
-  // Toggled by PositionsList's "Add stop loss"/"Add target" button on an already-open position -
-  // arms (or, clicked again on the same order+kind, disarms) waiting for the next chart click to
-  // place the new level (see placeLevel below and ReplayChart's addLevelMode handling).
-  const armAddLevel = (orderId, kind) =>
-    setAddLevelMode((m) => (m?.orderId === orderId && m.kind === kind ? null : { orderId, kind }))
+  // "Move stops to breakeven" - the standard risk-free adjustment once a trade is comfortably
+  // in profit. Pure engine call (see withStopsAtBreakeven), same shape as adjustOrder.
+  const moveStopsToBreakeven = (orderId) => {
+    const order = orders.find((o) => o.id === orderId)
+    if (!order?.stopLosses?.length) return
+    setOrders(orders.map((o) => (o.id === orderId ? withStopsAtBreakeven(o) : o)))
+    toast.success(`Stop moved to breakeven ${inr(order.entryPrice)}`)
+  }
 
-  // Fires once, from ReplayChart, on the first chart click after arming - the new level covers
-  // whatever quantity isn't already protected by an existing leg on that side (a fresh ladder has
-  // none, so this covers the whole size, same as the old one-shot "Set stop loss"/"Set target"
-  // did). A no-op if that side is already fully covered - resizing an existing leg happens by
-  // dragging its line, not by adding another.
-  const placeLevel = (price) => {
-    if (!addLevelMode) return
-    const { orderId, kind } = addLevelMode
-    setAddLevelMode(null)
+  // Cancelling a pending limit is NOT the same as closing a filled position - it never traded,
+  // so nothing gets journaled and no P&L exists. Guarded to pending only; open positions have
+  // to go through requestClose so a real trade is logged.
+  const cancelPending = (orderId) => {
+    const order = orders.find((o) => o.id === orderId)
+    if (!order || order.status !== 'pending') return
+    setOrders(orders.filter((o) => o.id !== orderId))
+    toast.success('Pending order cancelled')
+  }
+
+  // Adds a new SL or target leg to an open position at `price`. Called from the chart's
+  // right-click menu with a concrete order+kind+price - no arm-then-click state to keep in sync.
+  // The new leg covers whatever quantity is still unprotected on that side (a fresh ladder =
+  // whole position); no-op once that side is fully covered, since resizing an existing leg
+  // happens by dragging its line, not by stacking a second one on top of it.
+  const placeLevel = (orderId, kind, price) => {
     const legField = kind === 'stopLoss' ? 'stopLosses' : 'targets'
     const order = orders.find((o) => o.id === orderId)
     if (!order) return
@@ -325,6 +351,20 @@ export default function BarReplay() {
     if (remaining <= 0) return
     const newLeg = { id: crypto.randomUUID(), price: round2(price), qty: remaining }
     setOrders(orders.map((o) => (o.id === orderId ? { ...o, [legField]: [...o[legField], newLeg] } : o)))
+  }
+
+  // Editing a leg's quantity in place on its chart pill. Validation lives in the engine
+  // (setLegQty) so the "legs on one side can't sum past the position" rule holds wherever it's
+  // called from; a rejected edit toasts why and leaves the order exactly as it was.
+  const adjustLegQty = (orderId, kind, legId, qty) => {
+    const order = orders.find((o) => o.id === orderId)
+    if (!order) return
+    const { order: next, error } = setLegQty(order, kind, legId, qty)
+    if (error) {
+      toast.error(error)
+      return
+    }
+    setOrders(orders.map((o) => (o.id === orderId ? next : o)))
   }
 
   // Removing a leg just drops its protection - the quantity it covered goes back to being
@@ -391,6 +431,18 @@ export default function BarReplay() {
         : [...q, { order, exitPrice: lastBar.close, reason: 'manual', chartImage }],
     )
   }
+  // Same dispatcher as requestClose but pre-fills a partial qty - the close dialog's qty field
+  // will start at this value and can still be edited. Kept as a wrapper (not a second parameter
+  // on requestClose) so the plain "close all at market" call site stays a one-liner.
+  const requestPartialClose = async (order, qty) => {
+    if (!lastBar) return
+    const chartImage = await replayChartRef.current?.captureScreenshot()
+    setCloseQueue((q) =>
+      q.some((existing) => existing.order.id === order.id)
+        ? q
+        : [...q, { order, exitPrice: lastBar.close, reason: 'manual', chartImage, partialQty: qty }],
+    )
+  }
   const activeClose = closeQueue[0] ?? null
   // The close-trade feedback modal asks for result/emotion/notes - autoplay revealing more bars
   // underneath while it's open would move the replay on without the user noticing.
@@ -427,20 +479,17 @@ export default function BarReplay() {
           previewOrder={previewOrder}
           resetKey={`${symbol}-${timeframe}`}
           onAdjustOrder={adjustOrder}
-          addLevelMode={addLevelMode}
-          onPlaceLevel={placeLevel}
-          // Same three handlers the Positions popover uses - the on-chart pills are just a second
-          // surface onto them, so a level added or dropped from either place is the same action.
-          onArmAddLevel={armAddLevel}
+          // Same handlers the Positions strip uses - the on-chart controls and the strip are
+          // two surfaces onto the same actions, so a change made from either goes through here.
           onRemoveLevel={removeLevel}
+          onAdjustLegQty={adjustLegQty}
+          onPlaceLevel={placeLevel}
           onRequestClose={requestClose}
+          onMoveToBreakeven={moveStopsToBreakeven}
+          onCancelPending={cancelPending}
           view={view}
           onViewChange={setView}
           settings={chartSettings}
-          // drawMode={drawMode}
-          // drawings={drawings}
-          // onDrawComplete={handleDrawComplete}
-          // onConvertDrawing={convertDrawingToOrder}
         />
       </div>
 
@@ -496,8 +545,9 @@ export default function BarReplay() {
           lastBar,
           onOpenTicket: openOrderTicket,
           onRequestClose: requestClose,
-          addLevelMode,
-          onArmAddLevel: armAddLevel,
+          onRequestPartialClose: requestPartialClose,
+          onMoveToBreakeven: moveStopsToBreakeven,
+          onCancelPending: cancelPending,
           onRemoveLevel: removeLevel,
         }}
       />
@@ -537,6 +587,7 @@ export default function BarReplay() {
         exitPrice={activeClose?.exitPrice}
         reason={activeClose?.reason}
         leg={activeClose?.leg ?? null}
+        partialQty={activeClose?.partialQty ?? null}
         chartImage={activeClose?.chartImage}
         accountId={accountId}
         // The replayed period this trade actually happened in. It is NOT the same as when the
@@ -548,7 +599,7 @@ export default function BarReplay() {
             : null
         }
         exitDate={lastBar?.date ?? null}
-        onClosed={() => {
+        onClosed={(closedQty) => {
           queryClient.invalidateQueries({ queryKey: ['manualTrades'] })
           const { order, leg, reason } = activeClose
           if (leg) {
@@ -566,6 +617,11 @@ export default function BarReplay() {
                   )
                 : orders.filter((o) => o.id !== order.id),
             )
+          } else if (closedQty != null && closedQty < order.quantity) {
+            // Partial manual close: keep the position open with the remainder, same shape as a
+            // laddered leg hit but without any leg to drop.
+            const remainingQty = order.quantity - closedQty
+            setOrders(orders.map((o) => (o.id === order.id ? { ...o, quantity: remainingQty } : o)))
           } else {
             setOrders(orders.filter((o) => o.id !== order.id))
           }

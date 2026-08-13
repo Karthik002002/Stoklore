@@ -226,13 +226,28 @@ const ReplayChart = forwardRef(function ReplayChart(
     }
     const coordFor = (price) => candleSeriesRef.current?.priceToCoordinate(price) ?? null
 
-    // The right-hand axis strip, alongside the price pane. Everything there belongs to the price
-    // scale (drag- and wheel-zoom), not to the chart body.
-    const overPriceAxis = (e) => {
-      const scale = candleSeriesRef.current?.priceScale()
-      if (!scale) return false
+    // The right-hand axis strip of whichever pane the cursor is over (price pane or any oscillator
+    // pane below it), or null anywhere else. Everything in that strip belongs to the price scale -
+    // drag- and wheel-zoom - not to the chart body. X comes from the container because a pane's own
+    // element stops at the axis; Y comes from the pane element, which is exact (no separator drift).
+    const axisAt = (e) => {
+      // X first, and from the candle scale: the right axis is one column shared by every pane (that
+      // is why their labels line up), and a press in the chart body must reach the line-drag below
+      // without touching a pane API at all.
       const rect = container.getBoundingClientRect()
-      return e.clientX >= rect.right - scale.width() && e.clientY - rect.top <= chart.paneSize(0).height
+      const axisWidth = candleSeriesRef.current?.priceScale().width() ?? 0
+      if (!axisWidth || e.clientX < rect.right - axisWidth) return null
+      for (const pane of chart.panes()) {
+        const el = pane.getHTMLElement()
+        if (!el) continue
+        const paneRect = el.getBoundingClientRect()
+        if (e.clientY < paneRect.top || e.clientY > paneRect.bottom) continue
+        // Pane 0's first series is the candles; the oscillator panes hold only their own lines.
+        const series = pane.paneIndex() === 0 ? candleSeriesRef.current : pane.getSeries()[0]
+        if (!series) continue
+        return { scale: series.priceScale(), series, top: paneRect.top }
+      }
+      return null
     }
 
     // A position can have several stop-loss legs AND several target legs (both are ladders, see
@@ -269,7 +284,7 @@ const ReplayChart = forwardRef(function ReplayChart(
       if (e.button !== 0) return
       // findHandle matches on Y alone, so a press on the price axis that happens to line up with
       // an order level would grab that level instead of letting the axis drag-zoom the scale.
-      if (overPriceAxis(e)) return
+      if (axisAt(e)) return
       // The pills sit ON their own price line, so every click inside one is also inside the
       // drag hit-zone - without this, clicking a pill's ✕ or focusing its qty input would grab
       // the line and freeze the chart's pan/zoom underneath.
@@ -304,21 +319,19 @@ const ReplayChart = forwardRef(function ReplayChart(
     // already does - lightweight-charts only wires the drag, so a trackpad leaves the axis inert.
     // Capture phase + stopPropagation so the chart's own wheel handler doesn't also zoom time.
     const onWheel = (e) => {
-      const series = candleSeriesRef.current
-      if (!series || !overPriceAxis(e)) return
-      const scale = series.priceScale()
-      const range = scale.getVisibleRange()
+      const axis = axisAt(e)
+      if (!axis) return
+      const range = axis.scale.getVisibleRange()
       if (!range) return
       e.preventDefault()
       e.stopPropagation()
-      const rect = container.getBoundingClientRect()
-      // Zoom about the price under the cursor, so the level being studied stays put.
-      const pivot = series.coordinateToPrice(e.clientY - rect.top) ?? (range.from + range.to) / 2
+      // Zoom about the value under the cursor, so the level being studied stays put.
+      const pivot = axis.series?.coordinateToPrice(e.clientY - axis.top) ?? (range.from + range.to) / 2
       const k = Math.exp(e.deltaY * 0.002) // scroll down = zoom out
       const from = pivot - (pivot - range.from) * k
       const to = pivot + (range.to - pivot) * k
       if (Math.abs(to - from) < 1e-6) return
-      scale.setVisibleRange({ from, to })
+      axis.scale.setVisibleRange({ from, to })
     }
     const onContextMenu = (e) => {
       e.preventDefault()

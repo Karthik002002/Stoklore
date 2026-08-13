@@ -325,17 +325,26 @@ export function simulate({
   const runAt = (p) => order[Math.min(Math.round((runs - 1) * p), runs - 1)]
   const curveOf = (r) => curves.subarray(r * steps, r * steps + steps)
 
+  const bandRuns = { p10: runAt(0.1), p50: runAt(0.5), p90: runAt(0.9) }
   const bands = {
-    p10: curveOf(runAt(0.1)),
-    p50: curveOf(runAt(0.5)),
-    p90: curveOf(runAt(0.9)),
+    p10: curveOf(bandRuns.p10),
+    p50: curveOf(bandRuns.p50),
+    p90: curveOf(bandRuns.p90),
   }
 
   // Evenly spaced through the ranked order so the faint background spans the full outcome range
   // instead of clustering wherever the RNG happened to land first.
   const sample = []
+  // Which run each sampled curve is, and where it ranked - so hovering a line can report that run's
+  // own statistics instead of the percentile aggregates.
+  const sampleRuns = []
+  const samplePct = []
   const stride = Math.max(1, Math.floor(runs / keepPaths))
-  for (let i = 0; i < runs && sample.length < keepPaths; i += stride) sample.push(curveOf(order[i]))
+  for (let i = 0; i < runs && sample.length < keepPaths; i += stride) {
+    sample.push(curveOf(order[i]))
+    sampleRuns.push(order[i])
+    samplePct.push((i / (runs - 1 || 1)) * 100)
+  }
 
   // Infinity is a real outcome (a run that never lost) but it is not a number you can take a
   // percentile of - those runs sort to the top and the reported figure is capped rather than NaN.
@@ -348,12 +357,15 @@ export function simulate({
     steps,
     startBalance,
     bands,
+    bandRuns,
     ddBands: {
       p10: drawdownCurve(bands.p10),
       p50: drawdownCurve(bands.p50),
       p90: drawdownCurve(bands.p90),
     },
     sample,
+    sampleRuns,
+    samplePct,
     table: {
       endBalance: spread(endBalance),
       maxDD: spread(maxDD),

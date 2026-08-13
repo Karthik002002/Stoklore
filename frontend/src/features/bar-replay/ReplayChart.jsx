@@ -226,6 +226,15 @@ const ReplayChart = forwardRef(function ReplayChart(
     }
     const coordFor = (price) => candleSeriesRef.current?.priceToCoordinate(price) ?? null
 
+    // The right-hand axis strip, alongside the price pane. Everything there belongs to the price
+    // scale (drag- and wheel-zoom), not to the chart body.
+    const overPriceAxis = (e) => {
+      const scale = candleSeriesRef.current?.priceScale()
+      if (!scale) return false
+      const rect = container.getBoundingClientRect()
+      return e.clientX >= rect.right - scale.width() && e.clientY - rect.top <= chart.paneSize(0).height
+    }
+
     // A position can have several stop-loss legs AND several target legs (both are ladders, see
     // orderEngine.js/store.js) - each leg on either side is its own draggable line. Pending
     // orders' entry price is draggable too (limit price still un-fired); a filled position's
@@ -258,6 +267,9 @@ const ReplayChart = forwardRef(function ReplayChart(
       // Right-click is handled by onContextMenu below - do NOT grab a drag for it, or moving
       // the mouse between right-click and menu selection scrubs a level around.
       if (e.button !== 0) return
+      // findHandle matches on Y alone, so a press on the price axis that happens to line up with
+      // an order level would grab that level instead of letting the axis drag-zoom the scale.
+      if (overPriceAxis(e)) return
       // The pills sit ON their own price line, so every click inside one is also inside the
       // drag hit-zone - without this, clicking a pill's ✕ or focusing its qty input would grab
       // the line and freeze the chart's pan/zoom underneath.
@@ -288,6 +300,26 @@ const ReplayChart = forwardRef(function ReplayChart(
       container.style.cursor = ''
       if (price != null) onAdjustRef.current?.(orderId, field, price, legId)
     }
+    // Two-finger scroll (or wheel) over the price axis zooms it, the same way dragging the axis
+    // already does - lightweight-charts only wires the drag, so a trackpad leaves the axis inert.
+    // Capture phase + stopPropagation so the chart's own wheel handler doesn't also zoom time.
+    const onWheel = (e) => {
+      const series = candleSeriesRef.current
+      if (!series || !overPriceAxis(e)) return
+      const scale = series.priceScale()
+      const range = scale.getVisibleRange()
+      if (!range) return
+      e.preventDefault()
+      e.stopPropagation()
+      const rect = container.getBoundingClientRect()
+      // Zoom about the price under the cursor, so the level being studied stays put.
+      const pivot = series.coordinateToPrice(e.clientY - rect.top) ?? (range.from + range.to) / 2
+      const k = Math.exp(e.deltaY * 0.002) // scroll down = zoom out
+      const from = pivot - (pivot - range.from) * k
+      const to = pivot + (range.to - pivot) * k
+      if (Math.abs(to - from) < 1e-6) return
+      scale.setVisibleRange({ from, to })
+    }
     const onContextMenu = (e) => {
       e.preventDefault()
       const rect = container.getBoundingClientRect()
@@ -301,11 +333,13 @@ const ReplayChart = forwardRef(function ReplayChart(
     window.addEventListener('pointermove', onPointerMove)
     window.addEventListener('pointerup', onPointerUp)
     container.addEventListener('contextmenu', onContextMenu)
+    container.addEventListener('wheel', onWheel, { capture: true, passive: false })
     return () => {
       container.removeEventListener('pointerdown', onPointerDown)
       window.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('pointerup', onPointerUp)
       container.removeEventListener('contextmenu', onContextMenu)
+      container.removeEventListener('wheel', onWheel, { capture: true })
     }
   }, [resetKey])
 

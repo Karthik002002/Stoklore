@@ -30,6 +30,7 @@ import { getManualTrades, getTradeAccounts } from '@/services/api'
 // marking it.
 const BAND = { p10: '#b91c1c', p50: '#9ca3af', p90: '#22c55e' }
 const FAINT = 'rgba(148, 163, 184, 0.22)'
+const HOVER = '#0ea5e9'
 const AXIS = '#9ca3af'
 const GRID = 'rgba(148, 163, 184, 0.18)'
 
@@ -78,10 +79,22 @@ const PCT_HEADS = ['10th', '25th', '50th (median)', '75th', '90th']
 /** One canvas, N paths. Canvas rather than SVG because this draws up to ~100 polylines of 100+
  *  points each on every scale toggle - the same picture as 10,000 SVG nodes React would have to
  *  diff, for a chart with no per-point interaction to justify them. */
-function PathsCanvas({ faint = [], bold = [], log, invert = false, height = 260, formatY }) {
+function PathsCanvas({ faint = [], bold = [], log, invert = false, height = 260, formatY, tooltip }) {
   const wrapRef = useRef(null)
   const canvasRef = useRef(null)
   const [width, setWidth] = useState(0)
+  // { i: index into `series`, x, y } - the line under the cursor, or null.
+  const [hover, setHover] = useState(null)
+  // Scales from the last paint, so hit-testing doesn't recompute the layout.
+  const geom = useRef(null)
+
+  const series = useMemo(
+    () => [
+      ...faint.map((s) => ({ ...s, color: FAINT, lineWidth: 1 })),
+      ...bold.map((b) => ({ ...b, lineWidth: 2 })),
+    ],
+    [faint, bold],
+  )
 
   useEffect(() => {
     const el = wrapRef.current
@@ -105,13 +118,12 @@ function PathsCanvas({ faint = [], bold = [], log, invert = false, height = 260,
     const padR = 10
     const padT = 10
     const padB = 22
-    const all = [...faint, ...bold.map((b) => b.data)]
     let lo = Infinity
     let hi = -Infinity
-    for (const series of all) {
-      for (let i = 0; i < series.length; i++) {
-        if (series[i] < lo) lo = series[i]
-        if (series[i] > hi) hi = series[i]
+    for (const s of series) {
+      for (let i = 0; i < s.data.length; i++) {
+        if (s.data[i] < lo) lo = s.data[i]
+        if (s.data[i] > hi) hi = s.data[i]
       }
     }
     if (!Number.isFinite(lo)) return
@@ -146,21 +158,31 @@ function PathsCanvas({ faint = [], bold = [], log, invert = false, height = 260,
       ctx.fillText(formatY(v), padL - 6, y)
     }
 
-    const stroke = (series, color, lineWidth) => {
+    geom.current = { sx, sy, steps, padL, padR }
+
+    const stroke = (data, color, lineWidth) => {
       ctx.strokeStyle = color
       ctx.lineWidth = lineWidth
       ctx.beginPath()
-      for (let i = 0; i < series.length; i++) {
+      for (let i = 0; i < data.length; i++) {
         const x = sx(i)
-        const y = sy(series[i])
+        const y = sy(data[i])
         if (i === 0) ctx.moveTo(x, y)
         else ctx.lineTo(x, y)
       }
       ctx.stroke()
     }
 
-    for (const series of faint) stroke(series, FAINT, 1)
-    for (const b of bold) stroke(b.data, b.color, 2)
+    // Hovered line last, so it sits above the bundle it was picked out of.
+    series.forEach((s, i) => i !== hover?.i && stroke(s.data, s.color, s.lineWidth))
+    if (hover) {
+      const s = series[hover.i]
+      stroke(s.data, s.color === FAINT ? HOVER : s.color, s.lineWidth + 1.5)
+      ctx.fillStyle = s.color === FAINT ? HOVER : s.color
+      ctx.beginPath()
+      ctx.arc(hover.x, hover.y, 3.5, 0, Math.PI * 2)
+      ctx.fill()
+    }
 
     ctx.fillStyle = AXIS
     ctx.textAlign = 'center'
@@ -168,11 +190,46 @@ function PathsCanvas({ faint = [], bold = [], log, invert = false, height = 260,
       const i = Math.round(((steps - 1) * k) / 4)
       ctx.fillText(String(i), sx(i), height - 8)
     }
-  }, [faint, bold, log, invert, width, height, formatY])
+  }, [series, bold, log, invert, width, height, formatY, hover])
+
+  const onMove = (e) => {
+    if (!tooltip || !geom.current) return
+    const { sx, sy, steps, padL, padR } = geom.current
+    const rect = canvasRef.current.getBoundingClientRect()
+    const mx = e.clientX - rect.left
+    const my = e.clientY - rect.top
+    const i = Math.round(((mx - padL) / Math.max(width - padL - padR, 1)) * (steps - 1))
+    if (i < 0 || i > steps - 1) return setHover(null)
+    let best = null
+    series.forEach((s, k) => {
+      const y = sy(s.data[Math.min(i, s.data.length - 1)])
+      const d = Math.abs(y - my)
+      if (d <= 14 && (!best || d < best.d)) best = { d, i: k, x: sx(i), y }
+    })
+    setHover((prev) => (best ? { i: best.i, x: best.x, y: best.y } : prev === null ? prev : null))
+  }
+
+  const hovered = hover ? series[hover.i] : null
 
   return (
-    <div ref={wrapRef} className="w-full">
-      <canvas ref={canvasRef} style={{ width: '100%', height }} />
+    <div ref={wrapRef} className="relative w-full">
+      <canvas
+        ref={canvasRef}
+        style={{ width: '100%', height }}
+        onMouseMove={onMove}
+        onMouseLeave={() => setHover(null)}
+      />
+      {hovered && tooltip && (
+        <div
+          className="pointer-events-none absolute z-10 w-52 rounded-lg border bg-popover p-2 text-xs shadow-md"
+          style={{
+            left: Math.min(hover.x + 12, Math.max(width - 220, 0)),
+            top: Math.min(hover.y + 12, height - 40),
+          }}
+        >
+          {tooltip(hovered)}
+        </div>
+      )}
     </div>
   )
 }
@@ -494,6 +551,31 @@ function DataProfile({ pool, hint }) {
   )
 }
 
+/** One hovered run's own statistics — the same six metrics the percentile table reports, but for
+ *  this single path rather than across the distribution. */
+function RunTooltip({ result, run, label }) {
+  const { endBalance, maxDD, maxLossStreak, profitFactor, sharpe } = result.perRun
+  const stats = {
+    endBalance: endBalance[run],
+    maxDD: maxDD[run],
+    maxLossStreak: maxLossStreak[run],
+    roi: ((endBalance[run] - result.startBalance) / result.startBalance) * 100,
+    profitFactor: profitFactor[run],
+    sharpe: sharpe[run],
+  }
+  return (
+    <>
+      <p className="mb-1 font-medium">{label}</p>
+      {TABLE_ROWS.map((row) => (
+        <div key={row.key} className="flex justify-between gap-2">
+          <span className="text-muted-foreground">{row.label}</span>
+          <span className="tabular-nums">{row.format(stats[row.key])}</span>
+        </div>
+      ))}
+    </>
+  )
+}
+
 /** The full single-account read-out. Rendered identically whether it's the Single tab or one
  *  account's tab inside a comparison - an account's own numbers shouldn't change presentation just
  *  because it's being held up against another one. */
@@ -502,10 +584,19 @@ function SimulationResults({ result, config }) {
   const [logDd, setLogDd] = useState(false)
 
   const bands = [
-    { data: result.bands.p10, color: BAND.p10 },
-    { data: result.bands.p50, color: BAND.p50 },
-    { data: result.bands.p90, color: BAND.p90 },
+    { data: result.bands.p10, color: BAND.p10, run: result.bandRuns.p10, label: '10th percentile run' },
+    { data: result.bands.p50, color: BAND.p50, run: result.bandRuns.p50, label: 'Median run' },
+    { data: result.bands.p90, color: BAND.p90, run: result.bandRuns.p90, label: '90th percentile run' },
   ]
+  const faintRuns = useMemo(
+    () =>
+      result.sample.map((data, i) => ({
+        data,
+        run: result.sampleRuns[i],
+        label: `${fmt(result.samplePct[i], 0)}th percentile run`,
+      })),
+    [result],
+  )
   const ddBands = [
     { data: result.ddBands.p10, color: BAND.p10 },
     { data: result.ddBands.p50, color: BAND.p50 },
@@ -537,10 +628,16 @@ function SimulationResults({ result, config }) {
 
       <Panel
         title="Equity curves"
-        hint={`${result.sample.length} representative runs. The three bold curves are real runs — the ones that finished at the 10th, 50th and 90th percentile — not a stitched band.`}
+        hint={`${result.sample.length} representative runs. The three bold curves are real runs — the ones that finished at the 10th, 50th and 90th percentile — not a stitched band. Hover any line for that run's own numbers.`}
         action={<ScaleToggle log={logEquity} onChange={setLogEquity} />}
       >
-        <PathsCanvas faint={result.sample} bold={bands} log={logEquity} formatY={(v) => compact(v)} />
+        <PathsCanvas
+          faint={faintRuns}
+          bold={bands}
+          log={logEquity}
+          formatY={(v) => compact(v)}
+          tooltip={(s) => <RunTooltip result={result} run={s.run} label={s.label} />}
+        />
         <Legend
           items={[
             { label: '10th — worst case', color: BAND.p10 },

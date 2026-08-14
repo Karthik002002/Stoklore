@@ -1,16 +1,23 @@
+import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
   ActivityIcon,
   ArrowLeftIcon,
   DatabaseIcon,
+  EraserIcon,
   LayersIcon,
+  MinusIcon,
   PauseIcon,
+  PencilIcon,
   PlayIcon,
   RotateCcwIcon,
   SettingsIcon,
   SkipBackIcon,
   SkipForwardIcon,
+  SlashIcon,
   SlidersHorizontalIcon,
+  SquareIcon,
+  Trash2Icon,
 } from 'lucide-react'
 import SourceSelect from '@/components/SourceSelect'
 import SymbolCombobox from '@/components/SymbolCombobox'
@@ -28,6 +35,7 @@ import DateJumpMenu from './DateJumpMenu'
 import IndicatorControls from './IndicatorControls'
 import PositionsList from './PositionsList'
 import { riskReward } from './orderEngine'
+import { DRAW_TOOLS } from './ReplayChart'
 
 // Every control for a replay session lives in this one bar pinned under the chart - the chart
 // itself is never covered. It replaced a set of floating cards (Setup/Indicators/Trade/Playback)
@@ -219,6 +227,79 @@ function IndicatorsPopover({ indicators, onChange }) {
   )
 }
 
+// Drawings: pick a tool here, draw on the chart. Same popover-off-the-bar shape as Indicators and
+// Positions - the chart itself stays uncovered, so the only thing on the candles is the drawing.
+function DrawingsPopover({ draw }) {
+  const { tool, onToolChange, count, selected, onDeleteSelected, onClearAll } = draw
+  const ICONS = { trendline: SlashIcon, hline: MinusIcon, rect: SquareIcon }
+  // Controlled, unlike the Indicators popover next to it: picking a tool is followed immediately by
+  // drawing on the chart, and this panel sits over the chart. Every action here closes it.
+  const [open, setOpen] = useState(false)
+  const act = (fn) => () => {
+    fn()
+    setOpen(false)
+  }
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger render={<Button variant="ghost" size="sm" className="gap-1.5" />}>
+        <PencilIcon className="size-4" />
+        Draw
+        {(tool || count > 0) && (
+          <Badge variant="outline" className="ml-0.5 text-[10px]">
+            {tool ? DRAW_TOOLS[tool].label : count}
+          </Badge>
+        )}
+      </PopoverTrigger>
+      <PopoverContent side="top" align="start" className="w-64 space-y-1">
+        {Object.entries(DRAW_TOOLS).map(([id, { label, hint }]) => {
+          const Icon = ICONS[id]
+          const active = tool === id
+          return (
+            <button
+              key={id}
+              type="button"
+              // Re-clicking the armed tool disarms it, so the popover doubles as the way back to a
+              // plain cursor without reaching for Escape.
+              onClick={act(() => onToolChange(active ? null : id))}
+              className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted ${
+                active ? 'bg-muted text-primary' : ''
+              }`}
+            >
+              <Icon className="size-4 shrink-0" />
+              <span className="flex-1">{label}</span>
+              <span className="text-[10px] text-muted-foreground">{hint}</span>
+            </button>
+          )
+        })}
+        <Separator />
+        <button
+          type="button"
+          disabled={!selected}
+          onClick={act(onDeleteSelected)}
+          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <EraserIcon className="size-4 shrink-0" />
+          <span className="flex-1">Delete selected</span>
+          <kbd className="font-mono text-[10px] text-muted-foreground">Del</kbd>
+        </button>
+        <button
+          type="button"
+          disabled={!count}
+          onClick={act(onClearAll)}
+          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-down hover:bg-muted disabled:opacity-40 disabled:hover:bg-transparent"
+        >
+          <Trash2Icon className="size-4 shrink-0" />
+          <span className="flex-1">Clear all drawings</span>
+          <span className="text-[10px] text-muted-foreground">{count}</span>
+        </button>
+        <p className="px-2 pt-1 text-[11px] text-muted-foreground">
+          Click a drawing on the chart to select it. Drawings are kept per symbol and timeframe.
+        </p>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 function PlaybackControls({ playback }) {
   const {
     playing,
@@ -397,7 +478,7 @@ function TradeControls({ trade }) {
   )
 }
 
-export default function BottomBar({ setup, playback, trade, onOpenSettings }) {
+export default function BottomBar({ setup, playback, trade, draw, onOpenSettings }) {
   return (
     <div className="flex h-12 shrink-0 items-center gap-2 border-t bg-card px-2">
       <Link
@@ -419,6 +500,7 @@ export default function BottomBar({ setup, playback, trade, onOpenSettings }) {
           is just the setup entry point, same as the old floating panels' own gating. */}
       {playback.started && (
         <>
+          <DrawingsPopover draw={draw} />
           <Separator orientation="vertical" className="h-full" />
           <PlaybackControls playback={playback} />
         </>

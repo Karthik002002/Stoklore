@@ -38,3 +38,5 @@ local_data/
 
 # per-machine MCP server config (local absolute paths) - never shared/committed
 .mcp.json
+
+.claude/bar-replay-features.md

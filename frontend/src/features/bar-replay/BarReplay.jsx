@@ -39,6 +39,7 @@ export default function BarReplay() {
   const timeframe = useBarReplayStore((s) => s.timeframe)
   const barIndex = useBarReplayStore((s) => s.barIndex)
   const orders = useBarReplayStore((s) => s.orders)
+  const drawings = useBarReplayStore((s) => s.drawings)
   const indicators = useBarReplayStore((s) => s.indicators)
   const speedMs = useBarReplayStore((s) => s.speedMs)
   const chartSettings = useBarReplayStore((s) => s.settings)
@@ -48,6 +49,7 @@ export default function BarReplay() {
   const changeTimeframe = useBarReplayStore((s) => s.setTimeframe)
   const setBarIndex = useBarReplayStore((s) => s.setBarIndex)
   const setOrders = useBarReplayStore((s) => s.setOrders)
+  const setDrawings = useBarReplayStore((s) => s.setDrawings)
   const setIndicators = useBarReplayStore((s) => s.setIndicators)
   const setSpeedMs = useBarReplayStore((s) => s.setSpeedMs)
   const setChartSettings = useBarReplayStore((s) => s.setSettings)
@@ -91,6 +93,11 @@ export default function BarReplay() {
   // and leaves the order open, so nothing is silently lost. Deliberately plain component state,
   // not in the persisted store - a stale confirm dialog reopening after a reload would be worse
   // than just losing track of an unconfirmed close.
+  // Drawing tool armed from the bar's Draw popover, and which drawn shape is selected on the
+  // chart. Both are transient UI, not session state - a tool left armed across a reload would be a
+  // surprise, and a selection is only meaningful while you're looking at it.
+  const [drawTool, setDrawTool] = useState(null)
+  const [selectedDrawingId, setSelectedDrawingId] = useState(null)
   const [closeQueue, setCloseQueue] = useState([])
   const [settingsOpen, setSettingsOpen] = useState(false)
   // 'symbol' | 'timeframe' | null - which centred quick-switcher is open (see ReplayCommandDialog).
@@ -487,6 +494,12 @@ export default function BarReplay() {
           onRequestClose={requestClose}
           onMoveToBreakeven={moveStopsToBreakeven}
           onCancelPending={cancelPending}
+          drawings={drawings}
+          onDrawingsChange={setDrawings}
+          drawTool={drawTool}
+          onDrawToolChange={setDrawTool}
+          selectedDrawingId={selectedDrawingId}
+          onSelectDrawing={setSelectedDrawingId}
           view={view}
           onViewChange={setView}
           settings={chartSettings}
@@ -522,6 +535,21 @@ export default function BarReplay() {
           onStart: startReplay,
           indicators,
           onIndicatorsChange: setIndicators,
+        }}
+        draw={{
+          tool: drawTool,
+          onToolChange: setDrawTool,
+          count: drawings.length,
+          selected: !!selectedDrawingId,
+          onDeleteSelected: () => {
+            setDrawings(drawings.filter((d) => d.id !== selectedDrawingId))
+            setSelectedDrawingId(null)
+          },
+          onClearAll: () => {
+            setDrawings([])
+            setSelectedDrawingId(null)
+            setDrawTool(null)
+          },
         }}
         playback={{
           started,

@@ -1,5 +1,11 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
-import { CandlestickSeries, HistogramSeries, LineSeries, createChart } from 'lightweight-charts'
+import {
+  CandlestickSeries,
+  CrosshairMode,
+  HistogramSeries,
+  LineSeries,
+  createChart,
+} from 'lightweight-charts'
 import { compact, inr } from '@/lib/format'
 import { INDICATOR_COLORS, INDICATOR_TYPES } from '@/lib/indicators'
 import { tradeReturnPct } from '@/lib/manualTrades'
@@ -60,6 +66,98 @@ const INITIAL_VISIBLE_BARS = 200
 // it for dragging - see the drag-to-adjust effect below.
 const DRAG_HIT_PX = 6
 
+// --- drawings -----------------------------------------------------------------------------------
+//
+// Trendline / horizontal line / rectangle, drawn as one SVG layer over the canvas rather than as
+// lightweight-charts series primitives: a primitive would need its own renderer class per shape and
+// still couldn't be hit-tested or dragged without the same pointer code this file already runs for
+// order lines. Every shape is stored as fractional bar index + price (never pixels), so pan, zoom,
+// autoscale and new bars all keep it pinned to the price action it was drawn against.
+export const DRAW_TOOLS = {
+  trendline: { label: 'Trend line', hint: 'Drag from one point to another' },
+  hline: { label: 'Horizontal line', hint: 'Click a price' },
+  rect: { label: 'Rectangle', hint: 'Drag out a zone' },
+}
+const DRAW_COLOR = '#38bdf8'
+// Pointer slop for selecting an existing drawing, and the minimum drag that counts as a shape
+// rather than a stray click.
+const DRAW_HIT_PX = 6
+const DRAW_MIN_PX = 4
+
+// Distance from point p to segment ab, all in pixels. Used for both trendline hit-testing and each
+// edge of a rectangle.
+function distToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax
+  const dy = by - ay
+  const lenSq = dx * dx + dy * dy
+  const t = lenSq ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq)) : 0
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+}
+
+/** Re-places every drawn shape from its index/price anchors onto current pixels. React owns which
+ *  elements exist (and their styling); this owns only where they sit, so the ~60x/s loop never
+ *  touches React. Anchors ride in data-a/data-b as "index,price" strings. */
+function paintDrawings(chart, series, svg) {
+  if (!chart || !series || !svg) return
+  const ts = chart.timeScale()
+  const width = svg.clientWidth
+  const at = (attr) => {
+    if (!attr) return null
+    const [index, price] = attr.split(',').map(Number)
+    const x = ts.logicalToCoordinate(index)
+    const y = series.priceToCoordinate(price)
+    return x == null || y == null ? null : { x, y }
+  }
+  for (const el of svg.querySelectorAll('[data-a]')) {
+    const a = at(el.dataset.a)
+    const b = at(el.dataset.b)
+    if (!a || (el.dataset.b && !b)) {
+      el.style.visibility = 'hidden'
+      continue
+    }
+    el.style.visibility = 'visible'
+    if (el.dataset.shape === 'hline') {
+      el.setAttribute('x1', 0)
+      el.setAttribute('x2', width)
+      el.setAttribute('y1', a.y)
+      el.setAttribute('y2', a.y)
+    } else if (el.dataset.shape === 'rect') {
+      el.setAttribute('x', Math.min(a.x, b.x))
+      el.setAttribute('y', Math.min(a.y, b.y))
+      el.setAttribute('width', Math.abs(b.x - a.x))
+      el.setAttribute('height', Math.abs(b.y - a.y))
+    } else {
+      el.setAttribute('x1', a.x)
+      el.setAttribute('y1', a.y)
+      el.setAttribute('x2', b.x)
+      el.setAttribute('y2', b.y)
+    }
+  }
+}
+
+/** One drawing, positioned entirely by paintDrawings above - the geometry attributes here are just
+ *  placeholders until the first frame runs. */
+function DrawnShape({ drawing, selected, dashed = false }) {
+  const [a, b] = drawing.points
+  const anchors = {
+    'data-shape': drawing.type === 'hline' ? 'hline' : drawing.type === 'rect' ? 'rect' : 'line',
+    'data-a': `${a.index},${a.price}`,
+    ...(b ? { 'data-b': `${b.index},${b.price}` } : {}),
+  }
+  const stroke = {
+    stroke: DRAW_COLOR,
+    strokeWidth: selected ? 2.5 : 1.5,
+    strokeDasharray: dashed ? '4 3' : undefined,
+    vectorEffect: 'non-scaling-stroke',
+  }
+  if (drawing.type === 'rect') {
+    return (
+      <rect {...anchors} {...stroke} fill={DRAW_COLOR} fillOpacity={0.1} x={0} y={0} width={0} height={0} />
+    )
+  }
+  return <line {...anchors} {...stroke} x1={0} y1={0} x2={0} y2={0} />
+}
+
 // What the pane at `index` is showing: the candles at 0, otherwise the oscillator type occupying
 // that slot. This is the key persisted heights are stored under, and both the effect that applies
 // them and the sampler that records them go through here so they can't disagree.
@@ -100,6 +198,14 @@ const ReplayChart = forwardRef(function ReplayChart(
     onRequestClose,
     onMoveToBreakeven,
     onCancelPending,
+    drawings = [],
+    onDrawingsChange,
+    // Which drawing tool is armed, and which saved shape is selected. Both are owned by BarReplay
+    // because the picker for them lives in BottomBar (see its Draw popover), not on the chart.
+    drawTool = null,
+    onDrawToolChange,
+    selectedDrawingId = null,
+    onSelectDrawing,
     view,
     onViewChange,
     settings = DEFAULT_CHART_SETTINGS,
@@ -108,6 +214,7 @@ const ReplayChart = forwardRef(function ReplayChart(
 ) {
   const containerRef = useRef(null)
   const overlayRef = useRef(null)
+  const drawLayerRef = useRef(null)
   const chartRef = useRef(null)
   const candleSeriesRef = useRef(null)
   const volumeSeriesRef = useRef(null)
@@ -118,6 +225,17 @@ const ReplayChart = forwardRef(function ReplayChart(
   // Right-click context menu state: null when closed, { x, y, price } while open. See the
   // ContextMenu render at the bottom of this component.
   const [ctxMenu, setCtxMenu] = useState(null)
+  // The shape currently being dragged out, before it's committed to the store. Local because
+  // nothing outside the chart can act on half a rectangle.
+  const [draft, setDraft] = useState(null)
+  const tool = drawTool
+  const selectedId = selectedDrawingId
+  // Through a ref, not called directly: the pointer listeners below are bound once per chart, so a
+  // callback captured from the first render would go stale the moment BarReplay re-renders.
+  const drawCbRef = useRef(null)
+  drawCbRef.current = { onDrawToolChange, onSelectDrawing }
+  const setTool = (next) => drawCbRef.current.onDrawToolChange?.(next)
+  const setSelectedId = (next) => drawCbRef.current.onSelectDrawing?.(next)
 
   // Drag handlers close over ordersRef/onAdjustRef instead of orders/onAdjustOrder directly so
   // the pointer listeners only need attaching once per chart instance, not on every order change.
@@ -125,6 +243,14 @@ const ReplayChart = forwardRef(function ReplayChart(
   ordersRef.current = orders
   const onAdjustRef = useRef(onAdjustOrder)
   onAdjustRef.current = onAdjustOrder
+  // Same reason as ordersRef above: the pointer listeners are bound once per chart, so everything
+  // the drawing branch reads has to come through a ref rather than a closed-over prop.
+  const drawingsRef = useRef(drawings)
+  drawingsRef.current = drawings
+  const onDrawingsRef = useRef(onDrawingsChange)
+  onDrawingsRef.current = onDrawingsChange
+  const toolRef = useRef(tool)
+  toolRef.current = tool
   // Read by the first-data effect and the sampler below, both of which must see the *current*
   // view without re-running (re-running the sampler would restart its interval on every render,
   // and re-running the data effect would re-frame the chart under the user mid-session).
@@ -164,6 +290,11 @@ const ReplayChart = forwardRef(function ReplayChart(
       // (see minute_data.py) and the chart renders UTC, so this reads as market-local time.
       timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
       rightPriceScale: { borderVisible: false },
+      // lightweight-charts defaults the crosshair to Magnet, which snaps its horizontal line (and
+      // the price label) to the hovered bar's nearest OHLC. That makes the readout disagree with
+      // the pointer - and with anything placed AT the pointer, like a drawing or a click-placed
+      // level. Normal keeps the crosshair exactly where the mouse is.
+      crosshair: { mode: CrosshairMode.Normal },
       localization: { priceFormatter: (p) => `₹${p.toFixed(2)}` },
     })
     chartRef.current = chart
@@ -219,6 +350,7 @@ const ReplayChart = forwardRef(function ReplayChart(
     if (!container || !chart) return
 
     let drag = null // { orderId, field, legId? }
+    let drawStart = null // { index, price } while a drawing tool is being dragged out
 
     const priceAt = (clientY) => {
       const rect = container.getBoundingClientRect()
@@ -278,6 +410,60 @@ const ReplayChart = forwardRef(function ReplayChart(
       return null
     }
 
+    // Where a pointer sits in chart terms: a fractional bar index and a price. Both survive pan,
+    // zoom and autoscale, which is what makes a drawing stay on the price action it was drawn on.
+    const anchorAt = (e) => {
+      const rect = container.getBoundingClientRect()
+      const x = e.clientX - rect.left
+      const y = e.clientY - rect.top
+      // Drawings belong to the candle pane only - an oscillator pane has its own scale, and a
+      // trendline anchored to a price would land somewhere meaningless in it.
+      if (y > chart.paneSize(0).height) return null
+      const index = chart.timeScale().coordinateToLogical(x)
+      const price = candleSeriesRef.current?.coordinateToPrice(y)
+      return index == null || price == null ? null : { index, price }
+    }
+
+    // The topmost drawing within DRAW_HIT_PX of the pointer, newest first (last drawn sits on top,
+    // same as it renders).
+    const hitDrawing = (e) => {
+      const rect = container.getBoundingClientRect()
+      const px = e.clientX - rect.left
+      const py = e.clientY - rect.top
+      const ts = chart.timeScale()
+      const series = candleSeriesRef.current
+      if (!series) return null
+      const at = (p) => {
+        const x = ts.logicalToCoordinate(p.index)
+        const y = series.priceToCoordinate(p.price)
+        return x == null || y == null ? null : { x, y }
+      }
+      for (const d of [...drawingsRef.current].reverse()) {
+        const a = at(d.points[0])
+        if (!a) continue
+        if (d.type === 'hline') {
+          if (Math.abs(py - a.y) <= DRAW_HIT_PX) return d
+          continue
+        }
+        const b = at(d.points[1])
+        if (!b) continue
+        if (d.type === 'trendline') {
+          if (distToSegment(px, py, a.x, a.y, b.x, b.y) <= DRAW_HIT_PX) return d
+          continue
+        }
+        // Rectangle: grabbed by its border, not its fill - a big rectangle would otherwise swallow
+        // every click inside it, including the ones meant for the candles.
+        const edges = [
+          [a.x, a.y, b.x, a.y],
+          [b.x, a.y, b.x, b.y],
+          [b.x, b.y, a.x, b.y],
+          [a.x, b.y, a.x, a.y],
+        ]
+        if (edges.some((seg) => distToSegment(px, py, ...seg) <= DRAW_HIT_PX)) return d
+      }
+      return null
+    }
+
     const onPointerDown = (e) => {
       // Right-click is handled by onContextMenu below - do NOT grab a drag for it, or moving
       // the mouse between right-click and menu selection scrubs a level around.
@@ -294,9 +480,40 @@ const ReplayChart = forwardRef(function ReplayChart(
         drag = handle
         chart.applyOptions({ handleScroll: false, handleScale: false })
         container.style.cursor = 'ns-resize'
+        return
       }
+      // An order line always wins the press (checked above): the levels you can actually get
+      // filled at matter more than a sketch drawn near them.
+      const armed = toolRef.current
+      if (armed) {
+        const anchor = anchorAt(e)
+        if (!anchor) return
+        // A horizontal line needs no drag - one click is the whole shape.
+        if (armed === 'hline') {
+          commitDrawing({ type: 'hline', points: [anchor] })
+          return
+        }
+        drawStart = anchor
+        setDraft({ type: armed, points: [anchor, anchor] })
+        return
+      }
+      setSelectedId(hitDrawing(e)?.id ?? null)
+    }
+    const commitDrawing = (shape) => {
+      const drawing = { id: crypto.randomUUID(), ...shape }
+      onDrawingsRef.current?.([...drawingsRef.current, drawing])
+      setDraft(null)
+      setSelectedId(drawing.id)
+      // One shape per arming, like the old draw-zone tool: the common case is drawing one line and
+      // going straight back to reading the chart.
+      setTool(null)
     }
     const onPointerMove = (e) => {
+      if (drawStart) {
+        const anchor = anchorAt(e)
+        if (anchor) setDraft((d) => (d ? { ...d, points: [drawStart, anchor] } : d))
+        return
+      }
       if (!drag) return
       const price = priceAt(e.clientY)
       if (price == null) return
@@ -307,6 +524,22 @@ const ReplayChart = forwardRef(function ReplayChart(
       orderLinesRef.current.get(key)?.applyOptions({ price })
     }
     const onPointerUp = (e) => {
+      if (drawStart) {
+        const start = drawStart
+        const type = toolRef.current
+        drawStart = null
+        const anchor = anchorAt(e)
+        const rect = container.getBoundingClientRect()
+        const ts = chart.timeScale()
+        const x0 = ts.logicalToCoordinate(start.index) ?? 0
+        const y0 = candleSeriesRef.current?.priceToCoordinate(start.price) ?? 0
+        // A click that never really moved is a mis-click, not a zero-size shape: drop it and leave
+        // the tool armed so the next press still draws.
+        const moved = Math.hypot(e.clientX - rect.left - x0, e.clientY - rect.top - y0) >= DRAW_MIN_PX
+        if (anchor && moved && type) commitDrawing({ type, points: [start, anchor] })
+        else setDraft(null)
+        return
+      }
       if (!drag) return
       const { orderId, field, legId } = drag
       const price = priceAt(e.clientY)
@@ -617,16 +850,17 @@ const ReplayChart = forwardRef(function ReplayChart(
     return () => clearInterval(id)
   }, [])
 
-  // Keeps every floating pill sitting on its own price line. The pills are HTML over a canvas, so
-  // nothing tells React when the price scale moves - panning, zooming, autoscaling to a new bar
-  // and dragging a level all shift the mapping without any prop changing.
+  // Keeps every floating pill sitting on its own price line, and every drawing on its own bars.
+  // Both are HTML/SVG over a canvas, so nothing tells React when the mapping moves - panning,
+  // zooming, autoscaling to a new bar and dragging a level all shift it without any prop changing.
   //
-  // ponytail: one rAF loop writing style.top directly, running only while a position is open. It
-  // re-reads coordinates ~60x/s instead of reacting to actual scale changes, and skips React
-  // entirely so it costs a transform, not a render. If that ever shows up in a profile, swap it
-  // for the chart's own subscribeVisibleLogicalRangeChange plus a ResizeObserver.
+  // ponytail: one rAF loop writing attributes directly, running only while there's something to
+  // place. It re-reads coordinates ~60x/s instead of reacting to actual scale changes, and skips
+  // React entirely so it costs a transform, not a render. If that ever shows up in a profile, swap
+  // it for the chart's own subscribeVisibleLogicalRangeChange plus a ResizeObserver.
+  const hasDrawings = drawings.length > 0 || !!draft
   useEffect(() => {
-    if (orders.length === 0) return
+    if (orders.length === 0 && !hasDrawings) return
     let raf = 0
     const tick = () => {
       const series = candleSeriesRef.current
@@ -640,11 +874,48 @@ const ReplayChart = forwardRef(function ReplayChart(
           if (y != null) el.style.top = `${y}px`
         }
       }
+      paintDrawings(chartRef.current, series, drawLayerRef.current)
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [orders.length])
+  }, [orders.length, hasDrawings])
+
+  // Arming a tool has to pause the chart's own pan/zoom BEFORE the press lands: the chart's
+  // handler lives on a descendant canvas and sees pointerdown first, so switching it off from
+  // inside the handler would be too late to stop it panning under the drag.
+  useEffect(() => {
+    const chart = chartRef.current
+    const container = containerRef.current
+    if (!chart || !container) return
+    chart.applyOptions({ handleScroll: !tool, handleScale: !tool })
+    container.style.cursor = tool ? 'crosshair' : ''
+  }, [tool, resetKey])
+
+  // Escape disarms (or drops a half-drawn shape); Delete/Backspace removes the selected drawing.
+  // Window-level rather than on the container: the chart canvas never takes focus, so there is no
+  // focused element to hang a keydown on.
+  useEffect(() => {
+    if (!tool && !draft && !selectedId) return
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        setTool(null)
+        setDraft(null)
+        setSelectedId(null)
+        return
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
+        const el = document.activeElement
+        // Never eat a Backspace meant for a qty input or the symbol search.
+        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
+        e.preventDefault()
+        onDrawingsRef.current?.(drawingsRef.current.filter((d) => d.id !== selectedId))
+        setSelectedId(null)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [tool, draft, selectedId])
 
   // Live preview lines while the order ticket is open (dotted, distinct from confirmed orders'
   // lines above) - updates as the user edits the dialog, before anything is actually placed.
@@ -693,6 +964,28 @@ const ReplayChart = forwardRef(function ReplayChart(
       {bars.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
           Pick a symbol and start replay.
+        </div>
+      )}
+
+      {/* Drawing layer. pointer-events-none throughout: selection runs through the same pointer
+          handler as the order lines (see hitDrawing), so the canvas underneath keeps every drag,
+          click and wheel it would otherwise lose to an SVG sitting on top of it. */}
+      <svg
+        ref={drawLayerRef}
+        className="pointer-events-none absolute inset-0 z-[5] h-full w-full"
+        aria-hidden="true"
+      >
+        <title>Chart drawings</title>
+        {drawings.map((d) => (
+          <DrawnShape key={d.id} drawing={d} selected={d.id === selectedId} />
+        ))}
+        {draft && <DrawnShape drawing={draft} selected dashed />}
+      </svg>
+
+      {/* What's armed, so an active tool is visible without looking back down at the bar. */}
+      {tool && (
+        <div className="absolute top-2 left-2 z-20 rounded border bg-background/90 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm">
+          {DRAW_TOOLS[tool].label} — {DRAW_TOOLS[tool].hint.toLowerCase()} · Esc to cancel
         </div>
       )}
 

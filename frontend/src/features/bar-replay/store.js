@@ -49,6 +49,12 @@ export const useBarReplayStore = create(
       timeframe: '1D',
       barIndex: null,
       orders: [],
+      // Trendlines/horizontal lines/rectangles drawn on the chart. Anchored to a fractional bar
+      // index + a price (see ReplayChart's drawing layer), which is why they're dropped on a
+      // symbol/timeframe change alongside the orders - bar 3200 is a different moment in every
+      // instrument. Kept across a restart: the levels you marked are analysis of THIS chart, and
+      // redrawing them to replay the same stretch again would be busywork.
+      drawings: [],
       indicators: DEFAULT_INDICATORS,
       speedMs: 1000,
       settings: DEFAULT_CHART_SETTINGS,
@@ -63,11 +69,24 @@ export const useBarReplayStore = create(
       // "bar 400") from a different instrument/timeframe makes no sense. Same for the saved zoom
       // window; the pane heights stay (see DEFAULT_VIEW).
       setSymbol: (symbol) =>
-        set((s) => ({ symbol, barIndex: null, orders: [], view: { ...s.view, logicalRange: null } })),
+        set((s) => ({
+          symbol,
+          barIndex: null,
+          orders: [],
+          drawings: [],
+          view: { ...s.view, logicalRange: null },
+        })),
       setTimeframe: (timeframe) =>
-        set((s) => ({ timeframe, barIndex: null, orders: [], view: { ...s.view, logicalRange: null } })),
+        set((s) => ({
+          timeframe,
+          barIndex: null,
+          orders: [],
+          drawings: [],
+          view: { ...s.view, logicalRange: null },
+        })),
       setBarIndex: (barIndex) => set({ barIndex }),
       setOrders: (orders) => set({ orders }),
+      setDrawings: (drawings) => set({ drawings }),
       setIndicators: (indicators) => set({ indicators }),
       setSpeedMs: (speedMs) => set({ speedMs }),
       setSettings: (settings) => set({ settings }),
@@ -77,13 +96,18 @@ export const useBarReplayStore = create(
     }),
     {
       name: 'barReplay.store',
-      version: 5,
+      version: 6,
       // v0 -> v1: a position's stop-loss and target were single `stopLoss`/`target` numbers;
       // they're now `stopLosses`/`targets`, lists of {id, price, qty} legs (see orderEngine.js)
       // so one trade can carry a laddered exit on either side - a plain single-SL/single-target
       // order just becomes a one-leg list covering the full quantity, so nothing about existing
       // sessions' behavior changes.
       migrate: (persisted, version) => {
+        // v5 -> v6: `drawings` is new. persist's merge is shallow, so a session saved before this
+        // existed has no key at all and would read as undefined rather than an empty list.
+        if (version < 6 && persisted && !persisted.drawings) {
+          persisted.drawings = []
+        }
         // v4 -> v5: pane heights moved from a positional `paneStretch` array to `paneHeights`
         // keyed by what the pane shows. The old array can't be converted - which slot held which
         // oscillator wasn't recorded - so it's dropped and the panes go back to their defaults.

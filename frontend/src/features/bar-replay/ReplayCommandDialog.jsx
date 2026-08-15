@@ -8,6 +8,7 @@ import {
   CommandItem,
   CommandList,
 } from '@/components/ui/command'
+import { StockBadges, StockSubline } from '@/components/StockMeta'
 import { REPLAY_TIMEFRAMES } from '@/lib/replay'
 import { searchStocksMaster } from '@/services/api'
 
@@ -18,13 +19,22 @@ import { searchStocksMaster } from '@/services/api'
 // One component with a `mode` rather than two files: both are "type, arrow, Enter" over a list,
 // and only the row source and the commit differ. `mode === null` is closed.
 
+// Main board / SME / both. A replay session is usually one or the other - SME names behave nothing
+// like main-board ones - so the filter is worth a click here rather than typing around it.
+const BOARDS = [
+  { value: undefined, label: 'All' },
+  { value: 'MAIN', label: 'Main board' },
+  { value: 'SME', label: 'SME' },
+]
+
 function SymbolBody({ onSelect }) {
   const [query, setQuery] = useState('')
-  // Same source as SymbolCombobox: the full NSE listed-equity master, so any valid ticker is
-  // reachable whether or not it has ever been scraped.
+  const [board, setBoard] = useState(undefined)
+  // Same source as SymbolCombobox: the full NSE listed-equity master (both boards), so any valid
+  // ticker is reachable whether or not it has ever been scraped.
   const { data } = useQuery({
-    queryKey: ['stockSearch', query],
-    queryFn: () => searchStocksMaster(query),
+    queryKey: ['stockSearch', query, board],
+    queryFn: () => searchStocksMaster(query, board),
   })
   const matches = data?.stocks ?? []
 
@@ -36,12 +46,37 @@ function SymbolBody({ onSelect }) {
         placeholder="Search symbol…"
         className="uppercase placeholder:normal-case"
       />
+      <div className="flex items-center gap-1 border-b px-2 pb-2 text-[11px]">
+        {BOARDS.map((b) => (
+          <button
+            key={b.label}
+            type="button"
+            onClick={() => setBoard(b.value)}
+            className={`rounded px-1.5 py-0.5 ${
+              board === b.value ? 'bg-muted font-medium' : 'text-muted-foreground hover:bg-muted/60'
+            }`}
+          >
+            {b.label}
+          </button>
+        ))}
+        <span className="ml-auto text-muted-foreground">
+          {data
+            ? `${(data.total ?? 0).toLocaleString()} listed · ${(data.sme ?? 0).toLocaleString()} SME`
+            : ''}
+        </span>
+      </div>
       <CommandList>
         {matches.length === 0 && <CommandEmpty>No matches.</CommandEmpty>}
         {matches.map((m) => (
           <CommandItem key={m.symbol} value={m.symbol} onSelect={() => onSelect(m.symbol)}>
-            <span className="font-medium">{m.symbol}</span>
-            <span className="truncate text-xs text-muted-foreground">{m.name}</span>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <span className="flex items-center gap-1.5">
+                <span className="font-medium">{m.symbol}</span>
+                <span className="truncate text-xs text-muted-foreground">{m.name}</span>
+              </span>
+              <StockSubline stock={m} />
+            </div>
+            <StockBadges stock={m} showExchange className="ml-auto" />
           </CommandItem>
         ))}
       </CommandList>
@@ -77,7 +112,9 @@ export default function ReplayCommandDialog({ mode, onOpenChange, timeframe, onS
       open={mode != null}
       onOpenChange={onOpenChange}
       title={mode === 'timeframe' ? 'Switch timeframe' : 'Search symbol'}
-      description={mode === 'timeframe' ? 'Pick a replay timeframe' : 'Search the NSE listed-equity master'}
+      description={
+        mode === 'timeframe' ? 'Pick a replay timeframe' : 'Search the NSE listed-equity master (main + SME)'
+      }
     >
       {/* CommandDialog is only the centred shell - the Command root is the caller's, same as in
           CommandPalette.jsx. shouldFilter is off for symbols because the server already ranked

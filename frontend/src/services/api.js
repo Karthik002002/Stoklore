@@ -299,13 +299,20 @@ export const addStock = (symbol) =>
     body: JSON.stringify({ symbol }),
   }).then(json)
 
-export const searchStocksMaster = (q = '') =>
-  fetch(`/api/stocks-master?q=${encodeURIComponent(q)}`).then(json)
+// `board` is 'MAIN' | 'SME' | undefined (both boards). Rows carry name, series, board, market_lot,
+// face_value, listing_date and ISIN, so every caller can show what a symbol actually is.
+export const searchStocksMaster = (q = '', board) =>
+  fetch(`/api/stocks-master?q=${encodeURIComponent(q)}${board ? `&board=${board}` : ''}`).then(json)
 
-export const importStocksMaster = (file) => {
+// `board` forces every row onto that board; omitted, each row's board comes from its SERIES code
+// (SM/ST = NSE EMERGE), which is what makes one importer handle both CSVs.
+export const importStocksMaster = (file, board) => {
   const form = new FormData()
   form.append('file', file)
-  return fetch('/api/stocks-master/import', { method: 'POST', body: form }).then(json)
+  return fetch(`/api/stocks-master/import${board ? `?board=${board}` : ''}`, {
+    method: 'POST',
+    body: form,
+  }).then(json)
 }
 
 export const deleteStockMaster = (symbol) =>

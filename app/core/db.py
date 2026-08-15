@@ -406,6 +406,14 @@ CREATE TABLE IF NOT EXISTS stocks_master (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS stocks_master_name_idx ON stocks_master (name);
+-- The SME (EMERGE) board ships as its own EQUITY_L-shaped CSV from NSE, with the same columns and
+-- its own series codes (SM/ST). `board` is derived from SERIES at import (see stocks_master.py) so
+-- one importer covers both files. `market_lot` matters far more on SME than on the main board:
+-- those scrips trade only in fixed lots, so a quantity that isn't a multiple of the lot is not a
+-- real trade. Both are nullable/defaulted, so rows imported before this existed read as MAIN.
+ALTER TABLE stocks_master ADD COLUMN IF NOT EXISTS board TEXT NOT NULL DEFAULT 'MAIN';
+ALTER TABLE stocks_master ADD COLUMN IF NOT EXISTS market_lot INTEGER;
+ALTER TABLE stocks_master ADD COLUMN IF NOT EXISTS face_value REAL;
 """
 
 
@@ -1648,33 +1656,61 @@ def delete_balance_adjustment(adjustment_id):
 
 
 def upsert_stocks_master(rows):
-    """rows: list of {symbol, name, series, listing_date, isin}. Bulk upsert - re-importing a
-    fresh NSE CSV just refreshes existing rows and adds new listings, never removes delisted ones."""
+    """rows: list of {symbol, name, series, listing_date, isin, board, market_lot, face_value}.
+    Bulk upsert - re-importing a fresh NSE CSV (main board or SME) just refreshes existing rows and
+    adds new listings, never removes delisted ones."""
     if not rows:
         return
     with connect() as conn:
         conn.cursor().executemany(
-            "INSERT INTO stocks_master (symbol, name, series, listing_date, isin, updated_at) "
-            "VALUES (%s, %s, %s, %s, %s, now()) ON CONFLICT (symbol) DO UPDATE SET "
+            "INSERT INTO stocks_master "
+            "(symbol, name, series, listing_date, isin, board, market_lot, face_value, updated_at) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now()) ON CONFLICT (symbol) DO UPDATE SET "
             "name = excluded.name, series = excluded.series, listing_date = excluded.listing_date, "
-            "isin = excluded.isin, updated_at = excluded.updated_at",
-            [(r["symbol"], r["name"], r["series"], r["listing_date"], r["isin"]) for r in rows],
+            "isin = excluded.isin, board = excluded.board, market_lot = excluded.market_lot, "
+            "face_value = excluded.face_value, updated_at = excluded.updated_at",
+            [
+                (
+                    r["symbol"],
+                    r["name"],
+                    r["series"],
+                    r["listing_date"],
+                    r["isin"],
+                    r.get("board") or "MAIN",
+                    r.get("market_lot"),
+                    r.get("face_value"),
+                )
+                for r in rows
+            ],
         )
 
 
-def search_stocks_master(query="", limit=30):
-    """Case-insensitive substring match on symbol, company name, or ISIN, capped at `limit`."""
+def search_stocks_master(query="", limit=30, board=None):
+    """Case-insensitive substring match on symbol, company name, or ISIN, capped at `limit`.
+
+    Exact-symbol and prefix matches sort first: on a universe that now includes the SME board, a
+    plain alphabetical sort buried the ticker you typed under every SME name containing it.
+    `board` ('MAIN'/'SME') narrows to one board; None (the default) searches both.
+    """
+    like = f"%{query}%"
     with connect() as conn:
         return conn.execute(
-            "SELECT symbol, name, series, listing_date, isin FROM stocks_master "
-            "WHERE symbol ILIKE %s OR name ILIKE %s OR isin ILIKE %s ORDER BY symbol LIMIT %s",
-            (f"%{query}%", f"%{query}%", f"%{query}%", limit),
+            "SELECT symbol, name, series, listing_date, isin, board, market_lot, face_value "
+            "FROM stocks_master "
+            "WHERE (symbol ILIKE %s OR name ILIKE %s OR isin ILIKE %s) "
+            "AND (%s::text IS NULL OR board = %s) "
+            "ORDER BY (symbol ILIKE %s) DESC, (symbol ILIKE %s) DESC, symbol LIMIT %s",
+            (like, like, like, board, board, query, f"{query}%", limit),
         ).fetchall()
 
 
 def count_stocks_master():
+    """Total rows plus a per-board breakdown - the settings tab reports both, and 'how many SME
+    names did that import actually add' is the only way to tell an SME CSV landed correctly."""
     with connect() as conn:
-        return conn.execute("SELECT count(*) AS n FROM stocks_master").fetchone()["n"]
+        rows = conn.execute("SELECT board, count(*) AS n FROM stocks_master GROUP BY board").fetchall()
+    by_board = {r["board"]: r["n"] for r in rows}
+    return {"total": sum(by_board.values()), "main": by_board.get("MAIN", 0), "sme": by_board.get("SME", 0)}
 
 
 def delete_stock_master(symbol):

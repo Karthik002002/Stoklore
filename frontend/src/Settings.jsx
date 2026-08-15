@@ -846,14 +846,21 @@ function WatchlistCell({ symbol, lists, memberOf, tracked, onAdd, onRemove, onCr
   )
 }
 
+const BOARD_FILTERS = [
+  { value: undefined, label: 'All' },
+  { value: 'MAIN', label: 'Main board' },
+  { value: 'SME', label: 'SME' },
+]
+
 function StocksMasterTab() {
   const queryClient = useQueryClient()
   const fileInput = useRef(null)
   const [query, setQuery] = useState('')
+  const [board, setBoard] = useState(undefined)
 
   const { data, isLoading } = useQuery({
-    queryKey: ['stocksMaster', query],
-    queryFn: () => searchStocksMaster(query),
+    queryKey: ['stocksMaster', query, board],
+    queryFn: () => searchStocksMaster(query, board),
   })
   const stocks = data?.stocks ?? []
 
@@ -903,11 +910,14 @@ function StocksMasterTab() {
     if (name?.trim()) addToWatchlist(symbol, name.trim(), tracked)
   }
 
+  // The board split in the toast is the receipt: an SME export whose rows came back as 0 SME means
+  // the file wasn't the EMERGE one (or its SERIES column was empty), and that's worth seeing
+  // immediately rather than discovering later via a missing badge.
   const importCsv = useMutation({
-    mutationFn: importStocksMaster,
-    onSuccess: ({ imported }) => {
+    mutationFn: (file) => importStocksMaster(file),
+    onSuccess: ({ imported, imported_sme: sme }) => {
       queryClient.invalidateQueries({ queryKey: ['stocksMaster'] })
-      toast.success(`Imported ${imported} stocks`)
+      toast.success(`Imported ${imported} stocks${sme ? ` (${sme} SME)` : ''}`)
     },
     onError: (e) => toast.error(e.message),
   })
@@ -924,8 +934,11 @@ function StocksMasterTab() {
         <div>
           <p className="text-sm font-medium">NSE listed-equity master</p>
           <p className="text-xs text-muted-foreground">
-            {data ? `${data.total.toLocaleString()} stocks` : 'Loading…'} - imported from NSE's EQUITY_L.csv
-            export. Search shows up to 30 matches at a time.
+            {data
+              ? `${(data.total ?? 0).toLocaleString()} stocks — ${(data.main ?? 0).toLocaleString()} main board, ${(data.sme ?? 0).toLocaleString()} SME`
+              : 'Loading…'}
+            . Import NSE's EQUITY_L.csv for the main board and the EMERGE (SME) export for SME — same columns,
+            and each row's board is read from its series code. Search shows up to 30 matches.
           </p>
         </div>
         <input
@@ -950,18 +963,35 @@ function StocksMasterTab() {
         </Button>
       </div>
 
-      <Input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Search by symbol or company name…"
-      />
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search by symbol, company name or ISIN…"
+          className="min-w-48 flex-1"
+        />
+        <div className="flex shrink-0 items-center gap-1">
+          {BOARD_FILTERS.map((b) => (
+            <Button
+              key={b.label}
+              size="sm"
+              variant={board === b.value ? 'default' : 'outline'}
+              onClick={() => setBoard(b.value)}
+            >
+              {b.label}
+            </Button>
+          ))}
+        </div>
+      </div>
 
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Symbol</TableHead>
             <TableHead>Name</TableHead>
+            <TableHead>Board</TableHead>
             <TableHead>Series</TableHead>
+            <TableHead className="text-right">Lot</TableHead>
             <TableHead>Listed</TableHead>
             <TableHead>ISIN</TableHead>
             <TableHead className="w-8" />
@@ -975,7 +1005,15 @@ function StocksMasterTab() {
               <TableCell className="max-w-56 truncate" title={s.name}>
                 {s.name}
               </TableCell>
+              <TableCell>
+                {s.board === 'SME' ? (
+                  <span className="text-amber-600 dark:text-amber-400">SME</span>
+                ) : (
+                  <span className="text-muted-foreground">Main</span>
+                )}
+              </TableCell>
               <TableCell>{s.series}</TableCell>
+              <TableCell className="text-right tabular-nums">{s.market_lot ?? '—'}</TableCell>
               <TableCell>{s.listing_date}</TableCell>
               <TableCell className="text-muted-foreground">{s.isin}</TableCell>
               <TableCell>

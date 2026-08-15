@@ -63,22 +63,42 @@ def search_stocks(q: str = "", limit: int = 30):
 
 
 @router.get("/api/stocks-master")
-def stocks_master_search(q: str = "", limit: int = 30):
+def stocks_master_search(q: str = "", limit: int = 30, board: str | None = None):
     """Search endpoint for the full NSE listed-equity master (Settings > Manage stocks), separate
     from /api/stocks/search above which only covers previously-scraped symbols. Always capped at
-    30 - this table has 2000+ rows, nowhere near safe to return unbounded."""
-    return {"stocks": db.search_stocks_master(q, min(limit, 30)), "total": db.count_stocks_master()}
+    30 - this table has 2000+ rows, nowhere near safe to return unbounded.
+
+    `board` narrows to 'MAIN' or 'SME'; omitted, both boards are searched. Counts come back per
+    board so a caller can show the split without a second request."""
+    board = board.upper() if board else None
+    if board not in (None, "MAIN", "SME"):
+        raise HTTPException(status_code=400, detail="board must be MAIN or SME")
+    counts = db.count_stocks_master()
+    return {"stocks": db.search_stocks_master(q, min(limit, 30), board), **counts}
 
 
 @router.post("/api/stocks-master/import")
-async def stocks_master_import(file: UploadFile = File(...)):
-    """Bulk (re)import from an NSE EQUITY_L.csv export - upserts, so re-running with a fresh
-    download just refreshes the list."""
-    rows = stocks_master.parse_csv(await file.read())
+async def stocks_master_import(file: UploadFile = File(...), board: str | None = None):
+    """Bulk (re)import from an NSE EQUITY_L.csv export - main board or the SME (EMERGE) export,
+    which has the same columns. Upserts, so re-running with a fresh download just refreshes the
+    list. Each row's board is read from its SERIES code unless `board` forces one.
+
+    The reply reports how many of the imported rows landed on each board: that is the only quick
+    way to confirm an SME file was actually recognised as SME."""
+    board = board.upper() if board else None
+    if board not in (None, "MAIN", "SME"):
+        raise HTTPException(status_code=400, detail="board must be MAIN or SME")
+    rows = stocks_master.parse_csv(await file.read(), board)
     if not rows:
         raise HTTPException(status_code=422, detail="no valid rows found in CSV")
     db.upsert_stocks_master(rows)
-    return {"imported": len(rows), "total": db.count_stocks_master()}
+    imported_sme = sum(1 for r in rows if r["board"] == "SME")
+    return {
+        "imported": len(rows),
+        "imported_sme": imported_sme,
+        "imported_main": len(rows) - imported_sme,
+        **db.count_stocks_master(),
+    }
 
 
 @router.delete("/api/stocks-master/{symbol}")

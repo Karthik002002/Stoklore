@@ -5,11 +5,12 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { StockBadges } from '@/components/StockMeta'
 import { cn } from '@/lib/utils'
 import { searchStocksMaster } from '@/services/api'
 
 // Multi-select searchable dropdown backed by the full NSE listed-equity master (stocks_master
-// table) - unlike SymbolCombobox (previously-scraped symbols, single value, closes on pick), this
+// table, main board + SME) - unlike SymbolCombobox (previously-scraped symbols, single value, closes on pick), this
 // stays open across picks so several symbols can be added in one search session, showing a check
 // against each already-selected one; it closes only via the trigger or an outside click.
 //
@@ -73,6 +74,7 @@ export default function StockMasterCombobox({ selected, onSelect, className }) {
                 <span className="truncate">
                   {m.symbol} <span className="text-muted-foreground">— {m.name}</span>
                 </span>
+                <StockBadges stock={m} className="ml-auto" />
               </CommandItem>
             ))}
           </CommandList>

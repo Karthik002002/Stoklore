@@ -138,6 +138,23 @@ class TradeAccountRequest(BaseModel):
     max_position_size: float | None = None
     max_position_size_type: Literal["currency", "percentage"] = "currency"
     max_position_count: int | None = None
+    # Trading costs, charged per side of a round trip - see db.py's trade_accounts comment and
+    # frontend/src/lib/tradeCosts.js. All default to zero, so an account created before these
+    # existed (or by a caller that doesn't know about them) simply has no costs.
+    slippage_value: float = 0
+    slippage_type: Literal["per_share", "bps"] = "per_share"
+    brokerage_flat: float = 0
+    brokerage_pct: float = 0
+    other_charges_pct: float = 0
+
+    def costs(self):
+        return {
+            "slippage_value": self.slippage_value,
+            "slippage_type": self.slippage_type,
+            "brokerage_flat": self.brokerage_flat,
+            "brokerage_pct": self.brokerage_pct,
+            "other_charges_pct": self.other_charges_pct,
+        }
 
 
 class ManualBacktestSettingsRequest(BaseModel):

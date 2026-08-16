@@ -301,6 +301,11 @@ export const addStock = (symbol) =>
 
 // `board` is 'MAIN' | 'SME' | undefined (both boards). Rows carry name, series, board, market_lot,
 // face_value, listing_date and ISIN, so every caller can show what a symbol actually is.
+// NSE's top gainers/losers, one blob covering every index bucket. Fetched from NSE at most once a
+// day (it only moves after the close) - `refresh` forces it.
+export const getMarketMovers = (refresh = false) =>
+  fetch(`/api/market-movers${refresh ? '?refresh=1' : ''}`).then(json)
+
 export const searchStocksMaster = (q = '', board) =>
   fetch(`/api/stocks-master?q=${encodeURIComponent(q)}${board ? `&board=${board}` : ''}`).then(json)
 

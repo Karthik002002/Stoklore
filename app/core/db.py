@@ -293,6 +293,25 @@ CREATE TABLE IF NOT EXISTS trade_accounts (
 -- of it. Callers filter by kind; the two never share an account, so the balances stay separate.
 ALTER TABLE trade_accounts ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'journal';
 
+-- Per-account trading costs, charged on BOTH sides of a round trip (see lib/tradeCosts.js for the
+-- arithmetic and where each field applies). Kept on the account, not the trade: the same broker and
+-- the same fill quality apply to everything filed under one wallet, and a rate typed once is a rate
+-- that stays right. Nothing derived from these is stored - net P&L is recomputed from the current
+-- settings every time, the same rule P&L/R:R/return% already follow.
+--   slippage_value + slippage_type - fill quality: rupees per share, or basis points of the fill.
+--   brokerage_flat  - rupees per order (the flat ₹20-a-side plans).
+--   brokerage_pct   - percent of turnover per side (percentage plans; both may apply, as brokers cap
+--                     a percentage plan at a flat fee).
+--   other_charges_pct - one combined percent of turnover per side standing in for STT, exchange
+--                     transaction charges, SEBI fees, stamp duty and GST. Deliberately one number:
+--                     the statutory rates differ by segment and change with every budget, and a
+--                     wrong-but-current single rate beats six stale ones.
+ALTER TABLE trade_accounts ADD COLUMN IF NOT EXISTS slippage_value REAL NOT NULL DEFAULT 0;
+ALTER TABLE trade_accounts ADD COLUMN IF NOT EXISTS slippage_type TEXT NOT NULL DEFAULT 'per_share';
+ALTER TABLE trade_accounts ADD COLUMN IF NOT EXISTS brokerage_flat REAL NOT NULL DEFAULT 0;
+ALTER TABLE trade_accounts ADD COLUMN IF NOT EXISTS brokerage_pct REAL NOT NULL DEFAULT 0;
+ALTER TABLE trade_accounts ADD COLUMN IF NOT EXISTS other_charges_pct REAL NOT NULL DEFAULT 0;
+
 -- Manually logged trades for the Manual backtest tab - a personal trade journal, not tied to
 -- price_history/NSE at all (entry/exit/P&L are exactly what the user typed in, not computed from
 -- market data). P&L, R:R, and return% are deliberately NOT stored here - they're derived from
@@ -411,6 +430,17 @@ CREATE INDEX IF NOT EXISTS stocks_master_name_idx ON stocks_master (name);
 -- one importer covers both files. `market_lot` matters far more on SME than on the main board:
 -- those scrips trade only in fixed lots, so a quantity that isn't a multiple of the lot is not a
 -- real trade. Both are nullable/defaulted, so rows imported before this existed read as MAIN.
+-- NSE's top gainers/losers table, one row per trading session. Keyed by the SESSION date parsed
+-- out of NSE's own timestamp (not by when it was fetched): the table only moves after the close,
+-- so re-fetching it during the day would spend requests to get the same numbers back. The whole
+-- normalised payload (every index bucket, both directions) is stored as one blob because it
+-- arrives as one - splitting it into rows would only be re-joined on the way out.
+CREATE TABLE IF NOT EXISTS market_movers (
+  trade_date DATE PRIMARY KEY,
+  payload JSONB NOT NULL,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 ALTER TABLE stocks_master ADD COLUMN IF NOT EXISTS board TEXT NOT NULL DEFAULT 'MAIN';
 ALTER TABLE stocks_master ADD COLUMN IF NOT EXISTS market_lot INTEGER;
 ALTER TABLE stocks_master ADD COLUMN IF NOT EXISTS face_value REAL;
@@ -1323,29 +1353,45 @@ def list_trade_accounts(kind="journal"):
         return conn.execute(sql + " ORDER BY created_at", params).fetchall()
 
 
+# The cost fields are passed as one dict rather than five more positional arguments - the create
+# signature was already at the limit of readable, and every caller has them together anyway.
+COST_FIELDS = ("slippage_value", "slippage_type", "brokerage_flat", "brokerage_pct", "other_charges_pct")
+COST_DEFAULTS = {"slippage_value": 0, "slippage_type": "per_share", "brokerage_flat": 0,
+                 "brokerage_pct": 0, "other_charges_pct": 0}
+
+
+def _costs(costs):
+    merged = {**COST_DEFAULTS, **(costs or {})}
+    return [merged[f] for f in COST_FIELDS]
+
+
 def create_trade_account(name, strategy, strategy_explanation, opening_balance,
                           max_position_size, max_position_size_type, max_position_count,
-                          kind="journal"):
+                          kind="journal", costs=None):
     with connect() as conn:
         row = conn.execute(
             "INSERT INTO trade_accounts (name, strategy, strategy_explanation, opening_balance, "
-            "max_position_size, max_position_size_type, max_position_count, kind) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            "max_position_size, max_position_size_type, max_position_count, kind, "
+            f"{', '.join(COST_FIELDS)}) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (name, strategy, strategy_explanation, opening_balance, max_position_size,
-             max_position_size_type, max_position_count, kind),
+             max_position_size_type, max_position_count, kind, *_costs(costs)),
         ).fetchone()
     return row["id"]
 
 
 def update_trade_account(account_id, name, strategy, strategy_explanation, opening_balance,
-                          max_position_size, max_position_size_type, max_position_count):
+                          max_position_size, max_position_size_type, max_position_count,
+                          costs=None):
     with connect() as conn:
         conn.execute(
             "UPDATE trade_accounts SET name = %s, strategy = %s, strategy_explanation = %s, "
             "opening_balance = %s, max_position_size = %s, max_position_size_type = %s, "
-            "max_position_count = %s WHERE id = %s",
+            "max_position_count = %s, "
+            + ", ".join(f"{f} = %s" for f in COST_FIELDS)
+            + " WHERE id = %s",
             (name, strategy, strategy_explanation, opening_balance, max_position_size,
-             max_position_size_type, max_position_count, account_id),
+             max_position_size_type, max_position_count, *_costs(costs), account_id),
         )
 
 
@@ -1653,6 +1699,28 @@ def list_balance_adjustments():
 def delete_balance_adjustment(adjustment_id):
     with connect() as conn:
         conn.execute("DELETE FROM balance_adjustments WHERE id = %s", (adjustment_id,))
+
+
+def get_latest_movers():
+    """The most recent stored gainers/losers snapshot, or None. Returns {trade_date, payload,
+    fetched_at} - callers need the date to decide whether to refresh and to label the panel."""
+    with connect() as conn:
+        return conn.execute(
+            "SELECT trade_date, payload, fetched_at FROM market_movers ORDER BY trade_date DESC LIMIT 1"
+        ).fetchone()
+
+
+def save_movers(trade_date, payload):
+    """Upsert one session's snapshot. Re-running on the same session date overwrites it, which is
+    what a manual refresh during market hours should do - the row is 'the state of that session',
+    not an append-only log."""
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO market_movers (trade_date, payload, fetched_at) VALUES (%s, %s, now()) "
+            "ON CONFLICT (trade_date) DO UPDATE SET payload = excluded.payload, "
+            "fetched_at = excluded.fetched_at",
+            (trade_date, Jsonb(payload)),
+        )
 
 
 def upsert_stocks_master(rows):

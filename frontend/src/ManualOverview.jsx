@@ -42,6 +42,7 @@ import {
   SWEET_SPOT,
 } from '@/lib/tradeMath'
 import { holdingComparison, holdingPeriodRows, tradeGapRows } from '@/lib/tradeStats'
+import { accountFor, accountHasCosts, accountsById, tradeNetPnl } from '@/lib/tradeCosts'
 import {
   createBalanceAdjustment,
   deleteBalanceAdjustment,
@@ -1033,6 +1034,21 @@ export default function ManualOverview({ trades, accountId }) {
 
   const pnls = useMemo(() => closed.map(tradePnl), [closed])
   const totalPnl = Math.round(pnls.reduce((s, p) => s + p, 0) * 100) / 100
+  // The same totals after this account's costs. Reported beside the gross ones rather than instead
+  // of them: the gap between the two pairs is the cost of trading, and it only reads as a cost when
+  // both numbers are on screen. Zero-cost accounts make the two identical, so the net cards only
+  // appear once some account actually charges something.
+  const byId = useMemo(() => accountsById(accounts), [accounts])
+  const anyCosts = useMemo(() => accounts.some(accountHasCosts), [accounts])
+  const netPnls = useMemo(() => closed.map((t) => tradeNetPnl(t, accountFor(t, byId)) ?? 0), [closed, byId])
+  const totalNetPnl = Math.round(netPnls.reduce((s, p) => s + p, 0) * 100) / 100
+  const totalCosts = Math.round((totalPnl - totalNetPnl) * 100) / 100
+  const avgNetPnl = closed.length ? Math.round((totalNetPnl / closed.length) * 100) / 100 : 0
+  const netWins = netPnls.filter((p) => p > 0)
+  const netWinRate = closed.length ? Math.round((netWins.length / closed.length) * 1000) / 10 : 0
+  const netGrossProfit = netWins.reduce((s, p) => s + p, 0)
+  const netGrossLoss = Math.abs(netPnls.filter((p) => p < 0).reduce((s, p) => s + p, 0))
+  const netProfitFactor = netGrossLoss > 0 ? Math.round((netGrossProfit / netGrossLoss) * 1000) / 1000 : null
   const wins = pnls.filter((p) => p > 0)
   const losses = pnls.filter((p) => p < 0)
   const winRate = closed.length ? Math.round((wins.length / closed.length) * 1000) / 10 : 0
@@ -1291,6 +1307,27 @@ export default function ManualOverview({ trades, accountId }) {
           valueClassName={avgPnl >= 0 ? 'text-up' : 'text-down'}
         />
       </div>
+
+      {anyCosts && (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StatCard
+            label="Net PnL (after costs)"
+            value={inr(totalNetPnl)}
+            valueClassName={totalNetPnl >= 0 ? 'text-up' : 'text-down'}
+            sub={`${inr(totalCosts)} of slippage, brokerage and charges`}
+          />
+          <StatCard label="Net win rate" value={`${netWinRate}%`} />
+          <StatCard
+            label="Net profit factor"
+            value={netProfitFactor == null ? '—' : fmt(netProfitFactor, 3)}
+          />
+          <StatCard
+            label="Avg net / trade"
+            value={inr(avgNetPnl)}
+            valueClassName={avgNetPnl >= 0 ? 'text-up' : 'text-down'}
+          />
+        </div>
+      )}
 
       {riskTrades.length > 0 ? (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

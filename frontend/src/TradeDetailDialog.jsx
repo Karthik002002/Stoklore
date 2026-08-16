@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { ChevronDownIcon, ChevronUpIcon, PencilIcon } from 'lucide-react'
 import ImageLightbox from '@/components/ImageLightbox'
 import { Badge } from '@/components/ui/badge'
@@ -18,6 +19,8 @@ import {
 } from '@/lib/manualTrades'
 import { stopOverrunPct, targetCapturePct } from '@/lib/tradeStats'
 import { contextGap, contextReadings, excursionReading, hasContext } from '@/lib/tradeContext'
+import { tradeCosts, tradeNetPnl, tradeNetReturnPct } from '@/lib/tradeCosts'
+import { getTradeAccounts } from '@/services/api'
 
 const TONE_CLASS = { good: 'text-up', bad: 'text-down', warn: 'text-amber-600', neutral: '' }
 
@@ -75,6 +78,11 @@ function ExcursionBars({ ex }) {
 // the modal walks exactly what the table shows rather than the whole journal. Down goes further
 // down that list - older, since the table is newest-first.
 export default function TradeDetailDialog({ open, onOpenChange, trade, trades = [], onSelect, onEdit }) {
+  // Cached by the pages that open this dialog, so this is a cache read rather than a fetch.
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['tradeAccounts'],
+    queryFn: () => getTradeAccounts(),
+  })
   const [lightboxOpen, setLightboxOpen] = useState(false)
 
   const index = trade ? trades.findIndex((t) => t.id === trade.id) : -1
@@ -124,6 +132,12 @@ export default function TradeDetailDialog({ open, onOpenChange, trade, trades = 
 
   const pnl = tradePnl(trade)
   const returnPct = tradeReturnPct(trade)
+  // Costs come from the account the trade was filed under - an unassigned trade has no rate card,
+  // so it shows gross only rather than implying it traded for free.
+  const account = (accounts ?? []).find((a) => a.id === trade.account_id) ?? null
+  const costs = tradeCosts(trade, account)
+  const net = tradeNetPnl(trade, account)
+  const netPct = tradeNetReturnPct(trade, account)
   const meta = trade.result ? RESULT_META[trade.result] : null
   const readings = contextReadings(trade)
   const gap = contextGap(trade)
@@ -184,6 +198,14 @@ export default function TradeDetailDialog({ open, onOpenChange, trade, trades = 
                 <span className={`text-lg tabular-nums ${pnl >= 0 ? 'text-up' : 'text-down'}`}>
                   {inr(pnl)}
                 </span>
+                {net != null && costs?.total > 0 && (
+                  <span
+                    className={`text-sm tabular-nums ${net >= 0 ? 'text-up' : 'text-down'}`}
+                    title="Net of this account's slippage, brokerage and charges"
+                  >
+                    {inr(net)} net
+                  </span>
+                )}
                 <Button size="sm" variant="outline" onClick={() => onEdit(trade)}>
                   <PencilIcon className="size-3.5" /> Edit
                 </Button>
@@ -209,6 +231,21 @@ export default function TradeDetailDialog({ open, onOpenChange, trade, trades = 
                   sub={trade.exited_at ? undefined : 'Not recorded'}
                 />
                 <Stat label="Planned R:R" value={tradeRR(trade) != null ? `${tradeRR(trade)}` : null} />
+                <Stat
+                  label="Costs"
+                  value={costs?.total ? inr(costs.total) : null}
+                  sub={
+                    costs?.total
+                      ? `${inr(costs.slippage)} slip · ${inr(costs.brokerage)} brok · ${inr(costs.charges)} chg${costs.roundTrip ? '' : ' · entry only'}`
+                      : undefined
+                  }
+                />
+                <Stat
+                  label="Net P&L"
+                  value={net != null ? inr(net) : null}
+                  sub={netPct != null ? `${netPct}%` : undefined}
+                  tone={net == null ? undefined : net >= 0 ? 'good' : 'bad'}
+                />
                 <Stat
                   label="Result in R"
                   value={r != null ? `${r}R` : null}

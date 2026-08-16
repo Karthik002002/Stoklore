@@ -111,6 +111,14 @@ export const tradeAccountSchema = z.object({
   max_position_size: optionalNonNegative('Max position size'),
   max_position_size_type: z.enum(['currency', 'percentage']),
   max_position_count: optionalNonNegative('Max open positions'),
+  // Trading costs, charged per side (see lib/tradeCosts.js). Blank means zero rather than "unset":
+  // an account with no rate typed in trades for free, which is exactly what it did before these
+  // fields existed.
+  slippage_value: optionalNonNegative('Slippage').transform((v) => v ?? 0),
+  slippage_type: z.enum(['per_share', 'bps']),
+  brokerage_flat: optionalNonNegative('Brokerage per order').transform((v) => v ?? 0),
+  brokerage_pct: optionalNonNegative('Brokerage %').transform((v) => v ?? 0),
+  other_charges_pct: optionalNonNegative('Other charges %').transform((v) => v ?? 0),
 })
 
 // --- Balance adjustment (Overview > Adjust) ----------------------------------------------------

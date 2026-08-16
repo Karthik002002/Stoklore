@@ -38,8 +38,8 @@ import {
   getEventsAttention,
   getIndices,
   getMacroIndices,
+  getMarketMovers,
   getStocks,
-  getTopNews,
   getWatchlist,
   getWatchlistNames,
   pingActivity,
@@ -299,37 +299,135 @@ function EventsPanel({ events }) {
   )
 }
 
-function NewsPanel({ news, error }) {
+// NSE's own top gainers/losers table (nseindia.com/market-data/top-gainers-losers), served from the
+// backend's once-a-day cache. Two things shape this panel:
+//
+// - The payload carries SEVEN index buckets (NIFTY 50 / BANK NIFTY / NIFTY NEXT 50 / >Rs20 / <Rs20 /
+//   F&O / All Securities) for both directions, so the bucket is a selector, exactly like NSE's own
+//   page - showing one hardcoded cut would throw away six sevenths of a response already fetched.
+// - It's a post-close snapshot, not a live feed. The session date it belongs to is in the header,
+//   so a Monday morning reading of Friday's table can never be mistaken for today's move.
+const MOVER_DIRECTIONS = [
+  { key: 'gainers', label: 'Gainers' },
+  { key: 'losers', label: 'Losers' },
+]
+
+// Turnover arrives in ₹ lakh. Crore is how an Indian trader reads a day's value traded.
+const crore = (lakh) => (lakh == null ? '—' : `${fmt(lakh / 100, lakh >= 10000 ? 0 : 1)}`)
+const volume = (n) =>
+  n == null ? '—' : n >= 1e7 ? `${fmt(n / 1e7, 1)}Cr` : n >= 1e5 ? `${fmt(n / 1e5, 1)}L` : num(n)
+
+function MoversPanel({ data, isFetching, onRefresh }) {
+  const [bucket, setBucket] = useState('allSec')
+  const [direction, setDirection] = useState('gainers')
+  const groups = data?.groups ?? []
+  const active = groups.find((g) => g.key === bucket) ?? groups[0]
+  const rows = active?.[direction] ?? []
+
   return (
-    <TerminalPanel title="Market News" accent="text-blue-500">
-      {error ? (
-        <PanelEmpty>Cogencis isn’t configured — add a token in Settings → Cogencis.</PanelEmpty>
-      ) : !news ? (
+    <TerminalPanel
+      title="Top Gainers / Losers"
+      accent="text-blue-500"
+      actions={
+        <>
+          {groups.length > 0 && (
+            <select
+              value={active?.key ?? ''}
+              onChange={(e) => setBucket(e.target.value)}
+              className="h-6 rounded border bg-background px-1 font-mono text-[10px] uppercase"
+              aria-label="Index bucket"
+            >
+              {groups.map((g) => (
+                <option key={g.key} value={g.key}>
+                  {g.label}
+                </option>
+              ))}
+            </select>
+          )}
+          <RefreshButton busy={isFetching} onClick={onRefresh} label="Refresh movers" />
+        </>
+      }
+    >
+      {!data ? (
         <PanelLoading />
-      ) : !Array.isArray(news?.items) || news?.items?.length === 0 ? (
-        <PanelEmpty>No stories cached yet.</PanelEmpty>
       ) : (
-        news.items?.slice(0, 12).map((n) => (
-          <a
-            key={n.url}
-            href={n.url}
-            target="_blank"
-            rel="noreferrer"
-            className="flex items-center gap-2 border-b border-border/40 px-2 py-1 font-mono text-xs last:border-0 hover:bg-muted/40"
-          >
-            <span className="shrink-0 text-[10px] text-muted-foreground">
-              {n.published_at ? formatDate(n.published_at) : '—'}
+        <>
+          <div className="flex items-center gap-1 border-b bg-muted/20 px-1.5 py-1 font-mono text-[10px]">
+            {MOVER_DIRECTIONS.map((d) => (
+              <Button
+                key={d.key}
+                variant={direction === d.key ? 'secondary' : 'ghost'}
+                size="sm"
+                className={`h-5 font-mono text-[10px] uppercase ${
+                  direction === d.key ? (d.key === 'gainers' ? 'text-up' : 'text-down') : ''
+                }`}
+                onClick={() => setDirection(d.key)}
+              >
+                {d.label}
+              </Button>
+            ))}
+            <span
+              className="ml-auto tracking-widest text-muted-foreground uppercase"
+              title={
+                data.fetched_at ? `Fetched ${new Date(data.fetched_at).toLocaleString('en-GB')}` : undefined
+              }
+            >
+              {data.stale && <span className="mr-1 text-amber-500">STALE</span>}
+              {data.timestamp ?? data.trade_date ?? '—'}
             </span>
-            <span className="truncate" title={n.title}>
-              {n.title}
-            </span>
-            {n.affected_symbols?.length > 0 && (
-              <span className="ml-auto shrink-0 text-[10px] text-amber-500">
-                {n.affected_symbols.slice(0, 2).join(' ')}
-              </span>
-            )}
-          </a>
-        ))
+          </div>
+
+          {rows.length === 0 ? (
+            <PanelEmpty>Nothing in this bucket for that session.</PanelEmpty>
+          ) : (
+            <table className="w-full font-mono text-xs">
+              <thead>
+                <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
+                  <th className="px-2 py-1 text-left font-medium">Symbol</th>
+                  <th className="px-2 py-1 text-right font-medium">LTP</th>
+                  <th className="px-2 py-1 text-right font-medium">Chg%</th>
+                  <th className="px-2 py-1 text-right font-medium">Vol</th>
+                  <th className="px-2 py-1 text-right font-medium">₹Cr</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.slice(0, 12).map((r) => (
+                  <tr key={r.symbol} className="border-b border-border/40 last:border-0 hover:bg-muted/40">
+                    <td className="px-2 py-1">
+                      <Link
+                        to="/stock/$symbol"
+                        params={{ symbol: r.symbol }}
+                        className="font-semibold hover:underline"
+                      >
+                        {r.symbol}
+                      </Link>
+                      {/* An ex-dividend/bonus date is often the entire reason a name is in this
+                          table - marking it stops a mechanical drop reading as a sell-off. */}
+                      {r.ca_purpose && (
+                        <span className="ml-1 text-[9px] text-amber-500" title={r.ca_purpose}>
+                          CA
+                        </span>
+                      )}
+                      {r.series && r.series !== 'EQ' && (
+                        <span className="ml-1 text-[9px] text-muted-foreground">{r.series}</span>
+                      )}
+                    </td>
+                    <td className="px-2 py-1 text-right tabular-nums">{num(r.ltp)}</td>
+                    <td className={`px-2 py-1 text-right tabular-nums ${pctClass(r.perChange)}`}>
+                      {arrow(r.perChange)} {signedPct(r.perChange)}
+                    </td>
+                    <td className="px-2 py-1 text-right text-muted-foreground tabular-nums">
+                      {volume(r.trade_quantity)}
+                    </td>
+                    <td className="px-2 py-1 text-right text-muted-foreground tabular-nums">
+                      {crore(r.turnover)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
       )}
     </TerminalPanel>
   )
@@ -786,8 +884,14 @@ export default function StocksList() {
     queryFn: () => getEventsAttention(listParam),
     refetchInterval: 120_000,
   })
-  // Needs a Cogencis token - a 400 here is a config state, not a failure worth retrying.
-  const newsQuery = useQuery({ queryKey: ['topNews'], queryFn: getTopNews, retry: false })
+  // NSE's post-close gainers/losers table. The backend only goes out to NSE once a calendar day
+  // (the table doesn't move intraday), so polling it here would just re-read the same cached row -
+  // an hourly refetch is enough to pick up the new session after a close.
+  const moversQuery = useQuery({
+    queryKey: ['marketMovers'],
+    queryFn: () => getMarketMovers(),
+    refetchInterval: 3_600_000,
+  })
   // NSE's full index-performance table (nseindia.com/market-data/index-performances) - slow-rotating
   // macro context, 5min cache on the backend. Polled less often than the watchlist's own prices.
   const macroQuery = useQuery({
@@ -991,7 +1095,14 @@ export default function StocksList() {
       <div className="grid gap-2 lg:grid-cols-3">
         <AttentionPanel attention={attention} />
         <EventsPanel events={events} />
-        <NewsPanel news={newsQuery.data} error={newsQuery.isError} />
+        <MoversPanel
+          data={moversQuery.data}
+          isFetching={moversQuery.isFetching}
+          onRefresh={async () => {
+            await getMarketMovers(true)
+            moversQuery.refetch()
+          }}
+        />
       </div>
 
       <MacroIndicesPanel

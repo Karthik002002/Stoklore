@@ -3,16 +3,22 @@
 // Pure and dependency-free (relative import only) so tradeAccounts.selfcheck.mjs runs it under
 // plain `node`, same as tradeStats.js.
 import { tradePnl } from './manualTrades.js'
+import { tradeNetPnl } from './tradeCosts.js'
 
 export const tradesForAccount = (trades, accountId) =>
   accountId == null ? (trades ?? []) : (trades ?? []).filter((t) => t.account_id === accountId)
 
 /** Live wallet balance: opening balance + deposits/withdrawals + realized P&L of closed trades.
  *  The server computes this same figure once per trade (db.account_balance_at) and freezes it onto
- *  the row as account_balance_at_trade - this one is the running "where is it now" number. */
+ *  the row as account_balance_at_trade - this one is the running "where is it now" number.
+ *
+ *  Realized P&L here is NET of the account's trading costs. A balance is the money actually in the
+ *  wallet, and slippage/brokerage/charges left it - showing gross here would be the one number in
+ *  the app that's wrong on purpose. (Every other surface shows gross and net side by side; a
+ *  balance has no room for two answers.) An account with no costs configured is unaffected. */
 export function accountBalance(account, trades, adjustments) {
   if (!account) return null
-  const realized = (trades ?? []).reduce((sum, t) => sum + (tradePnl(t) ?? 0), 0)
+  const realized = (trades ?? []).reduce((sum, t) => sum + (tradeNetPnl(t, account) ?? 0), 0)
   const moved = (adjustments ?? []).reduce((sum, a) => sum + (a.type === 'add' ? a.amount : -a.amount), 0)
   return Math.round((account.opening_balance + moved + realized) * 100) / 100
 }

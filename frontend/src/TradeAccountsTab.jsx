@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { formatDate, inr } from '@/lib/format'
 import { balanceAdjustmentSchema, tradeAccountSchema } from '@/lib/schemas'
 import { accountBalance, positionSizeCap, tradesForAccount } from '@/lib/tradeAccounts'
+import { accountHasCosts, roundTripCost } from '@/lib/tradeCosts'
 import {
   createBalanceAdjustment,
   createTradeAccount,
@@ -30,6 +31,11 @@ const BLANK = {
   max_position_size: '',
   max_position_size_type: 'currency',
   max_position_count: '',
+  slippage_value: '',
+  slippage_type: 'per_share',
+  brokerage_flat: '',
+  brokerage_pct: '',
+  other_charges_pct: '',
 }
 
 const ADJUSTMENT_TYPE_OPTIONS = [
@@ -45,12 +51,124 @@ const formFrom = (a) => ({
   max_position_size: a.max_position_size != null ? String(a.max_position_size) : '',
   max_position_size_type: a.max_position_size_type ?? 'currency',
   max_position_count: a.max_position_count != null ? String(a.max_position_count) : '',
+  slippage_value: a.slippage_value ? String(a.slippage_value) : '',
+  slippage_type: a.slippage_type ?? 'per_share',
+  brokerage_flat: a.brokerage_flat ? String(a.brokerage_flat) : '',
+  brokerage_pct: a.brokerage_pct ? String(a.brokerage_pct) : '',
+  other_charges_pct: a.other_charges_pct ? String(a.other_charges_pct) : '',
 })
+
+const SLIPPAGE_TYPE_OPTIONS = [
+  { value: 'per_share', label: '₹ / share' },
+  { value: 'bps', label: 'bps' },
+]
+
+// What the preview prices. A round trip on a mid-sized position is the number that makes a rate
+// card real - "0.1% of turnover" means nothing until it's shown as rupees off a trade.
+const PREVIEW_PRICE = 500
+const PREVIEW_QTY = 100
 
 const SIZE_TYPE_OPTIONS = [
   { value: 'currency', label: '₹' },
   { value: 'percentage', label: '% of balance' },
 ]
+
+// Trading costs. Every field is charged PER SIDE, so the preview underneath prices a full round
+// trip - that is the number the trade actually pays, and quoting a one-way rate is how a cost model
+// ends up half as expensive as reality.
+//
+// `other charges` is one combined percentage on purpose: STT, exchange transaction charges, SEBI
+// turnover fees, stamp duty and GST differ by segment and move with every budget, so a single rate
+// you can keep current beats six that go stale.
+function CostFields({ form }) {
+  const values = form.watch()
+  const preview = roundTripCost(
+    {
+      slippage_value: values.slippage_value,
+      slippage_type: values.slippage_type,
+      brokerage_flat: values.brokerage_flat,
+      brokerage_pct: values.brokerage_pct,
+      other_charges_pct: values.other_charges_pct,
+    },
+    PREVIEW_PRICE,
+    PREVIEW_QTY,
+  )
+
+  return (
+    <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/[0.04] p-3">
+      <p className="text-sm font-medium text-amber-600 dark:text-amber-400">Trading costs</p>
+      <p className="text-xs text-muted-foreground">
+        Charged on both sides of every trade filed under this account. Net P&amp;L is recomputed from these
+        settings each time — change a rate and your whole history re-prices.
+      </p>
+
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Slippage" error={form.formState.errors.slippage_value} hint="Per side.">
+          <div className="flex gap-2">
+            <Input type="number" step="0.01" min="0" placeholder="0" {...form.register('slippage_value')} />
+            <Controller
+              control={form.control}
+              name="slippage_type"
+              render={({ field }) => (
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <SelectTrigger className="w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SLIPPAGE_TYPE_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            />
+          </div>
+        </Field>
+        <TextField
+          form={form}
+          name="brokerage_flat"
+          label="Brokerage per order (₹)"
+          type="number"
+          step="0.01"
+          min="0"
+          placeholder="0"
+          hint="The flat ₹20-a-side kind."
+        />
+        <TextField
+          form={form}
+          name="brokerage_pct"
+          label="Brokerage (% of turnover)"
+          type="number"
+          step="0.001"
+          min="0"
+          placeholder="0"
+          hint="Stacks with the flat fee, as capped plans bill."
+        />
+        <TextField
+          form={form}
+          name="other_charges_pct"
+          label="Other charges (% of turnover)"
+          type="number"
+          step="0.001"
+          min="0"
+          placeholder="0"
+          hint="STT, exchange, SEBI, stamp duty, GST — combined."
+        />
+      </div>
+
+      <p className="border-t border-amber-500/30 pt-2 text-xs text-muted-foreground">
+        A round trip of {PREVIEW_QTY} shares at {inr(PREVIEW_PRICE)} costs{' '}
+        <span className="font-semibold text-amber-600 tabular-nums dark:text-amber-400">
+          {inr(preview.total)}
+        </span>{' '}
+        — {inr(preview.slippage)} slippage · {inr(preview.brokerage)} brokerage · {inr(preview.charges)}{' '}
+        charges.
+      </p>
+    </div>
+  )
+}
 
 function AccountForm({ account, onDone, kind }) {
   const queryClient = useQueryClient()
@@ -152,6 +270,8 @@ function AccountForm({ account, onDone, kind }) {
           hint="How many trades may be open on this account at once."
         />
       </div>
+
+      <CostFields form={form} />
 
       <div className="flex gap-2">
         <Button type="submit" size="sm" disabled={save.isPending}>
@@ -319,6 +439,14 @@ function AccountCard({ account, trades, adjustments, onEdit, kind }) {
           <p className="text-muted-foreground">Max open / trades</p>
           <p className="font-medium tabular-nums">
             {account.max_position_count ?? '—'} / {mine.length}
+          </p>
+        </div>
+        <div className="col-span-2">
+          <p className="text-muted-foreground">Cost per round trip</p>
+          <p className="font-medium tabular-nums">
+            {accountHasCosts(account)
+              ? `${inr(roundTripCost(account, PREVIEW_PRICE, PREVIEW_QTY).total)} on ${PREVIEW_QTY} × ${inr(PREVIEW_PRICE)}`
+              : 'None set — P&L is gross'}
           </p>
         </div>
       </div>

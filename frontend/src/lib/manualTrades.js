@@ -22,6 +22,31 @@ export function tradeRR(t) {
   return Math.round((reward / risk) * 100) / 100
 }
 
+/** R:R for the trades table, with the exit standing in for a target that was never set.
+ *
+ * Most trades in this journal are managed out by hand rather than at a pre-set level, so tradeRR
+ * above (plan only) is null for them and the column read as a column of dashes. Falling back to
+ * the exit answers the question the column is actually asked: what did this trade return per unit
+ * of risk?
+ *
+ * Two deliberate differences from the planned ratio:
+ *  - the fallback is SIGNED against the trade's direction, so a stopped-out long reads -1, not +1.
+ *    An absolute value would print a losing trade as a healthy reward.
+ *  - `planned: false` comes back with it, so the caller can mark the number as realised. Mixing
+ *    "what I aimed for" and "what I got" in one column without saying which is which would make
+ *    the whole column unreadable.
+ */
+export function tradeRRDisplay(t) {
+  const planned = tradeRR(t)
+  if (planned != null) return { rr: planned, planned: true }
+  if (t.stop_loss == null || t.exit_price == null) return null
+  const risk = Math.abs(t.entry_price - t.stop_loss)
+  if (risk === 0) return null
+  const move = t.exit_price - t.entry_price
+  const reward = t.direction === 'short' ? -move : move
+  return { rr: Math.round((reward / risk) * 100) / 100, planned: false }
+}
+
 // A trade that lands within this many rupees of flat is "neutral" rather than a token win/loss -
 // scratching out at +₹12 is not a winning trade, and counting it as one flatters the win rate and
 // every stat built on it. Exact-zero P&L (the old rule) essentially never happens, so before this

@@ -54,6 +54,67 @@ def get_movers(count=25):
     return list(movers.values())[:count]
 
 
+# NSE's top gainers/losers table (nseindia.com/market-data/top-gainers-losers). One request per
+# direction returns EVERY bucket at once - the seven index cuts the page's own dropdown offers -
+# so this is two fetches for the whole table, not two per bucket.
+#
+# `legends` in the payload maps bucket key -> display label, which is what the UI's selector shows;
+# reading it from the response rather than hardcoding means a bucket NSE adds or renames follows
+# automatically.
+MOVER_FIELDS = ("symbol", "series", "ltp", "prev_price", "perChange", "trade_quantity", "turnover")
+
+
+def _mover_row(row):
+    """One row of the movers table. `net_price` is skipped deliberately: it usually equals
+    perChange but sometimes carries a different basis (an ex-dividend day, for instance), so the
+    rupee move is derived from ltp - prev_price where both are known and can be checked."""
+    ltp, prev = row.get("ltp"), row.get("prev_price")
+    ca = (row.get("ca_purpose") or "").strip()
+    return {
+        **{k: row.get(k) for k in MOVER_FIELDS},
+        "change": round(ltp - prev, 2) if ltp is not None and prev is not None else None,
+        # '-' is NSE's own "nothing here"; keep only a real corporate action, which is often the
+        # whole explanation for a name sitting at the top or bottom of the table.
+        "ca_purpose": ca if ca and ca != "-" else None,
+        "ca_ex_date": row.get("ca_ex_dt") or None,
+    }
+
+
+def get_top_movers():
+    """NSE's top gainers and losers for every index bucket, in one payload.
+
+    Returns {timestamp, trade_date, groups: [{key, label, gainers: [...], losers: [...]}]}.
+    `trade_date` is the ISO session date parsed out of NSE's own '14-Aug-2026 16:00:00' timestamp -
+    the table is a post-close snapshot, so the date it belongs to is the number worth storing and
+    showing, not the moment it was fetched.
+    """
+    gainers = _nse_json("/api/live-analysis-variations?index=gainers")
+    losers = _nse_json("/api/live-analysis-variations?index=loosers")
+
+    labels = {key: label for key, label in gainers.get("legends", []) or []}
+    labels.update({key: label for key, label in losers.get("legends", []) or []})
+
+    timestamp = None
+    groups = []
+    for key, label in labels.items():
+        up, down = gainers.get(key) or {}, losers.get(key) or {}
+        timestamp = timestamp or up.get("timestamp") or down.get("timestamp")
+        groups.append({
+            "key": key,
+            "label": label,
+            "gainers": [_mover_row(r) for r in up.get("data") or []],
+            "losers": [_mover_row(r) for r in down.get("data") or []],
+        })
+
+    trade_date = None
+    if timestamp:
+        try:
+            trade_date = datetime.strptime(timestamp.split(" ")[0], "%d-%b-%Y").date().isoformat()
+        except ValueError:
+            trade_date = None
+    return {"timestamp": timestamp, "trade_date": trade_date, "groups": groups}
+
+
 def _jsonld_article_body(soup):
     """Many news CMSes (this includes Economic Times/ETEnergyworld) embed the full plain-text
     article in a schema.org NewsArticle/Article JSON-LD block for SEO - the visible page itself
@@ -351,9 +412,40 @@ def _fast_quote(ticker):
     return {"price": last, "changePercent": change}
 
 
+def _fallback_quote(symbol):
+    """moneycontrol's chart feed, used only when Yahoo has no price for a symbol.
+
+    Yahoo simply does not carry most NSE SME (EMERGE) scrips - every suffix comes back "possibly
+    delisted" - so without a second source an SME name has no price anywhere in the app and a paper
+    order on one fails with "no live price available". moneycontrol keys on the same NSE symbol, so
+    there is nothing to map.
+
+    Imported lazily: this is the cold path, and scraper is imported by nearly everything.
+    """
+    try:
+        from app.core import moneycontrol_local
+
+        return moneycontrol_local.last_quote(symbol)
+    except Exception:
+        return None
+
+
 def get_price(symbol):
-    """Fast live price + day change% for list views."""
-    return _fast_quote(_ticker(f"{symbol}.NS"))
+    """Fast live price + day change% for list views. Falls back to moneycontrol when Yahoo has
+    nothing (see _fallback_quote) rather than reporting a null price for a tradable symbol."""
+    # yfinance doesn't return an empty quote for a symbol it has never heard of - fast_info raises
+    # (KeyError 'exchangeTimezoneName') while trying to read metadata that isn't there. Catching it
+    # here is what lets the fallback run at all.
+    try:
+        quote = _fast_quote(_ticker(f"{symbol}.NS"))
+    except Exception:
+        quote = {"price": None, "changePercent": None}
+    if quote.get("price") is not None:
+        return quote
+    fallback = _fallback_quote(symbol)
+    if fallback is None:
+        return quote
+    return {"price": fallback["price"], "changePercent": fallback["changePercent"]}
 
 
 def get_index_price(name):
@@ -362,9 +454,30 @@ def get_index_price(name):
 
 
 def get_quote(symbol):
-    """Full live fundamentals for the stock detail page."""
-    info = _ticker(f"{symbol}.NS").info
-    return {k: info.get(k) for k in QUOTE_FIELDS}
+    """Full live fundamentals for the stock detail page.
+
+    When Yahoo has no price (SME scrips, see _fallback_quote) the price fields are filled from
+    moneycontrol and the fundamentals stay None - a price with no P/E is the honest shape of what
+    that source knows, and it is what every quote-dependent path (paper order entry, the exit
+    engine, the stocks list) actually needs.
+    """
+    try:
+        info = _ticker(f"{symbol}.NS").info
+    except Exception:
+        info = {}
+    quote = {k: info.get(k) for k in QUOTE_FIELDS}
+    if quote.get("currentPrice") is not None:
+        return quote
+    fallback = _fallback_quote(symbol)
+    if fallback is None:
+        return quote
+    return {
+        **quote,
+        "currentPrice": fallback["price"],
+        "previousClose": fallback["previousClose"],
+        "regularMarketChangePercent": fallback["changePercent"],
+        "regularMarketVolume": fallback["volume"],
+    }
 
 
 # UI range -> (yahoo period, bar interval)

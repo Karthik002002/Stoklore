@@ -11,6 +11,7 @@ import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/
 import { compact, fmt, inr } from '@/lib/format'
 import { tradePnl } from '@/lib/manualTrades'
 import { tradesForAccount } from '@/lib/tradeAccounts'
+import { accountHasCosts, roundTripCost } from '@/lib/tradeCosts'
 import {
   correlationMatrix,
   dailyTotals,
@@ -963,10 +964,23 @@ function SingleMode({ config, set, accounts, allTrades }) {
   }, [allTrades, account])
   const pool = useMemo(() => (pnls.length ? poolStats(pnls) : null), [pnls])
 
-  // A fresh account should open at its own opening balance, not at a generic default - but never
-  // clobber a balance the user typed in, so this only fires on an actual account change.
+  // A fresh account should open at its own opening balance and its own friction, not at a generic
+  // default - but never clobber values the user typed in, so this only fires on an actual account
+  // change. The slippage seed is the account's real cost of a round trip at this pool's average
+  // position size, which is a far better starting guess than ₹0 and is exactly the number the
+  // journal now charges those trades.
   useEffect(() => {
     if (selected?.opening_balance) set({ startBalance: selected.opening_balance })
+    if (selected && accountHasCosts(selected)) {
+      const sample = tradesForAccount(allTrades, account)
+      const avgPrice = sample.length
+        ? sample.reduce((s, t) => s + (t.entry_price ?? 0), 0) / sample.length
+        : 0
+      const avgQty = sample.length ? sample.reduce((s, t) => s + (t.quantity ?? 0), 0) / sample.length : 0
+      if (avgPrice > 0 && avgQty > 0) {
+        set({ slip: Math.round(roundTripCost(selected, avgPrice, avgQty).total) })
+      }
+    }
     setResult(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [account])

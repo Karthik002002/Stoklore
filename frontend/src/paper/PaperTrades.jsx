@@ -1,6 +1,7 @@
+import { useMemo } from 'react'
 import { useFieldArray, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { XIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Field, SelectField, TextField } from '@/components/form'
@@ -13,8 +14,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Controller } from 'react-hook-form'
 import { formatDateTime, inr } from '@/lib/format'
 import { tradePnl, tradeReturnPct } from '@/lib/manualTrades'
+import { accountFor, accountHasCosts, accountsById, tradeCosts, tradeNetPnl } from '@/lib/tradeCosts'
 import { paperOrderSchema } from '@/lib/schemas'
-import { createPaperOrder } from '@/services/api'
+import { createPaperOrder, getTradeAccounts } from '@/services/api'
 
 const DIRECTION_OPTIONS = [
   { value: 'long', label: 'Buy (Long)' },
@@ -189,6 +191,14 @@ const EXIT_REASONS = ['Hit SL', 'Hit Target', 'Manual Close']
 const exitReason = (t) => (t.tags ?? []).find((tag) => EXIT_REASONS.includes(tag)) ?? '—'
 
 function HistoryLog({ trades }) {
+  // Paper accounts carry the same cost settings as journal ones, so a paper P&L and a journal P&L
+  // are finally comparable numbers rather than one gross and one net.
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['tradeAccounts', 'paper'],
+    queryFn: () => getTradeAccounts('paper'),
+  })
+  const byId = useMemo(() => accountsById(accounts), [accounts])
+  const anyCosts = useMemo(() => accounts.some(accountHasCosts), [accounts])
   if (trades.length === 0) {
     return (
       <p className="rounded-xl border bg-card py-12 text-center text-sm text-muted-foreground">
@@ -209,6 +219,14 @@ function HistoryLog({ trades }) {
             <TableHead className="text-right">Exit</TableHead>
             <TableHead>Reason</TableHead>
             <TableHead className="text-right">Realized</TableHead>
+            {anyCosts && (
+              <TableHead
+                className="text-right"
+                title="Realized P&L minus this paper account's slippage, brokerage and charges on both sides."
+              >
+                Net
+              </TableHead>
+            )}
             <TableHead className="text-right">Return</TableHead>
           </TableRow>
         </TableHeader>
@@ -216,6 +234,8 @@ function HistoryLog({ trades }) {
           {trades.map((t) => {
             const pnl = tradePnl(t)
             const ret = tradeReturnPct(t)
+            const costs = tradeCosts(t, accountFor(t, byId))
+            const net = tradeNetPnl(t, accountFor(t, byId))
             return (
               <TableRow key={t.id}>
                 <TableCell className="whitespace-nowrap">
@@ -232,6 +252,14 @@ function HistoryLog({ trades }) {
                 <TableCell className={`text-right tabular-nums ${pnl >= 0 ? 'text-up' : 'text-down'}`}>
                   {inr(pnl)}
                 </TableCell>
+                {anyCosts && (
+                  <TableCell
+                    className={`text-right tabular-nums ${net == null ? '' : net >= 0 ? 'text-up' : 'text-down'}`}
+                    title={costs ? `Costs ${inr(costs.total)}` : undefined}
+                  >
+                    {net == null ? '—' : inr(net)}
+                  </TableCell>
+                )}
                 <TableCell className={`text-right tabular-nums ${ret >= 0 ? 'text-up' : 'text-down'}`}>
                   {ret == null ? '—' : `${ret}%`}
                 </TableCell>

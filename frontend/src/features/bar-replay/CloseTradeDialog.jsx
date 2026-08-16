@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { SelectField, TagField, TextAreaField } from '@/components/form'
 import { Button } from '@/components/ui/button'
@@ -10,8 +10,9 @@ import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { inr } from '@/lib/format'
 import { autoResult, EMOTIONS, NEUTRAL_PNL_BAND, tradePnl } from '@/lib/manualTrades'
+import { tradeCosts, tradeNetPnl } from '@/lib/tradeCosts'
 import { closeTradeSchema } from '@/lib/schemas'
-import { createManualTrade, uploadManualTradeImage } from '@/services/api'
+import { createManualTrade, getTradeAccounts, uploadManualTradeImage } from '@/services/api'
 import { CLOSE_REASON_LABEL } from './orderEngine'
 
 const RESULT_OPTIONS = [
@@ -64,14 +65,24 @@ export default function CloseTradeDialog({
   const stopLossPrice = reason === 'stop_loss' ? leg?.price : (order?.stopLosses?.[0]?.price ?? null)
   const targetPrice = reason === 'target' ? leg?.price : (order?.targets?.[0]?.price ?? null)
 
-  const pnl = order
-    ? tradePnl({
+  const closingTrade = order
+    ? {
         direction: order.direction,
         entry_price: order.entryPrice,
         exit_price: exitPrice,
         quantity,
-      })
+      }
     : null
+  const pnl = closingTrade ? tradePnl(closingTrade) : null
+  // What this close costs under the account it will be journaled to - shown before you confirm,
+  // because "profit" and "profit after costs" are not always the same verdict on a small winner.
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['tradeAccounts'],
+    queryFn: () => getTradeAccounts(),
+  })
+  const account = accounts.find((a) => a.id === accountId) ?? null
+  const costs = closingTrade ? tradeCosts(closingTrade, account) : null
+  const net = closingTrade ? tradeNetPnl(closingTrade, account) : null
 
   // `quantity` matters here: autoResult multiplies by it to get ₹ P&L, and the neutral band is in
   // rupees. Omitting it (as this dialog used to) makes tradePnl return NaN, which classified
@@ -153,12 +164,19 @@ export default function CloseTradeDialog({
             <span>
               {quantity} @ {inr(order.entryPrice)} → {inr(exitPrice)}
             </span>
-            <span
-              className={`font-semibold tabular-nums ${
-                computedResult === 'neutral' ? '' : pnl >= 0 ? 'text-up' : 'text-down'
-              }`}
-            >
-              {inr(pnl)}
+            <span className="text-right">
+              <span
+                className={`font-semibold tabular-nums ${
+                  computedResult === 'neutral' ? '' : pnl >= 0 ? 'text-up' : 'text-down'
+                }`}
+              >
+                {inr(pnl)}
+              </span>
+              {costs?.total > 0 && (
+                <span className="block text-[11px] text-muted-foreground tabular-nums">
+                  {inr(net)} net · {inr(costs.total)} costs
+                </span>
+              )}
             </span>
           </div>
 

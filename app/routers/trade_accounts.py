@@ -29,6 +29,7 @@ def create_trade_account(req: TradeAccountRequest, kind: str = "journal"):
     account_id = db.create_trade_account(
         req.name.strip(), req.strategy, req.strategy_explanation, req.opening_balance,
         req.max_position_size, req.max_position_size_type, req.max_position_count, kind=kind,
+        costs=req.costs(),
     )
     return {"id": account_id}
 
@@ -40,6 +41,7 @@ def update_trade_account(account_id: int, req: TradeAccountRequest):
     db.update_trade_account(
         account_id, req.name.strip(), req.strategy, req.strategy_explanation, req.opening_balance,
         req.max_position_size, req.max_position_size_type, req.max_position_count,
+        costs=req.costs(),
     )
     return {"ok": True}
 

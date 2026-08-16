@@ -49,6 +49,38 @@ def fetch_history(symbol, from_ts, to_ts, resolution="60", currency_code="INR", 
     ]
 
 
+def last_quote(symbol):
+    """Latest price + day change from the two most recent daily bars, or None if moneycontrol has
+    nothing for the symbol.
+
+    This is the fallback behind scraper.get_price/get_quote: Yahoo has no data at all for most NSE
+    SME (EMERGE) scrips - BIKEWO, AAKAAR and the rest come back "possibly delisted" under every
+    suffix - while moneycontrol's chart feed carries them. Without this, an SME symbol has no price
+    anywhere in the app, which is what made a paper order on one fail outright.
+
+    During a session the last daily bar is the running one, so its close is the live-ish price;
+    after the close it is the settled one. Either way it's the same number the chart shows.
+    """
+    now = int(datetime.now(timezone.utc).timestamp())
+    # Ten days back covers a long weekend plus a holiday and still returns two bars.
+    bars = fetch_history(symbol, now - 86400 * 10, now, "1D", countback=10)
+    if not bars:
+        return None
+    last = bars[-1]
+    prev = bars[-2] if len(bars) > 1 else None
+    price = last.get("close")
+    previous_close = prev.get("close") if prev else None
+    change_pct = None
+    if price is not None and previous_close:
+        change_pct = round((price - previous_close) / previous_close * 100, 2)
+    return {
+        "price": price,
+        "previousClose": previous_close,
+        "changePercent": change_pct,
+        "volume": last.get("volume"),
+    }
+
+
 def save_history(symbol, resolution, bars):
     """Writes bars to local_data/<symbol>_<resolution>.json (gitignored). Overwrites any
     previous file for that symbol/resolution pair rather than merging - this is a personal

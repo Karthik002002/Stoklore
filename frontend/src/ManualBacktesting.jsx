@@ -24,12 +24,13 @@ import {
   NEUTRAL_PNL_BAND,
   RESULT_META,
   tradePnl,
-  tradeRR,
+  tradeRRDisplay,
   tradeReturnPct,
 } from '@/lib/manualTrades'
 import { tradeSchema } from '@/lib/schemas'
 import { activeCount, filterTrades, parseFilters, serializeFilters } from '@/lib/tradeFilters'
 import { accountBalance, capWarnings, tradesForAccount } from '@/lib/tradeAccounts'
+import { accountFor, accountHasCosts, accountsById, tradeCosts, tradeNetPnl } from '@/lib/tradeCosts'
 import {
   createManualTrade,
   deleteManualTrade,
@@ -387,8 +388,14 @@ function TradeFormDialog({ open, onOpenChange, trade, onSaved, defaultAccountId,
 // (a button inside that modal) because reviewing a trade is the common action and editing one is
 // the rare one - the old behaviour meant every glance at a trade opened a form full of live
 // inputs over the top of it.
-function TradesTable({ trades, onOpen, onDelete, selected, onToggleSelect, onToggleSelectAll }) {
+function TradesTable({ trades, accounts, onOpen, onDelete, selected, onToggleSelect, onToggleSelectAll }) {
   const [lightboxSrc, setLightboxSrc] = useState(null)
+  // Costs are per account, so the table needs the accounts to price a row. Indexed once rather
+  // than searched per row - this table renders every trade in the journal.
+  const byId = useMemo(() => accountsById(accounts), [accounts])
+  // The net column only appears once some account actually charges something; otherwise it would
+  // be a second column of numbers identical to the one beside it.
+  const anyCosts = useMemo(() => (accounts ?? []).some(accountHasCosts), [accounts])
   if (trades.length === 0) {
     return <p className="text-sm text-muted-foreground">No trades match - add one above or clear filters.</p>
   }
@@ -416,7 +423,20 @@ function TradesTable({ trades, onOpen, onDelete, selected, onToggleSelect, onTog
             <TableHead className="text-right">Stop Loss ₹</TableHead>
             <TableHead className="text-right">Target ₹</TableHead>
             <TableHead className="text-right">P&L ₹</TableHead>
-            <TableHead className="text-right">R:R</TableHead>
+            {anyCosts && (
+              <TableHead
+                className="text-right"
+                title="Gross P&L minus this account's slippage, brokerage and charges on both sides."
+              >
+                Net ₹
+              </TableHead>
+            )}
+            <TableHead
+              className="text-right"
+              title="Planned target vs stop. A * marks a trade with no target, where the exit price stands in for one — that number is what the trade actually returned per unit of risk."
+            >
+              R:R
+            </TableHead>
             <TableHead>Result</TableHead>
             <TableHead>Emotion</TableHead>
             <TableHead>Tags</TableHead>
@@ -429,7 +449,10 @@ function TradesTable({ trades, onOpen, onDelete, selected, onToggleSelect, onTog
         <TableBody>
           {trades.map((t) => {
             const pnl = tradePnl(t)
-            const rr = tradeRR(t)
+            const tradeAccount = accountFor(t, byId)
+            const costs = tradeCosts(t, tradeAccount)
+            const net = tradeNetPnl(t, tradeAccount)
+            const rr = tradeRRDisplay(t)
             const returnPct = tradeReturnPct(t)
             const resultMeta = t.result ? RESULT_META[t.result] : null
             return (
@@ -462,7 +485,28 @@ function TradesTable({ trades, onOpen, onDelete, selected, onToggleSelect, onTog
                 >
                   {pnl == null ? '—' : inr(pnl)}
                 </TableCell>
-                <TableCell className="text-right tabular-nums">{rr ?? '—'}</TableCell>
+                {anyCosts && (
+                  <TableCell
+                    className={`text-right tabular-nums ${net == null ? '' : net >= 0 ? 'text-up' : 'text-down'}`}
+                    title={
+                      costs
+                        ? `Costs ${inr(costs.total)} — ${inr(costs.slippage)} slippage, ${inr(costs.brokerage)} brokerage, ${inr(costs.charges)} charges${costs.roundTrip ? '' : ' (entry side only — still open)'}`
+                        : 'No account on this trade, so there is no rate card to price it with'
+                    }
+                  >
+                    {net == null ? '—' : inr(net)}
+                  </TableCell>
+                )}
+                <TableCell
+                  className={`text-right tabular-nums ${rr && !rr.planned ? 'text-muted-foreground' : ''}`}
+                  title={
+                    rr && !rr.planned
+                      ? 'Realised — no target was set, so the exit price stands in for one'
+                      : undefined
+                  }
+                >
+                  {rr ? `${rr.rr}${rr.planned ? '' : '*'}` : '—'}
+                </TableCell>
                 <TableCell>
                   {t.is_open ? (
                     <Badge variant="outline">Open</Badge>
@@ -767,6 +811,7 @@ export default function ManualBacktesting() {
           )}
           <TradesTable
             trades={filteredTrades}
+            accounts={accounts}
             onOpen={setDetailTrade}
             onDelete={(id) => remove.mutate(id)}
             selected={selected}

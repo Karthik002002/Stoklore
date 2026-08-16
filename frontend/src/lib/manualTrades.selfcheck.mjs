@@ -2,7 +2,7 @@
 // path with branches, so it gets a runnable check. Plain node, no test framework:
 //   node src/lib/manualTrades.selfcheck.mjs
 import assert from 'node:assert/strict'
-import { autoResult, NEUTRAL_PNL_BAND, tradePnl } from './manualTrades.js'
+import { autoResult, NEUTRAL_PNL_BAND, tradePnl, tradeRR, tradeRRDisplay } from './manualTrades.js'
 
 const long = (exit, qty = 1) => ({
   direction: 'long',
@@ -58,4 +58,26 @@ assert.equal(autoResult({ direction: 'long', entry_price: 100, exit_price: null,
 assert.equal(autoResult(long(150), 100), 'neutral')
 assert.equal(autoResult(long(150), 10), 'profit')
 
-console.log('ok - manualTrades: autoResult neutral band, quantity scaling, shorts, NaN guard')
+// --- R:R, and the exit-as-target fallback -----------------------------------------------------
+// Planned: target 120 vs stop 90 on a 100 entry is 20 reward over 10 risk.
+const planned = { direction: 'long', entry_price: 100, stop_loss: 90, target: 120, exit_price: 105 }
+assert.equal(tradeRR(planned), 2)
+assert.deepEqual(tradeRRDisplay(planned), { rr: 2, planned: true })
+
+// No target: the exit stands in for one, and the result is signed - a winner is positive, a
+// stopped-out trade negative. An absolute value here would print a loss as a healthy reward.
+const noTarget = { direction: 'long', entry_price: 100, stop_loss: 90, target: null, exit_price: 115 }
+assert.equal(tradeRR(noTarget), null)
+assert.deepEqual(tradeRRDisplay(noTarget), { rr: 1.5, planned: false })
+assert.deepEqual(tradeRRDisplay({ ...noTarget, exit_price: 90 }), { rr: -1, planned: false })
+
+// Shorts measure the move the other way.
+const shortTrade = { direction: 'short', entry_price: 100, stop_loss: 110, target: null, exit_price: 85 }
+assert.deepEqual(tradeRRDisplay(shortTrade), { rr: 1.5, planned: false })
+
+// Nothing to divide by, or nothing to measure: still null rather than a made-up number.
+assert.equal(tradeRRDisplay({ ...noTarget, stop_loss: null }), null)
+assert.equal(tradeRRDisplay({ ...noTarget, exit_price: null }), null)
+assert.equal(tradeRRDisplay({ ...noTarget, stop_loss: 100 }), null)
+
+console.log('ok - manualTrades: autoResult neutral band, quantity scaling, shorts, NaN guard, R:R fallback')

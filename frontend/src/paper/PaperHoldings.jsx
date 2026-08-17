@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import { XIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
@@ -164,8 +165,9 @@ function ModifyDialog({ position, open, onOpenChange }) {
   )
 }
 
-export default function PaperHoldings({ positions, isFetching, isPending }) {
+export default function PaperHoldings({ positions, isFetching, isPending, accountId }) {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [modifying, setModifying] = useState(null)
 
   const close = useMutation({
@@ -217,7 +219,17 @@ export default function PaperHoldings({ positions, isFetching, isPending }) {
           </TableHeader>
           <TableBody>
             {positions.map((p) => (
-              <TableRow key={p.id}>
+              <TableRow
+                key={p.id}
+                className="cursor-pointer"
+                onClick={() =>
+                  navigate({
+                    to: '/paper/$symbol',
+                    params: { symbol: p.symbol },
+                    search: { account: accountId },
+                  })
+                }
+              >
                 <TableCell className="font-medium whitespace-nowrap">
                   {p.symbol}
                   <Badge variant="secondary" className="ml-1.5 capitalize">
@@ -254,7 +266,9 @@ export default function PaperHoldings({ positions, isFetching, isPending }) {
                     ? '—'
                     : p.targets.map((l) => `${inr(l.price)}×${l.qty}`).join(', ')}
                 </TableCell>
-                <TableCell>
+                {/* The row navigates; the buttons act. Without stopping propagation here, Modify
+                    would open its dialog and then immediately navigate away underneath it. */}
+                <TableCell onClick={(e) => e.stopPropagation()}>
                   <div className="flex gap-1">
                     <Button size="sm" variant="outline" onClick={() => setModifying(p)}>
                       Modify

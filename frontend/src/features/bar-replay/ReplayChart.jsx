@@ -737,17 +737,24 @@ const ReplayChart = forwardRef(function ReplayChart(
       })
     })
     if (!hasFitRef.current) {
-      const saved = viewRef.current?.logicalRange
-      if (saved) {
-        chartRef.current?.timeScale().setVisibleLogicalRange(saved)
-      } else if (bars.length > INITIAL_VISIBLE_BARS) {
-        chartRef.current
-          ?.timeScale()
-          .setVisibleLogicalRange({ from: bars.length - INITIAL_VISIBLE_BARS, to: bars.length - 1 })
-      } else {
-        chartRef.current?.timeScale().fitContent()
-      }
+      // Deferred a frame: with autoSize the chart measures its container asynchronously, so on a
+      // cold mount (data already in cache, nothing to wait for) this runs while the chart is still
+      // zero-width. Framing a zero-width chart sticks - the range is kept through the resize, and
+      // the candles end up crushed into a sliver at the right edge. A frame later the width is real.
+      const frame = requestAnimationFrame(() => {
+        const scale = chartRef.current?.timeScale()
+        if (!scale) return
+        const saved = viewRef.current?.logicalRange
+        if (saved) {
+          scale.setVisibleLogicalRange(saved)
+        } else if (bars.length > INITIAL_VISIBLE_BARS) {
+          scale.setVisibleLogicalRange({ from: bars.length - INITIAL_VISIBLE_BARS, to: bars.length - 1 })
+        } else {
+          scale.fitContent()
+        }
+      })
       hasFitRef.current = true
+      return () => cancelAnimationFrame(frame)
     }
     // Deps must stay a superset of the series-creating effect's: anything that makes that effect
     // tear down and rebuild the series (rsiLevels, resetKey) has to re-run this one too, or the

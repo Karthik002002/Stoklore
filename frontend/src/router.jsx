@@ -6,6 +6,7 @@ import BarReplay from './features/bar-replay'
 import EventsFeed from './EventsFeed'
 import Holdings from './Holdings'
 import PaperTrading from './paper/PaperTrading'
+import PaperPositionChart from './paper/PaperPositionChart'
 import StockDetail from './StockDetail'
 import StocksList from './StocksList'
 import TopNews from './TopNews'
@@ -115,6 +116,17 @@ const paperRoute = createRoute({
 // Multiple tab's comma-separated list, each still simulated on its own. Keeping them separate means
 // switching tabs doesn't destroy the other tab's selection. `view` is the inner tab under Multiple:
 // 'comparison' or a stringified account id.
+// One position, on the Bar Replay chart. A child route of /paper rather than a tab: the chart wants
+// the whole viewport, and a position is a thing you drill into and come back from.
+const paperPositionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/paper/$symbol',
+  validateSearch: (search) => ({
+    account: Number.isFinite(Number(search.account)) && search.account ? Number(search.account) : undefined,
+  }),
+  component: PaperPositionChart,
+})
+
 const simulationRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/simulation',
@@ -150,6 +162,7 @@ const routeTree = rootRoute.addChildren([
   holdingsRoute,
   backtestingRoute,
   paperRoute,
+  paperPositionRoute,
   simulationRoute,
   autoBacktestDetailRoute,
   barReplayRoute,

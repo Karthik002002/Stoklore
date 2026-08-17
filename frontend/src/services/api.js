@@ -6,6 +6,10 @@ async function json(res) {
   return res.json()
 }
 
+// Quote + news + reports for one symbol. The order ticket only wants `quote.currentPrice`, but this
+// is the endpoint the app already caches per symbol, so asking for it here is a cache hit.
+export const getStockDetail = (symbol) => fetch(`/api/stocks/${symbol}`).then(json)
+
 export const getStockChart = (symbol, range) => fetch(`/api/stocks/${symbol}/chart?range=${range}`).then(json)
 
 export const getIndices = () => fetch('/api/indices').then(json)

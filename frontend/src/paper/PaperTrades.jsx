@@ -12,11 +12,20 @@ import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Controller } from 'react-hook-form'
-import { formatDateTime, inr } from '@/lib/format'
+import { fmt, formatDateTime, inr } from '@/lib/format'
 import { tradePnl, tradeReturnPct } from '@/lib/manualTrades'
 import { accountFor, accountHasCosts, accountsById, tradeCosts, tradeNetPnl } from '@/lib/tradeCosts'
 import { paperOrderSchema } from '@/lib/schemas'
-import { createPaperOrder, getTradeAccounts } from '@/services/api'
+import { accountBalance, tradesForAccount } from '@/lib/tradeAccounts'
+import { riskReward } from '@/features/bar-replay/orderEngine'
+import {
+  createPaperOrder,
+  getBalanceAdjustments,
+  getManualTrades,
+  getPaperPositions,
+  getStockDetail,
+  getTradeAccounts,
+} from '@/services/api'
 
 const DIRECTION_OPTIONS = [
   { value: 'long', label: 'Buy (Long)' },
@@ -78,6 +87,136 @@ function LegRows({ form, name, label, hint }) {
         </div>
       </div>
     </Field>
+  )
+}
+
+// What the ticket costs and what it risks, before it's placed. Everything here is derived from
+// fields already on the form plus the account's own wallet - no new inputs, because the point is to
+// answer "should I send this" without opening another screen.
+//
+// Entry is the limit price on a limit order and the live price on a market one. Both may be
+// unknown (no symbol picked yet, or no quote for it), and every figure below degrades to a dash
+// rather than guessing - a made-up entry would make every percentage on this panel wrong.
+function OrderReadout({ form, accountId }) {
+  const [symbol, quantity, direction, orderType, limitPrice, stopLosses, targets] = form.watch([
+    'symbol',
+    'quantity',
+    'direction',
+    'orderType',
+    'limitPrice',
+    'stopLosses',
+    'targets',
+  ])
+
+  const { data: detail } = useQuery({
+    queryKey: ['stockDetail', symbol],
+    queryFn: () => getStockDetail(symbol),
+    enabled: !!symbol,
+    staleTime: 60_000,
+  })
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['tradeAccounts', 'paper'],
+    queryFn: () => getTradeAccounts('paper'),
+  })
+  const { data: positions = [] } = useQuery({
+    queryKey: ['paperPositions', accountId],
+    queryFn: () => getPaperPositions(accountId),
+    enabled: accountId != null,
+  })
+  const { data: allTrades = [] } = useQuery({ queryKey: ['manualTrades'], queryFn: getManualTrades })
+  const { data: adjustments = [] } = useQuery({
+    queryKey: ['balanceAdjustments'],
+    queryFn: getBalanceAdjustments,
+  })
+
+  const account = accounts.find((a) => a.id === accountId) ?? null
+  const qty = Number(quantity) || 0
+  const entry = orderType === 'limit' ? Number(limitPrice) || null : (detail?.quote?.currentPrice ?? null)
+  const value = entry && qty ? entry * qty : null
+
+  // Cash available = the wallet, less what is already committed to open positions. Committed
+  // capital is at entry cost, not market value: that's the cash that actually left.
+  const balance = accountBalance(
+    account,
+    tradesForAccount(allTrades, accountId),
+    adjustments.filter((a) => a.account_id === accountId),
+  )
+  const committed = positions.reduce((s, p) => s + p.entry_price * p.quantity, 0)
+  const available = balance == null ? null : Math.round((balance - committed) * 100) / 100
+  const utilisation = available && value ? (value / available) * 100 : null
+
+  const level = (legs) => (legs ?? []).map((l) => Number(l.price)).filter((p) => p > 0)[0] ?? null
+  const stop = level(stopLosses)
+  const target = level(targets)
+  const away = (price) => (entry && price ? ((price - entry) / entry) * 100 : null)
+  // Signed against the direction, so a stop always reads negative and a target positive on both
+  // sides of the market rather than flipping sign on a short.
+  const directional = (pct) => (pct == null ? null : direction === 'short' ? -pct : pct)
+  const rr = entry
+    ? riskReward({
+        direction,
+        entryPrice: entry,
+        stopLosses: (stopLosses ?? []).map((l) => ({ ...l, price: Number(l.price) })).filter((l) => l.price),
+        targets: (targets ?? []).map((l) => ({ ...l, price: Number(l.price) })).filter((l) => l.price),
+      }).rr
+    : null
+
+  const pct = (v) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${fmt(v, 2)}%`)
+  const risk = stop && entry && qty ? Math.abs(entry - stop) * qty : null
+  const reward = target && entry && qty ? Math.abs(target - entry) * qty : null
+
+  return (
+    <div className="grid grid-cols-2 gap-x-3 gap-y-2 rounded-lg border bg-muted/20 p-3 text-xs sm:grid-cols-3">
+      <Readout
+        label="Position value"
+        value={value == null ? '—' : inr(value)}
+        sub={entry ? `at ${inr(entry)}${orderType === 'limit' ? ' limit' : ''}` : 'pick a symbol'}
+      />
+      <Readout
+        label="Cash utilisation"
+        value={utilisation == null ? '—' : `${fmt(utilisation, 1)}%`}
+        sub={available == null ? 'no account wallet' : `${inr(available)} available`}
+        tone={utilisation > 100 ? 'down' : undefined}
+      />
+      <Readout label="Risk : reward" value={rr == null ? '—' : `${fmt(rr, 2)}R`} />
+      <Readout
+        label="Stop loss"
+        value={stop == null ? '—' : inr(stop)}
+        sub={
+          stop == null ? 'none set' : `${pct(directional(away(stop)))}${risk ? ` · ${inr(risk)} risk` : ''}`
+        }
+        tone={stop == null ? undefined : 'down'}
+      />
+      <Readout
+        label="Target"
+        value={target == null ? '—' : inr(target)}
+        sub={
+          target == null
+            ? 'none set'
+            : `${pct(directional(away(target)))}${reward ? ` · ${inr(reward)} reward` : ''}`
+        }
+        tone={target == null ? undefined : 'up'}
+      />
+      <Readout
+        label="Risk of wallet"
+        value={risk && balance ? `${fmt((risk / balance) * 100, 2)}%` : '—'}
+        sub={balance == null ? undefined : `wallet ${inr(balance)}`}
+      />
+    </div>
+  )
+}
+
+function Readout({ label, value, sub, tone }) {
+  return (
+    <div>
+      <p className="text-[10px] tracking-wide text-muted-foreground uppercase">{label}</p>
+      <p
+        className={`font-semibold tabular-nums ${tone === 'up' ? 'text-up' : tone === 'down' ? 'text-down' : ''}`}
+      >
+        {value}
+      </p>
+      {sub && <p className="text-[10px] text-muted-foreground tabular-nums">{sub}</p>}
+    </div>
   )
 }
 
@@ -174,6 +313,8 @@ function OrderPanel({ accountId }) {
         label="Targets (multi-exit)"
         hint="Add two levels to scale out — e.g. 50 shares at target 1, 50 at target 2."
       />
+
+      <OrderReadout form={form} accountId={accountId} />
 
       <TextField form={form} name="notes" label="Notes" placeholder="Why this trade?" />
 

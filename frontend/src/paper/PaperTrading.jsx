@@ -182,7 +182,12 @@ export default function PaperTrading() {
           <PaperOverview account={selected} trades={trades} positions={positions} />
         </TabsPanel>
         <TabsPanel value="holdings">
-          <PaperHoldings positions={positions} isFetching={isFetching} isPending={isPending} />
+          <PaperHoldings
+            positions={positions}
+            isFetching={isFetching}
+            isPending={isPending}
+            accountId={accountId}
+          />
         </TabsPanel>
         <TabsPanel value="trades">
           <PaperTrades accountId={accountId} trades={trades} />

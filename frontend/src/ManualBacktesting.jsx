@@ -29,7 +29,7 @@ import {
 } from '@/lib/manualTrades'
 import { tradeSchema } from '@/lib/schemas'
 import { activeCount, filterTrades, parseFilters, serializeFilters } from '@/lib/tradeFilters'
-import { accountBalance, capWarnings, tradesForAccount } from '@/lib/tradeAccounts'
+import { accountBalance, capWarnings, journalTrades, tradesForAccount } from '@/lib/tradeAccounts'
 import { accountFor, accountHasCosts, accountsById, tradeCosts, tradeNetPnl } from '@/lib/tradeCosts'
 import {
   createManualTrade,
@@ -701,7 +701,13 @@ export default function ManualBacktesting() {
 
   // Filtered in the client rather than by a per-account fetch: the list is small, the whole set is
   // already cached for the trade form's cap checks, and "All accounts" then costs nothing.
-  const trades = useMemo(() => tradesForAccount(allTrades, account), [allTrades, account])
+  // "All accounts" means all JOURNAL accounts - see journalTrades. Paper closes live in the same
+  // table under a paper account, and pooling them in here made the journal's headline P&L the sum
+  // of two different books.
+  const trades = useMemo(
+    () => (account == null ? journalTrades(allTrades, accounts) : tradesForAccount(allTrades, account)),
+    [allTrades, account, accounts],
+  )
 
   // Filters live in the URL (?f=symbol:x:TCS|tag:x:revenge), so "my numbers without the revenge
   // trades" is a link rather than a set of clicks to repeat - and a reload doesn't quietly hand

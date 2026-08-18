@@ -58,3 +58,27 @@ app.add_middleware(
 
 # The one aggregated router - every endpoint in the app arrives through this.
 app.include_router(router)
+
+
+# Serving the built frontend from the API itself, so a deployed instance is ONE process to run and
+# one port to expose - no Vite, no second web server, no reverse proxy to configure. Mounted last so
+# every /api route above still wins; only paths nothing else claimed fall through to here.
+#
+# Absent in development: `npm run dev` serves the frontend and proxies /api here, so there is no
+# dist/ to mount and this block is skipped entirely.
+_DIST = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend", "dist")
+if os.path.isdir(_DIST):
+    from fastapi.responses import FileResponse
+
+    app.mount("/assets", StaticFiles(directory=os.path.join(_DIST, "assets")), name="assets")
+
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def _spa(full_path: str):
+        """Everything that isn't an API route is the single-page app: TanStack Router owns
+        /paper/BTML and /backtest/replay client-side, so a hard refresh on one of those URLs has to
+        return index.html rather than a 404. A real file under dist/ (favicon, manifest) is served
+        as itself."""
+        candidate = os.path.join(_DIST, full_path)
+        if full_path and os.path.isfile(candidate):
+            return FileResponse(candidate)
+        return FileResponse(os.path.join(_DIST, "index.html"))

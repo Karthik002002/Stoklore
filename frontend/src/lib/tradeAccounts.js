@@ -8,6 +8,25 @@ import { tradeNetPnl } from './tradeCosts.js'
 export const tradesForAccount = (trades, accountId) =>
   accountId == null ? (trades ?? []) : (trades ?? []).filter((t) => t.account_id === accountId)
 
+/** Paper trading writes its closes into manual_trades - the same table the journal reads - tagged
+ *  'paper' and filed under a paper account. Same table, different book. */
+export const isPaperTrade = (t) => (t?.tags ?? []).includes('paper')
+
+/** The journal's "All accounts" set: every trade under a JOURNAL account, plus unassigned ones.
+ *
+ *  Not simply "all rows": tradesForAccount(trades, null) hands back everything in manual_trades,
+ *  which pools the paper book into the journal's P&L, win rate and equity curve while the account
+ *  picker (journal accounts only) gives no way to see or deselect it.
+ *
+ *  Two rules, because either alone leaks. The account id catches paper trades filed normally; the
+ *  'paper' tag catches the ones whose account was deleted - manual_trades.account_id is
+ *  ON DELETE SET NULL, so a deleted paper account turns its history into "unassigned" rows that
+ *  would otherwise read as journal entries forever. */
+export const journalTrades = (trades, journalAccounts) => {
+  const ids = new Set((journalAccounts ?? []).map((a) => a.id))
+  return (trades ?? []).filter((t) => !isPaperTrade(t) && (t.account_id == null || ids.has(t.account_id)))
+}
+
 /** Live wallet balance: opening balance + deposits/withdrawals + realized P&L of closed trades.
  *  The server computes this same figure once per trade (db.account_balance_at) and freezes it onto
  *  the row as account_balance_at_trade - this one is the running "where is it now" number.

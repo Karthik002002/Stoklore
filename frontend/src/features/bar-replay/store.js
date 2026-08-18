@@ -33,7 +33,13 @@ const DEFAULT_INDICATORS = [{ key: 'default-ema20', type: 'ema', period: 20 }]
 //
 // Deliberately survives a symbol/timeframe change - how tall you like the RSI pane is a layout
 // preference, not something about the instrument.
-const DEFAULT_VIEW = { logicalRange: null, paneHeights: {} }
+//
+// `priceRanges` is the vertical half of the same idea: what each pane's price scale is showing,
+// keyed the same way as paneHeights. A value of `null` means "that pane was left on autoscale" -
+// stored explicitly, because restoring a range onto a scale the user never pinned would freeze it
+// at yesterday's prices, and the two states have to be told apart. Cleared with logicalRange on a
+// symbol/timeframe change: a price window in rupees means nothing on another instrument.
+const DEFAULT_VIEW = { logicalRange: null, paneHeights: {}, priceRanges: {} }
 
 // Everything about a Bar Replay session lives in this one store - symbol/timeframe/bar position,
 // open/pending orders, indicators, playback speed, and chart/trading settings - persisted to
@@ -74,7 +80,7 @@ export const useBarReplayStore = create(
           barIndex: null,
           orders: [],
           drawings: [],
-          view: { ...s.view, logicalRange: null },
+          view: { ...s.view, logicalRange: null, priceRanges: {} },
         })),
       setTimeframe: (timeframe) =>
         set((s) => ({
@@ -82,7 +88,7 @@ export const useBarReplayStore = create(
           barIndex: null,
           orders: [],
           drawings: [],
-          view: { ...s.view, logicalRange: null },
+          view: { ...s.view, logicalRange: null, priceRanges: {} },
         })),
       setBarIndex: (barIndex) => set({ barIndex }),
       setOrders: (orders) => set({ orders }),
@@ -92,17 +98,28 @@ export const useBarReplayStore = create(
       setSettings: (settings) => set({ settings }),
       setAccountId: (accountId) => set({ accountId }),
       setView: (view) => set((s) => ({ view: { ...s.view, ...view } })),
-      restart: () => set((s) => ({ barIndex: null, orders: [], view: { ...s.view, logicalRange: null } })),
+      restart: () =>
+        set((s) => ({
+          barIndex: null,
+          orders: [],
+          view: { ...s.view, logicalRange: null, priceRanges: {} },
+        })),
     }),
     {
       name: 'barReplay.store',
-      version: 6,
+      version: 7,
       // v0 -> v1: a position's stop-loss and target were single `stopLoss`/`target` numbers;
       // they're now `stopLosses`/`targets`, lists of {id, price, qty} legs (see orderEngine.js)
       // so one trade can carry a laddered exit on either side - a plain single-SL/single-target
       // order just becomes a one-leg list covering the full quantity, so nothing about existing
       // sessions' behavior changes.
       migrate: (persisted, version) => {
+        // v6 -> v7: `view.priceRanges` is new. persist's merge is shallow and `view` already
+        // exists, so without this an upgraded session reads it as undefined - harmless, but the
+        // first sample would then write a key the restore path never looked for.
+        if (version < 7 && persisted?.view && !persisted.view.priceRanges) {
+          persisted.view.priceRanges = {}
+        }
         // v5 -> v6: `drawings` is new. persist's merge is shallow, so a session saved before this
         // existed has no key at all and would read as undefined rather than an empty list.
         if (version < 6 && persisted && !persisted.drawings) {

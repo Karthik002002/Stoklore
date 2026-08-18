@@ -166,6 +166,21 @@ function paneKeyAt(index, oscillatorTypes) {
   return oscillatorTypes[index - FIRST_OSCILLATOR_PANE] ?? `pane${index}`
 }
 
+/** The price scale a pane is framed by, reached through its first series rather than
+ *  pane.priceScale('right') - that throws when a pane has no right scale, and this runs on a timer
+ *  over whatever panes happen to exist at the time. Pane 0's first series is the candles. */
+function paneScale(pane, index, candleSeries) {
+  return index === 0 ? (candleSeries?.priceScale() ?? null) : (pane.getSeries()[0]?.priceScale() ?? null)
+}
+
+/** Two saved price ranges, compared. null means "this pane is on autoscale", which is a state worth
+ *  storing as much as a pinned range is - restoring a range onto a scale the user left on auto
+ *  would freeze it at yesterday's prices. */
+function sameRange(a, b) {
+  if (!a || !b) return !a && !b
+  return a.from === b.from && a.to === b.to
+}
+
 // Series-map key for one line of one indicator. A single-line indicator passes lineKey = null and
 // keys on its own id alone; a band keys on `id:upper`, `id:middle`, `id:lower`. Both the effect
 // that creates the series and the one that feeds them go through here, so they can't disagree.
@@ -222,6 +237,9 @@ const ReplayChart = forwardRef(function ReplayChart(
   const orderLinesRef = useRef(new Map())
   const previewLinesRef = useRef([])
   const hasFitRef = useRef(false)
+  // Pane keys whose saved price scale has already been applied. Applied ONCE each: after that the
+  // scale belongs to the user, and re-applying on a later render would snap their drag back.
+  const restoredScalesRef = useRef(new Set())
   // Right-click context menu state: null when closed, { x, y, price } while open. See the
   // ContextMenu render at the bottom of this component.
   const [ctxMenu, setCtxMenu] = useState(null)
@@ -319,6 +337,7 @@ const ReplayChart = forwardRef(function ReplayChart(
     orderLinesRef.current = new Map()
     previewLinesRef.current = []
     hasFitRef.current = false
+    restoredScalesRef.current = new Set()
     return () => {
       chart.remove()
       chartRef.current = null
@@ -744,6 +763,13 @@ const ReplayChart = forwardRef(function ReplayChart(
       const frame = requestAnimationFrame(() => {
         const scale = chartRef.current?.timeScale()
         if (!scale) return
+        // Marked inside the frame, not right after scheduling it: `bars` is a fresh array on
+        // every BarReplay render (allBars.slice), so this effect re-runs constantly, and its
+        // cleanup cancels the pending frame. Flagging outside meant a re-render landing in the
+        // same frame killed the only framing pass there would ever be - the chart then sat on
+        // lightweight-charts' defaults (barSpacing 6, no right offset) and a reload lost the
+        // saved window. Flagging inside means a cancelled pass is simply rescheduled.
+        hasFitRef.current = true
         const saved = viewRef.current?.logicalRange
         if (saved) {
           scale.setVisibleLogicalRange(saved)
@@ -753,13 +779,35 @@ const ReplayChart = forwardRef(function ReplayChart(
           scale.fitContent()
         }
       })
-      hasFitRef.current = true
       return () => cancelAnimationFrame(frame)
     }
     // Deps must stay a superset of the series-creating effect's: anything that makes that effect
     // tear down and rebuild the series (rsiLevels, resetKey) has to re-run this one too, or the
     // freshly created series sit there with no data until the next bar step.
   }, [bars, indicators, resetKey, settings.rsiLevels, settings.bodyUpColor, settings.bodyDownColor])
+
+  // Restores each pane's saved price scale. Per pane rather than once for the whole chart: an
+  // oscillator pane added mid-session (adding RSI after the chart is already up) doesn't exist when
+  // the first-data framing runs, and would otherwise sit on autoscale until a reload.
+  //
+  // A saved `null` means "this pane was left on autoscale", which is restored as autoscale rather
+  // than pinned to a stale range - the two states are stored apart for exactly this reason (see
+  // store.js's priceRanges). Runs after the data effect above, so setData's own autoscale pass has
+  // already happened and can't overwrite what this puts back.
+  useEffect(() => {
+    const chart = chartRef.current
+    const saved = viewRef.current?.priceRanges
+    if (!chart || !saved || bars.length === 0) return
+    chart.panes().forEach((pane, index) => {
+      const key = paneKeyAt(index, oscillatorTypesRef.current)
+      if (restoredScalesRef.current.has(key) || !(key in saved)) return
+      const priceScale = paneScale(pane, index, candleSeriesRef.current)
+      if (!priceScale) return
+      if (saved[key]) priceScale.setVisibleRange(saved[key])
+      else priceScale.setAutoScale(true)
+      restoredScalesRef.current.add(key)
+    })
+  }, [bars, indicators, resetKey])
 
   // Entry/SL/target lines for every order (pending limits get a dotted amber entry line, filled
   // positions get a dashed gray one). Keyed by `orderId:role` so the drag effect above can
@@ -820,31 +868,47 @@ const ReplayChart = forwardRef(function ReplayChart(
     // change anything about them. The live return moved to the pills, which re-render on their own.
   }, [orders, resetKey])
 
-  // Samples the chart's framing (zoom window + pane heights) back into the persisted store, so a
-  // reload restores it. Only writes when something actually moved - a no-op tick must not churn
-  // the store or localStorage.
+  // Writes the chart's framing (zoom window, pane heights, price scales) back into the persisted
+  // store, so a reload restores it. Driven by the time scale's own range-change event - the one
+  // thing the chart actually tells us about - rather than a timer.
   //
-  // ponytail: a 500ms poll rather than event subscriptions. The time scale does emit
-  // subscribeVisibleLogicalRangeChange, but dragging a pane separator emits nothing at all, so
-  // half of this would need polling regardless; one timer covering both beats a subscription plus
-  // a timer. 500ms only loses the last half-second of framing on a hard reload.
+  // Only writes when something moved: the event also fires on every new bar and on our own restore
+  // call, and a no-op write would churn the store and localStorage on each step.
+  //
+  // ponytail: a pane-separator drag and a price-axis drag emit nothing of their own, so they are
+  // saved on the next pan/zoom or bar step rather than immediately. Add a second listener when
+  // that lag is actually annoying.
   useEffect(() => {
-    const id = setInterval(() => {
-      const chart = chartRef.current
-      if (!chart) return
-      const range = chart.timeScale().getVisibleLogicalRange()
+    const chart = chartRef.current
+    if (!chart) return
+    const timeScale = chart.timeScale()
+
+    const sample = (range) => {
+      // Before the initial framing has run, the range on offer is lightweight-charts' default -
+      // storing it would overwrite the very window we are about to restore.
+      if (!hasFitRef.current) return
 
       // Keyed by what each pane shows, not by its index - see store.js's paneHeights.
       const heights = {}
+      const priceRanges = {}
       chart.panes().forEach((pane, index) => {
-        heights[paneKeyAt(index, oscillatorTypesRef.current)] = pane.getStretchFactor()
+        const key = paneKeyAt(index, oscillatorTypesRef.current)
+        heights[key] = pane.getStretchFactor()
+        const priceScale = paneScale(pane, index, candleSeriesRef.current)
+        if (!priceScale) return
+        // autoScale is the question being answered here, not the range: a scale left on auto has a
+        // visible range too, and storing it would silently pin the scale on the next reload.
+        priceRanges[key] = priceScale.options().autoScale ? null : priceScale.getVisibleRange()
       })
 
       const prev = viewRef.current ?? {}
       const movedRange =
         range && (range.from !== prev.logicalRange?.from || range.to !== prev.logicalRange?.to)
       const movedPanes = Object.entries(heights).some(([key, value]) => prev.paneHeights?.[key] !== value)
-      if (!movedRange && !movedPanes) return
+      const movedScales = Object.entries(priceRanges).some(
+        ([key, value]) => !(key in (prev.priceRanges ?? {})) || !sameRange(prev.priceRanges[key], value),
+      )
+      if (!movedRange && !movedPanes && !movedScales) return
 
       onViewChangeRef.current?.({
         ...(movedRange ? { logicalRange: { from: range.from, to: range.to } } : {}),
@@ -852,10 +916,15 @@ const ReplayChart = forwardRef(function ReplayChart(
         // chart right now keeps its saved height, so re-adding it later brings back the size you
         // left it at rather than the default.
         ...(movedPanes ? { paneHeights: { ...prev.paneHeights, ...heights } } : {}),
+        ...(movedScales ? { priceRanges: { ...prev.priceRanges, ...priceRanges } } : {}),
       })
-    }, 500)
-    return () => clearInterval(id)
-  }, [])
+    }
+
+    timeScale.subscribeVisibleLogicalRangeChange(sample)
+    return () => timeScale.unsubscribeVisibleLogicalRangeChange(sample)
+    // Re-subscribes when the chart is recreated (resetKey) - the old chart, and its subscription,
+    // are gone with it.
+  }, [resetKey])
 
   // Keeps every floating pill sitting on its own price line, and every drawing on its own bars.
   // Both are HTML/SVG over a canvas, so nothing tells React when the mapping moves - panning,

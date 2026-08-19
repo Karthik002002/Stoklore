@@ -10,6 +10,12 @@ export const DEFAULT_CHART_SETTINGS = {
   borderUpColor: '#22c55e',
   borderDownColor: '#ef4444',
   defaultQty: 1,
+  // How a new position is sized. 'qty' takes defaultQty as-is; 'pctCapital' spends capitalPct% of
+  // the selected account's live balance at the current price (see orderEngine's preferredQuantity).
+  // One preference, read by every path that opens a position - the order ticket and the one-key
+  // market shortcuts alike - so it never has to be set twice.
+  sizeMode: 'qty',
+  capitalPct: 10,
   rsiLevels: [30, 70],
 }
 
@@ -107,13 +113,19 @@ export const useBarReplayStore = create(
     }),
     {
       name: 'barReplay.store',
-      version: 7,
+      version: 8,
       // v0 -> v1: a position's stop-loss and target were single `stopLoss`/`target` numbers;
       // they're now `stopLosses`/`targets`, lists of {id, price, qty} legs (see orderEngine.js)
       // so one trade can carry a laddered exit on either side - a plain single-SL/single-target
       // order just becomes a one-leg list covering the full quantity, so nothing about existing
       // sessions' behavior changes.
       migrate: (persisted, version) => {
+        // v7 -> v8: `settings.sizeMode`/`capitalPct` are new. persist's merge is shallow and
+        // `settings` already exists, so an upgraded session would read them as undefined and size
+        // every order off an undefined preference.
+        if (version < 8 && persisted?.settings) {
+          persisted.settings = { ...DEFAULT_CHART_SETTINGS, ...persisted.settings }
+        }
         // v6 -> v7: `view.priceRanges` is new. persist's merge is shallow and `view` already
         // exists, so without this an upgraded session reads it as undefined - harmless, but the
         // first sample would then write a key the restore path never looked for.

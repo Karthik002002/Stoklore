@@ -183,6 +183,22 @@ export function sizeByRisk({ balance, riskPct, entryPrice, stopLosses, direction
   return Math.max(1, Math.floor(cashRisk / perShareRisk))
 }
 
+// The quantity an order starts at, from the user's sizing preference (Settings > Preferences).
+// Every place that opens a position - the order ticket, the one-key market shortcuts - asks this
+// rather than reading settings.defaultQty itself, so changing the preference changes all of them.
+//
+// 'pctCapital' spends that % of the account's live balance at `price`, rounded DOWN: a fractional
+// share doesn't exist, and rounding up would over-spend the budget the user set. Falls back to the
+// fixed quantity whenever the percentage can't be turned into shares - no account selected (balance
+// is null), an empty account, or no price yet - because refusing to size at all would just leave
+// the field blank with no explanation.
+export function preferredQuantity({ sizeMode, defaultQty, capitalPct }, balance, price) {
+  const fallback = Math.max(1, Math.floor(defaultQty) || 1)
+  if (sizeMode !== 'pctCapital') return fallback
+  if (!(balance > 0) || !(price > 0) || !(capitalPct > 0)) return fallback
+  return Math.max(1, Math.floor((balance * (capitalPct / 100)) / price))
+}
+
 // Move every stop-loss leg to breakeven (entry price) - the standard "risk-free" adjustment
 // once a trade is comfortably in profit. Pure: returns a new order. No-op if the position has
 // no stops at all (nothing to move); the caller can decide whether to seed one instead.

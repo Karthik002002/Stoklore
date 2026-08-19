@@ -11,7 +11,13 @@ import { getBalanceAdjustments, getIntradayBars, getManualTrades, getTradeAccoun
 import BottomBar from './BottomBar'
 import CloseTradeDialog from './CloseTradeDialog'
 import OrderTicketDialog from './OrderTicketDialog'
-import { processBarForOrders, setLegQty, trailStops, withStopsAtBreakeven } from './orderEngine'
+import {
+  preferredQuantity,
+  processBarForOrders,
+  setLegQty,
+  trailStops,
+  withStopsAtBreakeven,
+} from './orderEngine'
 import ReplayChart from './ReplayChart'
 import ReplayCommandDialog from './ReplayCommandDialog'
 import SettingsDialog from './SettingsDialog'
@@ -246,13 +252,18 @@ export default function BarReplay() {
     restartStore()
   }
 
+  // The size a new position starts at, from the Settings > Preferences sizing preference - a fixed
+  // share count, or a % of the selected account's live balance at the current price. Read here,
+  // once, so the ticket and the one-key market orders can never disagree about it.
+  const startingQty = lastBar ? preferredQuantity(chartSettings, balance, lastBar.close) : 1
+
   const openOrderTicket = (direction) => {
     if (!lastBar) return
     setOrderDraft({
       direction,
       orderType: 'market',
       entryPrice: '',
-      qty: String(chartSettings.defaultQty),
+      qty: String(startingQty),
       slEnabled: false,
       stopLosses: [],
       targetEnabled: false,
@@ -298,6 +309,30 @@ export default function BarReplay() {
     }
     setOrders([...orders, newOrder])
     setOrderDraft(null)
+  }
+
+  // Straight to market at the current bar's close, no ticket - the fast path for "I want in, now",
+  // sized by the same preference the ticket uses. Naked by design: no SL/target legs, since there
+  // is no dialog to type them into. They can still be added from the chart or the Positions strip.
+  const placeMarketOrder = (direction) => {
+    if (!lastBar) return
+    const quantity = preferredQuantity(chartSettings, balance, lastBar.close)
+    setOrders([
+      ...orders,
+      {
+        id: crypto.randomUUID(),
+        type: 'market',
+        status: 'open',
+        direction,
+        quantity,
+        entryPrice: lastBar.close,
+        stopLosses: [],
+        targets: [],
+        entryBarIndex: currentIndex,
+        trailing: null,
+      },
+    ])
+    toast.success(`${direction === 'long' ? 'Bought' : 'Sold'} ${quantity} at ${inr(lastBar.close)}`)
   }
 
   // Dragging one specific leg's line on the chart commits here: round to paise, patch just
@@ -462,6 +497,9 @@ export default function BarReplay() {
   const hotkeysEnabled = started && !orderDraft
   useHotkey('b', () => openOrderTicket('long'), { enabled: hotkeysEnabled })
   useHotkey('s', () => openOrderTicket('short'), { enabled: hotkeysEnabled })
+  // Shift skips the ticket entirely and fills at market, at the preference's size.
+  useHotkey('shift+b', () => placeMarketOrder('long'), { enabled: hotkeysEnabled })
+  useHotkey('shift+s', () => placeMarketOrder('short'), { enabled: hotkeysEnabled })
   // Symbol and timeframe switchers. Not gated on `started` like the trading keys above - swapping
   // instruments is the main thing you do *before* a replay is running. Mod+K stays the global
   // palette (CommandPalette), so these take the single keys TradingView uses for the same jobs.
@@ -572,6 +610,8 @@ export default function BarReplay() {
           orders,
           lastBar,
           onOpenTicket: openOrderTicket,
+          onMarketOrder: placeMarketOrder,
+          startingQty,
           onRequestClose: requestClose,
           onRequestPartialClose: requestPartialClose,
           onMoveToBreakeven: moveStopsToBreakeven,
@@ -593,6 +633,8 @@ export default function BarReplay() {
         onOpenChange={setSettingsOpen}
         settings={chartSettings}
         onSave={setChartSettings}
+        balance={balance}
+        price={lastBar?.close ?? null}
       />
 
       <OrderTicketDialog

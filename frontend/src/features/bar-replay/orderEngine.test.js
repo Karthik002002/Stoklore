@@ -7,6 +7,7 @@ import {
   processBarForOrders,
   riskReward,
   setLegQty,
+  preferredQuantity,
   sizeByRisk,
   trailStops,
   withStopsAtBreakeven,
@@ -623,6 +624,26 @@ import {
   assert.ok(setLegQty(order, 'target', 't1', 2.5).error)
   assert.ok(setLegQty(order, 'target', 't1', Number.NaN).error)
   assert.ok(setLegQty(order, 'target', 'nope', 2).error)
+}
+
+// Order-sizing preference (Settings > Preferences).
+{
+  const qty = { sizeMode: 'qty', defaultQty: 5, capitalPct: 10 }
+  const pct = { sizeMode: 'pctCapital', defaultQty: 5, capitalPct: 10 }
+  // Fixed mode ignores balance and price entirely.
+  assert.equal(preferredQuantity(qty, 100000, 250), 5)
+  assert.equal(preferredQuantity(qty, null, null), 5)
+  // 10% of 1,00,000 = 10,000 / 250 = exactly 40.
+  assert.equal(preferredQuantity(pct, 100000, 250), 40)
+  // Rounds DOWN, never up: 10,000 / 300 = 33.33 shares is 33, not 34 (34 would overspend).
+  assert.equal(preferredQuantity(pct, 100000, 300), 33)
+  // Never sizes to zero - a budget too small for one share still enters with one.
+  assert.equal(preferredQuantity({ ...pct, capitalPct: 0.1 }, 1000, 500), 1)
+  // Missing inputs fall back to the fixed quantity rather than refusing to size.
+  assert.equal(preferredQuantity(pct, null, 250), 5)
+  assert.equal(preferredQuantity(pct, 0, 250), 5)
+  assert.equal(preferredQuantity(pct, 100000, null), 5)
+  assert.equal(preferredQuantity({ ...pct, capitalPct: 0 }, 100000, 250), 5)
 }
 
 console.log('orderEngine.test.js: all assertions passed')

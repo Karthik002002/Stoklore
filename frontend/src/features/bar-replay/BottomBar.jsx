@@ -423,6 +423,8 @@ function TradeControls({ trade }) {
     onMoveToBreakeven,
     onCancelPending,
     onRemoveLevel,
+    onMarketOrder,
+    startingQty,
   } = trade
   const openCount = orders.length
 
@@ -432,22 +434,24 @@ function TradeControls({ trade }) {
         {lastBar ? inr(lastBar.close) : '—'}
       </span>
       <PortfolioChip orders={orders} lastBar={lastBar} />
-      <Hint label="Buy — opens the order ticket" keys="B">
+      {/* Click (or B/S) reviews the order in the ticket; Shift-click (or Shift+B/S) skips it and
+          fills at market, both sized by the Settings > Preferences sizing preference. */}
+      <Hint label={`Buy — ticket, or Shift for ${startingQty} at market`} keys="B / ⇧B">
         <Button
           size="sm"
           className="bg-up text-white hover:bg-up/90"
           disabled={!lastBar}
-          onClick={() => onOpenTicket('long')}
+          onClick={(e) => (e.shiftKey ? onMarketOrder('long') : onOpenTicket('long'))}
         >
           Buy <span className="ml-1 text-xs opacity-70">B</span>
         </Button>
       </Hint>
-      <Hint label="Sell — opens the order ticket" keys="S">
+      <Hint label={`Sell — ticket, or Shift for ${startingQty} at market`} keys="S / ⇧S">
         <Button
           size="sm"
           className="bg-down text-white hover:bg-down/90"
           disabled={!lastBar}
-          onClick={() => onOpenTicket('short')}
+          onClick={(e) => (e.shiftKey ? onMarketOrder('short') : onOpenTicket('short'))}
         >
           Sell <span className="ml-1 text-xs opacity-70">S</span>
         </Button>

@@ -12,6 +12,7 @@ import {
   PlayIcon,
   RotateCcwIcon,
   SettingsIcon,
+  ShuffleIcon,
   SkipBackIcon,
   SkipForwardIcon,
   SlashIcon,
@@ -314,6 +315,7 @@ function PlaybackControls({ playback }) {
     bars,
     dateDraft,
     onJumpDate,
+    onRandomBar,
     onRestart,
   } = playback
 
@@ -371,6 +373,18 @@ function PlaybackControls({ playback }) {
         placeholder="Jump to date"
         triggerClassName="w-32 text-xs"
       />
+      {/* The menu's Random bar item, one click closer - it's the one people use every trade. */}
+      <Hint label="Random bar" keys="Shift+R">
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label="Jump to a random bar"
+          disabled={bars.length === 0}
+          onClick={onRandomBar}
+        >
+          <ShuffleIcon className="size-4" />
+        </Button>
+      </Hint>
       <span className="px-1 text-xs whitespace-nowrap text-muted-foreground tabular-nums">
         {currentIndex + 1}/{total}
       </span>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useHotkey } from '@tanstack/react-hotkeys'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -33,6 +33,11 @@ const FIELD_LABEL = { stopLoss: 'Stop loss', target: 'Target' }
 // order can both be queued without the second looking like a duplicate of the first.
 const closeKey = (entry) => (entry.leg ? `${entry.order.id}:${entry.leg.id}` : entry.order.id)
 
+// How long the chart's framing is allowed to settle before it's written to the persisted store.
+// Long enough that a whole pan or zoom gesture costs one write, short enough that a reload right
+// after letting go still lands where you left it.
+const VIEW_SAVE_MS = 400
+
 export default function BarReplay() {
   usePageTitle('Bar Replay')
   const queryClient = useQueryClient()
@@ -49,7 +54,6 @@ export default function BarReplay() {
   const indicators = useBarReplayStore((s) => s.indicators)
   const speedMs = useBarReplayStore((s) => s.speedMs)
   const chartSettings = useBarReplayStore((s) => s.settings)
-  const view = useBarReplayStore((s) => s.view)
   const accountId = useBarReplayStore((s) => s.accountId)
   const changeSymbol = useBarReplayStore((s) => s.setSymbol)
   const changeTimeframe = useBarReplayStore((s) => s.setTimeframe)
@@ -62,6 +66,33 @@ export default function BarReplay() {
   const setView = useBarReplayStore((s) => s.setView)
   const setAccountId = useBarReplayStore((s) => s.setAccountId)
   const restartStore = useBarReplayStore((s) => s.restart)
+
+  // `view` (zoom window, pane heights, price scales) is deliberately NOT subscribed: it changes on
+  // every frame of a pan or zoom, and re-rendering this page that often re-sliced `bars` and made
+  // the chart re-set every candle and recompute every indicator mid-drag. Read once, at mount -
+  // from there the chart owns its framing and only reports it back.
+  const initialViewRef = useRef(useBarReplayStore.getState().view)
+  // And the reports are coalesced: a drag emits dozens of them, each one otherwise a synchronous
+  // localStorage write of the whole session (zustand's persist middleware).
+  const pendingViewRef = useRef(null)
+  const viewTimerRef = useRef(0)
+  const flushView = useCallback(() => {
+    window.clearTimeout(viewTimerRef.current)
+    viewTimerRef.current = 0
+    const pending = pendingViewRef.current
+    pendingViewRef.current = null
+    if (pending) setView(pending)
+  }, [setView])
+  const handleViewChange = useCallback(
+    (next) => {
+      pendingViewRef.current = { ...pendingViewRef.current, ...next }
+      if (viewTimerRef.current) return
+      viewTimerRef.current = window.setTimeout(flushView, VIEW_SAVE_MS)
+    },
+    [flushView],
+  )
+  // Leaving the page mid-drag still saves where it was left.
+  useEffect(() => flushView, [flushView])
 
   const { data: accounts = [] } = useQuery({ queryKey: ['tradeAccounts'], queryFn: () => getTradeAccounts() })
   // The selected account's live wallet, so the order ticket can show a position's size as a
@@ -149,7 +180,12 @@ export default function BarReplay() {
   const barsReady = intraday ? allBars.length > 0 : hasMaxData
   const started = barIndex != null && allBars.length > 0
   const currentIndex = started ? Math.min(barIndex, allBars.length - 1) : null
-  const visibleBars = started ? allBars.slice(0, currentIndex + 1) : []
+  // Memoised: this array is the chart's `bars` prop, and a fresh one on an unrelated re-render
+  // (a hover, a pill update) re-runs setData over the whole history plus every indicator.
+  const visibleBars = useMemo(
+    () => (started ? allBars.slice(0, currentIndex + 1) : []),
+    [started, allBars, currentIndex],
+  )
   const lastBar = visibleBars.length ? visibleBars[visibleBars.length - 1] : null
   const atEnd = started && currentIndex >= allBars.length - 1
 
@@ -235,6 +271,16 @@ export default function BarReplay() {
     if (found < 0) return
     setPlaying(false)
     setBarIndex(found)
+  }
+
+  // Same pick the Jump to date › Random bar menu item makes, callable without the menu - used by
+  // the close dialog's "jump after logging" preference. Announced with a toast because the whole
+  // chart changes underneath the user without them having clicked anything.
+  const jumpToRandomBar = () => {
+    if (allBars.length === 0) return
+    const bar = allBars[Math.floor(Math.random() * allBars.length)]
+    jumpToDate(bar.date)
+    toast.success(`Jumped to ${bar.date}`, { description: 'Random bar — replay paused here.' })
   }
 
   // The date field's displayed value tracks what's typed/picked immediately, but the actual
@@ -508,6 +554,10 @@ export default function BarReplay() {
   // TradingView's own bar-replay bindings: Shift+Down plays/pauses, Shift+Right steps one bar.
   useHotkey('shift+down', () => setPlaying((p) => !p), { enabled: hotkeysEnabled && (!atEnd || playing) })
   useHotkey('shift+right', () => setBarIndex(currentIndex + 1), { enabled: hotkeysEnabled && !atEnd })
+  // Shuffle to a random bar - the keyboard half of the bottom bar's dice button (and of the close
+  // dialog's "jump after logging"). Not gated on `started`: picking a random spot is a perfectly
+  // good way to *begin* a session.
+  useHotkey('shift+r', jumpToRandomBar, { enabled: !orderDraft && allBars.length > 0 })
   // useHotkey('escape', () => setDrawMode(null), { enabled: !!drawMode })
 
   return (
@@ -538,8 +588,8 @@ export default function BarReplay() {
           onDrawToolChange={setDrawTool}
           selectedDrawingId={selectedDrawingId}
           onSelectDrawing={setSelectedDrawingId}
-          view={view}
-          onViewChange={setView}
+          view={initialViewRef.current}
+          onViewChange={handleViewChange}
           settings={chartSettings}
         />
       </div>
@@ -603,6 +653,7 @@ export default function BarReplay() {
           bars: allBars,
           dateDraft,
           onJumpDate: jumpToDate,
+          onRandomBar: jumpToRandomBar,
           onRestart: restart,
         }}
         trade={{
@@ -696,6 +747,11 @@ export default function BarReplay() {
             setOrders(orders.filter((o) => o.id !== order.id))
           }
           setCloseQueue((q) => q.slice(1))
+          // Only once the last queued close is dealt with: a laddered exit can queue several
+          // dialogs at the same bar, and jumping after the first would strand the rest on a
+          // chart that has moved on. Read straight from the store rather than subscribed, since
+          // nothing here re-renders on the preference changing.
+          if (closeQueue.length === 1 && useBarReplayStore.getState().autoRandomJump) jumpToRandomBar()
         }}
       />
     </div>

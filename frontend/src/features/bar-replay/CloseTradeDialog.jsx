@@ -2,18 +2,20 @@ import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery } from '@tanstack/react-query'
+import { InfoIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { SelectField, TagField, TextAreaField } from '@/components/form'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { inr } from '@/lib/format'
 import { autoResult, EMOTIONS, NEUTRAL_PNL_BAND, tradePnl } from '@/lib/manualTrades'
 import { tradeCosts, tradeNetPnl } from '@/lib/tradeCosts'
 import { closeTradeSchema } from '@/lib/schemas'
 import { createManualTrade, getTradeAccounts, uploadManualTradeImage } from '@/services/api'
 import { CLOSE_REASON_LABEL } from './orderEngine'
+import { useBarReplayStore } from './store'
 
 const RESULT_OPTIONS = [
   { value: 'profit', label: 'Profit' },
@@ -47,6 +49,11 @@ export default function CloseTradeDialog({
   // fixed qty (the leg's own), and any user edit there would misreport what actually happened.
   // Seeded from the partialQty the caller pre-suggested (via "Close 50" in PositionsList) or
   // from the order's full remaining qty for a plain "Close all" click.
+  // Persisted preference (store.js), not form state: the point of it is to not have to decide
+  // again on the next trade. Acted on by BarReplay once the whole close queue has drained.
+  const autoRandomJump = useBarReplayStore((s) => s.autoRandomJump)
+  const setAutoRandomJump = useBarReplayStore((s) => s.setAutoRandomJump)
+
   const isManual = reason === 'manual' && !leg
   const [manualQty, setManualQty] = useState(partialQty ?? order?.quantity ?? 0)
   useEffect(() => {
@@ -206,6 +213,32 @@ export default function CloseTradeDialog({
             rows={3}
             placeholder="What happened, what would you do differently…"
           />
+
+          <label className="flex items-start gap-2 rounded-lg border bg-muted/20 p-2.5 text-xs">
+            <input
+              type="checkbox"
+              className="mt-0.5 size-3.5 shrink-0 accent-primary"
+              checked={autoRandomJump}
+              onChange={(e) => setAutoRandomJump(e.target.checked)}
+            />
+            <span className="flex-1">
+              <span className="font-medium">Jump to a random date after logging</span>
+              <span className="block text-muted-foreground">
+                Saves clicking Jump to date › Random bar between trades.
+              </span>
+            </span>
+            <Tooltip>
+              <TooltipTrigger render={<span className="mt-0.5 inline-flex text-muted-foreground" />}>
+                <InfoIcon className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-64">
+                On save, the replay moves to a randomly picked bar somewhere else in this symbol's history — a
+                different date and time — and pauses there. Open positions and drawings stay as they are; only
+                where you're standing in the chart changes. The new date is shown in a message and on the
+                playback bar.
+              </TooltipContent>
+            </Tooltip>
+          </label>
 
           <Button type="submit" className="w-full" disabled={save.isPending}>
             {save.isPending && <Spinner className="size-4" />}

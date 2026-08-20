@@ -71,6 +71,12 @@ export const useBarReplayStore = create(
       speedMs: 1000,
       settings: DEFAULT_CHART_SETTINGS,
       view: DEFAULT_VIEW,
+      // After logging a closed trade, jump the replay to a random bar instead of leaving it
+      // parked where the trade ended. Off by default; the toggle lives in the close-trade dialog,
+      // where the decision is actually made. Persisted with everything else here, so the choice
+      // survives a reload - a missing key in an older persisted session reads as `false` through
+      // persist's shallow merge, so this needs no migration.
+      autoRandomJump: false,
       // Which trade_accounts row trades logged from this session's closes are journaled under -
       // sticky across the session (not reset by setSymbol/setTimeframe below) since a replay
       // session is "practicing one strategy", the same strategy regardless of which symbol is on
@@ -103,6 +109,7 @@ export const useBarReplayStore = create(
       setSpeedMs: (speedMs) => set({ speedMs }),
       setSettings: (settings) => set({ settings }),
       setAccountId: (accountId) => set({ accountId }),
+      setAutoRandomJump: (autoRandomJump) => set({ autoRandomJump }),
       setView: (view) => set((s) => ({ view: { ...s.view, ...view } })),
       restart: () =>
         set((s) => ({

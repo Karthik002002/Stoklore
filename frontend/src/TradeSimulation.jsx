@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { DownloadIcon, FileTextIcon, PlayIcon, SaveIcon } from 'lucide-react'
+import { DownloadIcon, PlayIcon, PrinterIcon, SaveIcon } from 'lucide-react'
 import { toast } from 'sonner'
+import MdActions from '@/components/MdActions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -21,7 +22,9 @@ import {
   simulate,
   SIZING,
   toComparisonCsv,
+  toComparisonMd,
   toCsv,
+  toMd,
 } from '@/lib/tradeSimulation'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { getManualTrades, getTradeAccounts } from '@/services/api'
@@ -395,7 +398,19 @@ function SlippagePanel({ config, set, pool }) {
 /** Identical in both modes, and deliberately so: a comparison is only a comparison if every account
  *  was put through the same starting balance, the same friction and the same sizing rule. There is
  *  no per-account config in the Multiple tab for exactly that reason. */
-function ConfigSidebar({ config, set, pool, onRun, canRun, runLabel, onCsv, csvLabel, hasResult }) {
+function ConfigSidebar({
+  config,
+  set,
+  pool,
+  onRun,
+  canRun,
+  runLabel,
+  onCsv,
+  csvLabel,
+  hasResult,
+  md,
+  mdName,
+}) {
   const savePreset = () => {
     localStorage.setItem(PRESET_KEY, JSON.stringify(config))
     toast.success('Configuration saved — it will load with this page next time')
@@ -518,9 +533,10 @@ function ConfigSidebar({ config, set, pool, onRun, canRun, runLabel, onCsv, csvL
           disabled={!hasResult}
           onClick={() => window.print()}
         >
-          <FileTextIcon className="size-3.5" /> PDF
+          <PrinterIcon className="size-3.5" /> PDF
         </Button>
       </div>
+      <MdActions build={md} name={mdName} disabled={!hasResult} className="[&>*]:flex-1" />
     </aside>
   )
 }
@@ -1023,6 +1039,8 @@ function SingleMode({ config, set, accounts, allTrades }) {
             csvLabel="CSV"
             hasResult={!!result}
             onCsv={() => downloadCsv(toCsv(result), `simulation-${selected?.name ?? 'log'}`)}
+            md={() => toMd(result, { title: selected?.name ?? 'log', config })}
+            mdName={`simulation-${selected?.name ?? 'log'}`}
           />
           <div className="min-w-0 flex-1 space-y-4">
             <DataProfile
@@ -1155,6 +1173,8 @@ function MultiMode({ config, set, accounts, allTrades }) {
             csvLabel="CSV"
             hasResult={!!results && entries.length > 0}
             onCsv={() => downloadCsv(toComparisonCsv(entries, matrix), 'simulation-comparison')}
+            md={() => toComparisonMd(entries, matrix, { config })}
+            mdName="simulation-comparison"
           />
 
           <div className="min-w-0 flex-1">

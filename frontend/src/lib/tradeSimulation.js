@@ -7,6 +7,7 @@
 //
 // Self-check: node src/lib/tradeSimulation.selfcheck.mjs
 
+import { mdTable } from './exportFile.js'
 import { rng } from './tradeMath.js'
 
 // --- pool preparation -------------------------------------------------------------------------
@@ -472,6 +473,114 @@ export function toComparisonCsv(entries, matrix) {
     })
   }
   return lines.join('\n')
+}
+
+// --- markdown -----------------------------------------------------------------------------
+// The same numbers as the CSV, in the shape you paste into a journal entry or a review note. The
+// per-run dump is deliberately absent: 1,000 rows of markdown is a wall, and that is what the CSV
+// export is for.
+
+const PCT_COLS = ['10th', '25th', '50th', '75th', '90th']
+
+const configLines = (config) => [
+  `- Starting balance: ${config.startBalance}`,
+  `- Runs x length: ${config.runs} x ${config.length} trades`,
+  `- Model: ${config.model === 'bootstrap' ? 'bootstrap (with replacement)' : 'shuffle (without replacement)'}`,
+  `- Slippage per trade: ${config.slip}`,
+  `- Sizing: ${
+    config.sizingMode === 'fixed-amount'
+      ? `fixed risk of ${config.riskAmount} per trade`
+      : config.sizingMode === 'fixed-pct'
+        ? `${config.riskPct}% of equity per trade`
+        : 'as logged'
+  }`,
+  `- Liquidation threshold: ${config.liquidateAt}`,
+  ...(config.removeTopWins ? ['- Top 5% of wins removed from the pool'] : []),
+]
+
+export function toMd(result, { title, config }) {
+  return [
+    `# Trade log simulation — ${title}`,
+    `Pool: ${result.pool.n} closed trades · win rate ${round(result.pool.winRate)}% · profit factor ${
+      result.pool.profitFactor == null ? '∞' : round(result.pool.profitFactor)
+    }`,
+    '## Configuration',
+    configLines(config).join('\n'),
+    '## Percentile summary',
+    mdTable(
+      ['Metric', ...PCT_COLS],
+      CSV_ROWS.map(([label, key]) => [label, ...result.table[key].map(round)]),
+    ),
+    '## Risk & survival',
+    mdTable(
+      ['Measure', 'Value'],
+      [
+        ['Survival rate', `${round(result.survivalRate)}%`],
+        ['Ruin (50% drawdown)', `${round(result.ruin50Pct)}%`],
+        ['Ruin (total)', `${round(result.ruinFullPct)}%`],
+      ],
+    ),
+    '## Consecutive losses',
+    mdTable(
+      ['Streak', '% of runs'],
+      result.lossStreakHist.map((b) => [b.label, round(b.pct)]),
+    ),
+  ].join('\n\n')
+}
+
+export function toComparisonMd(entries, matrix, { config }) {
+  const parts = [
+    `# Trade log simulation — ${entries.length} accounts compared`,
+    '## Configuration',
+    configLines(config).join('\n'),
+    '## Where each account ends up (median run)',
+    mdTable(
+      ['Account', 'Median end balance', 'Median ROI %', 'Pool trades', 'Pool win rate %'],
+      entries.map((e) => [
+        e.name,
+        round(e.result.table.endBalance[2]),
+        round(e.result.table.roi[2]),
+        e.result.pool.n,
+        round(e.result.pool.winRate),
+      ]),
+    ),
+    '## Risk & survival',
+    mdTable(
+      ['Account', 'Survival %', 'Ruin (50% DD) %', 'Ruin (total) %'],
+      entries.map((e) => [
+        e.name,
+        round(e.result.survivalRate),
+        round(e.result.ruin50Pct),
+        round(e.result.ruinFullPct),
+      ]),
+    ),
+  ]
+
+  for (const [label, key] of CSV_ROWS) {
+    parts.push(
+      `## ${label}`,
+      mdTable(
+        ['Account', ...PCT_COLS],
+        entries.map((e) => [e.name, ...e.result.table[key].map(round)]),
+      ),
+    )
+  }
+
+  if (matrix) {
+    parts.push(
+      '## Daily P&L correlation',
+      `Pearson correlation of realised daily P&L over the days each pair both traded; cells with fewer than ${MIN_OVERLAP} shared days are too thin to read as a finding. Shared days in brackets.`,
+      mdTable(
+        ['', ...entries.map((e) => e.short ?? e.name)],
+        matrix.map((row, i) => [
+          entries[i].short ?? entries[i].name,
+          ...row.map((c) => (c?.r == null ? '—' : `${round(c.r)} (${c.overlap}d)`)),
+        ]),
+      ),
+    )
+  }
+
+  return parts.join('\n\n')
 }
 
 // Account names are user-typed and routinely contain a comma ("Swing, v2").

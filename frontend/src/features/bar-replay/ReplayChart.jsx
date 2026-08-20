@@ -240,6 +240,11 @@ const ReplayChart = forwardRef(function ReplayChart(
   // Pane keys whose saved price scale has already been applied. Applied ONCE each: after that the
   // scale belongs to the user, and re-applying on a later render would snap their drag back.
   const restoredScalesRef = useRef(new Set())
+  // Time of the bar under the crosshair, or null when the pointer is off the chart - drives the
+  // OHLCV legend. Held as a ref too so the crosshair subscription can skip the setState on every
+  // pixel of movement and only re-render when the pointer crosses into a different candle.
+  const [hoverTime, setHoverTime] = useState(null)
+  const hoverTimeRef = useRef(null)
   // Right-click context menu state: null when closed, { x, y, price } while open. See the
   // ContextMenu render at the bottom of this component.
   const [ctxMenu, setCtxMenu] = useState(null)
@@ -272,8 +277,12 @@ const ReplayChart = forwardRef(function ReplayChart(
   // Read by the first-data effect and the sampler below, both of which must see the *current*
   // view without re-running (re-running the sampler would restart its interval on every render,
   // and re-running the data effect would re-frame the chart under the user mid-session).
+  // Read ONCE, at mount. After that the chart itself is the authority on its own framing and this
+  // ref is updated from the chart (see the sampler below), never from the prop again. Re-reading
+  // it every render is what made panning stutter: each write went back through the store, the page
+  // re-rendered, and a fresh `bars` array re-ran setData over every candle and every indicator on
+  // every frame of the drag.
   const viewRef = useRef(view)
-  viewRef.current = view
   // Which oscillator type sits in each pane below the price pane, in order. Written by the
   // indicator effect, read by the height sampler - a ref so the sampler's interval doesn't have to
   // be torn down and restarted every time the indicator list changes.
@@ -332,6 +341,16 @@ const ReplayChart = forwardRef(function ReplayChart(
     chart.priceScale(VOLUME_PRICE_SCALE).applyOptions({
       scaleMargins: { top: 0.8, bottom: 0 },
       visible: false,
+    })
+    // A recreated chart (symbol or timeframe change) starts with no crosshair, and a hover time
+    // from the previous symbol matches nothing in the new bars.
+    hoverTimeRef.current = null
+    setHoverTime(null)
+    chart.subscribeCrosshairMove((param) => {
+      const time = param.time ?? null
+      if (time === hoverTimeRef.current) return
+      hoverTimeRef.current = time
+      setHoverTime(time)
     })
     indicatorSeriesRef.current = new Map()
     orderLinesRef.current = new Map()
@@ -910,6 +929,15 @@ const ReplayChart = forwardRef(function ReplayChart(
       )
       if (!movedRange && !movedPanes && !movedScales) return
 
+      // The chart's own state is what the next sample diffs against - nothing flows back in from
+      // the store, so this has to be kept current here.
+      viewRef.current = {
+        ...prev,
+        ...(movedRange ? { logicalRange: { from: range.from, to: range.to } } : {}),
+        paneHeights: { ...prev.paneHeights, ...heights },
+        priceRanges: { ...prev.priceRanges, ...priceRanges },
+      }
+
       onViewChangeRef.current?.({
         ...(movedRange ? { logicalRange: { from: range.from, to: range.to } } : {}),
         // Merged over what's already stored, not replacing it: an oscillator that isn't on the
@@ -1035,6 +1063,12 @@ const ReplayChart = forwardRef(function ReplayChart(
     }
   }, [previewOrder, resetKey])
 
+  // The hovered bar, falling back to the newest one so the legend reads out the current candle
+  // when the pointer is away - same as every charting package. Index, not just the bar, because
+  // the change is against the previous close.
+  const legendIndex = hoverTime == null ? bars.length - 1 : bars.findIndex((b) => b.time === hoverTime)
+  const legendBar = legendIndex >= 0 ? bars[legendIndex] : null
+
   return (
     <div ref={containerRef} className="absolute inset-0 z-0">
       {bars.length === 0 && (
@@ -1058,12 +1092,16 @@ const ReplayChart = forwardRef(function ReplayChart(
         {draft && <DrawnShape drawing={draft} selected dashed />}
       </svg>
 
-      {/* What's armed, so an active tool is visible without looking back down at the bar. */}
-      {tool && (
-        <div className="absolute top-2 left-2 z-20 rounded border bg-background/90 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm">
-          {DRAW_TOOLS[tool].label} — {DRAW_TOOLS[tool].hint.toLowerCase()} · Esc to cancel
-        </div>
-      )}
+      {/* Top-left stack: the hovered bar's OHLCV, and what drawing tool is armed. One column so
+          the two never sit on top of each other. */}
+      <div className="pointer-events-none absolute top-2 left-2 z-20 flex flex-col items-start gap-1">
+        {legendBar && <OhlcvLegend bar={legendBar} prev={bars[legendIndex - 1] ?? null} />}
+        {tool && (
+          <div className="rounded border bg-background/90 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm">
+            {DRAW_TOOLS[tool].label} — {DRAW_TOOLS[tool].hint.toLowerCase()} · Esc to cancel
+          </div>
+        )}
+      </div>
 
       {/* Floating controls sitting on their own price lines (TradingView's on-chart position
           widget). Rendered as HTML rather than through the chart, because lightweight-charts'
@@ -1108,6 +1146,54 @@ export default ReplayChart
 //
 // `pointer-events-auto` per-pill, since the overlay wrapper is pointer-events-none - the chart
 // must keep receiving the drags and clicks that land anywhere else.
+// The hovered bar, read out TradingView-style. Prices are plain numbers rather than inr(): the
+// axis already carries the currency, and eight ₹ signs in one line is noise. Colour follows the
+// candle's own direction (close vs open), so the legend agrees with the bar it describes.
+function OhlcvLegend({ bar, prev }) {
+  const up = bar.close >= bar.open
+  const tone = up ? 'text-up' : 'text-down'
+  const change = prev ? bar.close - prev.close : null
+  const changePct = prev && prev.close ? (change / prev.close) * 100 : null
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 rounded border bg-background/85 px-2 py-1 text-[11px] tabular-nums shadow-sm backdrop-blur-sm">
+      <span className="text-muted-foreground">{stamp(bar)}</span>
+      {[
+        ['O', bar.open],
+        ['H', bar.high],
+        ['L', bar.low],
+        ['C', bar.close],
+      ].map(([label, value]) => (
+        <span key={label}>
+          <span className="text-muted-foreground">{label}</span> <span className={tone}>{price(value)}</span>
+        </span>
+      ))}
+      {change != null && (
+        <span className={tone}>
+          {change >= 0 ? '+' : ''}
+          {price(change)} ({change >= 0 ? '+' : ''}
+          {changePct.toFixed(2)}%)
+        </span>
+      )}
+      <span>
+        <span className="text-muted-foreground">Vol</span> <span className={tone}>{compact(bar.volume)}</span>
+      </span>
+    </div>
+  )
+}
+
+// Intraday bars key on a unix timestamp and daily ones on a "YYYY-MM-DD" business day, so the
+// legend follows the axis: date only for daily, date + time for intraday. UTC getters, because
+// intraday bar times are pre-shifted to IST and the chart renders them as UTC (see minute_data.py).
+const stamp = (bar) =>
+  typeof bar.time === 'number'
+    ? new Date(bar.time * 1000).toISOString().slice(0, 16).replace('T', ' ')
+    : (bar.date ?? bar.time)
+
+// Two decimals, thousands separated - the axis format minus the ₹.
+const price = (v) =>
+  v == null ? '—' : v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
 const PILL =
   'absolute left-[80%] -translate-x-1/2 -translate-y-1/2 pointer-events-auto flex items-center ' +
   'rounded border bg-background/90 text-[11px] whitespace-nowrap tabular-nums shadow-sm backdrop-blur-sm'

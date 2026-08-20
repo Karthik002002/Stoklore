@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { useFieldArray, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { XIcon } from 'lucide-react'
+import { FileSpreadsheetIcon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Field, SelectField, TextField } from '@/components/form'
 import SymbolCombobox from '@/components/SymbolCombobox'
@@ -12,6 +12,8 @@ import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Controller } from 'react-hook-form'
+import { downloadXlsx } from '@/lib/exportFile'
+import { tradeSheet } from '@/lib/tradeExport'
 import { fmt, formatDateTime, inr } from '@/lib/format'
 import { tradePnl, tradeReturnPct } from '@/lib/manualTrades'
 import { accountFor, accountHasCosts, accountsById, tradeCosts, tradeNetPnl } from '@/lib/tradeCosts'
@@ -340,6 +342,7 @@ function HistoryLog({ trades }) {
   })
   const byId = useMemo(() => accountsById(accounts), [accounts])
   const anyCosts = useMemo(() => accounts.some(accountHasCosts), [accounts])
+  const accountName = accounts.find((a) => a.id === trades[0]?.account_id)?.name ?? 'paper'
   if (trades.length === 0) {
     return (
       <p className="rounded-xl border bg-card py-12 text-center text-sm text-muted-foreground">
@@ -348,67 +351,78 @@ function HistoryLog({ trades }) {
     )
   }
   return (
-    <div className="overflow-x-auto rounded-xl border bg-card">
-      <Table>
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            <TableHead>Closed</TableHead>
-            <TableHead>Ticker</TableHead>
-            <TableHead>Direction</TableHead>
-            <TableHead className="text-right">Qty</TableHead>
-            <TableHead className="text-right">Entry</TableHead>
-            <TableHead className="text-right">Exit</TableHead>
-            <TableHead>Reason</TableHead>
-            <TableHead className="text-right">Realized</TableHead>
-            {anyCosts && (
-              <TableHead
-                className="text-right"
-                title="Realized P&L minus this paper account's slippage, brokerage and charges on both sides."
-              >
-                Net
-              </TableHead>
-            )}
-            <TableHead className="text-right">Return</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {trades.map((t) => {
-            const pnl = tradePnl(t)
-            const ret = tradeReturnPct(t)
-            const costs = tradeCosts(t, accountFor(t, byId))
-            const net = tradeNetPnl(t, accountFor(t, byId))
-            return (
-              <TableRow key={t.id}>
-                <TableCell className="whitespace-nowrap">
-                  {formatDateTime(t.exited_at ?? t.traded_at)}
-                </TableCell>
-                <TableCell className="font-medium">{t.symbol}</TableCell>
-                <TableCell className="capitalize">{t.direction}</TableCell>
-                <TableCell className="text-right tabular-nums">{t.quantity}</TableCell>
-                <TableCell className="text-right tabular-nums">{inr(t.entry_price)}</TableCell>
-                <TableCell className="text-right tabular-nums">{inr(t.exit_price)}</TableCell>
-                <TableCell>
-                  <Badge variant="outline">{exitReason(t)}</Badge>
-                </TableCell>
-                <TableCell className={`text-right tabular-nums ${pnl >= 0 ? 'text-up' : 'text-down'}`}>
-                  {inr(pnl)}
-                </TableCell>
-                {anyCosts && (
-                  <TableCell
-                    className={`text-right tabular-nums ${net == null ? '' : net >= 0 ? 'text-up' : 'text-down'}`}
-                    title={costs ? `Costs ${inr(costs.total)}` : undefined}
-                  >
-                    {net == null ? '—' : inr(net)}
+    <div className="space-y-2">
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => downloadXlsx(tradeSheet(trades, accounts), `paper-trades-${accountName}`)}
+        >
+          <FileSpreadsheetIcon className="size-4" /> Excel
+        </Button>
+      </div>
+      <div className="overflow-x-auto rounded-xl border bg-card">
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead>Closed</TableHead>
+              <TableHead>Ticker</TableHead>
+              <TableHead>Direction</TableHead>
+              <TableHead className="text-right">Qty</TableHead>
+              <TableHead className="text-right">Entry</TableHead>
+              <TableHead className="text-right">Exit</TableHead>
+              <TableHead>Reason</TableHead>
+              <TableHead className="text-right">Realized</TableHead>
+              {anyCosts && (
+                <TableHead
+                  className="text-right"
+                  title="Realized P&L minus this paper account's slippage, brokerage and charges on both sides."
+                >
+                  Net
+                </TableHead>
+              )}
+              <TableHead className="text-right">Return</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {trades.map((t) => {
+              const pnl = tradePnl(t)
+              const ret = tradeReturnPct(t)
+              const costs = tradeCosts(t, accountFor(t, byId))
+              const net = tradeNetPnl(t, accountFor(t, byId))
+              return (
+                <TableRow key={t.id}>
+                  <TableCell className="whitespace-nowrap">
+                    {formatDateTime(t.exited_at ?? t.traded_at)}
                   </TableCell>
-                )}
-                <TableCell className={`text-right tabular-nums ${ret >= 0 ? 'text-up' : 'text-down'}`}>
-                  {ret == null ? '—' : `${ret}%`}
-                </TableCell>
-              </TableRow>
-            )
-          })}
-        </TableBody>
-      </Table>
+                  <TableCell className="font-medium">{t.symbol}</TableCell>
+                  <TableCell className="capitalize">{t.direction}</TableCell>
+                  <TableCell className="text-right tabular-nums">{t.quantity}</TableCell>
+                  <TableCell className="text-right tabular-nums">{inr(t.entry_price)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{inr(t.exit_price)}</TableCell>
+                  <TableCell>
+                    <Badge variant="outline">{exitReason(t)}</Badge>
+                  </TableCell>
+                  <TableCell className={`text-right tabular-nums ${pnl >= 0 ? 'text-up' : 'text-down'}`}>
+                    {inr(pnl)}
+                  </TableCell>
+                  {anyCosts && (
+                    <TableCell
+                      className={`text-right tabular-nums ${net == null ? '' : net >= 0 ? 'text-up' : 'text-down'}`}
+                      title={costs ? `Costs ${inr(costs.total)}` : undefined}
+                    >
+                      {net == null ? '—' : inr(net)}
+                    </TableCell>
+                  )}
+                  <TableCell className={`text-right tabular-nums ${ret >= 0 ? 'text-up' : 'text-down'}`}>
+                    {ret == null ? '—' : `${ret}%`}
+                  </TableCell>
+                </TableRow>
+              )
+            })}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   )
 }

@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
 import { ChevronLeftIcon, ChevronRightIcon, SearchIcon } from 'lucide-react'
+import MdActions from '@/components/MdActions'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { mdTable } from '@/lib/exportFile'
 import { fmt, inr } from '@/lib/format'
 import {
   calendarHeatmap,
@@ -663,6 +665,43 @@ function OverallStatistics({ trades }) {
   )
 }
 
+// Everything on this tab that is a number rather than a chart, as markdown: the overall
+// statistics panel section by section, plus the metric-vs-dimension breakdowns for every dimension
+// (the panel shows one at a time; the file has no reason to).
+function statisticsMd(trades, closed) {
+  const parts = [
+    `# Trading statistics`,
+    `${trades.length} trades (${closed.length} closed) — exported ${new Date().toISOString().slice(0, 10)}`,
+  ]
+
+  for (const section of overallStats(trades)) {
+    parts.push(
+      `## ${section.group}`,
+      mdTable(
+        ['Statistic', 'Value'],
+        section.stats.map((st) => [st.label, formatValue(st.value, st.format)]),
+      ),
+    )
+  }
+
+  if (closed.length) {
+    parts.push('## Net P&L by dimension')
+    for (const [key, dim] of Object.entries(DIMENSIONS)) {
+      const rows = seriesFor(closed, key, 'netPnl')
+      if (!rows.length) continue
+      parts.push(
+        `### ${dim.label}`,
+        mdTable(
+          [dim.label, 'Net P&L', 'Trades'],
+          rows.map((r) => [r.label, formatValue(r.netPnl, 'inr'), r.count]),
+        ),
+      )
+    }
+  }
+
+  return parts.join('\n\n')
+}
+
 export default function ManualStatistics({ trades }) {
   const closed = useMemo(() => closedTrades(trades), [trades])
 
@@ -676,6 +715,9 @@ export default function ManualStatistics({ trades }) {
 
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className="flex justify-end lg:col-span-2">
+        <MdActions build={() => statisticsMd(trades, closed)} name="trading-statistics" />
+      </div>
       <OverallStatistics trades={trades} />
       <MetricByDimension trades={closed} />
       <DistributionPanel trades={closed} />

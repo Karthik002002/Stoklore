@@ -3,7 +3,7 @@ import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { ClapperboardIcon, DownloadIcon, PlusIcon, Trash2Icon } from 'lucide-react'
+import { ClapperboardIcon, DownloadIcon, FileSpreadsheetIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Field, SelectField, TagField, TextField } from '@/components/form'
 import ImageLightbox from '@/components/ImageLightbox'
@@ -17,6 +17,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
+import { downloadXlsx } from '@/lib/exportFile'
+import { tradeSheet } from '@/lib/tradeExport'
 import { formatDate, inr } from '@/lib/format'
 import {
   autoResult,
@@ -775,7 +777,24 @@ export default function ManualBacktesting() {
             />
             <Button size="sm" variant="outline" render={<a href="/api/manual-trades/export?format=csv" />}>
               <DownloadIcon className="size-4" />
-              Export CSV
+              CSV
+            </Button>
+            {/* The CSV above is the raw backend dump of every trade; this one is what's on screen -
+                the account picker and the active filters already applied, with the derived metrics
+                (P&L, costs, net, R:R) as columns rather than something to rebuild in Excel. */}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={filteredTrades.length === 0}
+              onClick={() =>
+                downloadXlsx(
+                  tradeSheet(filteredTrades, accounts),
+                  `trades-${accounts.find((a) => a.id === account)?.name ?? 'all-accounts'}`,
+                )
+              }
+            >
+              <FileSpreadsheetIcon className="size-4" />
+              Excel
             </Button>
             <Button size="sm" variant="outline" render={<Link to="/backtest/replay" />}>
               <ClapperboardIcon className="size-4" />

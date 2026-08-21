@@ -121,13 +121,11 @@ class ManualTradeRequest(BaseModel):
     setup: str | None = None  # freeform strategy/setup label, e.g. "Breakout" - see manual-backtesting plan
     ideal_risk_amount: float | None = None  # planned risk in rupees, for Expected-R / risk-deviation
     account_id: int | None = None  # which trade_accounts row this belongs to; None = unassigned
-    # When the position was actually closed. Optional - without it MAE/MFE can't be bounded, so
-    # those two metrics are left out of the snapshot rather than guessed at.
+    # When the position was actually opened and closed. Both optional; `entried_at` defaults to
+    # traded_at (for a hand-logged trade they are the same moment), and without `exited_at` MAE/MFE
+    # can't be bounded, so those two metrics are left out of the snapshot rather than guessed at.
+    entried_at: str | None = None
     exited_at: str | None = None
-    # Which market date the trade refers to, defaulting to traded_at. The two differ for Bar
-    # Replay, which journals under real wall-clock time while the trade itself happened in replayed
-    # history - without this, a 2022 replay would be scored against today's chart.
-    market_at: str | None = None
 
 
 class TradeAccountRequest(BaseModel):

@@ -77,7 +77,11 @@ const GOALS = [
 
 const daily = evaluateGoals(TRADES, GOALS, 'daily')
 assert.equal(daily.goals.length, 2, 'only the daily goals are scored here')
-assert.deepEqual(daily.rows.map((r) => r.key), ['2026-07-08', '2026-07-06'], 'newest period first')
+assert.deepEqual(
+  daily.rows.map((r) => r.key),
+  ['2026-07-08', '2026-07-06'],
+  'newest period first',
+)
 
 const wed = daily.rows[0]
 assert.equal(wed.trades, 2, 'the open trade is excluded from the bucket')
@@ -98,7 +102,11 @@ assert.equal(weekly.rows[0].cells[0].actual, 150)
 assert.equal(weekly.rows[0].cells[0].pct, 30, '150 of a 500 weekly target')
 
 // A goal referencing a metric this build doesn't know scores as unrated instead of throwing.
-const unknown = evaluateGoals(TRADES, [{ id: 'x', metric: 'nope', operator: 'gt', target: 1, period: 'daily' }], 'daily')
+const unknown = evaluateGoals(
+  TRADES,
+  [{ id: 'x', metric: 'nope', operator: 'gt', target: 1, period: 'daily' }],
+  'daily',
+)
 assert.equal(unknown.rows[0].cells[0].pct, null)
 assert.equal(unknown.rows[0].total, null, 'an all-unrated row has no total')
 
@@ -109,13 +117,26 @@ assert.equal(today.trades, 0)
 assert.equal(today.cells.length, 2, 'both daily goals still listed')
 assert.equal(today.total, null)
 
-const live = currentPeriodProgress(
-  [trade({ traded_at: new Date().toISOString() })],
+const live = currentPeriodProgress([trade({ traded_at: new Date().toISOString() })], GOALS, 'daily')
+assert.equal(live.trades, 1)
+assert.equal(live.cells[0].pct, 50, '+100 against a 200 target')
+
+// A Bar Replay trade: taken on 2013 bars, journaled just now. Goals track the work done today, so
+// it belongs to today's period - bucketing it by traded_at would file it under 2013 and leave the
+// day scoring as if nothing had been traded.
+const replayed = currentPeriodProgress(
+  [trade({ traded_at: '2013-03-20T00:00:00+05:30', created_at: new Date().toISOString() })],
   GOALS,
   'daily',
 )
-assert.equal(live.trades, 1)
-assert.equal(live.cells[0].pct, 50, '+100 against a 200 target')
+assert.equal(replayed.trades, 1, 'journaled today, so it counts today')
+assert.equal(replayed.cells[0].pct, 50)
+
+// ...and a row with no created_at at all still falls back to traded_at.
+assert.equal(
+  currentPeriodProgress([trade({ traded_at: new Date().toISOString() })], GOALS, 'daily').trades,
+  1,
+)
 
 // --- labels + metric coverage -----------------------------------------------------------------------
 assert.equal(goalLabel(GOALS[0]), 'Net P&L ≥ 200')

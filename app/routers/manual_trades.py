@@ -62,10 +62,10 @@ def _trade_context(req):
     fast. Returns None for a symbol with no local bars, which is normal and not an error -
     price_history only covers symbols that have been synced.
 
-    `market_at` rather than `traded_at` is what the bars are looked up against: Bar Replay journals
-    its trades under the real wall-clock time (deliberately - see CloseTradeDialog), so scoring a
-    2022 replay against traded_at would silently measure today's market instead."""
-    entry_date = _market_date(req.market_at or req.traded_at)
+    The bars are read against `entried_at` (falling back to traded_at): for a Bar Replay trade
+    that is the replayed bar the position opened on, not the day the row was written, so what gets
+    scored is the market the trade was actually taken in."""
+    entry_date = _market_date(req.entried_at or req.traded_at)
     if entry_date is None:
         return None
     symbol = req.symbol.strip().upper()
@@ -102,7 +102,7 @@ def _fill_once_context(existing, req):
     if "mae_pct" in stored or not req.exited_at:
         return None
 
-    entry_date = _market_date(req.market_at or req.traded_at)
+    entry_date = _market_date(req.entried_at or req.traded_at)
     exit_date = _market_date(req.exited_at)
     if entry_date is None or exit_date is None:
         return None
@@ -123,7 +123,7 @@ def create_manual_trade(req: ManualTradeRequest):
         req.symbol.strip().upper(), req.direction, req.quantity, req.entry_price, req.exit_price,
         req.stop_loss, req.target, req.is_open, req.result, req.emotion, req.tags, req.notes,
         req.traded_at, req.image_filename, req.setup, req.ideal_risk_amount, req.account_id, balance,
-        req.exited_at, _trade_context(req),
+        req.exited_at, _trade_context(req), req.entried_at,
     )
     return {"id": trade_id}
 
@@ -142,7 +142,7 @@ def update_manual_trade(trade_id: int, req: ManualTradeRequest):
         trade_id, req.symbol.strip().upper(), req.direction, req.quantity, req.entry_price,
         req.exit_price, req.stop_loss, req.target, req.is_open, req.result, req.emotion, req.tags,
         req.notes, req.traded_at, req.setup, req.ideal_risk_amount, req.account_id, balance,
-        req.exited_at, context,
+        req.exited_at, context, req.entried_at,
     )
     return {"ok": True}
 

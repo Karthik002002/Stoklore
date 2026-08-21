@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
 import { downloadXlsx } from '@/lib/exportFile'
@@ -415,7 +416,10 @@ function TradesTable({ trades, accounts, onOpen, onDelete, selected, onToggleSel
                 onChange={() => onToggleSelectAll(trades)}
               />
             </TableHead>
-            <TableHead>Date</TableHead>
+            {/* When the trade was logged, matching the order the list comes back in (newest
+                journaled first, see db.list_manual_trades). The market date sits underneath when
+                the two differ - a replayed trade is logged today and taken years ago. */}
+            <TableHead>Logged</TableHead>
             <TableHead>Symbol</TableHead>
             <TableHead>Setup</TableHead>
             <TableHead>Direction</TableHead>
@@ -467,7 +471,14 @@ function TradesTable({ trades, accounts, onOpen, onDelete, selected, onToggleSel
                     onChange={() => onToggleSelect(t.id)}
                   />
                 </TableCell>
-                <TableCell className="whitespace-nowrap">{formatDate(t.traded_at)}</TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {formatDate(t.created_at ?? t.traded_at)}
+                  {/* Always rendered, blank when there is nothing to say: an optional second line
+                      would make replay rows taller than hand-logged ones. */}
+                  <span className="block text-[11px] text-muted-foreground">
+                    {marketDate(t) ? `traded ${marketDate(t)}` : '\u00A0'}
+                  </span>
+                </TableCell>
                 <TableCell className="font-medium">{t.symbol}</TableCell>
                 <TableCell className="text-muted-foreground">{t.setup || '—'}</TableCell>
                 <TableCell className="capitalize">{t.direction}</TableCell>
@@ -520,13 +531,7 @@ function TradesTable({ trades, accounts, onOpen, onDelete, selected, onToggleSel
                 </TableCell>
                 <TableCell className="text-muted-foreground">{t.emotion || '—'}</TableCell>
                 <TableCell>
-                  <div className="flex flex-wrap gap-1">
-                    {(t.tags ?? []).map((tag) => (
-                      <Badge key={tag} variant="secondary">
-                        {tag}
-                      </Badge>
-                    ))}
-                  </div>
+                  <TagCell tags={t.tags} />
                 </TableCell>
                 <TableCell className="max-w-40 truncate text-muted-foreground">{t.notes || '—'}</TableCell>
                 <TableCell className="text-right tabular-nums">
@@ -652,6 +657,40 @@ function BulkEditDialog({ open, onOpenChange, trades, onSaved }) {
       </DialogContent>
     </Dialog>
   )
+}
+
+// One tag visible, the rest behind a +N chip that lists them on hover. Tags are free-form and a
+// trade often carries three or four, which wrapped the cell onto extra lines and left every row a
+// different height.
+function TagCell({ tags }) {
+  const list = tags ?? []
+  if (list.length === 0) return <span className="text-muted-foreground">—</span>
+  const rest = list.slice(1)
+  return (
+    <div className="flex items-center gap-1 whitespace-nowrap">
+      <Badge variant="secondary" className="max-w-28 truncate">
+        {list[0]}
+      </Badge>
+      {rest.length > 0 && (
+        <Tooltip>
+          <TooltipTrigger render={<span className="inline-flex" />}>
+            <Badge variant="outline" className="cursor-default">
+              +{rest.length}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent side="top">{rest.join(', ')}</TooltipContent>
+        </Tooltip>
+      )}
+    </div>
+  )
+}
+
+// The market date a trade was actually taken on, shown under the logged date only when it is a
+// different day - for a hand-logged trade the two are the same and the second line would be noise.
+const marketDate = (t) => {
+  const entry = t.entried_at ?? t.traded_at
+  if (!entry || !t.created_at) return null
+  return entry.slice(0, 10) === t.created_at.slice(0, 10) ? null : formatDate(entry)
 }
 
 // The selected account lives in the URL (?account=3), so a per-strategy view is shareable and

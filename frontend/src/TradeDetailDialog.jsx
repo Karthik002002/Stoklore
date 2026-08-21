@@ -24,6 +24,14 @@ import { getTradeAccounts } from '@/services/api'
 
 const TONE_CLASS = { good: 'text-up', bad: 'text-down', warn: 'text-amber-600', neutral: '' }
 
+// Whether a timestamp actually pins down a moment in the day, or is just a date sitting at
+// midnight - a daily-bar trade knows the day it happened, not the minute.
+const hasTimeOfDay = (iso) => {
+  if (!iso) return false
+  const d = new Date(iso)
+  return d.getHours() !== 0 || d.getMinutes() !== 0 || d.getSeconds() !== 0
+}
+
 function Stat({ label, value, tone, sub }) {
   return (
     <div className="rounded-lg border bg-card p-3">
@@ -131,6 +139,13 @@ export default function TradeDetailDialog({ open, onOpenChange, trade, trades = 
   const hasNext = index >= 0 && index < trades.length - 1
 
   const pnl = tradePnl(trade)
+  // Rows written before entried_at existed have none - traded_at is the entry moment for those.
+  const openedAt = trade.entried_at ?? trade.traded_at
+  // ...except when it obviously isn't: a trade cannot open after it closed. That is exactly the
+  // shape of a Bar Replay row logged before entried_at existed, where traded_at holds the wall
+  // clock of the journaling instead of the replayed entry bar. The entry is unknown for those and
+  // is shown as unknown - a date that contradicts the close is worse than no date.
+  const entryUnknown = !!openedAt && !!trade.exited_at && new Date(openedAt) > new Date(trade.exited_at)
   const returnPct = tradeReturnPct(trade)
   // Costs come from the account the trade was filed under - an unassigned trade has no rate card,
   // so it shows gross only rather than implying it traded for free.
@@ -224,11 +239,31 @@ export default function TradeDetailDialog({ open, onOpenChange, trade, trades = 
                 />
                 <Stat label="Stop" value={trade.stop_loss != null ? inr(trade.stop_loss) : null} />
                 <Stat label="Target" value={trade.target != null ? inr(trade.target) : null} />
-                <Stat label="Opened" value={formatDateTime(trade.traded_at)} sub={sessionFor(trade)} />
+                {/* The session label only means something when the timestamp carries a time of
+                    day. Day-granularity trades (a Bar Replay close, a back-filled row) sit at
+                    midnight, which would otherwise read as a deliberate "After hours" entry. */}
+                <Stat
+                  label="Opened"
+                  value={entryUnknown ? null : formatDateTime(openedAt)}
+                  sub={
+                    entryUnknown
+                      ? 'entry bar not recorded'
+                      : hasTimeOfDay(openedAt)
+                        ? sessionFor(trade)
+                        : undefined
+                  }
+                />
                 <Stat
                   label="Closed"
                   value={trade.exited_at ? formatDateTime(trade.exited_at) : null}
                   sub={trade.exited_at ? undefined : 'Not recorded'}
+                />
+                {/* When the row was written, as opposed to when the trade happened. The two are
+                    the same for a live trade and years apart for a replayed one. */}
+                <Stat
+                  label="Logged"
+                  value={trade.created_at ? formatDateTime(trade.created_at) : null}
+                  sub={trade.created_at ? 'journal entry written' : undefined}
                 />
                 <Stat label="Planned R:R" value={tradeRR(trade) != null ? `${tradeRR(trade)}` : null} />
                 <Stat

@@ -349,6 +349,9 @@ export default function BarReplay() {
       stopLosses: orderDraft.slEnabled ? legsFrom(orderDraft.stopLosses) : [],
       targets: orderDraft.targetEnabled ? legsFrom(orderDraft.targets) : [],
       entryBarIndex: isLimit ? null : currentIndex,
+      // The bar this fills on, captured now. A pending limit has no entry yet - the engine
+      // stamps it when the price is actually crossed.
+      entryDate: isLimit ? null : lastBar.date,
       // Only meaningful if the position also has at least one SL leg to trail. Kept on the
       // order (not on individual legs) since one trail rule ratchets every leg together.
       trailing: orderDraft.slEnabled ? (orderDraft.trailing ?? null) : null,
@@ -375,6 +378,7 @@ export default function BarReplay() {
         stopLosses: [],
         targets: [],
         entryBarIndex: currentIndex,
+        entryDate: lastBar.date,
         trailing: null,
       },
     ])
@@ -711,13 +715,16 @@ export default function BarReplay() {
         partialQty={activeClose?.partialQty ?? null}
         chartImage={activeClose?.chartImage}
         accountId={accountId}
-        // The replayed period this trade actually happened in. It is NOT the same as when the
-        // trade gets journaled (that's wall-clock now, see CloseTradeDialog) - without these the
-        // backend would score a 2022 replay against today's chart.
+        // The replayed bars this trade actually opened and closed on - what it gets journaled
+        // under. Read off the order itself, where it was stamped at fill. The index lookup is
+        // only a fallback for orders that were already open before entryDate existed: an index
+        // means nothing once collecting more history has prepended older bars to the array, which
+        // is exactly how this used to arrive null and date every replay trade to today.
         entryDate={
-          activeClose?.order?.entryBarIndex != null
+          activeClose?.order?.entryDate ??
+          (activeClose?.order?.entryBarIndex != null
             ? (allBars[activeClose.order.entryBarIndex]?.date ?? null)
-            : null
+            : null)
         }
         exitDate={lastBar?.date ?? null}
         onClosed={(closedQty) => {

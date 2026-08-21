@@ -647,3 +647,28 @@ import {
 }
 
 console.log('orderEngine.test.js: all assertions passed')
+
+// A filled limit stamps the bar's DATE, not just its index: the index is only meaningful against
+// the bars array it filled on, and collecting more history prepends older bars to that array.
+// This is what the journal writes as the trade's entry - a missing one used to fall through to
+// wall-clock, dating a 2017 replay trade to today.
+{
+  const pending = {
+    id: 'p1',
+    status: 'pending',
+    direction: 'long',
+    quantity: 1,
+    entryPrice: 100,
+    stopLosses: [],
+    targets: [],
+    entryBarIndex: null,
+    entryDate: null,
+  }
+  const bar = { date: '2017-05-12', time: '2017-05-12', open: 99, high: 101, low: 98, close: 100.5 }
+  const { nextOrders } = processBarForOrders([pending], bar, 7)
+  assert.equal(nextOrders[0].status, 'open')
+  assert.equal(nextOrders[0].entryDate, '2017-05-12')
+  assert.equal(nextOrders[0].entryBarIndex, 7)
+}
+
+console.log('orderEngine.test.js: entryDate assertions passed')

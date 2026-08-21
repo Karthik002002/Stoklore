@@ -124,14 +124,17 @@ export default function CloseTradeDialog({
         emotion: values.emotion || null,
         tags: [...values.tags, 'replay'],
         notes: values.notes || null,
-        // The replay bar's date is simulated history, not when this trade was actually journaled -
-        // logging it under the real wall-clock time keeps the journal's dates meaningful (e.g. for
-        // the overview's calendar) regardless of which historical period was being replayed.
-        traded_at: new Date().toISOString(),
-        // ...which is exactly why the replayed dates have to be sent separately. The backend reads
-        // the bars around `market_at` (not `traded_at`) for the entry-context snapshot, so without
-        // these a trade replayed from 2022 would be scored against today's chart.
-        market_at: entryDate ?? null,
+        // Three different moments, all of them facts about this trade:
+        //   entried_at - the replayed bar the position opened on
+        //   exited_at  - the replayed bar it closed on
+        //   traded_at  - the journal's own date for it, kept equal to the entry so the equity
+        //                curve, the calendar and every date filter place the trade in the market
+        //                it was actually taken in. Never a wall-clock stand-in: if the entry bar
+        //                were ever unknown, the exit bar is still the right period, and the
+        //                backend's own COALESCE(..., now()) is the last resort.
+        // (`created_at` is the fourth, written by the DB: when this row was journaled.)
+        entried_at: entryDate ?? exitDate ?? null,
+        traded_at: entryDate ?? exitDate ?? null,
         exited_at: exitDate ?? null,
         image_filename: null,
         account_id: accountId ?? null,

@@ -94,7 +94,10 @@ export function processBarForOrders(orders, bar, barIndex) {
   const nextOrders = orders.map((order) => {
     if (order.status === 'pending' && crosses(bar, order.entryPrice)) {
       changed = true
-      return { ...order, status: 'open', entryBarIndex: barIndex }
+      // entryDate alongside entryBarIndex: the index is only valid against the exact bars array
+      // it was filled on, and that array grows at the front when more history is collected. The
+      // date is what the trade is journaled with, so it is captured here, at the fill.
+      return { ...order, status: 'open', entryBarIndex: barIndex, entryDate: bar.date }
     }
     return order
   })

@@ -95,6 +95,13 @@ export function periodLabel(key, period) {
 
 export const currentPeriodKey = (period) => periodKey(new Date(), period)
 
+/** Which day a trade counts toward for goal-tracking: when it was JOURNALED, not the market date
+ *  it was taken on. A goal ("close 5 trades this week", "keep the week green") measures the work
+ *  you actually did that week, and a Bar Replay session practised on 2013 bars is work done today
+ *  - scoring it by traded_at would file today's practice under 2013 and leave this week empty.
+ *  Falls back to traded_at for rows written before created_at was read here. */
+export const goalDate = (t) => t.created_at ?? t.traded_at
+
 // Achievement as a 0-100% score.
 //   binary      - the condition is met or it isn't.
 //   gt (target) - how much of the target you reached, capped at 100.
@@ -142,7 +149,7 @@ export function evaluateGoals(trades, goals, period) {
   const closed = (trades ?? []).filter((t) => t.exit_price != null)
   const buckets = new Map()
   closed.forEach((t) => {
-    const key = periodKey(t.traded_at, period)
+    const key = periodKey(goalDate(t), period)
     if (!buckets.has(key)) buckets.set(key, [])
     buckets.get(key).push(t)
   })
@@ -170,7 +177,7 @@ export function evaluateGoals(trades, goals, period) {
 export function currentPeriodProgress(trades, goals, period) {
   const key = currentPeriodKey(period)
   const active = goals.filter((g) => g.period === period)
-  const group = (trades ?? []).filter((t) => t.exit_price != null && periodKey(t.traded_at, period) === key)
+  const group = (trades ?? []).filter((t) => t.exit_price != null && periodKey(goalDate(t), period) === key)
   const cells = active.map((goal) => ({ goal, ...scoreCell(goal, group) }))
   const scored = cells.map((c) => c.pct).filter((p) => p != null)
   return {

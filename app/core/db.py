@@ -353,6 +353,13 @@ CREATE INDEX IF NOT EXISTS manual_trades_account_idx ON manual_trades (account_i
 -- When the position was actually closed, as opposed to traded_at (when it was opened/journaled).
 -- Optional: without it MAE/MFE can't be bounded, so those two metrics are simply not computed.
 ALTER TABLE manual_trades ADD COLUMN IF NOT EXISTS exited_at TIMESTAMPTZ;
+-- When the position was actually ENTERED, the exact counterpart of exited_at. Distinct from
+-- traded_at because the two can genuinely differ: Bar Replay opens a position on a bar from years
+-- ago, and traded_at also doubles as the journal's sort/grouping key. Defaults to traded_at on
+-- insert, so a hand-logged trade (where the entry IS the traded_at the form asked for) needs to
+-- supply nothing, and rows written before this column existed read as NULL - "not recorded",
+-- which callers fall back to traded_at for.
+ALTER TABLE manual_trades ADD COLUMN IF NOT EXISTS entried_at TIMESTAMPTZ;
 -- The second point-in-time snapshot, for the same reason as account_balance_at_trade above: what
 -- the chart looked like when this trade was taken (trend, volatility regime, how extended the
 -- entry was) plus how far it ran either way. Bars get split-adjusted and revised, so re-deriving
@@ -1499,27 +1506,40 @@ def account_balance_at(account_id, at):
 def create_manual_trade(symbol, direction, quantity, entry_price, exit_price, stop_loss, target,
                          is_open, result, emotion, tags, notes, traded_at, image_filename=None,
                          setup=None, ideal_risk_amount=None, account_id=None,
-                         account_balance_at_trade=None, exited_at=None, trade_context=None):
+                         account_balance_at_trade=None, exited_at=None, trade_context=None,
+                         entried_at=None):
     with connect() as conn:
         row = conn.execute(
             "INSERT INTO manual_trades (symbol, direction, quantity, entry_price, exit_price, "
             "stop_loss, target, is_open, result, emotion, tags, notes, traded_at, image_filename, "
             "setup, ideal_risk_amount, account_id, account_balance_at_trade, exited_at, "
-            "trade_context) VALUES "
+            "trade_context, entried_at) VALUES "
             "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, now()), %s, %s, %s, %s, "
-            "%s, %s, %s) "
+            # entried_at falls back to traded_at (and then to now()) rather than being left NULL:
+            # for every caller but Bar Replay the entry IS what traded_at means.
+            "%s, %s, %s, COALESCE(%s, %s, now())) "
             "RETURNING id",
             (symbol, direction, quantity, entry_price, exit_price, stop_loss, target, is_open,
              result, emotion, tags, notes, traded_at, image_filename, setup, ideal_risk_amount,
              account_id, account_balance_at_trade, exited_at,
-             Jsonb(trade_context) if trade_context is not None else None),
+             Jsonb(trade_context) if trade_context is not None else None, entried_at, traded_at),
         ).fetchone()
     return row["id"]
 
 
 def list_manual_trades():
+    """Newest-journaled first (created_at), NOT by traded_at.
+
+    traded_at is the market date the trade happened on, which for a Bar Replay trade is the
+    replayed bar - a session practised on 2013 bars would file itself below every trade taken
+    since, and the trade logged a minute ago would be nowhere near the top of the table. `id` is
+    the tiebreaker so a bulk import (every row sharing one transaction's now()) still comes back
+    in a stable order. Anything that needs market-date order sorts for itself - see
+    tradeStats.chronological()."""
     with connect() as conn:
-        return conn.execute("SELECT * FROM manual_trades ORDER BY traded_at DESC").fetchall()
+        return conn.execute(
+            "SELECT * FROM manual_trades ORDER BY created_at DESC, id DESC"
+        ).fetchall()
 
 
 def get_manual_trade(trade_id):
@@ -1530,7 +1550,7 @@ def get_manual_trade(trade_id):
 def update_manual_trade(trade_id, symbol, direction, quantity, entry_price, exit_price, stop_loss,
                          target, is_open, result, emotion, tags, notes, traded_at, setup=None,
                          ideal_risk_amount=None, account_id=None, account_balance_at_trade=None,
-                         exited_at=None, trade_context=None):
+                         exited_at=None, trade_context=None, entried_at=None):
     """account_balance_at_trade is COALESCEd, not overwritten with None: an ordinary edit (fixing an
     exit price, adding a tag) must leave the original snapshot alone. The caller passes a fresh
     value only when the trade actually moves to a different account - see api.update_manual_trade.
@@ -1546,11 +1566,14 @@ def update_manual_trade(trade_id, symbol, direction, quantity, entry_price, exit
             "tags = %s, notes = %s, traded_at = COALESCE(%s, traded_at), setup = %s, "
             "ideal_risk_amount = %s, account_id = %s, "
             "account_balance_at_trade = COALESCE(%s, account_balance_at_trade), "
-            "exited_at = %s, trade_context = COALESCE(%s, trade_context) WHERE id = %s",
+            "exited_at = %s, trade_context = COALESCE(%s, trade_context), "
+            # COALESCEd like traded_at above: an edit that doesn't mention the entry time (the
+            # journal's own form doesn't have a field for it) must not blank it out.
+            "entried_at = COALESCE(%s, entried_at, traded_at) WHERE id = %s",
             (symbol, direction, quantity, entry_price, exit_price, stop_loss, target, is_open,
              result, emotion, tags, notes, traded_at, setup, ideal_risk_amount, account_id,
              account_balance_at_trade, exited_at,
-             Jsonb(trade_context) if trade_context is not None else None, trade_id),
+             Jsonb(trade_context) if trade_context is not None else None, entried_at, trade_id),
         )
 
 

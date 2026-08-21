@@ -24,7 +24,12 @@
 - The **Trades** tab lists every trade with a filter bar (setup, NSE
   session, risk discipline, expected-R range), row checkboxes for **Bulk
   edit** (set a setup and/or add a tag across the selection in one go), and
-  **Export CSV**.
+  two exports (see [Exports](#exports-csv-excel-markdown) below).
+- **The list is ordered newest-logged first**, and the first column is
+  **Logged** — when the row was written, not the market date. A Bar Replay
+  trade taken on 2013 bars but journaled this morning belongs at the top;
+  ordering by market date buried it forty rows down. When the two differ, the
+  market date sits underneath as a muted `traded …` line.
 - The **Overview** tab shows P&L stats, daily win/loss and cumulative P&L
   charts, a calendar heatmap (opens on the month of your most recent trade,
   not necessarily this month), a goals-progress strip (see Goals below), and
@@ -32,14 +37,40 @@
 - The **Statistics** tab (see below) is a deeper, TradesViz-style drill-down
   across many angles, all driven by the same closed trades.
 - The **Goals** tab (see below) scores your trades against targets/limits
-  you define, per day/week/month.
+  you define, per day/week/month — bucketed by when each trade was **logged**,
+  so replayed and paper trades count toward the day you actually did the work.
 - **Bar Replay** button opens the bar-by-bar replay tool ([docs](bar-replay.md))
   — trades you log there land in this same journal, tagged `replay`. Live-price
   [Paper Trading](paper-trading.md) trades land here too, tagged `paper`.
-- The **account picker** (top right, next to Export CSV) scopes all four
+- The **account picker** (top right, next to the export buttons) scopes all four
   sub-tabs to one trading account, or "All accounts". The choice lives in the
   URL (`?account=3`), so a per-strategy view is shareable and survives a
   reload. Accounts themselves are managed in **Settings › Trade accounts**.
+
+### Exports: CSV, Excel, Markdown
+
+- **CSV** (`GET /api/manual-trades/export?format=csv`) — the raw backend dump
+  of every trade, ignoring what's on screen.
+- **Excel** — a real `.xlsx` of exactly the rows in front of you: the account
+  picker and every active filter already applied, with the derived numbers as
+  their own columns (gross P&L, costs, net P&L, return %, R:R and whether it's
+  planned or realised, hours held) so nothing has to be rebuilt in a formula.
+  Static column set by design — the on-screen table hides columns depending on
+  the account, and an export that did the same would produce two files with the
+  same name and different columns. Screenshots are not exported; they aren't
+  data.
+- **Markdown** — on the **Statistics** tab and on
+  [Trade Simulation](trade-simulation.md): **Copy MD** puts the panel's numbers
+  on the clipboard, **Markdown** downloads them as a file. Statistics exports
+  every section of Overall statistics plus net P&L broken down by *every*
+  dimension, not just the one currently on screen.
+
+The writer behind the `.xlsx` is hand-rolled (`frontend/src/lib/exportFile.js`,
+~60 lines): an xlsx is a zip of a few XML parts, and writing one with no
+compression was cheaper than a megabyte-class spreadsheet dependency. Numbers
+are written as numbers, so a P&L column sums in Excel without retyping.
+`node frontend/src/lib/exportFile.selfcheck.mjs` checks it against a real zip
+reader.
 
 ## How it works
 
@@ -147,6 +178,23 @@ The modal re-reads the trade from the live list rather than the snapshot
 captured when the row was clicked, so an edit made from inside it is reflected
 immediately.
 
+### Four timestamps, four different questions
+
+`traded_at` is the market date the trade happened on and is what every
+price-aware calculation reads. `entried_at` and `exited_at` are the exact entry
+and exit moments — `entried_at` defaults to `traded_at` on insert, because for
+a hand-logged trade they *are* the same moment, so the trade form needs no
+extra field. `created_at` is when the row was written, which is what the
+Trades tab sorts and labels by and what Goals bucket on.
+
+They only diverge for [Bar Replay](bar-replay.md#replayed-dates-vs-when-you-logged-it)
+and [Paper Trading](paper-trading.md), where a trade is taken in one period and
+journaled in another. The trade detail view shows all three it can
+(**Opened** / **Closed** / **Logged**) and refuses to print an entry date that
+falls *after* the close — rows written before `entried_at` existed carry the
+journaling wall clock in `traded_at`, and a date that contradicts the close is
+worse than no date.
+
 ### `trade_context`: a point-in-time snapshot, captured once
 
 `app/core/trade_context.py` computes one JSON blob at trade creation and stores it on
@@ -218,6 +266,19 @@ balance, and its deposits/withdrawals.
   do to the account", as opposed to the existing return %, which is against the
   position's own cost. Available as a Statistics metric, a Compare axis, and
   two entries in Overall statistics.
+- **Trading costs are per account** (`frontend/src/lib/tradeCosts.js`):
+  slippage (per share or in bps of turnover), flat + percentage brokerage, and
+  other charges as a % of turnover, all configured in **Settings › Trade
+  accounts**. They're charged **per side** — entry always, exit only once the
+  trade is closed — so an open position shows a half-priced cost and says so
+  rather than pretending the round trip is done.
+  - Every surface shows **gross and net side by side**; the only place net
+    wins outright is a wallet balance, which has no room for two answers —
+    slippage and brokerage genuinely left the account.
+  - An account with no costs configured is unaffected, and a trade with no
+    account has no rate card at all: it reads `—`, "unknown", never "free".
+  - Same rate card applies to paper accounts, so a paper P&L and a journal
+    P&L are finally comparable numbers instead of one gross and one net.
 - **Max position size** (₹ or % of balance) and **max open positions** are
   **advisory**: they raise a warning on the trade form and never reject a trade.
   The journal records what you actually did, not what the rules said you should
@@ -294,6 +355,12 @@ about *achievement* is stored: every score is recomputed live from the
 current trades, so editing a past trade or a goal's target can never leave
 a stale percentage on screen.
 
+- **Which period a trade counts toward is decided by `created_at`**, not
+  `traded_at` (`goalDate` in `tradeGoals.js`). A goal measures the work you
+  did that day or week, and a Bar Replay session practised on 2013 bars is
+  work done today — bucketing it by market date would file today's practice
+  under 2013 and leave the week reading as if nothing had been traded. Rows
+  without a `created_at` fall back to `traded_at`.
 - **Metrics a goal can track** are the Statistics tab's `METRICS` (so a
   goal can never disagree with the chart of the same name) plus
   goal-specific ones: winning/losing trade count, gross loss, max drawdown,

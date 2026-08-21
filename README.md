@@ -402,8 +402,22 @@ OHLCV, no backend execution involved:
   bars at creation and frozen on the row — never recomputed, because bars get
   split-adjusted and revised behind you. Also four new Statistics dimensions
   ("do I only lose when I chase?")
-- **Export CSV** (`GET /api/manual-trades/export?format=csv`) and a direct
-  link into **Bar Replay** (see [`12` Bar Replay](#12-bar-replay))
+- **Trading costs per account** — slippage (per share or bps), flat +
+  percentage brokerage, and other charges, applied per side of the round trip
+  (`app/core/db.py` `trade_accounts` + `frontend/src/lib/tradeCosts.js`). Every
+  surface shows gross and net side by side; only a wallet balance is net-only,
+  because that money genuinely left the account. Paper accounts carry the same
+  rate card, so a paper P&L and a journal P&L are finally comparable
+- **Sorted newest-logged first**, with a **Logged** column — a Bar Replay
+  trade taken on 2013 bars but journaled this morning belongs at the top of
+  the list, not buried in 2013. The market date rides underneath it
+- **Exports** — raw **CSV** of everything
+  (`GET /api/manual-trades/export?format=csv`), a real **`.xlsx`** of exactly
+  the filtered rows on screen (derived metrics as columns, no screenshots),
+  and **Markdown**/**Copy MD** of the Statistics tab. The xlsx writer is ~60
+  hand-rolled lines (`frontend/src/lib/exportFile.js`) rather than a
+  megabyte-class dependency — an xlsx is a zip of a few XML parts
+- A direct link into **Bar Replay** (see [`12` Bar Replay](#12-bar-replay))
 
 The original single-strategy backtest (long-only EMA-crossover: buys the
 golden cross, sells the next death cross; Run vs. Save with an optional
@@ -430,24 +444,43 @@ Bar Replay.
 > for anything the dataset doesn't carry. See [How it works](docs/bar-replay.md#how-it-works)
 > for the details.
 
-- **Playback** — step forward/back, play/pause at 0.5×–4×, or jump to a date.
-  Shortcuts: `B`/`S` buy/sell, `Shift+↓` play/pause, `Shift+→` step forward
+- **Playback** — step forward/back, play/pause at 0.5×–4×, jump to a date, or
+  shuffle to a **random bar** so you don't know which period you're practising
+  in. Shortcuts: `B`/`S` buy/sell, `Shift+↓` play/pause, `Shift+→` step
+  forward, `Shift+R` random bar. The close dialog can do that jump for you
+  after every logged trade (a saved preference), and an **OHLCV legend**
+  tracks the crosshair top-left
 - **Trading** — Market or Limit orders with optional stop-loss/target;
   validated so a target/SL on the wrong side of entry is rejected up front.
   If a bar gaps clean past a level instead of touching it, the trade still
   closes — filled at the bar's open, not the skipped level
 - Stop-loss/target lines are **draggable directly on the chart** to adjust
   them after the fact
+- **Order sizing preference** — a fixed share count, or a % of the selected
+  account's live balance at the current price, so position size tracks the
+  account instead of a number set weeks ago. One preference, read by both the
+  ticket and the one-key market orders, so the two can't disagree
+- **Drawing tools** — trendlines, horizontal lines and rectangles, anchored to
+  bar index + price so they stay on the price action through pan and zoom
 - **Indicators**: EMA, SMA, and RSI (its own pane below the candles, via
   lightweight-charts' multi-pane support)
 - **Settings modal** — candle colors, default order quantity, RSI reference
   levels, all editable
 - Every closed trade is logged to the same manual trade journal as the rest
   of Backtesting → Manual (tagged `replay`), with a screenshot of the chart
-  at close time attached automatically
-- All session state (symbol, timeframe, bar position, orders, indicators,
-  settings) lives in one persisted store (`localStorage`) — reload the page
-  or navigate away and it resumes exactly where you left off
+  at close time attached automatically — dated by the **bars it was actually
+  taken on** (`entried_at`/`exited_at`, with `traded_at` following the entry),
+  while `created_at` records when you journaled it. Price-aware analysis reads
+  the market date; the trade list and Goals read the logged date
+- All session state (symbol, timeframe, bar position, orders, drawings,
+  indicators, settings) lives in one persisted store (`localStorage`) — reload
+  the page or navigate away and it resumes exactly where you left off,
+  **including how the chart was framed** (zoom window, pane heights, each
+  pane's price scale). That state is read from the store exactly once, at
+  mount, and written back coalesced — subscribing to it re-rendered the page
+  on every frame of a pan and re-fed the whole candle series mid-drag
+- Price axes are dragged (and double-click-autoscaled) **per pane** by the app
+  itself, so stretching the RSI axis never touches price
 
 <div align="right">
 
@@ -480,6 +513,8 @@ one click from the historical journal makes the two easy to confuse.
   trader is the right direction
 - **Live/stale/market-closed heartbeat** badge driven by the engine's own poll
   interval, and a price cell that flashes only when the price actually moved
+- **Position chart** (`/paper/position/:id`) — a held symbol's candles with its
+  entry, every stop-loss rung and every target drawn on as price lines
 - **Overview**: net portfolio value, unrealized/realized P&L, win rate,
   available cash, max drawdown, and a realized equity curve
 - Every exit is journaled into the **same `manual_trades` table** (tagged
@@ -513,6 +548,14 @@ Full details: [docs/paper-trading.md](docs/paper-trading.md).
 - `docs/warning.md` — a local-model sizing note: don't run large prompts/long
   sessions against the local Ollama model, switch to a LiteLLM-routed model
   for anything reading a lot of text at once
+- **NSE EMERGE (SME) names are first-class** — imported by the same parser as
+  the main board, badged everywhere a symbol is picked (SME, series, market
+  lot, ISIN, listing date), and searchable per board. They trade only in fixed
+  lots, which is worth knowing before you size a position in one
+- **Spreadsheet/markdown exports with no new dependency** —
+  `frontend/src/lib/exportFile.js` writes a real `.xlsx` (store-only zip of the
+  XML parts, numbers stay numeric) and markdown tables; used by the trade
+  journal, paper trade history, Statistics and Trade Simulation
 - An animated gradient app-logo mark and a redesigned icon-rail nav
 
 <div align="right">
@@ -532,6 +575,7 @@ Full details: [docs/paper-trading.md](docs/paper-trading.md).
 | Brokers    | `app/core/broker.py` (Dhan v2) + `app/core/kite.py` (Kite Connect v3) — read-only holdings/margin, normalized to one shape |
 | Backtests  | Manual: `app/core/backtest.py` — long-only EMA-crossover backtest over stored `price_history` (not yet wired into the UI). Auto: user-written Pine Script run client-side via `pinets` (PineTS) against `price_history`/`price_history_max`, saved as templates in `auto_backtest_scripts` |
 | Paper      | `app/core/paper.py` — background poller (20s, market hours only) that marks open `paper_positions` against live quotes and fires laddered simulated exits into the manual journal; `app/core/trade_context.py` — one-time entry-context + MAE/MFE snapshot stored on every trade |
+| Symbols    | `app/core/stocks_master.py` — NSE's listed-equity master (main board + EMERGE/SME from the same parser, board derived from the SERIES code), searchable per board |
 | Storage    | Postgres + pgvector (`app/core/db.py`)                                      |
 | API        | FastAPI (`app/main.py` + `app/routers/`) — chat streams over the AI SDK UI Message Stream protocol; 14 explicit agent tools (`AGENT_TOOLS`/`REAL_TOOL_IMPLS`) |
 | Frontend   | React + Vite, shadcn/ui, AI Elements, `@ai-sdk/react`, lightweight-charts, `pinets` (in-browser Pine Script v5 runtime) (`frontend/`) |

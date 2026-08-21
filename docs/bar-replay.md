@@ -18,7 +18,16 @@ paper-trade it.
 
 **Playback**
 - Step back/forward, play/pause (0.5×–4× speed), or jump to a date.
-- Shortcuts: `B` buy, `S` sell, `Shift+↓` play/pause, `Shift+→` step forward.
+- **Random bar** — the shuffle button next to the date picker (or the
+  **Jump to date › Random bar** menu item) drops you somewhere else in the
+  symbol's history and pauses there. The point is to practise without knowing
+  which period you're in.
+- Shortcuts: `B` buy, `S` sell, `Shift+↓` play/pause, `Shift+→` step forward,
+  `Shift+R` random bar.
+- The **OHLCV legend** sits top-left of the chart: date, open/high/low/close,
+  the change against the previous bar, and volume, coloured by the candle's
+  own direction. It follows the crosshair while you hover and falls back to
+  the newest bar when the pointer leaves.
 
 **Trading**
 - **Buy**/**Sell** in the Trade panel opens an order ticket — Market or
@@ -29,7 +38,12 @@ paper-trade it.
 - If price gaps clean past a stop-loss/target instead of touching it, the
   trade still closes — filled at that bar's open, not the skipped level.
 - Closing a trade (manually or automatically) opens a feedback dialog
-  (result/emotion/notes) and pauses playback while it's open. The trade is
+  (result/emotion/notes) and pauses playback while it's open. That dialog
+  carries a **Jump to a random date after logging** checkbox — tick it once
+  and every subsequent close ends with the same random jump the shuffle button
+  makes, so you're not clicking it by hand between trades. The preference is
+  saved with the rest of the session; a laddered exit that queues several
+  dialogs only jumps after the last one. The trade is
   saved with a screenshot of the chart at that moment, and shows up in the
   [Manual trade journal](backtesting-manual.md) above — including its
   Statistics tab (grouped like any other trade) and Goals tab (counts
@@ -77,18 +91,39 @@ paper-trade it.
   close any part of the position, only an actual bar touching a level's
   price does that.
 
+**Drawing on the chart**
+- The **Draw** popover in the bottom bar arms a tool: **trendline**,
+  **horizontal line**, or **rectangle**. Drag on the chart to place one; `Esc`
+  disarms, clicking a shape selects it, and `Delete`/`Backspace` removes the
+  selected one. **Clear all** drops every shape at once.
+- Shapes are anchored to a *bar index + price*, not to screen pixels, so they
+  stay on the price action through pan, zoom and autoscale. They're saved with
+  the session and dropped on a symbol/timeframe change — bar 3200 is a
+  different moment in every instrument.
+
 **Indicators & settings**
 - Indicators panel: add EMA, SMA, or RSI. RSI gets its own pane below the
   candles.
-- The gear icon (top-left) opens **Settings**: candle colors, default
-  order quantity, and RSI reference levels (add/remove any number of
-  levels, not just 30/70).
+- The gear icon (top-left) opens **Settings**: candle colors, RSI reference
+  levels (add/remove any number, not just 30/70), and **order sizing**.
+- **Order sizing** is either a **fixed quantity** or a **percentage of
+  capital** — with the percentage, every new order is sized off the selected
+  account's live balance at the current bar's price, so position size grows
+  and shrinks with the account instead of staying at a number you set weeks
+  ago. It applies to the ticket's pre-filled quantity and to the one-key
+  market orders (`Shift+B`/`Shift+S`) alike, so the two can never disagree.
+  The ticket also has a **Size by risk** field that back-solves the share
+  count from a % of the account you're willing to lose to the tightest stop.
 
 **Persistence**
-- Everything here (symbol, timeframe, bar position, open orders,
+- Everything here (symbol, timeframe, bar position, open orders, drawings,
   indicators, settings) is saved to your browser's local storage as you
   go — closing the tab or reloading resumes exactly where you left off.
   This state is per-browser, not synced anywhere.
+- That includes **how the chart is framed**: the zoom window, each pane's
+  height, and each pane's price scale (including whether you left it on
+  autoscale). A reload puts the candles back where you were looking, not at
+  a default window.
 
 ## How it works
 
@@ -313,18 +348,67 @@ forward instead of resetting every bar).
   Settings — never a full chart rebuild, so changing a color doesn't reset
   your zoom either.
 
-### Replayed dates vs. wall-clock dates
+### Axis drags: the price scale is the app's, not the library's
 
-A replay trade is journaled under the **real wall-clock time** (`traded_at`),
-deliberately — that's what keeps the journal's calendar and goals meaningful
-regardless of which historical period was being replayed. Which is exactly why
-the replayed dates have to be sent *separately*: `CloseTradeDialog` also
-carries `market_at` (the bar the position was entered on) and `exited_at` (the
-bar it closed on). The backend reads the price bars around `market_at`, not
-`traded_at`, for the
-[entry-context snapshot](backtesting-manual.md#trade_context-a-point-in-time-snapshot-captured-once)
-— without these, a trade replayed from 2022 would be scored against today's
-chart.
+Dragging a price axis (or double-clicking it to re-autoscale) is handled by
+this component, not left to lightweight-charts. The chart's own axis handler
+fights the drawing layer and the order-line drags for the same pointer, and it
+has no idea which pane's scale the pointer is actually over once an oscillator
+pane exists. `ReplayChart`'s pointer listeners resolve the pane under the
+cursor (`chart.panes()` → the pane's own first series, or the candle series for
+pane 0), then move *that* scale's visible range directly, so a drag on the RSI
+pane's axis stretches RSI and never price. Double-click on any axis puts that
+one scale back on autoscale.
+
+### Framing is persisted, but the store is read exactly once
+
+The zoom window, pane heights and per-pane price ranges are written back into
+the session store, so a reload lands where you left off. Two rules keep that
+from costing anything:
+
+- **Read once, at mount.** `BarReplay` pulls `view` out of the store with
+  `getState()` rather than subscribing to it. Subscribing meant every frame of
+  a pan re-rendered the page, which re-sliced the `bars` array, which made the
+  chart `setData()` every candle and recompute every indicator mid-drag. After
+  mount the chart owns its framing and only reports it back.
+- **Writes are coalesced** (400ms trailing, flushed on unmount) and only fire
+  when something actually moved — a drag emits dozens of range-change events,
+  each one otherwise a synchronous `localStorage` write of the whole session.
+
+A saved price range of `null` means "that pane was left on autoscale", stored
+explicitly: restoring a range onto a scale you never pinned would freeze it at
+yesterday's prices. Each pane's scale is restored **once** — after that it
+belongs to you, and re-applying it on a later render would snap your drag back.
+
+### Replayed dates vs. when you logged it
+
+A replay trade carries **four** timestamps, and they mean four different
+things:
+
+| Column | What it is |
+|---|---|
+| `entried_at` | the replayed bar the position **opened** on |
+| `exited_at` | the replayed bar it **closed** on |
+| `traded_at` | the journal's date for the trade — kept equal to the entry bar |
+| `created_at` | when the row was **written** (wall clock, DB default) |
+
+`traded_at` is the market date because everything that reasons about price
+reasons about it: the entry-context snapshot reads the bars around it, the
+equity curve and the calendar place the trade in the market it was taken in.
+It used to hold the wall clock instead, which dated a 2013 replay session to
+today and scored it against today's chart.
+
+The entry date is stamped **on the order at fill** (`entryDate`, set beside
+`entryBarIndex` in `orderEngine.processBarForOrders`), not looked up from a
+bar index when the trade closes. An index is only valid against the exact
+`allBars` array it filled on, and that array grows at the front when more
+history is collected — so the lookup could come back `null`, or worse, point
+at a different bar.
+
+Anything measuring *your* activity rather than the market uses `created_at`:
+the journal's Trades tab sorts newest-logged first and shows it as the
+**Logged** column, and the [Goals](backtesting-manual.md#goals-tab-targets-and-limits-scored-per-period-nothing-persisted-but-the-goal-itself)
+tab buckets by it — a session practised on 2013 bars is work you did today.
 
 ### Screenshot on close
 

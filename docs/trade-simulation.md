@@ -242,6 +242,12 @@ what the slippage slider is there to quantify.
   every individual run (ending balance, max DD, worst streak, Sharpe, profit
   factor). In Multiple, every metric at every percentile for every account,
   plus the correlation matrix and its shared-day counts. One file either way.
+- **Markdown** — **Copy MD** puts the whole report on the clipboard, **Markdown**
+  downloads it as a file: the configuration it was run with, the percentile
+  table, risk & survival, the losing-streak distribution, and (in Multiple)
+  every metric per account plus the correlation matrix with its shared-day
+  counts. The per-run dump is deliberately left out — a thousand rows of
+  markdown is a wall, and that's what the CSV is for.
 - **PDF** — the browser's own print-to-PDF. The nav rail and the config panel
   drop out; the profile, charts, table and risk cards print as rendered.
 

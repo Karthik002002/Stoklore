@@ -39,6 +39,10 @@ waiting out the poll interval.
 **Holdings tab — the open book**
 - One row per position: entry, current price (flashing green/red the moment it
   actually moves), quantity, value, unrealized P&L, and each side's levels.
+- **Chart** on a row opens `/paper/position/:id` — that symbol's candles with
+  the entry, every stop-loss rung and every target drawn on as price lines, so
+  "where is this actually sitting" doesn't mean opening the stock page and
+  re-plotting the levels by hand.
 - **Modify** edits the ladder in place — add, retune, or remove levels on a
   live position.
 - **Close** exits the whole position at the current quote, immediately. A
@@ -48,6 +52,17 @@ waiting out the poll interval.
 Net portfolio value, unrealized/realized P&L, win rate, available cash
 (opening balance + deposits + realized − cash deployed in open positions), max
 drawdown, and an equity curve of realized P&L day by day.
+
+**Trade history**
+- The Trades tab's history log carries a **Net** column whenever the paper
+  account has costs configured — the same per-account slippage/brokerage/
+  charges the journal uses (see
+  [Trade accounts](backtesting-manual.md#trade-accounts-one-strategy-one-wallet-one-frozen-balance-per-trade)),
+  so a paper P&L and a journal P&L are comparable numbers rather than one
+  gross and one net.
+- **Excel** exports the closed paper trades with the same static column set the
+  journal's export uses (see
+  [Exports](backtesting-manual.md#exports-csv-excel-markdown)).
 
 **Where closed trades go**
 Every exit — stop, target, or manual — is written to the **same

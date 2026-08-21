@@ -32,6 +32,25 @@ just price — so the next read of anything cached re-fetches live.
 symbol to a list, or the "all" view, is a straightforward join/filter over
 that table — no caching layer of its own beyond the price cache above.
 
+**The symbol universe: main board + EMERGE (SME).** `stocks_master` is NSE's
+own listed-equity master, imported from the exchange's `EQUITY_L.csv` in
+**Settings › Manage stocks**. The SME board ships as a second, identically
+shaped CSV, and one parser covers both: which board a row belongs to is read
+off its `SERIES` code (`SM`/`ST` are EMERGE) rather than from which file it
+arrived in, so importing either file lands rows on the right board and
+re-importing just upserts. `MARKET LOT` and `FACE VALUE` are kept, because an
+SME scrip trades only in fixed lots — a quantity that isn't a multiple of the
+lot is not a real trade.
+
+Every symbol picker in the app (the trade form, the bar-replay quick-switcher,
+Settings) renders the same `StockBadges`/`StockSubline` pair, so a ticker never
+reads as one thing in one picker and another somewhere else: an **SME** badge
+first (it changes how the scrip trades), the series when it isn't plain `EQ`,
+the lot size, and ISIN + listing date on the roomier pickers. Search can be
+narrowed to one board, and exact-symbol and prefix matches sort first —
+alphabetical order buried the ticker you typed under every SME name containing
+it once the universe grew.
+
 **Behind the scenes for every stock**, two independent OHLCV tiers exist:
 - `price_history` — a rolling ~1-year window, kept warm incrementally.
   `prices.sync_symbol(symbol)` (`app/core/prices.py:12`) checks

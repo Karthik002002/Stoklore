@@ -43,7 +43,7 @@ assert tc._percentile_rank([1, 2, 3, 4], 3) == 50.0
 assert tc._percentile_rank([], 1) is None
 
 # --- volume spike ------------------------------------------------------------------------------
-# A flat tape has no spike: every bar is exactly its own baseline.
+# A flat tape has no spike: every bar sits exactly on the baseline.
 flat = tc.volume_spike(flat_bars(60))
 assert flat["max_ratio"] == 1.0 and flat["count"] == 0, flat
 
@@ -53,20 +53,48 @@ spiky[-3]["volume"] = 3000
 hit = tc.volume_spike(spiky)
 assert hit["max_ratio"] == 3.0 and hit["bars_ago"] == 3 and hit["count"] == 1, hit
 assert hit["multiple"] == 2.0 and hit["lookback"] == 10, "the config used must be stored"
+# 3.0 exactly, not 2.73: the scanned bar is not in its own baseline.
+assert hit["max_ratio"] == 3000 / 1000
 
 # The account's config is what decides, not the module default.
 assert tc.volume_spike(spiky, multiple=4)["count"] == 0, "a 3x bar is no spike at a 4x threshold"
 assert tc.volume_spike(spiky, lookback=2)["count"] == 0, "a bar outside the window must not count"
 assert tc.volume_spike(spiky, lookback=2)["bars_ago"] == 1, "the window's own loudest bar instead"
 
-# The baseline rolls: a spike can't be measured against itself, so two adjacent 3x bars both clear.
+# One baseline for the whole window, taken from before it. This is what a rolling per-bar baseline
+# got wrong: neighbouring spikes would inflate each other's reference, so the second and third day
+# of an accumulation surge read progressively quieter. Here every bar in the window is quoted
+# against the same quiet stretch, so both 3x bars report a full 3x.
 twin = flat_bars(60)
 twin[-2]["volume"] = twin[-1]["volume"] = 3000
-assert tc.volume_spike(twin)["count"] == 2, tc.volume_spike(twin)
+both = tc.volume_spike(twin)
+assert both["max_ratio"] == 3.0 and both["count"] == 2 and both["bars_ago"] == 1, both
+
+# Ties go to the most recent bar - the loop runs oldest-first, so this is what >= buys.
+tie = flat_bars(60)
+tie[-7]["volume"] = tie[-3]["volume"] = 3500
+assert tc.volume_spike(tie)["bars_ago"] == 3, tc.volume_spike(tie)
+
+# A spike inside the baseline stretch raises the reference for the whole window - deliberately.
+# It is the definition of "normal volume here" that moved, and every bar shares the new one.
+before_window = flat_bars(60)
+before_window[-15]["volume"] = 3000
+assert tc.volume_spike(before_window)["max_ratio"] == 0.91, tc.volume_spike(before_window)
+
+# Short history shrinks the WINDOW, never the baseline - and says so, so the UI never claims to
+# have scanned 10 bars when it scanned 5.
+short = tc.volume_spike(flat_bars(25))
+assert short["scanned"] == 5 and short["lookback"] == 10, short
+assert tc.volume_spike(flat_bars(60))["scanned"] == 10
 
 # Not computable without a full baseline behind at least one candidate bar.
 assert tc.volume_spike(flat_bars(20)) == {}, "20 bars leaves no candidate with 20 behind it"
 assert tc.volume_spike(flat_bars(21))["bars_ago"] == 1
+assert tc.volume_spike(flat_bars(21))["scanned"] == 1
+
+# The ceiling the API enforces is exactly what 100 fetched bars can actually serve.
+assert tc.MAX_SPIKE_LOOKBACK == tc.LOOKBACK - tc.VOLUME_AVG
+assert tc.volume_spike(flat_bars(tc.LOOKBACK), lookback=tc.MAX_SPIKE_LOOKBACK)["scanned"] == tc.MAX_SPIKE_LOOKBACK
 assert tc.volume_spike([]) == {}
 assert tc.volume_spike(flat_bars(60, volume=0)) == {}, "zero-volume history must not divide"
 

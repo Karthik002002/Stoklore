@@ -37,10 +37,15 @@ HIGH_VOL_PCT = 80
 
 # Volume-spike scan, per account (trade_accounts.vol_spike_multiple / _lookback - the defaults
 # below are what an unassigned trade gets). A spike is a bar whose volume is `multiple` times the
-# average of the 20 bars ending just before IT - a rolling baseline, not one average for the whole
-# window, so a single huge bar can't raise the bar it is being measured against.
+# average of the 20 quiet bars ending just BEFORE the scanned window - one fixed baseline for the
+# whole window, not a rolling one per bar. See volume_spike for why.
 SPIKE_MULTIPLE = 2.0
 SPIKE_LOOKBACK = 10
+
+# The scan can only reach as far back as the fetched history minus its own baseline. Enforced at
+# the API boundary (routers/trade_accounts._validate_spike) so a lookback that silently scanned
+# fewer bars than configured is impossible to save in the first place.
+MAX_SPIKE_LOOKBACK = LOOKBACK - VOLUME_AVG
 
 # How far above/below the fast EMA (in ATRs) counts as "extended". Used only for the bucket label;
 # the raw signed value is stored too so the threshold can be revisited without re-collecting data.
@@ -86,40 +91,55 @@ def _round(v, places=2):
 
 def volume_spike(bars, multiple=SPIKE_MULTIPLE, lookback=SPIKE_LOOKBACK):
     """Was there unusual volume in the run-up to the entry? `bars` are the bars strictly BEFORE
-    entry, oldest-first; the last `lookback` of them are scanned.
+    entry, oldest-first; the last `lookback` of them are scanned against the 20 bars before those.
+
+    ONE baseline for the whole window, taken from the quiet stretch preceding it - not a rolling
+    20-bar average per scanned bar. A rolling baseline self-excludes each bar but still absorbs its
+    NEIGHBOURS, so on the multi-day accumulation this scan exists to find, day one's spike quietly
+    raises the bar day two is measured against and a three-day surge reads progressively calmer.
+    A fixed pre-window baseline also makes the ratios within one window comparable to each other,
+    since they are all quoted against the same reference.
 
     Reports the biggest bar in the window whether or not it cleared the threshold - "the loudest
     bar before I entered was 1.1x average" is a finding, and storing only spikes would make
-    no-spike indistinguishable from not-computed. `count` is how many bars did clear it.
+    no-spike indistinguishable from not-computed. `count` is how many bars did clear it, and
+    `scanned` how many were actually looked at, which is below `lookback` when the symbol's
+    history runs out first - the note in the UI quotes that, not the configured number.
 
     The config actually used is stored alongside the result on purpose: the account's threshold can
     be retuned later, and a stored reading that silently re-interprets itself against the new
     number is exactly the kind of quiet history-rewrite this module exists to avoid.
     """
+    # Shrink the window rather than the baseline when history is short: a ratio against 4 bars of
+    # baseline isn't a weaker reading, it's a different and mostly meaningless one.
+    scanned = min(lookback, len(bars) - VOLUME_AVG)
+    if scanned < 1:
+        return {}
+
+    baseline = bars[-(scanned + VOLUME_AVG):-scanned]
+    avg = sum(b["volume"] for b in baseline) / len(baseline)
+    if not avg:
+        return {}
+
+    window = bars[-scanned:]
     best_ratio = None
-    best_index = None
+    best_ago = None
     count = 0
-    # Each candidate needs VOLUME_AVG bars of its own history for the baseline, so the scan starts
-    # wherever both windows are satisfiable rather than reporting a ratio against 3 bars.
-    for i in range(max(VOLUME_AVG, len(bars) - lookback), len(bars)):
-        baseline = bars[i - VOLUME_AVG:i]
-        avg = sum(b["volume"] for b in baseline) / len(baseline)
-        if not avg:
-            continue
-        ratio = bars[i]["volume"] / avg
+    for offset, bar in enumerate(window):
+        ratio = bar["volume"] / avg
         if ratio >= multiple:
             count += 1
         # >= so a tie resolves to the most recent bar - "2 bars before entry" is the more useful
-        # reading than the same ratio ten bars back.
+        # reading than the same ratio ten bars back. The loop runs oldest-first, so >= is what
+        # keeps the LATEST of equal peaks; a strict > would keep the earliest.
         if best_ratio is None or ratio >= best_ratio:
-            best_ratio, best_index = ratio, i
-    if best_ratio is None:
-        return {}
+            best_ratio, best_ago = ratio, scanned - offset  # 1 = the bar immediately before entry
+
     return {
         "max_ratio": _round(best_ratio),
-        # 1 = the bar immediately before entry.
-        "bars_ago": len(bars) - best_index,
+        "bars_ago": best_ago,
         "count": count,
+        "scanned": scanned,
         "multiple": multiple,
         "lookback": lookback,
     }

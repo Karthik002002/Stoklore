@@ -123,7 +123,12 @@ export const tradeAccountSchema = z.object({
   // falls back to the backend's own defaults rather than to zero - a 0x multiple would call every
   // bar a spike and a 0-bar window would scan nothing.
   vol_spike_multiple: optionalNonNegative('Spike multiple').transform((v) => v ?? 2),
-  vol_spike_lookback: optionalNonNegative('Spike lookback').transform((v) => v ?? 10),
+  // Capped at 80: only 100 bars are fetched per trade and the scan needs 20 behind its window for
+  // the baseline, so anything larger would scan fewer bars than it claims. The backend rejects it
+  // too - this is just the faster no.
+  vol_spike_lookback: optionalNonNegative('Spike lookback')
+    .refine((v) => v == null || v <= 80, 'Spike lookback can be at most 80 bars')
+    .transform((v) => v ?? 10),
 })
 
 // --- Balance adjustment (Overview > Adjust) ----------------------------------------------------

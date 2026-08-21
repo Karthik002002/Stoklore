@@ -208,15 +208,16 @@ function VolumeSpikeFields({ form }) {
           type="number"
           step="1"
           min="1"
+          max="80"
           placeholder="10"
-          hint="How far back the run-up is looked at."
+          hint="How far back the run-up is looked at. Up to 80."
         />
       </div>
 
       <p className="border-t border-sky-500/30 pt-2 text-xs text-muted-foreground">
         A trade is flagged when any of the {lookback} bars before entry traded at least{' '}
-        <span className="font-semibold text-sky-600 tabular-nums dark:text-sky-400">{multiple}×</span> its
-        20-bar average volume.
+        <span className="font-semibold text-sky-600 tabular-nums dark:text-sky-400">{multiple}×</span> the
+        average volume of the 20 bars before those.
       </p>
     </div>
   )

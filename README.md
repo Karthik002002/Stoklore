@@ -405,12 +405,14 @@ OHLCV, no backend execution involved:
   split-adjusted and revised behind you. Also four new Statistics dimensions
   ("do I only lose when I chase?")
 - **Volume spike before entry, per account** — was there unusual volume in the
-  run-up? Each of the last N bars before entry is measured against its **own**
-  20-bar average (rolling baseline, so a spike can't inflate what it is
-  compared to); the loudest one is stored with how many bars back it was, how
-  many cleared the threshold, and the threshold used. Configured in Settings ›
-  Trade accounts (default 2× over 10 bars) and shown as a sentence in the trade
-  detail view
+  run-up? The last N bars before entry are measured against **one** baseline:
+  the 20 bars preceding that window. Not a rolling per-bar average, which would
+  let day one of an accumulation surge inflate the reference day two is judged
+  by and make a three-day surge read progressively calmer. The loudest bar is
+  stored with how many bars back it was (ties → most recent), how many cleared
+  the threshold, how many bars were actually scanned, and the threshold used.
+  Configured in Settings › Trade accounts (default 2× over 10 bars, capped at
+  80) and shown as a sentence in the trade detail view
 - **Trading costs per account** — slippage (per share or bps), flat +
   percentage brokerage, and other charges, applied per side of the round trip
   (`app/core/db.py` `trade_accounts` + `frontend/src/lib/tradeCosts.js`). Every

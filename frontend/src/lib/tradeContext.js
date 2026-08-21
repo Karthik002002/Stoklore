@@ -156,9 +156,11 @@ export function contextReadings(t) {
         ? `${spike.max_ratio}× — ${spike.bars_ago} bar${spike.bars_ago === 1 ? '' : 's'} before entry`
         : `None (peak ${spike.max_ratio}×)`,
       tone: hit ? 'good' : 'neutral',
+      // `scanned`, not `lookback`: a short history shrinks the window, and claiming to have
+      // checked 10 bars when 5 existed is the kind of small lie that makes the rest suspect.
       note: hit
-        ? `${spike.count} of the ${spike.lookback} bars before entry traded at or above ${spike.multiple}× their 20-bar average.`
-        : `No bar in the ${spike.lookback} before entry reached ${spike.multiple}× its 20-bar average — the move came in quietly.`,
+        ? `${spike.count} of the ${spike.scanned ?? spike.lookback} bars before entry traded at or above ${spike.multiple}× the 20-bar average preceding them.`
+        : `No bar in the ${spike.scanned ?? spike.lookback} before entry reached ${spike.multiple}× the 20-bar average preceding them — the move came in quietly.`,
     })
   }
 

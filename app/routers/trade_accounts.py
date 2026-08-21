@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from fastapi import HTTPException
 
 from app.core import db
+from app.core import trade_context
 
 from app.schemas import TradeAccountRequest
 
@@ -12,11 +13,18 @@ ACCOUNT_KINDS = {"journal", "paper"}
 
 def _validate_spike(req):
     """A multiple below 1 flags every bar as a spike, and a zero/negative lookback scans nothing -
-    both make the stored reading meaningless rather than merely odd, so they're rejected here."""
+    both make the stored reading meaningless rather than merely odd, so they're rejected here.
+
+    The upper bound is real, not cosmetic: only 100 bars are ever fetched per trade and the scan
+    needs 20 of them behind its window for the baseline, so a larger lookback would quietly scan
+    fewer bars than it was told to. Rejecting it here is the only place that can say so."""
     if req.vol_spike_multiple < 1:
         raise HTTPException(status_code=422, detail="volume spike multiple must be at least 1")
-    if req.vol_spike_lookback < 1:
-        raise HTTPException(status_code=422, detail="volume spike lookback must be at least 1 bar")
+    if not 1 <= req.vol_spike_lookback <= trade_context.MAX_SPIKE_LOOKBACK:
+        raise HTTPException(
+            status_code=422,
+            detail=f"volume spike lookback must be 1-{trade_context.MAX_SPIKE_LOOKBACK} bars",
+        )
 
 
 @router.get("/api/trade-accounts")

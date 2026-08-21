@@ -232,13 +232,28 @@ context (re-reading the entry bars could pick up a split adjustment and rewrite
 a fact you already have); everything present → touch nothing.
 
 **Volume spike before entry.** `vol_spike` records the loudest bar in the last
-N bars *before* entry as a multiple of that bar's **own** 20-bar average volume
-— a rolling baseline, so one huge bar can't inflate the average it is measured
-against. Stored as `{max_ratio, bars_ago, count, multiple, lookback}`: the peak
+N bars *before* entry as a multiple of **one fixed baseline**: the average
+volume of the 20 bars immediately preceding that window.
+
+The baseline is deliberately *not* a rolling per-bar average. A rolling one
+excludes each bar from its own reference but still absorbs its **neighbours**,
+so on the multi-day accumulation this scan exists to find, day one's spike
+raises the bar day two is measured against and a three-day surge reads
+progressively calmer — the exact opposite of the truth. One shared reference
+also makes the ratios *within* a window comparable to each other.
+
+Stored as `{max_ratio, bars_ago, count, scanned, multiple, lookback}`: the peak
 is kept whether or not it cleared the threshold (peaking at 1.1× is a finding,
 and storing only spikes would make "no spike" indistinguishable from "not
-computed"), `bars_ago: 1` is the bar immediately before entry, and `count` is
-how many bars in the window cleared it.
+computed"), `bars_ago: 1` is the bar immediately before entry, ties resolve to
+the **most recent** bar, and `count` is how many bars in the window cleared it.
+`scanned` is how many bars were actually looked at — a short history shrinks the
+window (never the baseline, since a ratio against 4 bars is a different reading,
+not a weaker one), and the detail view quotes `scanned` rather than the
+configured `lookback` so it can't claim to have checked bars that didn't exist.
+The lookback is capped at **80** for the same reason: only 100 bars are fetched
+per trade and 20 of them are the baseline, so a larger window would silently
+scan less than it was told to — the API rejects it instead.
 
 The threshold and window are **per trade account** (`trade_accounts.vol_spike_multiple`
 / `vol_spike_lookback`, default 2× over 10 bars, editable in Settings → Trade

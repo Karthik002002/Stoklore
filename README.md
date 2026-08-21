@@ -397,11 +397,20 @@ OHLCV, no backend execution involved:
   target capture, stop overrun), MAE/MFE, and the market conditions at entry
 - **Market context captured once per trade** (`app/core/trade_context.py`) — trend
   (20/50 EMA), volatility regime (ATR percentile), how extended the entry was
-  in ATRs off the 20-EMA, position in the 100-bar range, volume vs average,
-  plus **MAE/MFE** in % and R once a close date is known. Computed from local
+  in ATRs off the 20-EMA, position in the 100-bar range, volume vs average, a
+  **volume-spike scan of the bars before entry** (threshold and window
+  configured per trade account, stored with the reading so retuning never
+  rewrites history), plus **MAE/MFE** in % and R once a close date is known. Computed from local
   bars at creation and frozen on the row — never recomputed, because bars get
   split-adjusted and revised behind you. Also four new Statistics dimensions
   ("do I only lose when I chase?")
+- **Volume spike before entry, per account** — was there unusual volume in the
+  run-up? Each of the last N bars before entry is measured against its **own**
+  20-bar average (rolling baseline, so a spike can't inflate what it is
+  compared to); the loudest one is stored with how many bars back it was, how
+  many cleared the threshold, and the threshold used. Configured in Settings ›
+  Trade accounts (default 2× over 10 bars) and shown as a sentence in the trade
+  detail view
 - **Trading costs per account** — slippage (per share or bps), flat +
   percentage brokerage, and other charges, applied per side of the round trip
   (`app/core/db.py` `trade_accounts` + `frontend/src/lib/tradeCosts.js`). Every

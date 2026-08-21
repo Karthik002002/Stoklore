@@ -147,7 +147,31 @@ export function contextReadings(t) {
     })
   }
 
+  const spike = c.vol_spike
+  if (spike?.max_ratio != null) {
+    const hit = spike.count > 0
+    out.push({
+      label: 'Volume spike',
+      value: hit
+        ? `${spike.max_ratio}× — ${spike.bars_ago} bar${spike.bars_ago === 1 ? '' : 's'} before entry`
+        : `None (peak ${spike.max_ratio}×)`,
+      tone: hit ? 'good' : 'neutral',
+      note: hit
+        ? `${spike.count} of the ${spike.lookback} bars before entry traded at or above ${spike.multiple}× their 20-bar average.`
+        : `No bar in the ${spike.lookback} before entry reached ${spike.multiple}× its 20-bar average — the move came in quietly.`,
+    })
+  }
+
   return out
+}
+
+/** How the entry sat against the account's volume-spike threshold, for grouping in Statistics.
+ *  Null for trades logged before the scan existed, which keeps them out of the buckets rather
+ *  than lumping them in with genuine no-spike entries. */
+export function volSpikeBucket(t) {
+  const spike = t?.trade_context?.vol_spike
+  if (spike?.count == null) return null
+  return spike.count > 0 ? 'Volume spike before entry' : 'No volume spike'
 }
 
 /** The excursion read: heat taken vs profit that was actually on the table.

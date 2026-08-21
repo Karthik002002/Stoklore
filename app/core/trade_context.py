@@ -35,6 +35,13 @@ VOLUME_AVG = 20
 LOW_VOL_PCT = 20
 HIGH_VOL_PCT = 80
 
+# Volume-spike scan, per account (trade_accounts.vol_spike_multiple / _lookback - the defaults
+# below are what an unassigned trade gets). A spike is a bar whose volume is `multiple` times the
+# average of the 20 bars ending just before IT - a rolling baseline, not one average for the whole
+# window, so a single huge bar can't raise the bar it is being measured against.
+SPIKE_MULTIPLE = 2.0
+SPIKE_LOOKBACK = 10
+
 # How far above/below the fast EMA (in ATRs) counts as "extended". Used only for the bucket label;
 # the raw signed value is stored too so the threshold can be revisited without re-collecting data.
 EXTENDED_ATR = 1.5
@@ -77,7 +84,49 @@ def _round(v, places=2):
     return None if v is None or v != v else round(float(v), places)
 
 
-def entry_context(bars, direction, entry_price):
+def volume_spike(bars, multiple=SPIKE_MULTIPLE, lookback=SPIKE_LOOKBACK):
+    """Was there unusual volume in the run-up to the entry? `bars` are the bars strictly BEFORE
+    entry, oldest-first; the last `lookback` of them are scanned.
+
+    Reports the biggest bar in the window whether or not it cleared the threshold - "the loudest
+    bar before I entered was 1.1x average" is a finding, and storing only spikes would make
+    no-spike indistinguishable from not-computed. `count` is how many bars did clear it.
+
+    The config actually used is stored alongside the result on purpose: the account's threshold can
+    be retuned later, and a stored reading that silently re-interprets itself against the new
+    number is exactly the kind of quiet history-rewrite this module exists to avoid.
+    """
+    best_ratio = None
+    best_index = None
+    count = 0
+    # Each candidate needs VOLUME_AVG bars of its own history for the baseline, so the scan starts
+    # wherever both windows are satisfiable rather than reporting a ratio against 3 bars.
+    for i in range(max(VOLUME_AVG, len(bars) - lookback), len(bars)):
+        baseline = bars[i - VOLUME_AVG:i]
+        avg = sum(b["volume"] for b in baseline) / len(baseline)
+        if not avg:
+            continue
+        ratio = bars[i]["volume"] / avg
+        if ratio >= multiple:
+            count += 1
+        # >= so a tie resolves to the most recent bar - "2 bars before entry" is the more useful
+        # reading than the same ratio ten bars back.
+        if best_ratio is None or ratio >= best_ratio:
+            best_ratio, best_index = ratio, i
+    if best_ratio is None:
+        return {}
+    return {
+        "max_ratio": _round(best_ratio),
+        # 1 = the bar immediately before entry.
+        "bars_ago": len(bars) - best_index,
+        "count": count,
+        "multiple": multiple,
+        "lookback": lookback,
+    }
+
+
+def entry_context(bars, direction, entry_price, spike_multiple=SPIKE_MULTIPLE,
+                  spike_lookback=SPIKE_LOOKBACK):
     """Market state at entry, from the bars strictly BEFORE it. `bars` is oldest-first
     [{date, open, high, low, close, volume}]. Returns None when there's nothing usable.
 
@@ -154,6 +203,7 @@ def entry_context(bars, direction, entry_price):
         "extended": None if extension is None else bool(extension > EXTENDED_ATR),
         "range_pos": _round(range_pos, 3),
         "vol_ratio": _round(volumes[-1] / avg_volume) if avg_volume else None,
+        "vol_spike": volume_spike(bars, spike_multiple, spike_lookback) or None,
         # Trading with or against the prevailing trend - the single most-asked question of a
         # journal, and free once trend and direction are both known.
         "with_trend": (trend == "up") == (direction == "long") if trend != "chop" else None,
@@ -195,14 +245,15 @@ def excursion(bars, direction, entry_price, stop_loss=None):
     return out
 
 
-def compute(before_bars, holding_bars, direction, entry_price, stop_loss=None, source=None):
+def compute(before_bars, holding_bars, direction, entry_price, stop_loss=None, source=None,
+            spike_multiple=SPIKE_MULTIPLE, spike_lookback=SPIKE_LOOKBACK):
     """The whole snapshot. `before_bars` are the bars strictly before entry (oldest-first),
     `holding_bars` those from entry through exit (empty/None when the exit date is unknown).
 
     Returns None when there is no usable pre-entry data at all - the caller stores NULL rather
     than an empty object, so "never captured" stays distinguishable from "captured, nothing found".
     """
-    context = entry_context(before_bars, direction, entry_price)
+    context = entry_context(before_bars, direction, entry_price, spike_multiple, spike_lookback)
     if context is None:
         return None
     if source:

@@ -10,6 +10,15 @@ router = APIRouter(tags=["trade-accounts"])
 ACCOUNT_KINDS = {"journal", "paper"}
 
 
+def _validate_spike(req):
+    """A multiple below 1 flags every bar as a spike, and a zero/negative lookback scans nothing -
+    both make the stored reading meaningless rather than merely odd, so they're rejected here."""
+    if req.vol_spike_multiple < 1:
+        raise HTTPException(status_code=422, detail="volume spike multiple must be at least 1")
+    if req.vol_spike_lookback < 1:
+        raise HTTPException(status_code=422, detail="volume spike lookback must be at least 1 bar")
+
+
 @router.get("/api/trade-accounts")
 def trade_accounts(kind: str = "journal"):
     """`kind` defaults to journal so existing callers are unaffected. The two kinds never mix in
@@ -24,12 +33,13 @@ def trade_accounts(kind: str = "journal"):
 def create_trade_account(req: TradeAccountRequest, kind: str = "journal"):
     if not req.name.strip():
         raise HTTPException(status_code=422, detail="account name is required")
+    _validate_spike(req)
     if kind not in ACCOUNT_KINDS:
         raise HTTPException(status_code=422, detail=f"kind must be one of {sorted(ACCOUNT_KINDS)}")
     account_id = db.create_trade_account(
         req.name.strip(), req.strategy, req.strategy_explanation, req.opening_balance,
         req.max_position_size, req.max_position_size_type, req.max_position_count, kind=kind,
-        costs=req.costs(),
+        settings=req.settings(),
     )
     return {"id": account_id}
 
@@ -38,10 +48,11 @@ def create_trade_account(req: TradeAccountRequest, kind: str = "journal"):
 def update_trade_account(account_id: int, req: TradeAccountRequest):
     if not req.name.strip():
         raise HTTPException(status_code=422, detail="account name is required")
+    _validate_spike(req)
     db.update_trade_account(
         account_id, req.name.strip(), req.strategy, req.strategy_explanation, req.opening_balance,
         req.max_position_size, req.max_position_size_type, req.max_position_count,
-        costs=req.costs(),
+        settings=req.settings(),
     )
     return {"ok": True}
 

@@ -36,6 +36,8 @@ const BLANK = {
   brokerage_flat: '',
   brokerage_pct: '',
   other_charges_pct: '',
+  vol_spike_multiple: '2',
+  vol_spike_lookback: '10',
 }
 
 const ADJUSTMENT_TYPE_OPTIONS = [
@@ -56,6 +58,8 @@ const formFrom = (a) => ({
   brokerage_flat: a.brokerage_flat ? String(a.brokerage_flat) : '',
   brokerage_pct: a.brokerage_pct ? String(a.brokerage_pct) : '',
   other_charges_pct: a.other_charges_pct ? String(a.other_charges_pct) : '',
+  vol_spike_multiple: String(a.vol_spike_multiple ?? 2),
+  vol_spike_lookback: String(a.vol_spike_lookback ?? 10),
 })
 
 const SLIPPAGE_TYPE_OPTIONS = [
@@ -170,6 +174,54 @@ function CostFields({ form }) {
   )
 }
 
+// Volume-spike scan. What counts as "unusual volume" is a property of the strategy, not the
+// symbol - a breakout account cares about 2x on the run-up, a mean-reversion one may not care at
+// all. Read once when a trade is logged and copied onto that trade's snapshot, so changing these
+// affects future trades only and never rewrites what past ones recorded.
+function VolumeSpikeFields({ form }) {
+  const multiple = Number(form.watch('vol_spike_multiple')) || 2
+  const lookback = Number(form.watch('vol_spike_lookback')) || 10
+
+  return (
+    <div className="space-y-2 rounded-lg border border-sky-500/40 bg-sky-500/[0.04] p-3">
+      <p className="text-sm font-medium text-sky-600 dark:text-sky-400">Volume spike</p>
+      <p className="text-xs text-muted-foreground">
+        Captured once per trade, from the bars before entry. Changing these re-scans nothing — trades already
+        logged keep the reading (and the threshold) they were saved with.
+      </p>
+
+      <div className="grid grid-cols-2 gap-2">
+        <TextField
+          form={form}
+          name="vol_spike_multiple"
+          label="Spike is (× avg volume)"
+          type="number"
+          step="0.1"
+          min="1"
+          placeholder="2"
+          hint="Against the bar's own 20-bar average."
+        />
+        <TextField
+          form={form}
+          name="vol_spike_lookback"
+          label="Bars scanned before entry"
+          type="number"
+          step="1"
+          min="1"
+          placeholder="10"
+          hint="How far back the run-up is looked at."
+        />
+      </div>
+
+      <p className="border-t border-sky-500/30 pt-2 text-xs text-muted-foreground">
+        A trade is flagged when any of the {lookback} bars before entry traded at least{' '}
+        <span className="font-semibold text-sky-600 tabular-nums dark:text-sky-400">{multiple}×</span> its
+        20-bar average volume.
+      </p>
+    </div>
+  )
+}
+
 function AccountForm({ account, onDone, kind }) {
   const queryClient = useQueryClient()
   const form = useForm({
@@ -272,6 +324,11 @@ function AccountForm({ account, onDone, kind }) {
       </div>
 
       <CostFields form={form} />
+
+      {/* Journal only: a paper close writes its manual_trades row from the engine and captures no
+          entry-context snapshot at all, so a spike threshold on a paper account would configure
+          nothing. Costs above DO apply to both. */}
+      {kind !== 'paper' && <VolumeSpikeFields form={form} />}
 
       <div className="flex gap-2">
         <Button type="submit" size="sm" disabled={save.isPending}>

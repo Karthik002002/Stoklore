@@ -42,6 +42,40 @@ assert tc._percentile_rank([1, 2, 3, 4], 5) == 100.0
 assert tc._percentile_rank([1, 2, 3, 4], 3) == 50.0
 assert tc._percentile_rank([], 1) is None
 
+# --- volume spike ------------------------------------------------------------------------------
+# A flat tape has no spike: every bar is exactly its own baseline.
+flat = tc.volume_spike(flat_bars(60))
+assert flat["max_ratio"] == 1.0 and flat["count"] == 0, flat
+
+# One 3x bar, three bars before entry.
+spiky = flat_bars(60)
+spiky[-3]["volume"] = 3000
+hit = tc.volume_spike(spiky)
+assert hit["max_ratio"] == 3.0 and hit["bars_ago"] == 3 and hit["count"] == 1, hit
+assert hit["multiple"] == 2.0 and hit["lookback"] == 10, "the config used must be stored"
+
+# The account's config is what decides, not the module default.
+assert tc.volume_spike(spiky, multiple=4)["count"] == 0, "a 3x bar is no spike at a 4x threshold"
+assert tc.volume_spike(spiky, lookback=2)["count"] == 0, "a bar outside the window must not count"
+assert tc.volume_spike(spiky, lookback=2)["bars_ago"] == 1, "the window's own loudest bar instead"
+
+# The baseline rolls: a spike can't be measured against itself, so two adjacent 3x bars both clear.
+twin = flat_bars(60)
+twin[-2]["volume"] = twin[-1]["volume"] = 3000
+assert tc.volume_spike(twin)["count"] == 2, tc.volume_spike(twin)
+
+# Not computable without a full baseline behind at least one candidate bar.
+assert tc.volume_spike(flat_bars(20)) == {}, "20 bars leaves no candidate with 20 behind it"
+assert tc.volume_spike(flat_bars(21))["bars_ago"] == 1
+assert tc.volume_spike([]) == {}
+assert tc.volume_spike(flat_bars(60, volume=0)) == {}, "zero-volume history must not divide"
+
+# It rides the snapshot, carrying the config it was computed with.
+ctx_spike = tc.compute(spiky, None, "long", 100.0, spike_multiple=2.5, spike_lookback=5)
+assert ctx_spike["vol_spike"]["multiple"] == 2.5 and ctx_spike["vol_spike"]["count"] == 1
+# ...and is absent, not zeroed, when the history is too thin to read.
+assert "vol_spike" not in tc.entry_context(flat_bars(10), "long", 100)
+
 # --- entry context: degradation comes first, it's the part that silently lies ------------------
 assert tc.entry_context([], "long", 100) is None
 assert tc.compute([], None, "long", 100) is None, "no bars must be NULL, not an empty dict"
@@ -148,4 +182,4 @@ assert thin["mae_pct"] == 4.0 and thin["mfe_pct"] == 10.0, thin
 for key in ("trend", "vol_regime", "extension_atr", "range_pos"):
     assert key not in thin, key
 
-print("ok - trade_context: ATR, percentile, entry context, direction flips, MAE/MFE, degradation")
+print("ok - trade_context: ATR, percentile, entry context, volume spike, direction flips, MAE/MFE, degradation")

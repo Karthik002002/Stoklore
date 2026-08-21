@@ -119,6 +119,11 @@ export const tradeAccountSchema = z.object({
   brokerage_flat: optionalNonNegative('Brokerage per order').transform((v) => v ?? 0),
   brokerage_pct: optionalNonNegative('Brokerage %').transform((v) => v ?? 0),
   other_charges_pct: optionalNonNegative('Other charges %').transform((v) => v ?? 0),
+  // Volume-spike scan for trades filed under this account (see app/core/trade_context.py). Blank
+  // falls back to the backend's own defaults rather than to zero - a 0x multiple would call every
+  // bar a spike and a 0-bar window would scan nothing.
+  vol_spike_multiple: optionalNonNegative('Spike multiple').transform((v) => v ?? 2),
+  vol_spike_lookback: optionalNonNegative('Spike lookback').transform((v) => v ?? 10),
 })
 
 // --- Balance adjustment (Overview > Adjust) ----------------------------------------------------

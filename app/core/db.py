@@ -312,6 +312,14 @@ ALTER TABLE trade_accounts ADD COLUMN IF NOT EXISTS brokerage_flat REAL NOT NULL
 ALTER TABLE trade_accounts ADD COLUMN IF NOT EXISTS brokerage_pct REAL NOT NULL DEFAULT 0;
 ALTER TABLE trade_accounts ADD COLUMN IF NOT EXISTS other_charges_pct REAL NOT NULL DEFAULT 0;
 
+-- Per-account volume-spike scan (see trade_context.volume_spike). What counts as a spike is a
+-- property of the strategy, not of the symbol: a breakout account wants 2x on the 10 bars before
+-- entry, a mean-reversion one may want something else entirely. Read once, at trade creation, and
+-- the values used are copied into the stored snapshot - retuning these changes what FUTURE trades
+-- capture, never what past ones already recorded.
+ALTER TABLE trade_accounts ADD COLUMN IF NOT EXISTS vol_spike_multiple REAL NOT NULL DEFAULT 2;
+ALTER TABLE trade_accounts ADD COLUMN IF NOT EXISTS vol_spike_lookback INTEGER NOT NULL DEFAULT 10;
+
 -- Manually logged trades for the Manual backtest tab - a personal trade journal, not tied to
 -- price_history/NSE at all (entry/exit/P&L are exactly what the user typed in, not computed from
 -- market data). P&L, R:R, and return% are deliberately NOT stored here - they're derived from
@@ -1363,42 +1371,60 @@ def list_trade_accounts(kind="journal"):
 # The cost fields are passed as one dict rather than five more positional arguments - the create
 # signature was already at the limit of readable, and every caller has them together anyway.
 COST_FIELDS = ("slippage_value", "slippage_type", "brokerage_flat", "brokerage_pct", "other_charges_pct")
-COST_DEFAULTS = {"slippage_value": 0, "slippage_type": "per_share", "brokerage_flat": 0,
-                 "brokerage_pct": 0, "other_charges_pct": 0}
+# The volume-spike scan config rides the same dict, for the same reason.
+SETTING_FIELDS = COST_FIELDS + ("vol_spike_multiple", "vol_spike_lookback")
+SETTING_DEFAULTS = {"slippage_value": 0, "slippage_type": "per_share", "brokerage_flat": 0,
+                    "brokerage_pct": 0, "other_charges_pct": 0,
+                    "vol_spike_multiple": 2, "vol_spike_lookback": 10}
 
 
-def _costs(costs):
-    merged = {**COST_DEFAULTS, **(costs or {})}
-    return [merged[f] for f in COST_FIELDS]
+def _settings(settings):
+    merged = {**SETTING_DEFAULTS, **(settings or {})}
+    return [merged[f] for f in SETTING_FIELDS]
+
+
+def vol_spike_config(account_id):
+    """The account's volume-spike settings as trade_context.compute kwargs, or {} for a trade
+    with no account - an empty dict so the caller splats it and the module's own defaults apply."""
+    if not account_id:
+        return {}
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT vol_spike_multiple, vol_spike_lookback FROM trade_accounts WHERE id = %s",
+            (account_id,),
+        ).fetchone()
+    if not row:
+        return {}
+    return {"spike_multiple": row["vol_spike_multiple"], "spike_lookback": row["vol_spike_lookback"]}
 
 
 def create_trade_account(name, strategy, strategy_explanation, opening_balance,
                           max_position_size, max_position_size_type, max_position_count,
-                          kind="journal", costs=None):
+                          kind="journal", settings=None):
     with connect() as conn:
         row = conn.execute(
             "INSERT INTO trade_accounts (name, strategy, strategy_explanation, opening_balance, "
             "max_position_size, max_position_size_type, max_position_count, kind, "
-            f"{', '.join(COST_FIELDS)}) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            f"{', '.join(SETTING_FIELDS)}) "
+            f"VALUES ({', '.join(['%s'] * (8 + len(SETTING_FIELDS)))}) RETURNING id",
             (name, strategy, strategy_explanation, opening_balance, max_position_size,
-             max_position_size_type, max_position_count, kind, *_costs(costs)),
+             max_position_size_type, max_position_count, kind, *_settings(settings)),
         ).fetchone()
     return row["id"]
 
 
 def update_trade_account(account_id, name, strategy, strategy_explanation, opening_balance,
                           max_position_size, max_position_size_type, max_position_count,
-                          costs=None):
+                          settings=None):
     with connect() as conn:
         conn.execute(
             "UPDATE trade_accounts SET name = %s, strategy = %s, strategy_explanation = %s, "
             "opening_balance = %s, max_position_size = %s, max_position_size_type = %s, "
             "max_position_count = %s, "
-            + ", ".join(f"{f} = %s" for f in COST_FIELDS)
+            + ", ".join(f"{f} = %s" for f in SETTING_FIELDS)
             + " WHERE id = %s",
             (name, strategy, strategy_explanation, opening_balance, max_position_size,
-             max_position_size_type, max_position_count, *_costs(costs), account_id),
+             max_position_size_type, max_position_count, *_settings(settings), account_id),
         )
 
 

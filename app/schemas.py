@@ -144,14 +144,23 @@ class TradeAccountRequest(BaseModel):
     brokerage_flat: float = 0
     brokerage_pct: float = 0
     other_charges_pct: float = 0
+    # Volume-spike scan for trades filed under this account - see trade_context.volume_spike. A bar
+    # trading at least `multiple` times its own 20-bar average volume, anywhere in the
+    # `lookback` bars before entry, counts as a spike.
+    vol_spike_multiple: float = 2
+    vol_spike_lookback: int = 10
 
-    def costs(self):
+    def settings(self):
+        """Cost + volume-spike fields as one dict - everything on the account that is a stored
+        setting rather than an identity field."""
         return {
             "slippage_value": self.slippage_value,
             "slippage_type": self.slippage_type,
             "brokerage_flat": self.brokerage_flat,
             "brokerage_pct": self.brokerage_pct,
             "other_charges_pct": self.other_charges_pct,
+            "vol_spike_multiple": self.vol_spike_multiple,
+            "vol_spike_lookback": self.vol_spike_lookback,
         }
 
 

@@ -214,7 +214,8 @@ Two halves, knowable at different times:
   in the direction the move had already gone", so it reads the same for a
   short), position in the 100-bar range (deliberately **not** clamped to
   [0, 1]: >1 is a breakout, and clamping would erase exactly the interesting
-  distinction), volume vs its 20-day average, and `with_trend`.
+  distinction), volume vs its 20-day average, `with_trend`, and the volume-spike
+  scan (below).
 - **MAE / MFE** (Maximum Adverse / Favourable Excursion) over the holding
   window: the heat the trade took before it worked, and the best it ever
   offered before you closed it. Expressed both as a % of entry and in **R**
@@ -229,6 +230,22 @@ whole thing; entry context stored but no excursion and an exit date has now
 arrived → compute **only** the excursion and merge it onto the stored entry
 context (re-reading the entry bars could pick up a split adjustment and rewrite
 a fact you already have); everything present → touch nothing.
+
+**Volume spike before entry.** `vol_spike` records the loudest bar in the last
+N bars *before* entry as a multiple of that bar's **own** 20-bar average volume
+— a rolling baseline, so one huge bar can't inflate the average it is measured
+against. Stored as `{max_ratio, bars_ago, count, multiple, lookback}`: the peak
+is kept whether or not it cleared the threshold (peaking at 1.1× is a finding,
+and storing only spikes would make "no spike" indistinguishable from "not
+computed"), `bars_ago: 1` is the bar immediately before entry, and `count` is
+how many bars in the window cleared it.
+
+The threshold and window are **per trade account** (`trade_accounts.vol_spike_multiple`
+/ `vol_spike_lookback`, default 2× over 10 bars, editable in Settings → Trade
+accounts) — what counts as unusual volume is a property of the strategy, not
+the symbol. The values actually used are copied onto each snapshot, so retuning
+an account changes what *future* trades capture and never re-interprets what
+past ones recorded. A trade with no account falls back to the same defaults.
 
 Under 30 prior bars, the snapshot stores `{bars_used, context_insufficient}`
 rather than a partial payload — a dict carrying `trend` but no `vol_regime`
@@ -279,6 +296,13 @@ balance, and its deposits/withdrawals.
     account has no rate card at all: it reads `—`, "unknown", never "free".
   - Same rate card applies to paper accounts, so a paper P&L and a journal
     P&L are finally comparable numbers instead of one gross and one net.
+- **The volume-spike scan is per account too** — "spike is N× the bar's own
+  20-bar average" and "scan the last M bars before entry", defaulting to 2× over
+  10 bars, in the same **Settings › Trade accounts** form. What counts as
+  unusual volume belongs to the strategy, not the symbol: a breakout account
+  wants the run-up to be loud, a mean-reversion one may not care. Read once when
+  the trade is logged and copied onto its snapshot, so retuning an account
+  changes what future trades capture and never rewrites a past reading.
 - **Max position size** (₹ or % of balance) and **max open positions** are
   **advisory**: they raise a warning on the trade form and never reject a trade.
   The journal records what you actually did, not what the rules said you should

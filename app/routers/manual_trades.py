@@ -75,8 +75,12 @@ def _trade_context(req):
 
     exit_date = _market_date(req.exited_at) if req.exited_at else None
     holding = db.bars_between(symbol, entry_date, exit_date) if exit_date else []
+    # What counts as a volume spike is per-account (a breakout account and a mean-reversion one
+    # disagree), so the account's setting is read here and the values used are stored on the
+    # snapshot. An unassigned trade gets {} and falls back to trade_context's own defaults.
     return trade_context.compute(
-        before, holding, req.direction, req.entry_price, req.stop_loss, source
+        before, holding, req.direction, req.entry_price, req.stop_loss, source,
+        **db.vol_spike_config(req.account_id),
     )
 
 

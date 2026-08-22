@@ -12,6 +12,36 @@ import { rng } from './tradeMath.js'
 
 // --- pool preparation -------------------------------------------------------------------------
 
+/** Which slice of a trade log to simulate, as 1-based inclusive positions counting from the OLDEST
+ *  trade. Blank ends mean "from the start" / "to the end", so the default is the whole log.
+ *
+ *  This exists because a log is not one strategy. Trades taken while a rule was still being learned
+ *  belong to a trader who no longer exists, and mixing them into the pool answers a question nobody
+ *  asked: bootstrap draws the old mistakes as often as the current process, so the projection is of
+ *  an average of two different traders. Cutting the log at the point the process changed is the
+ *  only way to simulate the one being run now.
+ *
+ *  Returns 0-based slice bounds plus how many trades that actually selects, and an `error` string
+ *  for a range the user still has to fix. Ends past the end of the log are CLAMPED rather than
+ *  rejected - that is what lets one range apply across accounts of different lengths in the
+ *  Multiple tab, where an account simply contributes whatever part of the range it has.
+ */
+export function tradeRange(total, from = null, to = null) {
+  const blank = (v) => v == null || v === ''
+  const f = blank(from) ? 1 : Math.floor(Number(from))
+  const t = blank(to) ? total : Math.floor(Number(to))
+  const fail = (error) => ({ start: 0, end: total, count: total, error })
+
+  if (!Number.isFinite(f) || !Number.isFinite(t)) return fail('Range must be whole numbers')
+  if (f < 1) return fail('From must be at least 1')
+  if (t < f) return fail('To must be greater than or equal to From')
+  if (total > 0 && f > total) return fail(`Only ${total} trades in this log`)
+
+  const start = f - 1
+  const end = Math.min(t, total)
+  return { start, end, count: Math.max(0, end - start), error: null }
+}
+
 /** The R denominator: what one "unit of risk" was worth in this log. Average losing trade, because
  *  that is what a manual trader's stop actually cost on average - a mean over all trades would be
  *  dragged around by the winners, which is the wrong scale for sizing. Null when there are no
@@ -496,6 +526,11 @@ const configLines = (config) => [
   }`,
   `- Liquidation threshold: ${config.liquidateAt}`,
   ...(config.removeTopWins ? ['- Top 5% of wins removed from the pool'] : []),
+  // Only when narrowed - an exported report of the whole log shouldn't imply a slice was chosen,
+  // but one of trades 50-95 is a different claim and has to say so.
+  ...(config.rangeFrom || config.rangeTo
+    ? [`- Trade range: ${config.rangeFrom || 'first'} to ${config.rangeTo || 'last'} (oldest logged = 1)`]
+    : []),
 ]
 
 export function toMd(result, { title, config }) {

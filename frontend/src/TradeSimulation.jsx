@@ -25,6 +25,7 @@ import {
   toComparisonMd,
   toCsv,
   toMd,
+  tradeRange,
 } from '@/lib/tradeSimulation'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { getManualTrades, getTradeAccounts } from '@/services/api'
@@ -52,6 +53,14 @@ const ACCOUNT_COLORS = [
 ]
 const colorFor = (i) => ACCOUNT_COLORS[i % ACCOUNT_COLORS.length]
 
+// Oldest LOGGED first, and deliberately NOT tradeStats' chronological() (which orders by
+// traded_at, the market date). The trade range is about the user's own timeline - "the first 40
+// were while I was still learning the rule" - and a Bar Replay trade taken on 2013 bars but
+// journaled last week belongs at the END of that timeline, not the start. created_at is the same
+// axis the trades table sorts on and Goals bucket by, for the same reason.
+const byLogged = (trades) =>
+  [...trades].sort((a, b) => new Date(a.created_at ?? a.traded_at) - new Date(b.created_at ?? b.traded_at))
+
 const PRESET_KEY = 'tradeSimulation.preset'
 
 const DEFAULTS = {
@@ -65,6 +74,10 @@ const DEFAULTS = {
   riskAmount: 1000,
   riskPct: 1,
   liquidateAt: 0,
+  // 1-based inclusive positions in the log, oldest trade = 1. Both blank = the whole log, which is
+  // what every existing saved preset deserializes to.
+  rangeFrom: '',
+  rangeTo: '',
 }
 
 const TABLE_ROWS = [
@@ -402,6 +415,8 @@ function ConfigSidebar({
   config,
   set,
   pool,
+  range,
+  rangeHint,
   onRun,
   canRun,
   runLabel,
@@ -460,6 +475,46 @@ function ConfigSidebar({
                 Match log
               </Button>
             </div>
+          </Field>
+
+          {/* The log is not one strategy. Trades taken while a rule was still being learned belong
+              to a trader who no longer exists, and bootstrap draws them as often as the current
+              process - so the projection ends up being of an average of two different traders.
+              Cutting the log where the process changed is the only way to simulate the one being
+              run now. Positions count from the OLDEST trade, which is how a person reads their own
+              log ("the first 40 were the mistakes"). */}
+          <Field label="Trade range" hint={range?.error ? undefined : rangeHint}>
+            <div className="flex items-center gap-1.5">
+              <Input
+                type="number"
+                min="1"
+                className="h-8"
+                placeholder="First"
+                aria-label="From trade"
+                value={config.rangeFrom}
+                onChange={(e) => set({ rangeFrom: e.target.value })}
+              />
+              <span className="text-xs text-muted-foreground">to</span>
+              <Input
+                type="number"
+                min="1"
+                className="h-8"
+                placeholder="Last"
+                aria-label="To trade"
+                value={config.rangeTo}
+                onChange={(e) => set({ rangeTo: e.target.value })}
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!config.rangeFrom && !config.rangeTo}
+                onClick={() => set({ rangeFrom: '', rangeTo: '' })}
+              >
+                All
+              </Button>
+            </div>
+            {range?.error && <span className="mt-1 block text-xs text-destructive">{range.error}</span>}
           </Field>
 
           <Field
@@ -972,12 +1027,21 @@ function SingleMode({ config, set, accounts, allTrades }) {
   const [result, setResult] = useState(null)
 
   const selected = accounts.find((a) => a.id === account) ?? null
-  const pnls = useMemo(() => {
+  // Closed trades first, THEN ordered, THEN sliced - so "trade 50" means the 50th trade the
+  // simulation could actually draw. Numbering the open ones too would make the range disagree with
+  // the pool it selects, by a different amount for every account.
+  const closedTrades = useMemo(() => {
     if (account == null) return []
-    return tradesForAccount(allTrades, account)
-      .map(tradePnl)
-      .filter((p) => p != null)
+    return byLogged(tradesForAccount(allTrades, account)).filter((t) => tradePnl(t) != null)
   }, [allTrades, account])
+  const range = useMemo(
+    () => tradeRange(closedTrades.length, config.rangeFrom, config.rangeTo),
+    [closedTrades.length, config.rangeFrom, config.rangeTo],
+  )
+  const pnls = useMemo(
+    () => (range.error ? [] : closedTrades.slice(range.start, range.end).map(tradePnl)),
+    [closedTrades, range],
+  )
   const pool = useMemo(() => (pnls.length ? poolStats(pnls) : null), [pnls])
 
   // A fresh account should open at its own opening balance and its own friction, not at a generic
@@ -1033,8 +1097,14 @@ function SingleMode({ config, set, accounts, allTrades }) {
             config={config}
             set={set}
             pool={pool}
+            range={range}
+            rangeHint={
+              closedTrades.length
+                ? `Simulating ${range.count} of ${closedTrades.length} closed trades — position 1 is the oldest you logged.`
+                : 'Leave both blank to use the whole log.'
+            }
             onRun={() => pnls.length && setResult(runFor(pnls, config))}
-            canRun={pnls.length > 0}
+            canRun={pnls.length > 0 && !range.error}
             runLabel="Run simulation"
             csvLabel="CSV"
             hasResult={!!result}
@@ -1045,7 +1115,11 @@ function SingleMode({ config, set, accounts, allTrades }) {
           <div className="min-w-0 flex-1 space-y-4">
             <DataProfile
               pool={pool}
-              hint={`${selected?.kindLabel} · ${selected?.name} — closed trades only, the pool every run is drawn from.`}
+              hint={`${selected?.kindLabel} · ${selected?.name} — closed trades only, the pool every run is drawn from${
+                range.count < closedTrades.length
+                  ? `. Trades ${range.start + 1}–${range.end} of ${closedTrades.length}`
+                  : ''
+              }.`}
             />
             {result ? (
               <SimulationResults result={result} config={config} />
@@ -1088,17 +1162,26 @@ function MultiMode({ config, set, accounts, allTrades }) {
   const perAccount = useMemo(
     () =>
       chosen.map((a) => {
-        const trades = tradesForAccount(allTrades, a.id)
-        const closed = trades.map((t) => ({ date: t.exited_at ?? t.traded_at, pnl: tradePnl(t) }))
+        const trades = byLogged(tradesForAccount(allTrades, a.id)).filter((t) => tradePnl(t) != null)
+        // One range, applied to each account's OWN log and clamped to its length - "the last 50" is
+        // a fair comparison across accounts, and a short log simply contributes the part it has
+        // rather than blocking the whole run. Correlation reads the same slice, so it answers about
+        // the same period the curves do.
+        const r = tradeRange(trades.length, config.rangeFrom, config.rangeTo)
+        const closed = (r.error ? [] : trades.slice(r.start, r.end)).map((t) => ({
+          date: t.exited_at ?? t.traded_at,
+          pnl: tradePnl(t),
+        }))
         return {
           id: a.id,
           name: `${a.kindLabel} · ${a.name}`,
           short: a.name,
-          pnls: closed.map((c) => c.pnl).filter((p) => p != null),
+          total: trades.length,
+          pnls: closed.map((c) => c.pnl),
           daily: dailyTotals(closed),
         }
       }),
-    [allTrades, chosen],
+    [allTrades, chosen, config.rangeFrom, config.rangeTo],
   )
 
   const runnable = useMemo(() => perAccount.filter((a) => a.pnls.length), [perAccount])
@@ -1109,6 +1192,11 @@ function MultiMode({ config, set, accounts, allTrades }) {
     () => (runnable.length ? poolStats(runnable.flatMap((a) => a.pnls)) : null),
     [runnable],
   )
+
+  // Validated against the longest log on the board: a range that selects nothing anywhere is a
+  // mistake worth blocking, while one that overshoots a shorter account is just clamped there.
+  const longest = perAccount.reduce((max, a) => Math.max(max, a.total), 0)
+  const range = tradeRange(longest, config.rangeFrom, config.rangeTo)
 
   const run = () => {
     setResults(Object.fromEntries(runnable.map((a) => [a.id, { ...a, result: runFor(a.pnls, config) }])))
@@ -1167,8 +1255,14 @@ function MultiMode({ config, set, accounts, allTrades }) {
             config={config}
             set={set}
             pool={combinedPool}
+            range={range}
+            rangeHint={
+              range.count < longest
+                ? `Trades ${range.start + 1}–${range.end} of each account's own log, clamped to its length.`
+                : "Applied to each account's own log — position 1 is its oldest trade."
+            }
             onRun={run}
-            canRun={runnable.length >= 2}
+            canRun={runnable.length >= 2 && !range.error}
             runLabel={`Run ${runnable.length} simulations`}
             csvLabel="CSV"
             hasResult={!!results && entries.length > 0}

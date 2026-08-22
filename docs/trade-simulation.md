@@ -51,6 +51,7 @@ percentile spread as a shape, not a forecast.
 | **Starting balance** | Prefilled from the account's opening balance when it has one. |
 | **Simulations** | 100–10,000 runs. 1,000 is plenty for the shape; 10,000 steadies the last decimal. |
 | **Length** | Trades to project forward. **Match log** sets it to your trade count — the honest "what else could my own history have looked like". |
+| **Trade range** | Which slice of the log to draw from — see below. Blank ends mean the whole log. |
 | **Resampling model** | See below. |
 | **Slippage** | See below — this is the one that matters. |
 | **Position sizing** | See below. |
@@ -58,6 +59,36 @@ percentile spread as a shape, not a forecast.
 
 **4. Run simulation.** It's synchronous and takes single-digit milliseconds —
 there is no progress bar because there is nothing to wait for.
+
+## Trade range — simulating the trader you are now
+
+A log is not one strategy. Trades taken while a rule was still being learned
+belong to a trader who no longer exists, and the pool doesn't know that:
+bootstrap draws those early mistakes exactly as often as the current process,
+so the projection is of an *average of two different traders*. That average is
+nobody, and it is usually pessimistic in a way that hides whether the fix
+worked.
+
+The **From** and **To** fields cut the log to the part worth projecting — "50
+to 95" after fixing a sizing rule at trade 50. Both are 1-based and inclusive,
+blank means "from the first" / "to the last", and **All** clears them.
+
+Positions count from your **oldest logged trade**, not the oldest market date.
+That distinction only shows up for [Bar Replay](bar-replay.md) trades: one
+taken on 2013 bars but journaled last week sits at the *end* of the range, not
+the start, because the range is about your own timeline — the same axis the
+trades table sorts on. Only closed trades are numbered, so position 50 is the
+50th trade the simulation could actually draw.
+
+Validation is on the field: From below 1, To below From, or a From past the end
+of the log blocks the run and says why. Ends past the end of the log are
+**clamped**, not rejected — that is what lets one range apply across accounts of
+different lengths in the Multiple tab, where a shorter account contributes
+whatever part of the range it has. There, the range is applied to each
+account's own log ("the last 50 trades of each"), never to a pooled one.
+
+A narrowed range is written into the CSV and Markdown exports, so a report of
+trades 50–95 can't be mistaken later for a report of the whole log.
 
 ## The two resampling models
 

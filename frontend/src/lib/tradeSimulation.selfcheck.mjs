@@ -14,10 +14,34 @@ import {
   simulate,
   toComparisonCsv,
   toCsv,
+  tradeRange,
 } from './tradeSimulation.js'
 
 // A deliberately simple log: 3 wins of +200, 2 losses of -100. PF = 600/200 = 3.
 const LOG = [200, -100, 200, -100, 200]
+
+// --- trade range ------------------------------------------------------------------------------
+// 1-based and inclusive, counting from the oldest trade - "50 to 95" is what a person reading their
+// own log means by it, so that is what the inputs take.
+assert.deepEqual(tradeRange(95, 50, 95), { start: 49, end: 95, count: 46, error: null })
+assert.deepEqual(tradeRange(95, null, null), { start: 0, end: 95, count: 95, error: null })
+assert.equal(tradeRange(95, 50, null).count, 46, 'a blank To runs to the end of the log')
+assert.equal(tradeRange(95, null, 10).count, 10, 'a blank From starts at the first trade')
+assert.equal(tradeRange(95, 7, 7).count, 1, 'a single-trade range is one trade, not zero')
+
+// Past the end is clamped, not refused: the same range has to be usable across accounts of
+// different lengths in the Multiple tab.
+assert.deepEqual(tradeRange(20, 10, 500), { start: 9, end: 20, count: 11, error: null })
+assert.equal(tradeRange(0, null, null).count, 0, 'an empty log selects nothing and is not an error')
+
+// What the user still has to fix.
+assert.match(tradeRange(95, 0, 50).error, /at least 1/)
+assert.match(tradeRange(95, 60, 50).error, /greater than or equal/)
+assert.match(tradeRange(95, 200, 300).error, /Only 95 trades/)
+assert.match(tradeRange(95, 'abc', 50).error, /whole numbers/)
+// A rejected range reports the whole log, so nothing downstream has to branch on `error` to have
+// usable bounds - the UI blocks the run, the numbers stay sane in the meantime.
+assert.equal(tradeRange(95, 60, 50).count, 95)
 
 // --- pool description -------------------------------------------------------------------------
 const stats = poolStats(LOG)
@@ -131,7 +155,10 @@ assert.ok(spread.lossStreakHist.every((b) => b.streak >= 1))
 const a = simulate({ pnls: LOG, runs: 100, length: 20 })
 const b = simulate({ pnls: LOG, runs: 100, length: 20 })
 assert.deepEqual(a.table.endBalance, b.table.endBalance)
-assert.notDeepEqual(a.table.endBalance, simulate({ pnls: LOG, runs: 100, length: 20, seed: 99 }).table.endBalance)
+assert.notDeepEqual(
+  a.table.endBalance,
+  simulate({ pnls: LOG, runs: 100, length: 20, seed: 99 }).table.endBalance,
+)
 
 // --- guards -----------------------------------------------------------------------------------
 assert.equal(simulate({ pnls: [], runs: 10, length: 10 }), null)
@@ -142,7 +169,13 @@ const csv = toCsv(a)
 assert.ok(csv.startsWith('Percentile summary\n'))
 assert.ok(csv.includes('Max consecutive losses'))
 // header + 100 runs, plus the summary block above it.
-assert.equal(csv.trim().split('\n').filter((l) => /^\d+,/.test(l)).length, 100)
+assert.equal(
+  csv
+    .trim()
+    .split('\n')
+    .filter((l) => /^\d+,/.test(l)).length,
+  100,
+)
 
 // --- daily totals -----------------------------------------------------------------------------
 // Several trades closed on one day collapse to one observation, and the timestamp is truncated to

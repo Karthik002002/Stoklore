@@ -52,6 +52,9 @@ Monte Carlo over your own trade history, not asset returns. Two independent mode
 - `simulate()` — runs the whole thing. ~1M iterations in single-digit ms.
 - Bootstrap (with replacement) and shuffle (without replacement) models.
 - Position sizing: as-logged, fixed-₹ risk, or fixed-% of equity.
+- `tradeRange(total, from, to)` — 1-based inclusive slice of the log, ends clamped, invalid ranges
+  reported rather than thrown. The UI orders trades by `created_at` (oldest *logged* first, not
+  oldest traded) before slicing, and counts closed trades only.
 - `dailyTotals()` + `pearson()` + `correlationMatrix()` — correlates accounts on realised daily P&L (stationary, not simulated curves).
 - Self-check: `node frontend/src/lib/tradeSimulation.selfcheck.mjs` (passing).
 

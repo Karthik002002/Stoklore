@@ -23,7 +23,15 @@ paper-trade it.
   symbol's history and pauses there. The point is to practise without knowing
   which period you're in.
 - Shortcuts: `B` buy, `S` sell, `Shift+↓` play/pause, `Shift+→` step forward,
-  `Shift+R` random bar.
+  `Shift+R` random bar, `A` strategy.
+- **`A` — the account's rules**, in a read-only modal over the chart: the
+  strategy explanation you wrote, balance, position-size and open-position
+  caps, the volume-spike threshold, and what a round trip costs at the price on
+  screen. Replay is where discipline is actually tested, so what you said you
+  would trade belongs one key away rather than a tab away in Settings.
+  Deliberately not editable — rewriting the rules mid-trade is the habit this
+  interrupts, not one it should make easier. Works before a replay starts too;
+  off while an order ticket or a close dialog is open.
 - The **OHLCV legend** sits top-left of the chart: date, open/high/low/close,
   the change against the previous bar, and volume, coloured by the candle's
   own direction. It follows the crosshair while you hover and falls back to

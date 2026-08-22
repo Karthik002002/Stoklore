@@ -21,6 +21,7 @@ import {
 import ReplayChart from './ReplayChart'
 import ReplayCommandDialog from './ReplayCommandDialog'
 import SettingsDialog from './SettingsDialog'
+import StrategyDialog from './StrategyDialog'
 import { useBarReplayStore } from './store'
 
 const numeric = (v) => (v === '' || v == null ? null : Number(v))
@@ -107,8 +108,9 @@ export default function BarReplay() {
     queryKey: ['balanceAdjustments'],
     queryFn: getBalanceAdjustments,
   })
+  const account = accounts.find((a) => a.id === accountId) ?? null
   const balance = accountBalance(
-    accounts.find((a) => a.id === accountId) ?? null,
+    account,
     tradesForAccount(allJournalTrades, accountId),
     adjustments.filter((a) => a.account_id === accountId),
   )
@@ -137,6 +139,7 @@ export default function BarReplay() {
   const [selectedDrawingId, setSelectedDrawingId] = useState(null)
   const [closeQueue, setCloseQueue] = useState([])
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [strategyOpen, setStrategyOpen] = useState(false)
   // 'symbol' | 'timeframe' | null - which centred quick-switcher is open (see ReplayCommandDialog).
   const [commandMode, setCommandMode] = useState(null)
   // Imperative handle onto ReplayChart (see its captureScreenshot) - grabbing a snapshot of the
@@ -562,6 +565,12 @@ export default function BarReplay() {
   // dialog's "jump after logging"). Not gated on `started`: picking a random spot is a perfectly
   // good way to *begin* a session.
   useHotkey('shift+r', jumpToRandomBar, { enabled: !orderDraft && allBars.length > 0 })
+  // 'A' re-reads the account's strategy and caps without leaving the bar you're on. Not gated on
+  // `started`: checking what you said you would trade is most useful right before you take the
+  // trade, and equally useful while setting the session up.
+  // Also off while a close dialog is up: that one is asking how the trade felt, and stacking the
+  // rules on top of it buries the question.
+  useHotkey('a', () => setStrategyOpen(true), { enabled: !orderDraft && !activeClose })
   // useHotkey('escape', () => setDrawMode(null), { enabled: !!drawMode })
 
   return (
@@ -688,6 +697,14 @@ export default function BarReplay() {
         onOpenChange={setSettingsOpen}
         settings={chartSettings}
         onSave={setChartSettings}
+        balance={balance}
+        price={lastBar?.close ?? null}
+      />
+
+      <StrategyDialog
+        open={strategyOpen}
+        onOpenChange={setStrategyOpen}
+        account={account}
         balance={balance}
         price={lastBar?.close ?? null}
       />

@@ -458,9 +458,15 @@ Bar Replay.
 - **Playback** — step forward/back, play/pause at 0.5×–4×, jump to a date, or
   shuffle to a **random bar** so you don't know which period you're practising
   in. Shortcuts: `B`/`S` buy/sell, `Shift+↓` play/pause, `Shift+→` step
-  forward, `Shift+R` random bar. The close dialog can do that jump for you
-  after every logged trade (a saved preference), and an **OHLCV legend**
-  tracks the crosshair top-left
+  forward, `Shift+R` random bar, `A` strategy. The close dialog can do that
+  jump for you after every logged trade (a saved preference), and an **OHLCV
+  legend** tracks the crosshair top-left
+- **`A` — your own rules, mid-replay** — a read-only modal with the selected
+  account's strategy explanation, balance, position-size and open-position
+  caps, volume-spike threshold, and what a round trip costs at the price on
+  screen. Replay is where discipline is tested, so the rules are one key away
+  instead of a tab away. Not editable on purpose: rewriting them mid-trade is
+  the habit this interrupts
 - **Trading** — Market or Limit orders with optional stop-loss/target;
   validated so a target/SL on the wrong side of entry is rejected up front.
   If a bar gaps clean past a level instead of touching it, the trade still

@@ -22,6 +22,14 @@ paper-trade it.
   **Jump to date › Random bar** menu item) drops you somewhere else in the
   symbol's history and pauses there. The point is to practise without knowing
   which period you're in.
+- **Every jump hands the y-axis back to autoscale** — a date jump, `Shift+R`,
+  starting a session, or a restart. Dragging or wheel-zooming the price axis
+  pins it (that is the point of doing it), but the bars a jump lands on are
+  usually nowhere near that range: 2013's candles around ₹120 on a scale pinned
+  to 2024's ₹1,400 draw nothing at all, and an empty chart reads as a bug
+  rather than a pinned axis. The saved range is cleared at the same time, so a
+  reload doesn't pin it straight back. Ordinary bar stepping leaves your scale
+  exactly where you put it.
 - Shortcuts: `B` buy, `S` sell, `Shift+↓` play/pause, `Shift+→` step forward,
   `Shift+R` random bar, `A` strategy.
 - **`A` — the account's rules**, in a read-only modal over the chart: the

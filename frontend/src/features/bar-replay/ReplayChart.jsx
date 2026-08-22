@@ -372,6 +372,32 @@ const ReplayChart = forwardRef(function ReplayChart(
         }
         canvas.toBlob((blob) => resolve(blob), 'image/png')
       }),
+    // Hands every pane's price scale back to autoscale. Called when the replay is RELOCATED - a
+    // date jump, Shift+R, a restart - not on an ordinary bar step.
+    //
+    // A scale the user dragged or wheel-zoomed has autoScale off and stays exactly where they put
+    // it. That is right while stepping through one stretch of chart and wrong the moment the data
+    // underneath is replaced: 2013's candles at ₹120 rendered on a scale pinned to 2024's ₹1,400
+    // are simply off-screen, and the fix looks like a broken chart rather than a pinned axis.
+    // Called before the new bars are set, so setData's own autoscale pass does the fitting.
+    autoscalePrice: () => {
+      const chart = chartRef.current
+      if (!chart) return
+      const priceRanges = {}
+      chart.panes().forEach((pane, index) => {
+        paneScale(pane, index, candleSeriesRef.current)?.setAutoScale(true)
+        priceRanges[paneKeyAt(index, oscillatorTypesRef.current)] = null
+      })
+      // The SAVED range has to be cleared in the same breath. The restore effect below runs again
+      // once the new bars land, and a stale range still sitting in `view` would pin the scale
+      // straight back to where this call just released it (and would survive a reload besides).
+      // null is how store.js spells "this pane is on autoscale".
+      viewRef.current = {
+        ...viewRef.current,
+        priceRanges: { ...viewRef.current?.priceRanges, ...priceRanges },
+      }
+      onViewChangeRef.current?.({ priceRanges: viewRef.current.priceRanges })
+    },
   }))
 
   useEffect(() => {

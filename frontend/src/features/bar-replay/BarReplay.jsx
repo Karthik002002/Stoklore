@@ -263,6 +263,9 @@ export default function BarReplay() {
       if (found >= 0) idx = found
     }
     setBarIndex(idx)
+    // Same reason as jumpToDate below: starting a session cuts the bars back to one date, which is
+    // rarely the price range the axis was left on while browsing.
+    replayChartRef.current?.autoscalePrice()
   }
 
   // Jump mid-session to any date within the collected range (Playback panel's date picker) -
@@ -274,6 +277,10 @@ export default function BarReplay() {
     if (found < 0) return
     setPlaying(false)
     setBarIndex(found)
+    // The y-axis goes back to autoscale on every jump. A price scale the user dragged is pinned to
+    // the range they were studying, and the bars this jump lands on are usually nowhere near it -
+    // a 2013 entry at ₹120 on a scale pinned around ₹1,400 draws nothing at all.
+    replayChartRef.current?.autoscalePrice()
   }
 
   // Same pick the Jump to date › Random bar menu item makes, callable without the menu - used by
@@ -299,6 +306,9 @@ export default function BarReplay() {
     setCloseQueue([])
     prevIndexRef.current = null
     restartStore()
+    // restartStore() clears the SAVED price ranges; the live scale still holds whatever it was
+    // pinned to, so it needs telling too.
+    replayChartRef.current?.autoscalePrice()
   }
 
   // The size a new position starts at, from the Settings > Preferences sizing preference - a fixed

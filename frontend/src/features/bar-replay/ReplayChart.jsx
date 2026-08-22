@@ -9,6 +9,7 @@ import {
 import { compact, inr } from '@/lib/format'
 import { INDICATOR_COLORS, INDICATOR_TYPES } from '@/lib/indicators'
 import { tradeReturnPct } from '@/lib/manualTrades'
+import { measureRange } from '@/lib/replay'
 import { riskReward } from './orderEngine'
 import { DEFAULT_CHART_SETTINGS } from './store'
 
@@ -121,6 +122,10 @@ function paintDrawings(chart, series, svg) {
       el.setAttribute('x2', width)
       el.setAttribute('y1', a.y)
       el.setAttribute('y2', a.y)
+    } else if (el.dataset.shape === 'label') {
+      // The measure readout, pinned above the middle of its own box and following it through pan,
+      // zoom and autoscale like everything else here.
+      el.setAttribute('transform', `translate(${(a.x + b.x) / 2}, ${Math.min(a.y, b.y)})`)
     } else if (el.dataset.shape === 'rect') {
       el.setAttribute('x', Math.min(a.x, b.x))
       el.setAttribute('y', Math.min(a.y, b.y))
@@ -156,6 +161,62 @@ function DrawnShape({ drawing, selected, dashed = false }) {
     )
   }
   return <line {...anchors} {...stroke} x1={0} y1={0} x2={0} y2={0} />
+}
+
+/** The measure tool's zone and its readout. Both anchored in index/price like every other drawing,
+ *  so the box stays on the price action it was drawn across while the chart pans and zooms.
+ *
+ *  The readout is a foreignObject rather than <text> lines: it is ordinary HTML in the app's own
+ *  type and spacing, and it sizes itself to its content - three SVG <text> nodes would need their
+ *  own width measured by hand to draw the pill behind them. */
+function MeasureBox({ measure, bars }) {
+  const { a, b, locked } = measure
+  const anchors = { 'data-a': `${a.index},${a.price}`, 'data-b': `${b.index},${b.price}` }
+  const read = measureRange(bars, a, b)
+  const tone = read.up ? COLORS.up : COLORS.down
+  const sign = read.change >= 0 ? '+' : '−'
+  const abs = Math.abs(read.change)
+
+  return (
+    <g>
+      <rect
+        {...anchors}
+        data-shape="rect"
+        x={0}
+        y={0}
+        width={0}
+        height={0}
+        fill={tone}
+        fillOpacity={0.12}
+        stroke={tone}
+        strokeWidth={locked ? 1.5 : 1}
+        strokeDasharray={locked ? undefined : '4 3'}
+        vectorEffect="non-scaling-stroke"
+      />
+      {/* Height/width are the label's own box, generous on purpose: the pill inside is centred in
+          it and sizes to its text, so nothing has to be measured to keep it symmetric. */}
+      <g {...anchors} data-shape="label">
+        <foreignObject x={-140} y={-78} width={280} height={72} style={{ overflow: 'visible' }}>
+          <div className="flex justify-center">
+            <div
+              className="rounded-lg px-3 py-1.5 text-center text-[11px] leading-tight font-medium text-white tabular-nums shadow-md"
+              style={{ backgroundColor: tone }}
+            >
+              <div>
+                {sign}
+                {price(abs)} {read.pct != null && `(${sign}${Math.abs(read.pct).toFixed(2)}%)`}
+              </div>
+              <div className="opacity-90">
+                {read.bars} bar{read.bars === 1 ? '' : 's'}
+                {read.elapsed ? `, ${read.elapsed}` : ''}
+              </div>
+              {read.volume != null && <div className="opacity-90">Vol {compact(read.volume)}</div>}
+            </div>
+          </div>
+        </foreignObject>
+      </g>
+    </g>
+  )
 }
 
 // What the pane at `index` is showing: the candles at 0, otherwise the oscillator type occupying
@@ -251,6 +312,13 @@ const ReplayChart = forwardRef(function ReplayChart(
   // The shape currently being dragged out, before it's committed to the store. Local because
   // nothing outside the chart can act on half a rectangle.
   const [draft, setDraft] = useState(null)
+  // TradingView's measure tool: { a, b, locked }, both anchors in {index, price}. Shift+click
+  // drops `a`, the pointer drags `b` around, and the next click locks the reading so it can be
+  // read (and stays put through pan/zoom) until the click after that dismisses it. Local and
+  // never persisted - a measurement is a question you ask once, not a drawing you keep.
+  const [measure, setMeasure] = useState(null)
+  const measureRef = useRef(null)
+  measureRef.current = measure
   const tool = drawTool
   const selectedId = selectedDrawingId
   // Through a ref, not called directly: the pointer listeners below are bound once per chart, so a
@@ -513,6 +581,25 @@ const ReplayChart = forwardRef(function ReplayChart(
       // drag hit-zone - without this, clicking a pill's ✕ or focusing its qty input would grab
       // the line and freeze the chart's pan/zoom underneath.
       if (overlayRef.current?.contains(e.target)) return
+      // Measure tool (TradingView's Shift+click). Checked before order lines and drawings: Shift is
+      // an explicit "I'm measuring, not trading", and the two anchors are usually dropped right on
+      // top of the levels that would otherwise swallow the press.
+      if (e.shiftKey && !toolRef.current) {
+        const anchor = anchorAt(e)
+        if (!anchor) return
+        // Pan is off for the rubber-band phase only - the pointer moves with no button down, but a
+        // stray drag would otherwise slide the chart out from under the anchor being placed.
+        chart.applyOptions({ handleScroll: false, handleScale: false })
+        setMeasure({ a: anchor, b: anchor, locked: false })
+        return
+      }
+      if (measureRef.current) {
+        // Second click locks the reading in place; the click after that dismisses it. Either way
+        // the press is spent on the measurement and doesn't also select or move something.
+        chart.applyOptions({ handleScroll: true, handleScale: true })
+        setMeasure((m) => (m && !m.locked ? { ...m, locked: true } : null))
+        return
+      }
       const handle = findHandle(e.clientY)
       if (handle) {
         drag = handle
@@ -547,6 +634,12 @@ const ReplayChart = forwardRef(function ReplayChart(
       setTool(null)
     }
     const onPointerMove = (e) => {
+      const measuring = measureRef.current
+      if (measuring && !measuring.locked) {
+        const anchor = anchorAt(e)
+        if (anchor) setMeasure((m) => (m && !m.locked ? { ...m, b: anchor } : m))
+        return
+      }
       if (drawStart) {
         const anchor = anchorAt(e)
         if (anchor) setDraft((d) => (d ? { ...d, points: [drawStart, anchor] } : d))
@@ -562,6 +655,21 @@ const ReplayChart = forwardRef(function ReplayChart(
       orderLinesRef.current.get(key)?.applyOptions({ price })
     }
     const onPointerUp = (e) => {
+      // Shift+DRAG is the same gesture with the button held: releasing after a real drag locks the
+      // reading, exactly where a second click would have. A release that never moved is the first
+      // half of the click-move-click form, so it leaves the band live and following the pointer.
+      const measuring = measureRef.current
+      if (measuring && !measuring.locked) {
+        const ts = chart.timeScale()
+        const rect = container.getBoundingClientRect()
+        const x0 = ts.logicalToCoordinate(measuring.a.index) ?? 0
+        const y0 = candleSeriesRef.current?.priceToCoordinate(measuring.a.price) ?? 0
+        if (Math.hypot(e.clientX - rect.left - x0, e.clientY - rect.top - y0) >= DRAW_MIN_PX) {
+          chart.applyOptions({ handleScroll: true, handleScale: true })
+          setMeasure((m) => (m ? { ...m, locked: true } : m))
+        }
+        return
+      }
       if (drawStart) {
         const start = drawStart
         const type = toolRef.current
@@ -962,7 +1070,7 @@ const ReplayChart = forwardRef(function ReplayChart(
   // place. It re-reads coordinates ~60x/s instead of reacting to actual scale changes, and skips
   // React entirely so it costs a transform, not a render. If that ever shows up in a profile, swap
   // it for the chart's own subscribeVisibleLogicalRangeChange plus a ResizeObserver.
-  const hasDrawings = drawings.length > 0 || !!draft
+  const hasDrawings = drawings.length > 0 || !!draft || !!measure
   useEffect(() => {
     if (orders.length === 0 && !hasDrawings) return
     let raf = 0
@@ -985,6 +1093,11 @@ const ReplayChart = forwardRef(function ReplayChart(
     return () => cancelAnimationFrame(raf)
   }, [orders.length, hasDrawings])
 
+  // A measurement belongs to the bars it was drawn across. Switching symbol or timeframe replaces
+  // those bars under the same anchors, so it is dropped rather than left pointing at whatever now
+  // sits at that index.
+  useEffect(() => setMeasure(null), [resetKey])
+
   // Arming a tool has to pause the chart's own pan/zoom BEFORE the press lands: the chart's
   // handler lives on a descendant canvas and sees pointerdown first, so switching it off from
   // inside the handler would be too late to stop it panning under the drag.
@@ -1000,12 +1113,16 @@ const ReplayChart = forwardRef(function ReplayChart(
   // Window-level rather than on the container: the chart canvas never takes focus, so there is no
   // focused element to hang a keydown on.
   useEffect(() => {
-    if (!tool && !draft && !selectedId) return
+    if (!tool && !draft && !selectedId && !measure) return
     const onKey = (e) => {
       if (e.key === 'Escape') {
         setTool(null)
         setDraft(null)
         setSelectedId(null)
+        if (measureRef.current) {
+          chartRef.current?.applyOptions({ handleScroll: true, handleScale: true })
+          setMeasure(null)
+        }
         return
       }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
@@ -1019,7 +1136,7 @@ const ReplayChart = forwardRef(function ReplayChart(
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [tool, draft, selectedId])
+  }, [tool, draft, selectedId, measure])
 
   // Live preview lines while the order ticket is open (dotted, distinct from confirmed orders'
   // lines above) - updates as the user edits the dialog, before anything is actually placed.
@@ -1090,6 +1207,7 @@ const ReplayChart = forwardRef(function ReplayChart(
           <DrawnShape key={d.id} drawing={d} selected={d.id === selectedId} />
         ))}
         {draft && <DrawnShape drawing={draft} selected dashed />}
+        {measure && <MeasureBox measure={measure} bars={bars} />}
       </svg>
 
       {/* Top-left stack: the hovered bar's OHLCV, and what drawing tool is armed. One column so
@@ -1099,6 +1217,15 @@ const ReplayChart = forwardRef(function ReplayChart(
         {tool && (
           <div className="rounded border bg-background/90 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm">
             {DRAW_TOOLS[tool].label} — {DRAW_TOOLS[tool].hint.toLowerCase()} · Esc to cancel
+          </div>
+        )}
+        {/* Click-move-click gives no clue that a second click is what ends it, so the band says so
+            while it is live, and how to get rid of it once it isn't. */}
+        {measure && (
+          <div className="rounded border bg-background/90 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm">
+            {measure.locked
+              ? 'Measure — click anywhere to clear · Esc'
+              : 'Measure — click to lock · Esc to cancel'}
           </div>
         )}
       </div>

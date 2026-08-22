@@ -479,6 +479,9 @@ Bar Replay.
   ticket and the one-key market orders, so the two can't disagree
 - **Drawing tools** — trendlines, horizontal lines and rectangles, anchored to
   bar index + price so they stay on the price action through pan and zoom
+- **Measure tool** — `Shift`+click, move, click (or Shift+drag) marks out a
+  range and reads it back: price change, % move, bars spanned, time elapsed,
+  and volume traded across it — TradingView's measure, on the replay chart
 - **Indicators**: EMA, SMA, and RSI (its own pane below the candles, via
   lightweight-charts' multi-pane support)
 - **Settings modal** — candle colors, default order quantity, RSI reference

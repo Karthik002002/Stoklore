@@ -32,6 +32,15 @@ paper-trade it.
   Deliberately not editable — rewriting the rules mid-trade is the habit this
   interrupts, not one it should make easier. Works before a replay starts too;
   off while an order ticket or a close dialog is open.
+- **Measure tool (`Shift`+click)** — TradingView's, on the replay candles.
+  Shift+click one point, move the pointer, click again to lock the reading;
+  Shift+drag and release does the same in one gesture. The band shows the exact
+  price change, the percentage move, how many bars (candles) it spans, the time
+  elapsed between the two ends, and the volume traded across them. Anchored to
+  bar index + price like the drawing tools, so it stays on the price action
+  through pan and zoom; `Esc` or one more click clears it, and switching symbol
+  or timeframe drops it (the bars underneath it are no longer the same bars).
+  Nothing is saved — a measurement is a question you ask once.
 - The **OHLCV legend** sits top-left of the chart: date, open/high/low/close,
   the change against the previous bar, and volume, coloured by the candle's
   own direction. It follows the crosshair while you hover and falls back to

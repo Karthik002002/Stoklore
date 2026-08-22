@@ -68,3 +68,65 @@ export function aggregateBars(dailyBars, timeframe) {
   }
   return order.map((k) => buckets.get(k))
 }
+
+// --- Measure tool -------------------------------------------------------------------------------
+// The reading behind Shift+click on the replay chart (TradingView's measure): what the two anchors
+// say about price, time and participation. Pure - the chart hands it two {index, price} anchors and
+// the bar array they index into, and gets back the numbers to print.
+
+/** Milliseconds a bar's `time` stands for. Intraday bars key on a unix timestamp, daily ones on a
+ *  "YYYY-MM-DD" business day (see ReplayChart's stamp) - so this is the one place that has to know
+ *  both, and everything downstream just subtracts. */
+function barMs(bar) {
+  if (!bar) return null
+  if (typeof bar.time === 'number') return bar.time * 1000
+  return Date.parse(`${bar.date ?? bar.time}T00:00:00Z`)
+}
+
+/** Elapsed time as the shortest thing worth reading: days once there is at least one, otherwise
+ *  hours and minutes. Null when either end has no bar under it. */
+export function elapsedLabel(ms) {
+  if (ms == null) return null
+  const abs = Math.abs(ms)
+  const days = Math.round(abs / 86400000)
+  if (days >= 1) return `${days}d`
+  const minutes = Math.round(abs / 60000)
+  const hours = Math.floor(minutes / 60)
+  return hours ? `${hours}h ${minutes % 60}m` : `${minutes}m`
+}
+
+/** The measure reading between two chart anchors.
+ *
+ *  `price` comes from the anchors themselves, not from the bars underneath: the whole point of
+ *  dragging to an arbitrary spot is measuring to THAT level, which is rarely a close. Bars, elapsed
+ *  time and volume do come from the bars, since those only exist per candle.
+ *
+ *  Indices are fractional (the chart's logical scale) and can sit outside the data - past the last
+ *  bar is normal, since the replay chart keeps empty space on the right. They're rounded and
+ *  clamped, so a measurement dragged into that space still counts the bars it actually covered
+ *  rather than reporting nothing.
+ */
+export function measureRange(bars, a, b) {
+  const change = b.price - a.price
+  const pct = a.price ? (change / a.price) * 100 : null
+
+  const last = bars.length - 1
+  const clamp = (i) => Math.max(0, Math.min(last, Math.round(i)))
+  const from = clamp(Math.min(a.index, b.index))
+  const to = clamp(Math.max(a.index, b.index))
+
+  let volume = 0
+  for (let i = from; i <= to && bars.length; i++) volume += bars[i]?.volume ?? 0
+
+  const startMs = barMs(bars[from])
+  const endMs = barMs(bars[to])
+  return {
+    change,
+    pct,
+    // Inclusive: dragging across one candle is "1 bar", not zero.
+    bars: bars.length ? to - from + 1 : 0,
+    elapsed: startMs == null || endMs == null ? null : elapsedLabel(endMs - startMs),
+    volume: bars.length ? volume : null,
+    up: change >= 0,
+  }
+}

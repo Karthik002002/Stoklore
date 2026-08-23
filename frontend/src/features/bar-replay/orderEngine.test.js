@@ -9,6 +9,7 @@ import {
   setLegQty,
   preferredQuantity,
   sizeByRisk,
+  sizeWarnings,
   trailStops,
   withStopsAtBreakeven,
 } from './orderEngine.js'
@@ -672,3 +673,56 @@ console.log('orderEngine.test.js: all assertions passed')
 }
 
 console.log('orderEngine.test.js: entryDate assertions passed')
+
+// --- size warnings ------------------------------------------------------------------------------
+// The case this exists for: Rs 10,000 account, 10% per position, Rs 5,000 a share. The intended
+// budget is Rs 1,000, which buys 0.2 shares - so preferredQuantity floors to 1 and the position is
+// half the account. Silent before; a warning now.
+{
+  const settings = { sizeMode: 'pctCapital', capitalPct: 10, defaultQty: 1 }
+  const qty = preferredQuantity(settings, 10000, 5000)
+  assert.strictEqual(qty, 1, 'one share is the floor, however unaffordable the rule makes it')
+  const warnings = sizeWarnings({ quantity: qty, price: 5000, balance: 10000, settings })
+  assert.strictEqual(warnings.length, 1, warnings.join(' | '))
+  assert.match(warnings[0], /50\.0% of the account/)
+  assert.match(warnings[0], /asks for 10%/)
+  assert.match(warnings[0], /no smaller size exists/, 'a 1-share position has no smaller alternative')
+}
+
+// Rounding up by a few percent is unavoidable and not worth a modal: 10% of 10,000 at Rs 1,100 can
+// only be Rs 1,100 or nothing.
+{
+  const settings = { sizeMode: 'pctCapital', capitalPct: 10, defaultQty: 1 }
+  assert.deepStrictEqual(sizeWarnings({ quantity: 1, price: 1100, balance: 10000, settings }), [])
+  // ...but past the tolerance it is.
+  assert.strictEqual(sizeWarnings({ quantity: 1, price: 1300, balance: 10000, settings }).length, 1)
+}
+
+// A hand-typed size in the ticket is judged the same way - the preference is the rule either way,
+// and this one is nowhere near a single unaffordable share.
+{
+  const settings = { sizeMode: 'pctCapital', capitalPct: 10, defaultQty: 1 }
+  const warnings = sizeWarnings({ quantity: 40, price: 100, balance: 10000, settings })
+  assert.strictEqual(warnings.length, 1)
+  assert.match(warnings[0], /40\.0% of the account/)
+  assert.ok(!/no smaller size exists/.test(warnings[0]), 'plenty of smaller sizes exist at 40 shares')
+}
+
+// Unaffordable outright: both warnings, balance first.
+{
+  const settings = { sizeMode: 'pctCapital', capitalPct: 10, defaultQty: 1 }
+  const warnings = sizeWarnings({ quantity: 3, price: 5000, balance: 10000, settings })
+  assert.strictEqual(warnings.length, 2)
+  assert.match(warnings[0], /more than the account's whole balance/)
+}
+
+// Fixed-quantity sizing sets no budget to breach, so only affordability is checked.
+{
+  const settings = { sizeMode: 'qty', defaultQty: 1 }
+  assert.deepStrictEqual(sizeWarnings({ quantity: 1, price: 5000, balance: 10000, settings }), [])
+  assert.strictEqual(sizeWarnings({ quantity: 5, price: 5000, balance: 10000, settings }).length, 1)
+}
+
+// No account selected (Bar Replay allows that), or nothing to size: nothing to say, no crash.
+assert.deepStrictEqual(sizeWarnings({ quantity: 1, price: 5000, balance: 0, settings: {} }), [])
+assert.deepStrictEqual(sizeWarnings({ quantity: 0, price: 5000, balance: 10000, settings: {} }), [])

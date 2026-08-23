@@ -4,6 +4,7 @@
 // Relative path (not the '@/' alias): this module is imported by node-run self-checks
 // (orderEngine.test.js) which don't resolve Vite aliases.
 import { computeAtr } from '../../lib/indicators.js'
+import { capWarnings } from '../../lib/tradeAccounts.js'
 
 // A bar's [low, high] range "touching" a price is how a resting limit order gets triggered - no
 // intrabar tick data exists to know exactly when within the bar it happened, only that it did.
@@ -200,6 +201,63 @@ export function preferredQuantity({ sizeMode, defaultQty, capitalPct }, balance,
   if (sizeMode !== 'pctCapital') return fallback
   if (!(balance > 0) || !(price > 0) || !(capitalPct > 0)) return fallback
   return Math.max(1, Math.floor((balance * (capitalPct / 100)) / price))
+}
+
+// How far past the sizing preference's budget a position may land before it is worth stopping the
+// user for. A share is indivisible: 10% of Rs 10,000 at Rs 1,100 a share can only be 11% or
+// nothing, and confirming that is noise. Asking for 10% and getting 50% is not.
+// ponytail: one flat tolerance, tune it if it nags.
+export const OVERSIZE_TOLERANCE = 1.25
+
+/** Advisory warnings about what a position actually COSTS, versus what was asked for.
+ *
+ *  preferredQuantity floors to whole shares and then floors at 1 - it has to, a position of 0.2
+ *  shares does not exist. On a small account in an expensive stock that minimum is the entire
+ *  sizing rule overridden in silence: 10% of Rs 10,000 at Rs 5,000 a share is 0.2 shares, becomes
+ *  1, and fills at 50% of the account. The number was never wrong, it was just unreachable, and
+ *  nothing said so.
+ *
+ *  Rupee amounts are rounded whole and formatted here rather than through lib/format's inr(), the
+ *  same way capWarnings does - these strings are read as sentences, not as table cells.
+ *  Advisory only: returns [] when there is nothing to say, and never blocks anything.
+ */
+export function sizeWarnings({ quantity, price, balance, settings }) {
+  const out = []
+  const value = quantity * price
+  if (!(value > 0) || !(balance > 0)) return out
+
+  const pct = (value / balance) * 100
+  if (value > balance) {
+    out.push(
+      `${quantity} x Rs ${Math.round(price)} costs Rs ${Math.round(value)} - more than the account's whole balance of Rs ${Math.round(balance)}.`,
+    )
+  }
+
+  const { sizeMode, capitalPct } = settings ?? {}
+  if (
+    sizeMode === 'pctCapital' &&
+    capitalPct > 0 &&
+    value > balance * (capitalPct / 100) * OVERSIZE_TOLERANCE
+  ) {
+    out.push(
+      `This position is ${pct.toFixed(1)}% of the account - your sizing preference asks for ${capitalPct}%.` +
+        (quantity === 1 ? ' One share already costs more than that budget, so no smaller size exists.' : ''),
+    )
+  }
+  return out
+}
+
+/** Everything worth stopping for before a position is opened: what it costs against the sizing
+ *  preference (above) and against the account's own caps (capWarnings, shared with the trade form
+ *  so the journal and the replay judge a position by the same rules).
+ *
+ *  One function so the ticket's inline warning block and the confirmation gate can never disagree
+ *  about what counts as a problem. Still advisory - Bar Replay records what you actually did. */
+export function orderWarnings({ quantity, price, balance, settings, account, openCount = 0 }) {
+  return [
+    ...sizeWarnings({ quantity, price, balance, settings }),
+    ...capWarnings(account, { positionValue: quantity * price, openCount, balance }),
+  ]
 }
 
 // Move every stop-loss leg to breakeven (entry price) - the standard "risk-free" adjustment

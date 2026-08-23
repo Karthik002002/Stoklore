@@ -10,8 +10,10 @@ import { accountBalance, tradesForAccount } from '@/lib/tradeAccounts'
 import { getBalanceAdjustments, getIntradayBars, getManualTrades, getTradeAccounts } from '@/services/api'
 import BottomBar from './BottomBar'
 import CloseTradeDialog from './CloseTradeDialog'
+import ConfirmOrderDialog from './ConfirmOrderDialog'
 import OrderTicketDialog from './OrderTicketDialog'
 import {
+  orderWarnings,
   preferredQuantity,
   processBarForOrders,
   setLegQty,
@@ -140,6 +142,9 @@ export default function BarReplay() {
   const [closeQueue, setCloseQueue] = useState([])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [strategyOpen, setStrategyOpen] = useState(false)
+  // An order that tripped a warning and is waiting on a yes/no: { order, warnings, fromTicket }.
+  // Both entry paths park here, so neither can place a position the other would have questioned.
+  const [pendingOrder, setPendingOrder] = useState(null)
   // 'symbol' | 'timeframe' | null - which centred quick-switcher is open (see ReplayCommandDialog).
   const [commandMode, setCommandMode] = useState(null)
   // Imperative handle onto ReplayChart (see its captureScreenshot) - grabbing a snapshot of the
@@ -337,6 +342,30 @@ export default function BarReplay() {
   }
   const updateDraft = (patch) => setOrderDraft((d) => (d ? { ...d, ...patch } : d))
 
+  // What a position would be questioned for, from either entry path. Passed to the ticket too, so
+  // the warning is on screen while the size is still being typed rather than only at submit.
+  const warningsFor = (quantity, price) =>
+    orderWarnings({
+      quantity,
+      price,
+      balance,
+      settings: chartSettings,
+      account,
+      openCount: orders.filter((o) => o.status === 'open').length,
+    })
+
+  // Read through the store rather than the `orders` closure: a confirmation can sit on screen while
+  // autoplay reveals bars behind it, and a stale array here would resurrect a position the engine
+  // has since closed.
+  const commitOrder = (order) => {
+    useBarReplayStore.getState().setOrders([...useBarReplayStore.getState().orders, order])
+    if (order.status === 'open') {
+      toast.success(
+        `${order.direction === 'long' ? 'Bought' : 'Sold'} ${order.quantity} at ${inr(order.entryPrice)}`,
+      )
+    }
+  }
+
   // ponytail: a market order fills immediately at the current (last revealed) bar's close rather
   // than TradingView's stricter next-bar-open timing - simpler, and good enough for practicing
   // entries/exits against real price action.
@@ -369,6 +398,13 @@ export default function BarReplay() {
       // order (not on individual legs) since one trail rule ratchets every leg together.
       trailing: orderDraft.slEnabled ? (orderDraft.trailing ?? null) : null,
     }
+    const warnings = warningsFor(newOrder.quantity, entryPrice)
+    if (warnings.length) {
+      // The ticket stays open behind the confirmation: cancelling puts the user back on the field
+      // they need to change, instead of making them reopen the ticket and retype everything.
+      setPendingOrder({ order: newOrder, warnings, fromTicket: true })
+      return
+    }
     setOrders([...orders, newOrder])
     setOrderDraft(null)
   }
@@ -379,23 +415,27 @@ export default function BarReplay() {
   const placeMarketOrder = (direction) => {
     if (!lastBar) return
     const quantity = preferredQuantity(chartSettings, balance, lastBar.close)
-    setOrders([
-      ...orders,
-      {
-        id: crypto.randomUUID(),
-        type: 'market',
-        status: 'open',
-        direction,
-        quantity,
-        entryPrice: lastBar.close,
-        stopLosses: [],
-        targets: [],
-        entryBarIndex: currentIndex,
-        entryDate: lastBar.date,
-        trailing: null,
-      },
-    ])
-    toast.success(`${direction === 'long' ? 'Bought' : 'Sold'} ${quantity} at ${inr(lastBar.close)}`)
+    const order = {
+      id: crypto.randomUUID(),
+      type: 'market',
+      status: 'open',
+      direction,
+      quantity,
+      entryPrice: lastBar.close,
+      stopLosses: [],
+      targets: [],
+      entryBarIndex: currentIndex,
+      entryDate: lastBar.date,
+      trailing: null,
+    }
+    // The shortcut is exactly where an unreachable sizing rule used to fill silently: one share of
+    // a Rs 5,000 stock on a Rs 10,000 account is half the wallet, whatever the preference said.
+    const warnings = warningsFor(quantity, lastBar.close)
+    if (warnings.length) {
+      setPendingOrder({ order, warnings, fromTicket: false })
+      return
+    }
+    commitOrder(order)
   }
 
   // Dragging one specific leg's line on the chart commits here: round to paise, patch just
@@ -555,9 +595,15 @@ export default function BarReplay() {
     if (activeClose) setPlaying(false)
   }, [activeClose])
 
+  // Same reason as the close dialog above: a question about position size can't be answered while
+  // the chart keeps revealing bars behind it.
+  useEffect(() => {
+    if (pendingOrder) setPlaying(false)
+  }, [pendingOrder])
+
   // 'B'/'S' shortcuts open the order ticket, same as clicking Buy/Sell - ignored automatically
   // while typing in any input/textarea (ignoreInputs defaults true for single-key hotkeys).
-  const hotkeysEnabled = started && !orderDraft
+  const hotkeysEnabled = started && !orderDraft && !pendingOrder
   useHotkey('b', () => openOrderTicket('long'), { enabled: hotkeysEnabled })
   useHotkey('s', () => openOrderTicket('short'), { enabled: hotkeysEnabled })
   // Shift skips the ticket entirely and fills at market, at the preference's size.
@@ -711,6 +757,16 @@ export default function BarReplay() {
         price={lastBar?.close ?? null}
       />
 
+      <ConfirmOrderDialog
+        pending={pendingOrder}
+        onCancel={() => setPendingOrder(null)}
+        onConfirm={() => {
+          commitOrder(pendingOrder.order)
+          if (pendingOrder.fromTicket) setOrderDraft(null)
+          setPendingOrder(null)
+        }}
+      />
+
       <StrategyDialog
         open={strategyOpen}
         onOpenChange={setStrategyOpen}
@@ -727,6 +783,7 @@ export default function BarReplay() {
         symbol={symbol}
         lastBar={lastBar}
         accountBalance={balance}
+        warningsFor={warningsFor}
       />
 
       <CloseTradeDialog

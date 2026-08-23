@@ -89,6 +89,7 @@ export default function OrderTicketDialog({
   symbol,
   lastBar,
   accountBalance,
+  warningsFor,
 }) {
   if (!draft) return null
   const marketPrice = lastBar?.close ?? 0
@@ -163,6 +164,10 @@ export default function OrderTicketDialog({
   const orderValue = entry * qty
   const valuePctOfAccount = accountBalance > 0 && orderValue > 0 ? (orderValue / accountBalance) * 100 : null
   const riskPctOfAccount = accountBalance > 0 && risk != null ? (risk / accountBalance) * 100 : null
+  // Sizing-preference and account-cap warnings, live while the size is being typed - the same list
+  // the confirmation gate uses on submit (orderEngine.orderWarnings), so nothing appears there that
+  // wasn't already on screen here. Advisory: they never disable the button.
+  const warnings = warningsFor?.(qty, entry) ?? []
   const valid = qty > 0 && (!isLimit || numeric(draft.entryPrice) != null) && !targetError && !slError
 
   return (
@@ -374,6 +379,14 @@ export default function OrderTicketDialog({
               </span>
             </div>
           </div>
+
+          {warnings.length > 0 && (
+            <ul className="space-y-1 rounded-lg border border-amber-500/40 bg-amber-500/[0.06] p-2.5 text-xs text-amber-600 dark:text-amber-400">
+              {warnings.map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          )}
 
           <Button
             className={`w-full text-white ${draft.direction === 'long' ? 'bg-up hover:bg-up/90' : 'bg-down hover:bg-down/90'}`}

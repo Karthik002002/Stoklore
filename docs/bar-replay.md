@@ -58,6 +58,27 @@ paper-trade it.
 - **Buy**/**Sell** in the Trade panel opens an order ticket — Market or
   Limit, with optional take-profit and stop-loss. A level on the wrong
   side of entry is rejected with an inline error.
+- **Position-size warnings, with a confirmation before the fill.** A share is
+  indivisible, so a sizing preference can be arithmetically unreachable: 10% of
+  a ₹10,000 account at ₹5,000 a share is 0.2 shares, which floors to 1 — and
+  fills at **50% of the account**. That used to happen in silence, most easily
+  through `Shift+B`/`Shift+S`, which skip the ticket entirely.
+
+  Now both entry paths run the same check (`orderEngine.orderWarnings`) and stop
+  for a confirmation when anything trips: the position costs more than the whole
+  balance, it is more than 25% past the sizing preference's budget, or it breaks
+  one of the account's own caps (max position size / max open positions — the
+  same `capWarnings` the trade form uses, so journal and replay judge a position
+  by identical rules). The order ticket shows the same warnings inline while you
+  are still typing the size, so nothing appears at submit that wasn't already on
+  screen.
+
+  Confirming is always allowed — every cap here is advisory and the replay
+  records what you actually did. The point is that an oversized entry becomes a
+  decision instead of an accident. A position inside your rules is placed with no
+  dialog at all, which is what keeps the dialog worth reading. Autoplay pauses
+  while the question is on screen, and the trading shortcuts are inert until it
+  is answered.
 - Drag a stop-loss/target line directly on the chart to adjust it after
   placing the order.
 - If price gaps clean past a stop-loss/target instead of touching it, the

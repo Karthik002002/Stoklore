@@ -477,6 +477,13 @@ Bar Replay.
   account's live balance at the current price, so position size tracks the
   account instead of a number set weeks ago. One preference, read by both the
   ticket and the one-key market orders, so the two can't disagree
+- **Position-size warnings + confirmation** — a share is indivisible, so 10% of
+  a ₹10,000 account at ₹5,000 a share floors to one share worth **half the
+  account**. Both entry paths (the ticket and the `Shift+B`/`Shift+S`
+  shortcuts) now stop for a confirmation when a position overshoots the sizing
+  preference, costs more than the balance, or breaks the account's own caps —
+  advisory, never blocking, so an oversized entry is a decision rather than an
+  accident
 - **Drawing tools** — trendlines, horizontal lines and rectangles, anchored to
   bar index + price so they stay on the price action through pan and zoom
 - **Measure tool** — `Shift`+click, move, click (or Shift+drag) marks out a

@@ -6,8 +6,8 @@ Two deliberate choices here:
 rather than being split into an `APIRouter(prefix=...)` plus a relative path. The domains in
 this app don't map one-to-one onto URL prefixes - the manual-trades router also owns
 `/api/trading-goals` and `/api/settings/manual-backtest`, and the activity router owns both
-`/api/activity/*` and `/ws/activity` - so a prefix would only be honest for about half of
-them. Mixing the two conventions reads worse than one consistent absolute path, and it is the
+`/api/activity/*` and `/api/settings/activity` - so a prefix would only be honest for about
+half of them. Mixing the two conventions reads worse than one consistent absolute path, and it is the
 prefix-splitting step that silently changes URLs during a refactor like this. `tags` do the
 OpenAPI grouping instead. To version the whole surface later, add `prefix="/api/v1"` to the
 `APIRouter()` below once and strip `/api` from the decorators in one pass.

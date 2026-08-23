@@ -193,6 +193,15 @@ class ActivityPingRequest(BaseModel):
     kind: str  # "analyze" | "review"
 
 
+class ActivityDay(BaseModel):
+    date: str  # "YYYY-MM-DD", the CLIENT's local calendar day - see routers/activity.py
+    seconds: int
+
+
+class ActivityTimeRequest(BaseModel):
+    days: list[ActivityDay] = []
+
+
 class ActivitySettingsRequest(BaseModel):
     qualifiers: dict[str, bool]
     daily_goal_minutes: int

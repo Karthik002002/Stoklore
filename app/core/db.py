@@ -1613,14 +1613,17 @@ def update_manual_trade_image(trade_id, filename):
         conn.execute("UPDATE manual_trades SET image_filename = %s WHERE id = %s", (filename, trade_id))
 
 
-def add_activity_seconds(seconds):
-    """Upserts today's row, adding to (not replacing) seconds_active - the heartbeat endpoint
-    calls this every ~20s while the tab is visible, so a day's total accumulates across calls."""
+def add_activity_seconds(seconds, day=None):
+    """Adds to (never replaces) a day's seconds_active, defaulting to today.
+
+    `day` is passed explicitly by the sync endpoint because the browser is the one counting, and
+    its local calendar day is the one the user lived - CURRENT_DATE is the database server's, which
+    files an evening session under tomorrow whenever the two timezones disagree."""
     with connect() as conn:
         conn.execute(
-            "INSERT INTO daily_activity (date, seconds_active) VALUES (CURRENT_DATE, %s) "
+            "INSERT INTO daily_activity (date, seconds_active) VALUES (COALESCE(%s::date, CURRENT_DATE), %s) "
             "ON CONFLICT (date) DO UPDATE SET seconds_active = daily_activity.seconds_active + excluded.seconds_active",
-            (seconds,),
+            (day, seconds),
         )
 
 

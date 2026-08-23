@@ -33,6 +33,12 @@
 Roughly 830 KB per dump on a typical database (price history is most of it),
 so keeping 5 days of daily dumps is around 4 MB.
 
+`daily_activity` holds the synced history, but **today's tally lives in the
+browser** until it syncs (`localStorage`, key `activity.time` — see
+`frontend/src/lib/activityTime.js`). Restoring a dump onto a different machine
+therefore brings back the streak history and not the current day's partial
+count, and clearing site data loses at most the unsynced remainder.
+
 Trade **screenshots are not in the dump** — they're files on disk under
 `uploads/`, backed up by whatever backs up that folder. A restored trade row
 keeps its `image_filename`, so the link re-connects as long as `uploads/`

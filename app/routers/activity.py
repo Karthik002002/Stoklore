@@ -1,12 +1,11 @@
 from fastapi import APIRouter
-import asyncio
 from datetime import date, timedelta
 
-from fastapi import HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import HTTPException
 
 from app.core import db
 
-from app.schemas import ActivityPingRequest, ActivitySettingsRequest
+from app.schemas import ActivityPingRequest, ActivitySettingsRequest, ActivityTimeRequest
 
 router = APIRouter(tags=["activity"])
 
@@ -16,27 +15,41 @@ router = APIRouter(tags=["activity"])
 # streak and surface it back to the same user - nothing here is sent anywhere else.
 
 ACTIVITY_DAYS_WINDOW = 371
-# A single heartbeat is clamped so a stale tab regaining focus after hours away can't credit a
-# whole afternoon in one call - the frontend sends small (~20s) increments anyway, this is just
-# a server-side backstop.
-MAX_HEARTBEAT_SECONDS = 300
+# A day cannot receive more than 24h of usage however enthusiastic the client is - a backstop
+# against a broken clock or a doctored payload, not against normal use.
+MAX_DAY_SECONDS = 86_400
+# How far back a sync may credit. The browser only carries a couple of weeks of backlog
+# (activityTime.KEEP_DAYS); anything older is a clock problem, not a late delivery.
+MAX_BACKLOG_DAYS = 30
 
 
-@router.websocket("/ws/activity")
-async def activity_socket(ws: WebSocket):
-    """One persistent connection per tab instead of a fresh HTTP request every ~20s - the
-    frontend sends {"seconds": N} ticks over it while visible. db.add_activity_seconds is a
-    blocking psycopg call; offloaded to a thread so it doesn't stall the event loop (and any
-    other request) for the life of the connection."""
-    await ws.accept()
-    try:
-        while True:
-            data = await ws.receive_json()
-            seconds = data.get("seconds")
-            if isinstance(seconds, (int, float)) and seconds > 0:
-                await asyncio.to_thread(db.add_activity_seconds, min(int(seconds), MAX_HEARTBEAT_SECONDS))
-    except (WebSocketDisconnect, ValueError):
-        pass
+@router.post("/api/activity/time")
+def add_activity_time(req: ActivityTimeRequest):
+    """Occasional catch-up from the browser's own ledger - NOT a heartbeat.
+
+    Time is counted in localStorage now (frontend/src/lib/activityTime.js). This used to be a
+    WebSocket taking ~20s ticks, which meant the day's total only existed if that socket was up:
+    when it wasn't, the ticks went nowhere and the retry loop reconnected every 5s forever, so the
+    Profile modal showed 0s for a day that had actually been worked. The client now sends whatever
+    the server hasn't been told yet, tagged with the LOCAL day it was spent on, and simply keeps
+    the backlog if this call fails.
+
+    Dates are the client's local calendar days on purpose: CURRENT_DATE here is the database
+    server's, which splits an evening session across two rows whenever the two disagree.
+    """
+    today = date.today()
+    oldest = today - timedelta(days=MAX_BACKLOG_DAYS)
+    for entry in req.days:
+        try:
+            day = date.fromisoformat(entry.date)
+        except ValueError:
+            raise HTTPException(status_code=422, detail=f"bad date: {entry.date}") from None
+        # A future date is a wrong clock, not a prediction - dropped rather than written where no
+        # amount of later usage could correct it.
+        if day > today or day < oldest or entry.seconds <= 0:
+            continue
+        db.add_activity_seconds(min(int(entry.seconds), MAX_DAY_SECONDS), day)
+    return {"ok": True}
 
 
 @router.post("/api/activity/ping")

@@ -12,6 +12,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import UsageCommitGraph from '@/components/UsageCommitGraph'
+import { readStore, secondsOn, subscribeLive } from '@/lib/activityTime'
 import { formatDuration } from '@/lib/format'
 import { getActivitySummary } from '@/services/api'
 
@@ -47,9 +48,22 @@ export default function Profile() {
     return () => window.removeEventListener(OPEN_EVENT, onOpen)
   }, [])
 
+  // Today's figure comes from the browser's own ledger, not from the summary. The server only
+  // learns about time every couple of minutes (lib/activityTime.js), so reading it from there
+  // showed a number that was always behind and, when the sync was broken, permanently 0s - which
+  // is exactly what this modal is for.
+  //
+  // Seeded from storage on open (instant, even before the first tick), then live: the tracker
+  // publishes every second while this subscription exists, and stops the moment the dialog closes.
+  const [todaySeconds, setTodaySeconds] = useState(0)
+  useEffect(() => {
+    if (!open) return
+    setTodaySeconds(secondsOn(readStore()))
+    return subscribeLive(setTodaySeconds)
+  }, [open])
+
   const daysBehind = summary?.days_missed_in_a_row ?? 0
   const goalSeconds = (summary?.daily_goal_minutes ?? 15) * 60
-  const todaySeconds = summary?.avg_seconds_today ?? 0
   const goalPct = goalSeconds > 0 ? Math.min(100, Math.round((todaySeconds / goalSeconds) * 100)) : 0
 
   return (
@@ -80,7 +94,7 @@ export default function Profile() {
               <StatCard label="Best streak" value={`${summary.best_streak}d`} />
               <StatCard
                 label={`Today (goal ${summary.daily_goal_minutes}m)`}
-                value={formatDuration(summary.avg_seconds_today)}
+                value={formatDuration(todaySeconds)}
                 sub={
                   <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
                     <div className="h-full bg-primary transition-all" style={{ width: `${goalPct}%` }} />
@@ -101,7 +115,15 @@ export default function Profile() {
 
             <div>
               <p className="mb-2 text-sm font-medium">Usage over the last year</p>
-              <UsageCommitGraph days={summary.days} />
+              {/* Today's square is patched with the local count for the same reason as the card
+                  above - the server's copy of today is up to two minutes stale. */}
+              <UsageCommitGraph
+                days={summary.days.map((d, i) =>
+                  i === summary.days.length - 1
+                    ? { ...d, seconds_active: Math.max(d.seconds_active, todaySeconds) }
+                    : d,
+                )}
+              />
             </div>
           </div>
         )}

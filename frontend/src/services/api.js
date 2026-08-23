@@ -283,6 +283,15 @@ export const pingActivity = (kind) =>
     body: JSON.stringify({ kind }),
   }).then(json)
 
+// Per-day backlog, not a heartbeat: [{ date: 'YYYY-MM-DD', seconds }]. The browser owns the tally
+// (see lib/activityTime.js); this is the occasional catch-up that keeps the year graph fed.
+export const postActivityTime = (days) =>
+  fetch('/api/activity/time', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ days }),
+  }).then(json)
+
 export const getActivitySummary = () => fetch('/api/activity/summary').then(json)
 
 export const getActivitySettings = () => fetch('/api/settings/activity').then(json)

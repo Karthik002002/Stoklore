@@ -560,6 +560,19 @@ Full details: [docs/paper-trading.md](docs/paper-trading.md).
 
 ### `*` What's more
 
+- **Consistency tracker (the Profile modal)** — daily streak, best streak,
+  time on the app today against a goal, and a year-long usage graph. Time is
+  counted **in the browser**, in `localStorage`, per local calendar day
+  (`frontend/src/lib/activityTime.js`), and pushed to the server every couple
+  of minutes as a per-day backlog. The modal counts **live** while it is open —
+  the tracker publishes every second to whoever is watching, and does nothing
+  at all when nobody is. It used to be counted server-side over a
+  WebSocket ticking every 20s — when that socket couldn't connect it retried
+  every 5s forever and the day's total stayed at **0s**, which is the one thing
+  the feature exists to show. Now a failed sync costs nothing: the seconds are
+  already banked locally, carry as a backlog, and land on the day they were
+  actually spent. Idle time doesn't count (no input for 5 minutes and the
+  counter pauses), and neither does a hidden tab
 - Corporate-action, price-move, and volume-spike detection reuse the exact
   same threshold constants as the `app/skills/movement.py`/`app/skills/volume.py`
   filters used for movers scanning — no duplicated logic

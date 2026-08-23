@@ -320,6 +320,13 @@ ALTER TABLE trade_accounts ADD COLUMN IF NOT EXISTS other_charges_pct REAL NOT N
 ALTER TABLE trade_accounts ADD COLUMN IF NOT EXISTS vol_spike_multiple REAL NOT NULL DEFAULT 2;
 ALTER TABLE trade_accounts ADD COLUMN IF NOT EXISTS vol_spike_lookback INTEGER NOT NULL DEFAULT 10;
 
+-- After this many losing trades in a row on this account, Bar Replay interrupts with a reminder
+-- (see frontend/src/features/bar-replay/LossStreakDialog.jsx). NULL means off, which is what every
+-- existing account gets - a nag nobody asked for is worse than no nag. Per account because the
+-- number that should stop you depends on the strategy: a 40%-win-rate breakout system produces
+-- four-loss runs as a matter of course, a mean-reversion one rarely does.
+ALTER TABLE trade_accounts ADD COLUMN IF NOT EXISTS loss_streak_alert INTEGER;
+
 -- Manually logged trades for the Manual backtest tab - a personal trade journal, not tied to
 -- price_history/NSE at all (entry/exit/P&L are exactly what the user typed in, not computed from
 -- market data). P&L, R:R, and return% are deliberately NOT stored here - they're derived from
@@ -1372,10 +1379,11 @@ def list_trade_accounts(kind="journal"):
 # signature was already at the limit of readable, and every caller has them together anyway.
 COST_FIELDS = ("slippage_value", "slippage_type", "brokerage_flat", "brokerage_pct", "other_charges_pct")
 # The volume-spike scan config rides the same dict, for the same reason.
-SETTING_FIELDS = COST_FIELDS + ("vol_spike_multiple", "vol_spike_lookback")
+SETTING_FIELDS = COST_FIELDS + ("vol_spike_multiple", "vol_spike_lookback", "loss_streak_alert")
 SETTING_DEFAULTS = {"slippage_value": 0, "slippage_type": "per_share", "brokerage_flat": 0,
                     "brokerage_pct": 0, "other_charges_pct": 0,
-                    "vol_spike_multiple": 2, "vol_spike_lookback": 10}
+                    "vol_spike_multiple": 2, "vol_spike_lookback": 10,
+                    "loss_streak_alert": None}
 
 
 def _settings(settings):

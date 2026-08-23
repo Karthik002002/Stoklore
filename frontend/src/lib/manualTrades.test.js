@@ -1,6 +1,7 @@
 // Plain assert-based check, no framework - run with `node manualTrades.test.js`.
 import assert from 'node:assert'
 import {
+  byLoggedOrder,
   lossStreaks,
   recoveryFactor,
   sortinoRatio,
@@ -49,6 +50,41 @@ assert.equal(recoveryFactor(500, 250), 2)
   const { series, maxDrawdown } = underwaterSeries([0, 10, 5, -5, 8])
   assert.deepEqual(series, [0, 0, -5, -15, -2])
   assert.equal(maxDrawdown, 15)
+}
+
+// --- byLoggedOrder + the losing run it feeds ---------------------------------------------------
+// The Bar Replay case: three trades taken in one session, but on 2013, 2024 and 2019 bars because
+// the replay jumped around. Market-date order says the run ended on a win; logged order - the order
+// they were actually taken in - says it is two losses deep and still going.
+{
+  const at = (created, traded, pnl) => ({ ...trade(pnl), created_at: created, traded_at: traded })
+  const session = [
+    at('2026-08-23T10:00:00Z', '2013-04-02', 5),
+    at('2026-08-23T10:05:00Z', '2024-01-09', -2),
+    at('2026-08-23T10:09:00Z', '2019-07-15', -3),
+  ]
+  const logged = byLoggedOrder(session)
+  assert.deepEqual(
+    logged.map((t) => t.created_at),
+    ['2026-08-23T10:00:00Z', '2026-08-23T10:05:00Z', '2026-08-23T10:09:00Z'],
+  )
+  assert.equal(lossStreaks(logged).current, 2, 'two losses in a row, in the order they were taken')
+
+  // Shuffled input, same answer - the sort is what decides, not the array it arrived in.
+  assert.equal(lossStreaks(byLoggedOrder([session[2], session[0], session[1]])).current, 2)
+
+  // A row written before created_at existed falls back to its trade date instead of sorting as
+  // Invalid Date (which compares false against everything and scrambles the run).
+  const legacy = [{ ...trade(-1), traded_at: '2020-01-01' }, ...session]
+  assert.equal(byLoggedOrder(legacy)[0].traded_at, '2020-01-01')
+
+  // The input is not mutated - callers hold this array from a query cache.
+  const before = session.map((t) => t.created_at)
+  byLoggedOrder(session)
+  assert.deepEqual(
+    session.map((t) => t.created_at),
+    before,
+  )
 }
 
 console.log('ok')

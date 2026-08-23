@@ -477,6 +477,11 @@ Bar Replay.
   account's live balance at the current price, so position size tracks the
   account instead of a number set weeks ago. One preference, read by both the
   ticket and the one-key market orders, so the two can't disagree
+- **Losing-run reminder** — per account, "remind me after N losses in a row"
+  (blank = off). Bar Replay interrupts right after the close dialog once the
+  account is on that run, showing the streak, what it cost, and the strategy
+  you wrote for that account. Counted from the journal in logged order, so it
+  survives a reload and isn't confused by a replay jumping between periods
 - **Position-size warnings + confirmation** — a share is indivisible, so 10% of
   a ₹10,000 account at ₹5,000 a share floors to one share worth **half the
   account**. Both entry paths (the ticket and the `Shift+B`/`Shift+S`

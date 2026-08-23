@@ -31,6 +31,7 @@ const BLANK = {
   max_position_size: '',
   max_position_size_type: 'currency',
   max_position_count: '',
+  loss_streak_alert: '',
   slippage_value: '',
   slippage_type: 'per_share',
   brokerage_flat: '',
@@ -53,6 +54,7 @@ const formFrom = (a) => ({
   max_position_size: a.max_position_size != null ? String(a.max_position_size) : '',
   max_position_size_type: a.max_position_size_type ?? 'currency',
   max_position_count: a.max_position_count != null ? String(a.max_position_count) : '',
+  loss_streak_alert: a.loss_streak_alert != null ? String(a.loss_streak_alert) : '',
   slippage_value: a.slippage_value ? String(a.slippage_value) : '',
   slippage_type: a.slippage_type ?? 'per_share',
   brokerage_flat: a.brokerage_flat ? String(a.brokerage_flat) : '',
@@ -321,6 +323,18 @@ function AccountForm({ account, onDone, kind }) {
           min="0"
           placeholder="No cap"
           hint="How many trades may be open on this account at once."
+        />
+        {/* Per account because the number that should stop you is a property of the strategy: a
+            40%-win-rate breakout system throws four-loss runs routinely, a mean-reversion one
+            almost never does. Blank means never interrupt. */}
+        <TextField
+          form={form}
+          name="loss_streak_alert"
+          label="Remind me after N losses in a row"
+          type="number"
+          min="1"
+          placeholder="Off"
+          hint="Bar Replay stops for a reminder once this account is on that run."
         />
       </div>
 

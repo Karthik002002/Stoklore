@@ -38,8 +38,8 @@ paper-trade it.
   `Shift+R` random bar, `A` strategy.
 - **`A` — the account's rules**, in a read-only modal over the chart: the
   strategy explanation you wrote, balance, position-size and open-position
-  caps, the volume-spike threshold, and what a round trip costs at the price on
-  screen. Replay is where discipline is actually tested, so what you said you
+  caps, the volume-spike threshold, the losing-run reminder, and what a round
+  trip costs at the price on screen. Replay is where discipline is actually tested, so what you said you
   would trade belongs one key away rather than a tab away in Settings.
   Deliberately not editable — rewriting the rules mid-trade is the habit this
   interrupts, not one it should make easier. Works before a replay starts too;
@@ -83,6 +83,22 @@ paper-trade it.
   dialog at all, which is what keeps the dialog worth reading. Autoplay pauses
   while the question is on screen, and the trading shortcuts are inert until it
   is answered.
+- **Losing-run reminder.** Set *"Remind me after N losses in a row"* on the
+  account (Settings › Trade accounts; blank = off) and Bar Replay interrupts
+  once that run is reached — **after** the close dialog, so the trade that got
+  you there is already journaled and counted. It shows the run, what it cost,
+  and the account's own strategy explanation, because re-reading the plan you
+  wrote calmly is the cheapest intervention available.
+
+  Per account on purpose: a 40%-win-rate breakout system throws four-loss runs
+  routinely and a mean-reversion one almost never does, so one global number
+  would be wrong for somebody. The run is counted from the **journal**, not from
+  this replay session, so it survives a reload — and in the order the trades
+  were *logged*, not their market dates, because a replay that jumps to random
+  bars produces market dates in no meaningful sequence. It re-alerts on each
+  further loss (4, 5, 6…) and resets on the first win. There is no "don't show
+  again": that is the setting, and it lives on the account where it can be
+  reasoned about between sessions rather than dismissed mid-tilt.
 - Drag a stop-loss/target line directly on the chart to adjust it after
   placing the order.
 - If price gaps clean past a stop-loss/target instead of touching it, the

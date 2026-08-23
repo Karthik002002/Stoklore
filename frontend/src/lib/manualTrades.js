@@ -141,6 +141,18 @@ export function sessionFor(t) {
 // Losing trades diagnose "why" far better than profit metrics, which just reward whatever's
 // already working - these all read fields already captured per trade, no new columns needed.
 
+/** Oldest LOGGED first (created_at), which is NOT tradeStats' chronological() - that one orders by
+ *  traded_at, the market date.
+ *
+ *  Both are right, for different questions. An equity curve belongs on market dates. Anything about
+ *  *your own* sequence - "am I on a losing run right now", "the first 40 trades were while I was
+ *  still learning" - belongs on the order you actually took them in, and the two diverge hard in
+ *  Bar Replay: a session jumping to random bars produces trades whose market dates are shuffled
+ *  relative to the order they were taken. created_at is the same axis the trades table sorts on.
+ */
+export const byLoggedOrder = (trades) =>
+  [...trades].sort((a, b) => new Date(a.created_at ?? a.traded_at) - new Date(b.created_at ?? b.traded_at))
+
 // trades must be chronological (oldest first).
 function streaksBy(trades, predicate) {
   let longest = 0

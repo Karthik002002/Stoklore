@@ -80,6 +80,13 @@ export default function StrategyDialog({ open, onOpenChange, account, balance, p
               <Row label="Max open positions">
                 {account.max_position_count ?? <span className="text-muted-foreground">No cap</span>}
               </Row>
+              <Row label="Loss streak reminder">
+                {account.loss_streak_alert ? (
+                  `After ${account.loss_streak_alert} losses in a row`
+                ) : (
+                  <span className="text-muted-foreground">Off</span>
+                )}
+              </Row>
               <Row label="Volume spike">
                 {account.vol_spike_multiple}× avg, {account.vol_spike_lookback} bars before entry
               </Row>

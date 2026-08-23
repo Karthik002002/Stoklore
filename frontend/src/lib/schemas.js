@@ -111,6 +111,12 @@ export const tradeAccountSchema = z.object({
   max_position_size: optionalNonNegative('Max position size'),
   max_position_size_type: z.enum(['currency', 'percentage']),
   max_position_count: optionalNonNegative('Max open positions'),
+  // Blank = off, so this one stays nullable rather than defaulting to a number - "0 losses in a
+  // row" is a dialog that never closes, not a setting.
+  loss_streak_alert: optionalNonNegative('Loss streak reminder').refine(
+    (v) => v == null || v >= 1,
+    'Loss streak reminder must be at least 1 trade',
+  ),
   // Trading costs, charged per side (see lib/tradeCosts.js). Blank means zero rather than "unset":
   // an account with no rate typed in trades for free, which is exactly what it did before these
   // fields existed.

@@ -149,6 +149,8 @@ class TradeAccountRequest(BaseModel):
     # `lookback` bars before entry, counts as a spike.
     vol_spike_multiple: float = 2
     vol_spike_lookback: int = 10
+    # Losing trades in a row before Bar Replay interrupts with a reminder. None = off.
+    loss_streak_alert: int | None = None
 
     def settings(self):
         """Cost + volume-spike fields as one dict - everything on the account that is a stored
@@ -161,6 +163,7 @@ class TradeAccountRequest(BaseModel):
             "other_charges_pct": self.other_charges_pct,
             "vol_spike_multiple": self.vol_spike_multiple,
             "vol_spike_lookback": self.vol_spike_lookback,
+            "loss_streak_alert": self.loss_streak_alert,
         }
 
 

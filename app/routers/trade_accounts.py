@@ -25,6 +25,10 @@ def _validate_spike(req):
             status_code=422,
             detail=f"volume spike lookback must be 1-{trade_context.MAX_SPIKE_LOOKBACK} bars",
         )
+    # None is "off"; 0 would mean "remind me after no losses at all", which is a dialog that never
+    # closes rather than a setting.
+    if req.loss_streak_alert is not None and req.loss_streak_alert < 1:
+        raise HTTPException(status_code=422, detail="loss streak reminder must be at least 1 trade")
 
 
 @router.get("/api/trade-accounts")

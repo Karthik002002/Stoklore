@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
 import { compact, fmt, inr } from '@/lib/format'
-import { tradePnl } from '@/lib/manualTrades'
+import { byLoggedOrder, tradePnl } from '@/lib/manualTrades'
 import { tradesForAccount } from '@/lib/tradeAccounts'
 import { accountHasCosts, roundTripCost } from '@/lib/tradeCosts'
 import {
@@ -52,14 +52,6 @@ const ACCOUNT_COLORS = [
   '#84cc16',
 ]
 const colorFor = (i) => ACCOUNT_COLORS[i % ACCOUNT_COLORS.length]
-
-// Oldest LOGGED first, and deliberately NOT tradeStats' chronological() (which orders by
-// traded_at, the market date). The trade range is about the user's own timeline - "the first 40
-// were while I was still learning the rule" - and a Bar Replay trade taken on 2013 bars but
-// journaled last week belongs at the END of that timeline, not the start. created_at is the same
-// axis the trades table sorts on and Goals bucket by, for the same reason.
-const byLogged = (trades) =>
-  [...trades].sort((a, b) => new Date(a.created_at ?? a.traded_at) - new Date(b.created_at ?? b.traded_at))
 
 const PRESET_KEY = 'tradeSimulation.preset'
 
@@ -1032,7 +1024,7 @@ function SingleMode({ config, set, accounts, allTrades }) {
   // the pool it selects, by a different amount for every account.
   const closedTrades = useMemo(() => {
     if (account == null) return []
-    return byLogged(tradesForAccount(allTrades, account)).filter((t) => tradePnl(t) != null)
+    return byLoggedOrder(tradesForAccount(allTrades, account)).filter((t) => tradePnl(t) != null)
   }, [allTrades, account])
   const range = useMemo(
     () => tradeRange(closedTrades.length, config.rangeFrom, config.rangeTo),
@@ -1162,7 +1154,7 @@ function MultiMode({ config, set, accounts, allTrades }) {
   const perAccount = useMemo(
     () =>
       chosen.map((a) => {
-        const trades = byLogged(tradesForAccount(allTrades, a.id)).filter((t) => tradePnl(t) != null)
+        const trades = byLoggedOrder(tradesForAccount(allTrades, a.id)).filter((t) => tradePnl(t) != null)
         // One range, applied to each account's OWN log and clamped to its length - "the last 50" is
         // a fair comparison across accounts, and a short log simply contributes the part it has
         // rather than blocking the whole run. Correlation reads the same slice, so it answers about

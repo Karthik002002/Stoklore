@@ -6,11 +6,13 @@ import { inr } from '@/lib/format'
 import { aggregateBars, isIntraday } from '@/lib/replay'
 import { useMaxHistoryCollector } from '@/lib/useMaxHistoryCollector'
 import { usePageTitle } from '@/lib/usePageTitle'
+import { byLoggedOrder, lossStreaks, tradePnl } from '@/lib/manualTrades'
 import { accountBalance, tradesForAccount } from '@/lib/tradeAccounts'
 import { getBalanceAdjustments, getIntradayBars, getManualTrades, getTradeAccounts } from '@/services/api'
 import BottomBar from './BottomBar'
 import CloseTradeDialog from './CloseTradeDialog'
 import ConfirmOrderDialog from './ConfirmOrderDialog'
+import LossStreakDialog from './LossStreakDialog'
 import OrderTicketDialog from './OrderTicketDialog'
 import {
   orderWarnings,
@@ -117,6 +119,30 @@ export default function BarReplay() {
     adjustments.filter((a) => a.account_id === accountId),
   )
 
+  // Losing-run check. Runs off the journal (not the replay session's own orders) so the run counts
+  // trades taken in earlier sessions too - a streak doesn't reset because you reloaded the page.
+  // Ordered by when they were LOGGED: a replay jumping to random bars produces market dates in no
+  // particular order, and the run being asked about is the order you actually took them in.
+  useEffect(() => {
+    const threshold = account?.loss_streak_alert
+    if (!threshold) return
+    const closed = byLoggedOrder(tradesForAccount(allJournalTrades, accountId)).filter(
+      (t) => !t.is_open && tradePnl(t) != null,
+    )
+    const streak = lossStreaks(closed).current
+    if (streak < threshold) {
+      alertedStreakRef.current = 0
+      return
+    }
+    if (!armStreakCheckRef.current || streak <= alertedStreakRef.current) return
+    armStreakCheckRef.current = false
+    alertedStreakRef.current = streak
+    setLossStreak({
+      streak,
+      lost: Math.abs(closed.slice(-streak).reduce((sum, t) => sum + (tradePnl(t) ?? 0), 0)),
+    })
+  }, [allJournalTrades, accountId, account?.loss_streak_alert])
+
   const [startDate, setStartDate] = useState('')
   const [dateDraft, setDateDraft] = useState('')
   const [playing, setPlaying] = useState(false)
@@ -145,6 +171,15 @@ export default function BarReplay() {
   // An order that tripped a warning and is waiting on a yes/no: { order, warnings, fromTicket }.
   // Both entry paths park here, so neither can place a position the other would have questioned.
   const [pendingOrder, setPendingOrder] = useState(null)
+  // The losing-run reminder: { streak, lost } once the account's threshold is hit, null otherwise.
+  const [lossStreak, setLossStreak] = useState(null)
+  // Set when a close is journaled, cleared when the streak has been looked at. Without it the
+  // check below would fire on arrival at the page - opening Bar Replay while already three losses
+  // deep is not the moment to be told about it; finishing a fourth is.
+  const armStreakCheckRef = useRef(false)
+  // The streak already shown, so one run doesn't re-open the dialog on every re-render. Reset when
+  // the run ends, which is what lets a longer run alert again at 4, 5, 6.
+  const alertedStreakRef = useRef(0)
   // 'symbol' | 'timeframe' | null - which centred quick-switcher is open (see ReplayCommandDialog).
   const [commandMode, setCommandMode] = useState(null)
   // Imperative handle onto ReplayChart (see its captureScreenshot) - grabbing a snapshot of the
@@ -601,9 +636,13 @@ export default function BarReplay() {
     if (pendingOrder) setPlaying(false)
   }, [pendingOrder])
 
+  useEffect(() => {
+    if (lossStreak) setPlaying(false)
+  }, [lossStreak])
+
   // 'B'/'S' shortcuts open the order ticket, same as clicking Buy/Sell - ignored automatically
   // while typing in any input/textarea (ignoreInputs defaults true for single-key hotkeys).
-  const hotkeysEnabled = started && !orderDraft && !pendingOrder
+  const hotkeysEnabled = started && !orderDraft && !pendingOrder && !lossStreak
   useHotkey('b', () => openOrderTicket('long'), { enabled: hotkeysEnabled })
   useHotkey('s', () => openOrderTicket('short'), { enabled: hotkeysEnabled })
   // Shift skips the ticket entirely and fills at market, at the preference's size.
@@ -757,6 +796,13 @@ export default function BarReplay() {
         price={lastBar?.close ?? null}
       />
 
+      <LossStreakDialog
+        streak={lossStreak?.streak ?? 0}
+        lost={lossStreak?.lost ?? null}
+        account={account}
+        onClose={() => setLossStreak(null)}
+      />
+
       <ConfirmOrderDialog
         pending={pendingOrder}
         onCancel={() => setPendingOrder(null)}
@@ -812,6 +858,9 @@ export default function BarReplay() {
         }
         exitDate={lastBar?.date ?? null}
         onClosed={(closedQty) => {
+          // The reminder is checked once this refetch lands, so it appears after the close dialog
+          // with the just-logged trade already counted.
+          armStreakCheckRef.current = true
           queryClient.invalidateQueries({ queryKey: ['manualTrades'] })
           const { order, leg, reason } = activeClose
           if (leg) {

@@ -20,32 +20,60 @@ const hoursHeld = (t) => {
   return Number.isFinite(h) ? Math.round(h * 100) / 100 : null
 }
 
+// [label, value, key, jsonValue?] - the label heads a spreadsheet column, the key names the field
+// in the JSON copy, and the optional fourth entry is for the one or two fields a cell and a JSON
+// value should genuinely differ on (tags read as "a, b" in a spreadsheet and belong as an array in
+// JSON). Both outputs come off ONE list so an export and a copy can never describe the same trade
+// differently; the keys are spelled out rather than slugged from the labels, because "R:R" and
+// "Gross P&L" slug into things nobody wants to type.
 const COLUMNS = [
-  ['Entry time', (t) => localTime(t.traded_at)],
-  ['Exit time', (t) => localTime(t.exited_at)],
-  ['Symbol', (t) => t.symbol],
-  ['Direction', (t) => t.direction],
-  ['Status', (t) => (t.exit_price == null ? 'Open' : 'Closed')],
-  ['Setup', (t) => t.setup ?? ''],
-  ['Account', (t, acct) => acct?.name ?? ''],
-  ['Quantity', (t) => t.quantity],
-  ['Entry price', (t) => t.entry_price],
-  ['Exit price', (t) => t.exit_price],
-  ['Stop loss', (t) => t.stop_loss],
-  ['Target', (t) => t.target],
-  ['Planned risk', (t) => t.ideal_risk_amount],
-  ['R:R', (t) => tradeRRDisplay(t)?.rr ?? null],
-  ['R:R basis', (t) => (tradeRRDisplay(t) == null ? '' : tradeRRDisplay(t).planned ? 'planned' : 'realised')],
-  ['Gross P&L', (t) => tradePnl(t)],
-  ['Costs', (t, acct) => tradeCosts(t, acct)?.total ?? null],
-  ['Net P&L', (t, acct) => tradeNetPnl(t, acct)],
-  ['Return %', (t) => tradeReturnPct(t)],
-  ['Result', (t) => t.result ?? autoResult(t) ?? ''],
-  ['Emotion', (t) => t.emotion ?? ''],
-  ['Tags', (t) => (t.tags ?? []).join(', ')],
-  ['Hours held', (t) => hoursHeld(t)],
-  ['Notes', (t) => t.notes ?? ''],
+  ['Entry time', (t) => localTime(t.traded_at), 'entry_time'],
+  ['Exit time', (t) => localTime(t.exited_at), 'exit_time'],
+  ['Symbol', (t) => t.symbol, 'symbol'],
+  ['Direction', (t) => t.direction, 'direction'],
+  ['Status', (t) => (t.exit_price == null ? 'Open' : 'Closed'), 'status'],
+  ['Setup', (t) => t.setup ?? '', 'setup'],
+  ['Account', (t, acct) => acct?.name ?? '', 'account'],
+  ['Quantity', (t) => t.quantity, 'quantity'],
+  ['Entry price', (t) => t.entry_price, 'entry_price'],
+  ['Exit price', (t) => t.exit_price, 'exit_price'],
+  ['Stop loss', (t) => t.stop_loss, 'stop_loss'],
+  ['Target', (t) => t.target, 'target'],
+  ['Planned risk', (t) => t.ideal_risk_amount, 'planned_risk'],
+  ['R:R', (t) => tradeRRDisplay(t)?.rr ?? null, 'rr'],
+  [
+    'R:R basis',
+    (t) => (tradeRRDisplay(t) == null ? '' : tradeRRDisplay(t).planned ? 'planned' : 'realised'),
+    'rr_basis',
+  ],
+  ['Gross P&L', (t) => tradePnl(t), 'gross_pnl'],
+  ['Costs', (t, acct) => tradeCosts(t, acct)?.total ?? null, 'costs'],
+  ['Net P&L', (t, acct) => tradeNetPnl(t, acct), 'net_pnl'],
+  ['Return %', (t) => tradeReturnPct(t), 'return_pct'],
+  ['Result', (t) => t.result ?? autoResult(t) ?? '', 'result'],
+  ['Emotion', (t) => t.emotion ?? '', 'emotion'],
+  ['Tags', (t) => (t.tags ?? []).join(', '), 'tags', (t) => t.tags ?? []],
+  ['Hours held', (t) => hoursHeld(t), 'hours_held'],
+  ['Notes', (t) => t.notes ?? '', 'notes'],
 ]
+
+/** The selected trades as plain objects, for "Copy JSON" on the Trades tab - the same fields as the
+ *  spreadsheet export, keyed for code rather than for a column heading.
+ *
+ *  Derived values (P&L, costs, R:R) are resolved here rather than left to the reader: they are what
+ *  the app means by those words, and recomputing them elsewhere from entry/exit/quantity is how two
+ *  answers to "what did this trade make" get into circulation. `id` is included so a pasted array
+ *  can still be matched back to the journal; the screenshot is not - it isn't data. */
+export function tradeJson(trades, accounts) {
+  const byId = accountsById(accounts)
+  return trades.map((t) => {
+    const acct = accountFor(t, byId)
+    return Object.fromEntries([
+      ['id', t.id],
+      ...COLUMNS.map(([, value, key, jsonValue]) => [key, (jsonValue ?? value)(t, acct)]),
+    ])
+  })
+}
 
 /** { headers, rows } for xlsxBlob. `trades` is whatever the page is currently showing - filters
  *  and the account picker have already been applied by the caller, so the file matches the screen. */

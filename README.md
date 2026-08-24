@@ -425,7 +425,9 @@ OHLCV, no backend execution involved:
 - **Exports** — raw **CSV** of everything
   (`GET /api/manual-trades/export?format=csv`), a real **`.xlsx`** of exactly
   the filtered rows on screen (derived metrics as columns, no screenshots),
-  and **Markdown**/**Copy MD** of the Statistics tab. The xlsx writer is ~60
+  **Copy JSON** of whichever trades you've ticked (same fields as the xlsx,
+  keyed for code — paste straight into a notebook or the chat agent), and
+  **Markdown**/**Copy MD** of the Statistics tab. The xlsx writer is ~60
   hand-rolled lines (`frontend/src/lib/exportFile.js`) rather than a
   megabyte-class dependency — an xlsx is a zip of a few XML parts
 - A direct link into **Bar Replay** (see [`12` Bar Replay](#12-bar-replay))

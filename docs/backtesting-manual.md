@@ -47,7 +47,7 @@
   URL (`?account=3`), so a per-strategy view is shareable and survives a
   reload. Accounts themselves are managed in **Settings › Trade accounts**.
 
-### Exports: CSV, Excel, Markdown
+### Exports: CSV, Excel, JSON, Markdown
 
 - **CSV** (`GET /api/manual-trades/export?format=csv`) — the raw backend dump
   of every trade, ignoring what's on screen.
@@ -59,6 +59,18 @@
   the account, and an export that did the same would produce two files with the
   same name and different columns. Screenshots are not exported; they aren't
   data.
+- **Copy JSON** — tick some rows on the **Trades** tab and the selection
+  toolbar offers it: the selected trades as an array of objects on the
+  clipboard, ready to paste into a notebook, a formula, or the chat agent.
+  Same fields as the Excel export (one `COLUMNS` list feeds both, so a copy and
+  an export can never describe the same trade differently), keyed for code
+  rather than for a column heading — `gross_pnl`, `rr_basis`, `hours_held` —
+  plus the trade `id` so a pasted array can be matched back to the journal.
+  Tags come out as an array rather than the spreadsheet's `"a, b"` string.
+  Derived values are resolved here rather than left to the reader: they are
+  what the app means by those words, and recomputing them from
+  entry/exit/quantity elsewhere is how two answers to "what did this trade
+  make" get into circulation.
 - **Markdown** — on the **Statistics** tab and on
   [Trade Simulation](trade-simulation.md): **Copy MD** puts the panel's numbers
   on the clipboard, **Markdown** downloads them as a file. Statistics exports

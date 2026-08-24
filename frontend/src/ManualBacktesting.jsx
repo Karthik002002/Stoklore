@@ -3,7 +3,14 @@ import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { ClapperboardIcon, DownloadIcon, FileSpreadsheetIcon, PlusIcon, Trash2Icon } from 'lucide-react'
+import {
+  ClapperboardIcon,
+  CopyIcon,
+  DownloadIcon,
+  FileSpreadsheetIcon,
+  PlusIcon,
+  Trash2Icon,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import { Field, SelectField, TagField, TextField } from '@/components/form'
 import ImageLightbox from '@/components/ImageLightbox'
@@ -18,8 +25,8 @@ import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
-import { downloadXlsx } from '@/lib/exportFile'
-import { tradeSheet } from '@/lib/tradeExport'
+import { copyText, downloadXlsx } from '@/lib/exportFile'
+import { tradeJson, tradeSheet } from '@/lib/tradeExport'
 import { formatDate, inr } from '@/lib/format'
 import {
   autoResult,
@@ -865,6 +872,25 @@ export default function ManualBacktesting() {
           {selected.size > 0 && (
             <div className="flex items-center justify-end gap-2">
               <span className="text-sm text-muted-foreground">{selected.size} selected</span>
+              {/* The same fields as the xlsx export, as an array of objects - for pasting into a
+                  notebook, a spreadsheet formula, or a chat with the agent. Selection order is not
+                  preserved: they come out in the order they are on screen, which is the order the
+                  eye picked them in. */}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  copyText(JSON.stringify(tradeJson(selectedTrades, accounts), null, 2)).then(
+                    () =>
+                      toast.success(
+                        `${selectedTrades.length} trade${selectedTrades.length === 1 ? '' : 's'} copied as JSON`,
+                      ),
+                    () => toast.error('Could not copy - the browser refused clipboard access'),
+                  )
+                }
+              >
+                <CopyIcon className="size-3.5" /> Copy JSON
+              </Button>
               <Button size="sm" variant="outline" onClick={() => setBulkEditOpen(true)}>
                 Bulk edit
               </Button>

@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useHotkey } from '@tanstack/react-hotkeys'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { inr } from '@/lib/format'
@@ -7,6 +6,7 @@ import { aggregateBars, isIntraday } from '@/lib/replay'
 import { useMaxHistoryCollector } from '@/lib/useMaxHistoryCollector'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { byLoggedOrder, lossStreaks, tradePnl } from '@/lib/manualTrades'
+import { useShortcut } from '@/lib/shortcuts'
 import { accountBalance, tradesForAccount } from '@/lib/tradeAccounts'
 import { getBalanceAdjustments, getIntradayBars, getManualTrades, getTradeAccounts } from '@/services/api'
 import BottomBar from './BottomBar'
@@ -640,32 +640,38 @@ export default function BarReplay() {
     if (lossStreak) setPlaying(false)
   }, [lossStreak])
 
-  // 'B'/'S' shortcuts open the order ticket, same as clicking Buy/Sell - ignored automatically
-  // while typing in any input/textarea (ignoreInputs defaults true for single-key hotkeys).
+  // Every binding below is looked up by id from lib/shortcuts.js, so Settings > Shortcuts and the
+  // tooltips in the bottom bar can't drift from what actually fires. The defaults are the keys they
+  // always were. Single-key hotkeys are ignored while typing in any input/textarea (ignoreInputs
+  // defaults true), whatever they are rebound to.
+  //
+  // 'B'/'S' open the order ticket, same as clicking Buy/Sell.
   const hotkeysEnabled = started && !orderDraft && !pendingOrder && !lossStreak
-  useHotkey('b', () => openOrderTicket('long'), { enabled: hotkeysEnabled })
-  useHotkey('s', () => openOrderTicket('short'), { enabled: hotkeysEnabled })
+  useShortcut('replay.buy', () => openOrderTicket('long'), { enabled: hotkeysEnabled })
+  useShortcut('replay.sell', () => openOrderTicket('short'), { enabled: hotkeysEnabled })
   // Shift skips the ticket entirely and fills at market, at the preference's size.
-  useHotkey('shift+b', () => placeMarketOrder('long'), { enabled: hotkeysEnabled })
-  useHotkey('shift+s', () => placeMarketOrder('short'), { enabled: hotkeysEnabled })
+  useShortcut('replay.buyMarket', () => placeMarketOrder('long'), { enabled: hotkeysEnabled })
+  useShortcut('replay.sellMarket', () => placeMarketOrder('short'), { enabled: hotkeysEnabled })
   // Symbol and timeframe switchers. Not gated on `started` like the trading keys above - swapping
   // instruments is the main thing you do *before* a replay is running. Mod+K stays the global
   // palette (CommandPalette), so these take the single keys TradingView uses for the same jobs.
-  useHotkey('/', () => setCommandMode('symbol'), { enabled: !orderDraft })
-  useHotkey('t', () => setCommandMode('timeframe'), { enabled: !orderDraft })
+  useShortcut('replay.symbol', () => setCommandMode('symbol'), { enabled: !orderDraft })
+  useShortcut('replay.timeframe', () => setCommandMode('timeframe'), { enabled: !orderDraft })
   // TradingView's own bar-replay bindings: Shift+Down plays/pauses, Shift+Right steps one bar.
-  useHotkey('shift+down', () => setPlaying((p) => !p), { enabled: hotkeysEnabled && (!atEnd || playing) })
-  useHotkey('shift+right', () => setBarIndex(currentIndex + 1), { enabled: hotkeysEnabled && !atEnd })
+  useShortcut('replay.playPause', () => setPlaying((p) => !p), {
+    enabled: hotkeysEnabled && (!atEnd || playing),
+  })
+  useShortcut('replay.step', () => setBarIndex(currentIndex + 1), { enabled: hotkeysEnabled && !atEnd })
   // Shuffle to a random bar - the keyboard half of the bottom bar's dice button (and of the close
   // dialog's "jump after logging"). Not gated on `started`: picking a random spot is a perfectly
   // good way to *begin* a session.
-  useHotkey('shift+r', jumpToRandomBar, { enabled: !orderDraft && allBars.length > 0 })
+  useShortcut('replay.randomBar', jumpToRandomBar, { enabled: !orderDraft && allBars.length > 0 })
   // 'A' re-reads the account's strategy and caps without leaving the bar you're on. Not gated on
   // `started`: checking what you said you would trade is most useful right before you take the
   // trade, and equally useful while setting the session up.
   // Also off while a close dialog is up: that one is asking how the trade felt, and stacking the
   // rules on top of it buries the question.
-  useHotkey('a', () => setStrategyOpen(true), { enabled: !orderDraft && !activeClose })
+  useShortcut('replay.strategy', () => setStrategyOpen(true), { enabled: !orderDraft && !activeClose })
   // useHotkey('escape', () => setDrawMode(null), { enabled: !!drawMode })
 
   return (

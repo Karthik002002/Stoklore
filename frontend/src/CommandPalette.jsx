@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { useHotkey } from '@tanstack/react-hotkeys'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
+import { useShortcut } from '@/lib/shortcuts'
 import { toast } from 'sonner'
 import {
   ArrowRightIcon,
@@ -88,7 +88,7 @@ export default function CommandPalette() {
   const navigate = useNavigate()
   const { theme, toggle: toggleTheme } = useTheme()
 
-  useHotkey('Mod+K', () => setOpen((o) => !o))
+  useShortcut('global.commandPalette', () => setOpen((o) => !o))
 
   const close = () => {
     setOpen(false)

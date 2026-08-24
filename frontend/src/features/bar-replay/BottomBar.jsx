@@ -32,6 +32,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { inr } from '@/lib/format'
 import { tradePnl } from '@/lib/manualTrades'
 import { REPLAY_SPEEDS, REPLAY_TIMEFRAMES } from '@/lib/replay'
+import { useShortcutLabel } from '@/lib/shortcuts'
 import DateJumpMenu from './DateJumpMenu'
 import IndicatorControls from './IndicatorControls'
 import PositionsList from './PositionsList'
@@ -59,8 +60,9 @@ const NO_ACCOUNT = 'none'
 // trigger wrapping whatever it's given), opening upward since the bar is at the bottom of the
 // screen. `data-slot="kbd"` is what TooltipContent styles its key caps from.
 //
-// The shortcuts themselves are registered in BarReplay - this only advertises them, so a key
-// added there must be added here too or it stays invisible.
+// The keys shown come from the shortcut registry (useShortcutLabel), not from literals here, so a
+// rebind in Settings > Shortcuts is reflected in every tooltip immediately and a hint can never
+// advertise a key that no longer fires.
 function Hint({ label, keys, children }) {
   return (
     <Tooltip>
@@ -106,7 +108,10 @@ function SetupPopover({ setup }) {
 
   return (
     <Popover>
-      <Hint label="Setup — symbol, account, timeframe, data" keys="/  T">
+      <Hint
+        label="Setup — symbol, account, timeframe, data"
+        keys={`${useShortcutLabel('replay.symbol')}  ${useShortcutLabel('replay.timeframe')}`}
+      >
         <PopoverTrigger render={<Button variant="ghost" size="sm" className="gap-1.5" />}>
           <SlidersHorizontalIcon className="size-4" />
           {symbol ?? 'Pick a symbol'}
@@ -332,7 +337,7 @@ function PlaybackControls({ playback }) {
           <SkipBackIcon className="size-4" />
         </Button>
       </Hint>
-      <Hint label={playing ? 'Pause' : 'Play'} keys="Shift+↓">
+      <Hint label={playing ? 'Pause' : 'Play'} keys={useShortcutLabel('replay.playPause')}>
         <Button
           size="icon-sm"
           variant="ghost"
@@ -343,7 +348,7 @@ function PlaybackControls({ playback }) {
           {playing ? <PauseIcon className="size-4" /> : <PlayIcon className="size-4" />}
         </Button>
       </Hint>
-      <Hint label="Step forward" keys="Shift+→">
+      <Hint label="Step forward" keys={useShortcutLabel('replay.step')}>
         <Button
           size="icon-sm"
           variant="ghost"
@@ -374,7 +379,7 @@ function PlaybackControls({ playback }) {
         triggerClassName="w-32 text-xs"
       />
       {/* The menu's Random bar item, one click closer - it's the one people use every trade. */}
-      <Hint label="Random bar" keys="Shift+R">
+      <Hint label="Random bar" keys={useShortcutLabel('replay.randomBar')}>
         <Button
           size="icon-sm"
           variant="ghost"
@@ -450,24 +455,30 @@ function TradeControls({ trade }) {
       <PortfolioChip orders={orders} lastBar={lastBar} />
       {/* Click (or B/S) reviews the order in the ticket; Shift-click (or Shift+B/S) skips it and
           fills at market, both sized by the Settings > Preferences sizing preference. */}
-      <Hint label={`Buy — ticket, or Shift for ${startingQty} at market`} keys="B / ⇧B">
+      <Hint
+        label={`Buy — ticket, or Shift-click for ${startingQty} at market`}
+        keys={`${useShortcutLabel('replay.buy')} / ${useShortcutLabel('replay.buyMarket')}`}
+      >
         <Button
           size="sm"
           className="bg-up text-white hover:bg-up/90"
           disabled={!lastBar}
           onClick={(e) => (e.shiftKey ? onMarketOrder('long') : onOpenTicket('long'))}
         >
-          Buy <span className="ml-1 text-xs opacity-70">B</span>
+          Buy <span className="ml-1 text-xs opacity-70">{useShortcutLabel('replay.buy')}</span>
         </Button>
       </Hint>
-      <Hint label={`Sell — ticket, or Shift for ${startingQty} at market`} keys="S / ⇧S">
+      <Hint
+        label={`Sell — ticket, or Shift-click for ${startingQty} at market`}
+        keys={`${useShortcutLabel('replay.sell')} / ${useShortcutLabel('replay.sellMarket')}`}
+      >
         <Button
           size="sm"
           className="bg-down text-white hover:bg-down/90"
           disabled={!lastBar}
           onClick={(e) => (e.shiftKey ? onMarketOrder('short') : onOpenTicket('short'))}
         >
-          Sell <span className="ml-1 text-xs opacity-70">S</span>
+          Sell <span className="ml-1 text-xs opacity-70">{useShortcutLabel('replay.sell')}</span>
         </Button>
       </Hint>
       <Popover>

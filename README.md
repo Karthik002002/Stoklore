@@ -565,6 +565,15 @@ Full details: [docs/paper-trading.md](docs/paper-trading.md).
 
 ### `*` What's more
 
+- **Every keyboard shortcut is rebindable** — Settings › Shortcuts lists all of
+  them (command palette, AI chat, and Bar Replay's ten trading/playback keys),
+  each captured by pressing the combination rather than typing its name.
+  Backspace turns one off, and clashes are flagged rather than left to be
+  discovered when one of the two silently stops firing. Components register by
+  id (`useShortcut('replay.buy', …)`) against a single registry
+  (`frontend/src/lib/shortcuts.js`), so the Settings tab, the tooltips and what
+  actually fires cannot drift apart. Stored per browser, not per account — a
+  keyboard belongs to the machine you're sitting at
 - **Consistency tracker (the Profile modal)** — daily streak, best streak,
   time on the app today against a goal, and a year-long usage graph. Time is
   counted **in the browser**, in `localStorage`, per local calendar day

@@ -34,8 +34,11 @@ paper-trade it.
   **Indicator panes are never touched.** An oscillator's scale is a property of
   the indicator, not of the period on screen — RSI is 0–100 in 2013 exactly as
   it is today — so a MACD or RSI pane you sized by hand survives every jump.
-- Shortcuts: `B` buy, `S` sell, `Shift+↓` play/pause, `Shift+→` step forward,
-  `Shift+R` random bar, `A` strategy.
+- Shortcuts: `B` buy, `S` sell, `Shift+B`/`Shift+S` buy/sell at market, `/`
+  symbol, `T` timeframe, `Shift+↓` play/pause, `Shift+→` step forward,
+  `Shift+R` random bar, `A` strategy. **All of them are rebindable** in
+  Settings › Shortcuts — those are just the defaults, and every tooltip in the
+  bottom bar reads the current binding rather than a hardcoded letter.
 - **`A` — the account's rules**, in a read-only modal over the chart: the
   strategy explanation you wrote, balance, position-size and open-position
   caps, the volume-spike threshold, the losing-run reminder, and what a round

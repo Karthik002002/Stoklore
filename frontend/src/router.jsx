@@ -21,6 +21,7 @@ const SETTINGS_TABS = [
   'data',
   'stocks',
   'activity',
+  'shortcuts',
   'backtesting',
   'accounts',
   'paper-accounts',

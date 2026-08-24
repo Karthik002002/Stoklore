@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { BrokerLogo } from '@/BrokerLogo'
+import ShortcutsTab from '@/ShortcutsTab'
 import TradeAccountsTab from '@/TradeAccountsTab'
 import SourceSelect from '@/components/SourceSelect'
 import StockMasterCombobox from '@/components/StockMasterCombobox'
@@ -1088,6 +1089,7 @@ export default function Settings() {
             <TabsTab value="data">Collect data</TabsTab>
             <TabsTab value="stocks">Manage stocks</TabsTab>
             <TabsTab value="activity">Activity</TabsTab>
+            <TabsTab value="shortcuts">Shortcuts</TabsTab>
             <TabsTab value="backtesting">Backtesting</TabsTab>
             <TabsTab value="accounts">Trade accounts</TabsTab>
             <TabsTab value="paper-accounts">Paper accounts</TabsTab>
@@ -1116,6 +1118,9 @@ export default function Settings() {
             </TabsPanel>
             <TabsPanel value="activity">
               <ActivityTab />
+            </TabsPanel>
+            <TabsPanel value="shortcuts">
+              <ShortcutsTab />
             </TabsPanel>
             <TabsPanel value="backtesting">
               <ManualBacktestTab />

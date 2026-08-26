@@ -1,4 +1,5 @@
 import { Controller } from 'react-hook-form'
+import DatePicker from '@/components/DatePicker'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
@@ -9,8 +10,8 @@ import TagInput from '@/components/TagInput'
 // need Controller; plain <Input>/<Textarea> can use `register` directly and are wrapped here only
 // so every form field renders its label and error the same way.
 //
-// Deliberately not a full form-component kit - just the four field types the app's forms actually
-// use, sharing one label/error shell.
+// Deliberately not a full form-component kit - just the field types the app's forms actually use,
+// sharing one label/error shell.
 
 /** Label + control + error message. The shell every field below renders into. */
 export function Field({ label, error, hint, children, className = '' }) {
@@ -108,6 +109,22 @@ export function TagField({ form, name, label, hint, placeholder, className }) {
         name={name}
         render={({ field }) => (
           <TagInput value={field.value ?? []} onChange={field.onChange} placeholder={placeholder} />
+        )}
+      />
+    </Field>
+  )
+}
+
+/** A date field bound to react-hook-form. Controller rather than `register` for the same reason
+ *  SelectField needs it: DatePicker is a controlled component with no ref or onBlur to register. */
+export function DateField({ form, name, label, hint, className, ...props }) {
+  return (
+    <Field label={label} hint={hint} error={form.formState.errors[name]} className={className}>
+      <Controller
+        control={form.control}
+        name={name}
+        render={({ field }) => (
+          <DatePicker value={field.value} onChange={field.onChange} className="w-full" {...props} />
         )}
       />
     </Field>

@@ -39,17 +39,47 @@ def shareholding_sync_status():
 
 
 @router.post("/api/shareholding/sync")
-def start_shareholding_sync(years: int = 1, detail: bool = True):
-    """Collect (or re-collect) filings. Safe to run over an existing table and over the daily job:
-    filings are keyed on NSE's record id, so an overlapping window upserts rather than duplicates,
-    and a filing whose XBRL detail is already stored is never fetched twice."""
-    if not 1 <= years <= shareholding.MAX_SEED_YEARS:
+def start_shareholding_sync(
+    years: int = 1,
+    detail: bool = True,
+    from_date: str | None = None,
+    to_date: str | None = None,
+):
+    """Collect (or re-collect) filings, either for the last `years` years or for an explicit
+    from/to span (ISO dates - what the page's range picker sends).
+
+    Safe to run over an existing table and over the daily job: filings are keyed on NSE's record
+    id, so an overlapping window upserts rather than duplicates, and a filing whose XBRL detail is
+    already stored is never fetched twice. Re-running a range you already have is therefore cheap
+    and idempotent, which is what makes "just collect that quarter again" a reasonable thing to do.
+    """
+    start = end = None
+    if from_date or to_date:
+        if not (from_date and to_date):
+            raise HTTPException(status_code=422, detail="both from_date and to_date are required")
+        try:
+            start, end = date.fromisoformat(from_date), date.fromisoformat(to_date)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="dates must be YYYY-MM-DD") from None
+        if start > end:
+            start, end = end, start
+        if end > date.today():
+            end = date.today()
+        # The guard is on SPAN, not on how far back it reaches: collecting one old quarter is one
+        # request, and refusing it would make the picker useless for exactly the case it exists for.
+        if (end - start).days > 365 * shareholding.MAX_SEED_YEARS:
+            raise HTTPException(
+                status_code=422,
+                detail=f"range must be {shareholding.MAX_SEED_YEARS} years or less",
+            )
+    elif not 1 <= years <= shareholding.MAX_SEED_YEARS:
         raise HTTPException(
             status_code=422, detail=f"years must be 1-{shareholding.MAX_SEED_YEARS}"
         )
-    if not jobs.start_shareholding_sync(years=years, with_detail=detail):
+
+    if not jobs.start_shareholding_sync(years=years, with_detail=detail, start=start, end=end):
         raise HTTPException(status_code=409, detail="a shareholding sync is already running")
-    return {"ok": True}
+    return {"ok": True, "windows": len(shareholding.windows_between(start, end)) if start else None}
 
 
 # Registered after /status deliberately - FastAPI matches in order, and a parameterised sibling

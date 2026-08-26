@@ -133,20 +133,31 @@ def fetch_window(from_date, to_date):
 
 
 def windows(years, today=None):
-    """The (from, to) ranges covering `years` back from today, newest first.
-
-    Newest first on purpose: a seed that is interrupted (or rate-limited) half way has the recent
-    quarters, which are the ones the screener actually reads.
-    """
+    """The (from, to) ranges covering `years` back from today, newest first."""
     today = today or date.today()
     years = max(1, min(int(years), MAX_SEED_YEARS))
-    end = today
+    return windows_between(today - timedelta(days=365 * years), today)
+
+
+def windows_between(start, end):
+    """The 90-day ranges tiling [start, end], NEWEST FIRST.
+
+    Newest first on purpose: a sweep that is interrupted (or rate-limited) half way through has the
+    recent quarters, which are the ones the screener actually reads. The endpoint refuses ranges
+    much wider than a quarter, which is why an arbitrary span has to be walked rather than asked
+    for in one go.
+
+    An inverted range is read the way it was obviously meant rather than returning nothing - the
+    two ends of a date picker are easy to fill in backwards.
+    """
+    if start > end:
+        start, end = end, start
     out = []
-    start_limit = today - timedelta(days=365 * years)
-    while end > start_limit:
-        start = max(end - timedelta(days=WINDOW_DAYS), start_limit)
-        out.append((start, end))
-        end = start - timedelta(days=1)
+    cursor = end
+    while cursor >= start:
+        window_start = max(cursor - timedelta(days=WINDOW_DAYS), start)
+        out.append((window_start, cursor))
+        cursor = window_start - timedelta(days=1)
     return out
 
 

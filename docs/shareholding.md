@@ -85,8 +85,11 @@ NSE's own `record_id`, so re-collecting a window you already have upserts the sa
 duplicating quarters. That is what makes the daily job and a 5-year backfill safe to run over each
 other.
 
-**Collect** on the page pulls 1–5 years (90-day windows, newest first, so an interrupted run keeps
-the useful end). A background job runs **once per IST day** — newest window plus up to 60 detail
+**Collect** on the page pulls 1–5 years, or an explicit **from/to span** picked on the calendar —
+useful for re-pulling a single quarter, or reaching back to a period the years shorthand doesn't
+cover. Either way it walks 90-day windows, newest first, so an interrupted run keeps the useful
+end; the span wins when both are set. Re-collecting a range you already have is idempotent (record
+ids again), so "just pull that quarter again" is a reasonable thing to do. A background job runs **once per IST day** — newest window plus up to 60 detail
 fetches, the rest picked up tomorrow — checked hourly, so a machine that was asleep at the target
 hour catches up when it wakes. Same shape as the daily watchlist event scan.
 

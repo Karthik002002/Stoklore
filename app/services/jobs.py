@@ -163,12 +163,14 @@ def _collect_shareholding_details(limit=MAX_DETAILS_PER_RUN):
     return stored
 
 
-def _run_shareholding_sync(years, with_detail=True):
+def _run_shareholding_sync(years, with_detail=True, start=None, end=None):
     _shareholding_state.update(
         running=True, phase="master", done=0, total=0, new=0, details=0, error=None
     )
     try:
-        ranges = shareholding.windows(years)
+        # An explicit range wins over the years shorthand: "the last N years" is the common case,
+        # a named span is the deliberate one.
+        ranges = shareholding.windows_between(start, end) if start and end else shareholding.windows(years)
         _shareholding_state["total"] = len(ranges)
         for index, (start, end) in enumerate(ranges):
             try:
@@ -187,13 +189,13 @@ def _run_shareholding_sync(years, with_detail=True):
         _shareholding_state.update(running=False, phase=None)
 
 
-def start_shareholding_sync(years=1, with_detail=True):
+def start_shareholding_sync(years=1, with_detail=True, start=None, end=None):
     """Kick the sweep in the background. No-op while one is already running - two sweeps would
     fight over the same NSE cookie pool for no benefit."""
     if _shareholding_state["running"]:
         return False
     threading.Thread(
-        target=_run_shareholding_sync, args=(years, with_detail), daemon=True
+        target=_run_shareholding_sync, args=(years, with_detail, start, end), daemon=True
     ).start()
     return True
 

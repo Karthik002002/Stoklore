@@ -395,5 +395,9 @@ export const getShareholdingSymbol = (symbol) => fetch(`/api/shareholding/${symb
 
 export const getShareholdingStatus = () => fetch('/api/shareholding/status').then(json)
 
-export const syncShareholding = (years = 1) =>
-  fetch(`/api/shareholding/sync?years=${years}`, { method: 'POST' }).then(json)
+// Either a "last N years" shorthand or an explicit { from, to } span from the range picker - the
+// backend prefers the span when both arrive.
+export const syncShareholding = ({ years = 1, from, to } = {}) => {
+  const query = new URLSearchParams(from && to ? { from_date: from, to_date: to } : { years: String(years) })
+  return fetch(`/api/shareholding/sync?${query}`, { method: 'POST' }).then(json)
+}

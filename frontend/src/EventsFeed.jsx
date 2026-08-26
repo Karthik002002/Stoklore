@@ -3,8 +3,8 @@ import { Link } from '@tanstack/react-router'
 import { CalendarIcon, RadarIcon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Badge } from '@/components/ui/badge'
+import { DateRangePicker } from '@/components/DatePicker'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
@@ -185,20 +185,17 @@ export default function EventsFeed() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Input
-          type="date"
-          value={fromDate}
-          onChange={(e) => setFromDate(e.target.value)}
-          className="h-8 w-36"
-          aria-label="From date"
-        />
-        <span className="text-sm text-muted-foreground">to</span>
-        <Input
-          type="date"
-          value={toDate}
-          onChange={(e) => setToDate(e.target.value)}
-          className="h-8 w-36"
-          aria-label="To date"
+        {/* One popover for both ends - picking a range was two separate browser pickers and a
+            mental note about which one you were on. */}
+        <DateRangePicker
+          from={fromDate}
+          to={toDate}
+          onChange={({ from, to }) => {
+            setFromDate(from)
+            setToDate(to)
+          }}
+          placeholder="Any date"
+          className="h-8"
         />
         <Popover open={presetsOpen} onOpenChange={setPresetsOpen}>
           <PopoverTrigger render={<Button variant="outline" size="icon-sm" aria-label="Date presets" />}>

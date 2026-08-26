@@ -118,6 +118,15 @@ assert len(sh.windows(0, today)) == len(sh.windows(1, today)), "and floored at o
 for newer, older in zip(year[:-1], year[1:]):
     assert (newer[0] - older[1]).days == 1, (newer, older)
 
+# An explicit span (what the page's range picker sends) tiles the same way, and reads an inverted
+# range the way it was obviously meant - the two ends of a date picker are easy to fill in backwards.
+span = sh.windows_between(date(2026, 1, 1), today)
+assert span[0][1] == today and span[-1][0] == date(2026, 1, 1), span
+assert sh.windows_between(today, date(2026, 1, 1)) == span, "from/to swapped is still that range"
+assert sh.windows_between(today, today) == [(today, today)], "a single day is one window, not none"
+for newer, older in zip(span[:-1], span[1:]):
+    assert (newer[0] - older[1]).days == 1, (newer, older)
+
 # --- master row parsing ---------------------------------------------------------------------------
 row = {
     "symbol": " ajooni ", "name": "Ajooni Biotech Limited", "isin": "INE637Y01029",

@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { PlusIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Field, SelectField, TextAreaField, TextField } from '@/components/form'
+import { DateField, Field, SelectField, TextAreaField, TextField } from '@/components/form'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -406,7 +406,7 @@ function Transactions({ accountId, adjustments }) {
           placeholder="Amount ₹"
           className="w-28"
         />
-        <TextField form={form} name="date" type="date" className="w-36" />
+        <DateField form={form} name="date" label="Date" className="w-40" />
         <TextField form={form} name="reason" placeholder="Reason (optional)" className="w-44" />
         <Button type="submit" size="sm" disabled={create.isPending}>
           Add

@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AreaSeries, HistogramSeries, createChart } from 'lightweight-charts'
 import { ChevronLeftIcon, ChevronRightIcon, Trash2Icon, WalletIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { TextField } from '@/components/form'
+import { DateField, TextField } from '@/components/form'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { balanceAdjustmentSchema } from '@/lib/schemas'
@@ -939,7 +939,7 @@ function BalanceAdjusterDialog({ open, onOpenChange, adjustments, accountId }) {
         <form onSubmit={form.handleSubmit((values) => create.mutate(values))} className="space-y-3">
           <div className="grid grid-cols-2 gap-2">
             <TextField form={form} name="amount" type="number" step="0.01" min="0" placeholder="Amount ₹" />
-            <TextField form={form} name="date" type="date" />
+            <DateField form={form} name="date" label="Date" />
           </div>
           {/* Two buttons rather than a Select - it's a binary choice and the sign matters enough
               to be visible without opening anything. setValue keeps it inside the form state. */}

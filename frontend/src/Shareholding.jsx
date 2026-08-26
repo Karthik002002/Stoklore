@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { RefreshCwIcon } from 'lucide-react'
 import { toast } from 'sonner'
+import { DateRangePicker } from '@/components/DatePicker'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -138,6 +139,10 @@ export default function Shareholding() {
   const [minPp, setMinPp] = useState('0.5')
   const [search, setSearch] = useState('')
   const [years, setYears] = useState('1')
+  // An explicit span, when "the last N years" isn't the question - re-pulling one quarter, or
+  // reaching back to a period the years shorthand doesn't cover. Empty = use the shorthand.
+  const [range, setRange] = useState({ from: '', to: '' })
+  const ranged = !!(range.from && range.to)
 
   const { data, isLoading } = useQuery({ queryKey: ['shareholding'], queryFn: () => getShareholding() })
   // Polled only while a sweep is running - the collector is a background thread, and there is
@@ -150,9 +155,16 @@ export default function Shareholding() {
   const running = !!status?.running
 
   const sync = useMutation({
-    mutationFn: () => syncShareholding(Number(years)),
+    mutationFn: () =>
+      ranged
+        ? syncShareholding({ from: range.from, to: range.to })
+        : syncShareholding({ years: Number(years) }),
     onSuccess: () => {
-      toast.success(`Collecting ${years} year${years === '1' ? '' : 's'} of filings in the background`)
+      toast.success(
+        ranged
+          ? `Collecting filings from ${range.from} to ${range.to} in the background`
+          : `Collecting ${years} year${years === '1' ? '' : 's'} of filings in the background`,
+      )
       queryClient.invalidateQueries({ queryKey: ['shareholdingStatus'] })
     },
     onError: (e) => toast.error(e.message),
@@ -190,7 +202,10 @@ export default function Shareholding() {
           </p>
         </div>
         <div className="flex items-center gap-1.5">
-          <Select value={years} onValueChange={setYears}>
+          {/* Two ways to say the same thing, and the span wins when it is filled in: "last N
+              years" is the common case, a named period is the deliberate one (re-pulling a single
+              quarter, or reaching back further than the shorthand offers). */}
+          <Select value={years} onValueChange={setYears} disabled={ranged}>
             <SelectTrigger size="sm" className="w-28">
               <SelectValue />
             </SelectTrigger>
@@ -202,6 +217,19 @@ export default function Shareholding() {
               ))}
             </SelectContent>
           </Select>
+          <DateRangePicker
+            from={range.from}
+            to={range.to}
+            onChange={setRange}
+            placeholder="or a date range"
+            max={new Date().toISOString().slice(0, 10)}
+            align="end"
+          />
+          {ranged && (
+            <Button size="sm" variant="ghost" onClick={() => setRange({ from: '', to: '' })}>
+              Clear
+            </Button>
+          )}
           <Button size="sm" disabled={running || sync.isPending} onClick={() => sync.mutate()}>
             {running ? <Spinner className="size-4" /> : <RefreshCwIcon className="size-4" />}
             Collect

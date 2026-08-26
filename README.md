@@ -368,7 +368,8 @@ percentage cannot tell the two apart.
   so a period that isn't a quarter end is itself a corporate-action flag (~154 of 2,466 a quarter)
 - **Pace, not just size** — cumulative move over the last four filings, tagged *gradual* or *one
   step* depending on whether a single filing carried most of it, with a sparkline of the shape
-- Backfills 1–5 years on demand; a background job sweeps the newest window once per IST day
+- Backfills 1–5 years on demand, or any explicit date range off a calendar picker; a background
+  job sweeps the newest window once per IST day
 - Full manual: [docs/shareholding.md](docs/shareholding.md)
 
 ### `11` Backtesting
@@ -594,6 +595,13 @@ Full details: [docs/paper-trading.md](docs/paper-trading.md).
 
 ### `*` What's more
 
+- **One date control everywhere** — shadcn's Base UI `Calendar` (added through the CLI, so it
+  matches the project's `base-nova` style) behind a shared `DatePicker`/`DateRangePicker`
+  (`frontend/src/components/DatePicker.jsx`). It replaced every `<input type="date">` in the app:
+  the events-feed range filter, both balance-adjustment forms, Bar Replay's jump-to-date, and the
+  shareholding collect span. Values stay `"YYYY-MM-DD"` strings end to end — the API, the forms and
+  the URL all already spoke that, and converting at the edges beats spreading `Date` juggling
+  across five call sites
 - **Every keyboard shortcut is rebindable** — Settings › Shortcuts lists all of
   them (command palette, AI chat, and Bar Replay's ten trading/playback keys),
   each captured by pressing the combination rather than typing its name.

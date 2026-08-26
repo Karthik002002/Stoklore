@@ -327,6 +327,44 @@ ALTER TABLE trade_accounts ADD COLUMN IF NOT EXISTS vol_spike_lookback INTEGER N
 -- four-loss runs as a matter of course, a mean-reversion one rarely does.
 ALTER TABLE trade_accounts ADD COLUMN IF NOT EXISTS loss_streak_alert INTEGER;
 
+-- One shareholding-pattern filing, as published by NSE. Keyed on NSE's own `record_id` so a sweep
+-- that re-covers a date range already collected upserts the same rows instead of inventing extra
+-- quarters - which is what makes the daily job and a 5-year backfill safe to run over each other.
+--
+-- The PERCENTAGE columns come from the master endpoint (one call covers every listed company). The
+-- SHARE-COUNT columns come from the filing's own XBRL, fetched separately and only for filings that
+-- actually moved (see app/core/shareholding.py). They are the ones that matter: percentages alone
+-- cannot tell a promoter buying from the public apart from new shares being issued to them, because
+-- every category sums to 100 either way. `detail_fetched_at` is the "already have it" marker - a
+-- filing never changes, and a revision arrives as its own row with its own record_id.
+CREATE TABLE IF NOT EXISTS shareholding_filings (
+  record_id TEXT PRIMARY KEY,
+  symbol TEXT NOT NULL,
+  isin TEXT,
+  company TEXT,
+  -- The period the filing is FOR. A date that isn't a quarter end is an off-cycle filing, which
+  -- SEBI only requires after a capital change over 2% - so the date itself is a corporate-action
+  -- flag that costs nothing to read.
+  period_date DATE NOT NULL,
+  submission_date DATE,
+  promoter_pct REAL,
+  public_pct REAL,
+  employee_trust_pct REAL,
+  dr_pct REAL,
+  is_revision BOOLEAN NOT NULL DEFAULT false,
+  xbrl_url TEXT,
+  promoter_shares BIGINT,
+  public_shares BIGINT,
+  total_shares BIGINT,
+  promoter_holders INTEGER,
+  public_holders INTEGER,
+  allotment_date DATE,
+  detail_fetched_at TIMESTAMPTZ,
+  collected_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS shareholding_symbol_period_idx
+  ON shareholding_filings (symbol, period_date);
+
 -- Manually logged trades for the Manual backtest tab - a personal trade journal, not tied to
 -- price_history/NSE at all (entry/exit/P&L are exactly what the user typed in, not computed from
 -- market data). P&L, R:R, and return% are deliberately NOT stored here - they're derived from
@@ -1844,3 +1882,93 @@ def count_stocks_master():
 def delete_stock_master(symbol):
     with connect() as conn:
         conn.execute("DELETE FROM stocks_master WHERE symbol = %s", (symbol,))
+
+
+# --- Shareholding pattern ------------------------------------------------------------------------
+
+SHAREHOLDING_MASTER_FIELDS = (
+    "record_id", "symbol", "isin", "company", "period_date", "submission_date",
+    "promoter_pct", "public_pct", "employee_trust_pct", "dr_pct", "is_revision", "xbrl_url",
+)
+
+
+def upsert_shareholding_filings(rows):
+    """Master-endpoint rows in, nothing derived. Returns how many were NEW, which is what the
+    collector reports as progress.
+
+    The update clause deliberately lists only the master fields: re-running a window must never
+    blank the XBRL detail already fetched for those filings. Revisions are the reason it updates at
+    all rather than DO NOTHING - NSE restates percentages under the same record on occasion.
+    """
+    if not rows:
+        return 0
+    columns = ", ".join(SHAREHOLDING_MASTER_FIELDS)
+    placeholders = ", ".join(["%s"] * len(SHAREHOLDING_MASTER_FIELDS))
+    updates = ", ".join(
+        f"{f} = excluded.{f}" for f in SHAREHOLDING_MASTER_FIELDS if f != "record_id"
+    )
+    with connect() as conn:
+        before = conn.execute("SELECT count(*) AS n FROM shareholding_filings").fetchone()["n"]
+        conn.cursor().executemany(
+            f"INSERT INTO shareholding_filings ({columns}) VALUES ({placeholders}) "
+            f"ON CONFLICT (record_id) DO UPDATE SET {updates}",
+            [tuple(r.get(f) for f in SHAREHOLDING_MASTER_FIELDS) for r in rows],
+        )
+        after = conn.execute("SELECT count(*) AS n FROM shareholding_filings").fetchone()["n"]
+    return after - before
+
+
+def set_shareholding_detail(record_id, detail):
+    """The five numbers from a filing's XBRL, plus the timestamp that stops it being fetched twice.
+    Stamped even when the parse found nothing usable - a filing whose XBRL is unreadable would
+    otherwise be retried on every sweep, forever."""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE shareholding_filings SET promoter_shares = %s, public_shares = %s, "
+            "total_shares = %s, promoter_holders = %s, public_holders = %s, allotment_date = %s, "
+            "detail_fetched_at = now() WHERE record_id = %s",
+            (
+                detail.get("promoter_shares"), detail.get("public_shares"),
+                detail.get("total_shares"), detail.get("promoter_holders"),
+                detail.get("public_holders"), detail.get("allotment_date"), record_id,
+            ),
+        )
+
+
+def list_shareholding_filings(symbols=None, since=None):
+    """Filings oldest-first per symbol - the order every change calculation needs, so no caller has
+    to re-sort. `symbols` filters to a watchlist; `since` trims the history depth."""
+    sql = "SELECT * FROM shareholding_filings"
+    where, params = [], []
+    if symbols:
+        where.append("symbol = ANY(%s)")
+        params.append(list(symbols))
+    if since:
+        where.append("period_date >= %s")
+        params.append(since)
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    with connect() as conn:
+        return conn.execute(sql + " ORDER BY symbol, period_date, submission_date", params).fetchall()
+
+
+def shareholding_coverage():
+    """What's in the table, for the page's own header: how many filings, symbols and the newest
+    period held, plus how many still have no XBRL detail."""
+    with connect() as conn:
+        return conn.execute(
+            "SELECT count(*) AS filings, count(DISTINCT symbol) AS symbols, "
+            "max(period_date) AS latest_period, "
+            "count(*) FILTER (WHERE detail_fetched_at IS NULL) AS without_detail "
+            "FROM shareholding_filings"
+        ).fetchone()
+
+
+def get_last_shareholding_sync_date():
+    """ISO date (Asia/Kolkata) the automatic daily shareholding sweep last ran - same
+    survive-a-restart rule as the event scan above."""
+    return _get_setting("last_shareholding_sync_date")
+
+
+def set_last_shareholding_sync_date(iso_date):
+    _set_setting("last_shareholding_sync_date", iso_date)

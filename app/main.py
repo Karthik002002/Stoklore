@@ -14,7 +14,7 @@ from app.core import paper
 
 from app.core.config import UPLOAD_DIR
 from app.routers import router
-from app.services.jobs import _auto_event_scan_loop
+from app.services.jobs import _auto_event_scan_loop, _auto_shareholding_loop
 from app.services.quotes import paper_price
 
 app = FastAPI(title="Stoklore API")
@@ -28,6 +28,10 @@ def _startup():
     db.purge_old(days=14)
     llm.configure_litellm(db.get_litellm_base_url(), db.get_litellm_api_key())
     threading.Thread(target=_auto_event_scan_loop, daemon=True).start()
+    # One NSE shareholding sweep per IST day: the newest 90-day window (one request covering every
+    # listed company), then the XBRL detail for the handful of filings that actually moved. See
+    # app/services/jobs.py.
+    threading.Thread(target=_auto_shareholding_loop, daemon=True).start()
     backup.start()
     # Watches open paper positions against live prices and fires simulated exits. Idempotent, and
     # idles outside market hours - see paper.py.

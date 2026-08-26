@@ -13,6 +13,7 @@ from app.core import db
 from app.core import events
 from app.core import price_sources
 from app.core import prices
+from app.core import shareholding
 
 # Populated by the background watchlist event scan (POST /api/events/scan, or the daily automatic
 # one below) - polled by GET /api/events/status so the frontend can show scan progress.
@@ -105,3 +106,113 @@ def _run_bulk_collect(symbols, source):
             time.sleep(BULK_COLLECT_INTERVAL_SECONDS)
     _bulk_collect_state["running"] = False
     _bulk_collect_state["current_symbol"] = None
+
+
+# --- Shareholding sweep ---------------------------------------------------------------------------
+# Two phases, because the two data sources cost wildly different amounts (see app/core/
+# shareholding.py). The master endpoint covers every listed company in ONE call per 90-day window,
+# so a full 5-year backfill is ~20 requests. The per-filing XBRL is ~85-270 KB each, so it is
+# fetched only for the filings that actually moved - a few dozen a quarter instead of 2,500.
+#
+# Re-running is free by design: filings are keyed on NSE's own record id, so a window already
+# collected upserts the same rows, and a filing whose detail is already stored is skipped outright.
+
+_shareholding_state = {"running": False, "phase": None, "done": 0, "total": 0, "new": 0, "details": 0, "error": None}
+
+# How many XBRL fetches one run will do. A cap rather than "everything pending": the first run after
+# a 5-year backfill has thousands of candidates, and hammering nsearchives for an hour is exactly
+# the behaviour netfetch.py's throttle exists to avoid. What is left is picked up by tomorrow's run.
+MAX_DETAILS_PER_RUN = 60
+
+
+def _collect_shareholding_details(limit=MAX_DETAILS_PER_RUN):
+    """Fetch the XBRL for filings that moved and don't have it yet. Returns how many were stored.
+
+    The gate needs the PREVIOUS filing of the same symbol to compare against, which is why this
+    walks per-symbol series rather than a flat 'detail is null' query.
+    """
+    filings = db.list_shareholding_filings()
+    by_symbol = {}
+    for f in filings:
+        by_symbol.setdefault(f["symbol"], []).append(f)
+
+    pending = []
+    for symbol_filings in by_symbol.values():
+        ordered = shareholding.latest_per_period(symbol_filings)
+        for index, filing in enumerate(ordered):
+            previous = ordered[index - 1] if index else None
+            if filing.get("detail_fetched_at") is None and shareholding.needs_detail(filing, previous):
+                pending.append(filing)
+    # Newest first: a filing from this quarter is the one being looked at today.
+    pending.sort(key=lambda f: f["period_date"], reverse=True)
+    pending = pending[:limit]
+
+    _shareholding_state.update(phase="detail", done=0, total=len(pending))
+    stored = 0
+    for index, filing in enumerate(pending):
+        try:
+            detail = shareholding.fetch_detail(filing["xbrl_url"])
+            db.set_shareholding_detail(filing["record_id"], detail)
+            stored += 1
+        except Exception:
+            # One unreadable filing (a withdrawn URL, a malformed XBRL) must not end the sweep.
+            # It stays unstamped and is retried on the next run.
+            pass
+        _shareholding_state["done"] = index + 1
+        _shareholding_state["details"] = stored
+    return stored
+
+
+def _run_shareholding_sync(years, with_detail=True):
+    _shareholding_state.update(
+        running=True, phase="master", done=0, total=0, new=0, details=0, error=None
+    )
+    try:
+        ranges = shareholding.windows(years)
+        _shareholding_state["total"] = len(ranges)
+        for index, (start, end) in enumerate(ranges):
+            try:
+                rows = shareholding.fetch_window(start, end)
+                _shareholding_state["new"] += db.upsert_shareholding_filings(rows)
+            except Exception as e:
+                # A window that fails is recorded and skipped - the newest windows are fetched
+                # first, so a rate limit deep in a backfill still leaves the useful end collected.
+                _shareholding_state["error"] = str(e)
+            _shareholding_state["done"] = index + 1
+        if with_detail:
+            _collect_shareholding_details()
+    except Exception as e:
+        _shareholding_state["error"] = str(e)
+    finally:
+        _shareholding_state.update(running=False, phase=None)
+
+
+def start_shareholding_sync(years=1, with_detail=True):
+    """Kick the sweep in the background. No-op while one is already running - two sweeps would
+    fight over the same NSE cookie pool for no benefit."""
+    if _shareholding_state["running"]:
+        return False
+    threading.Thread(
+        target=_run_shareholding_sync, args=(years, with_detail), daemon=True
+    ).start()
+    return True
+
+
+def shareholding_status():
+    return dict(_shareholding_state)
+
+
+# Once per IST calendar day, checked hourly - same shape (and the same reasoning) as the event scan
+# at the top of this file: cheap to check, and a machine that was asleep at the target hour still
+# catches up within the hour of waking. Only the newest window is swept; the history behind it is
+# already stored and filings don't change.
+def _auto_shareholding_loop():
+    from zoneinfo import ZoneInfo
+
+    ist = ZoneInfo("Asia/Kolkata")
+    while True:
+        today = datetime.now(ist).date().isoformat()
+        if db.get_last_shareholding_sync_date() != today and not _shareholding_state["running"]:
+            db.set_last_shareholding_sync_date(today)
+            _run_shareholding_sync(years=1, with_detail=True)
+        time.sleep(3600)

@@ -7,6 +7,7 @@ import {
   IconNews,
   IconRefresh,
   IconTrendingUp,
+  IconUsersGroup,
   IconWallet,
 } from '@tabler/icons-react'
 import { useState } from 'react'
@@ -27,6 +28,7 @@ const NAV_ITEMS = [
   { to: '/events', icon: IconNews, label: 'Events' },
   { to: '/top-news', icon: IconTrendingUp, label: 'Top news' },
   { to: '/holdings', icon: IconWallet, label: 'Holdings' },
+  { to: '/shareholding', icon: IconUsersGroup, label: 'Shareholding' },
   { to: '/backtesting', icon: IconFlask, label: 'Backtesting' },
   { to: '/paper', icon: IconChartCandle, label: 'Paper Trading' },
   { to: '/simulation', icon: IconChartHistogram, label: 'Trade Simulation' },

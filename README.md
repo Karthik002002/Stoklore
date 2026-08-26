@@ -344,6 +344,33 @@ no order placement, no funds movement:
 
 </div>
 
+### `10.5` Promoter Shareholding
+
+A `/shareholding` screener over NSE's shareholding-pattern filings — **not** "did promoter holding
+go up", but *how* it went up. A steady climb over four quarters is usually a promoter buying with
+their own money; the same move in one step is usually shares being **issued** to them, and the
+percentage cannot tell the two apart.
+
+> **Why not**: every category sums to 100, so issuing new shares to a promoter pushes promoter %
+> up and public % down in exactly the shape buying from the public would. AJOONI's 2026 filings:
+> promoter 26.89% → 30.53%, and the public's share count is **identical to the digit** — nine
+> million new shares were created for a sixth promoter entity that didn't exist the quarter
+> before. Percentages call that accumulation. It's dilution.
+
+- **Share counts, not percentages** — the verdict (bought from the public / issued to the promoter
+  / diluted / reclassification / needs the filing read) is decided on promoter, public and total
+  share counts, and says **"detail not fetched"** rather than guessing when it can't tell
+- **Two-tier scraping** — one request per 90-day window covers every listed company (~2,500
+  filings, percentages only); the per-filing XBRL (85–270 KB) is fetched **only** for filings that
+  moved ≥0.5pp or are off-cycle, and only once ever. Keyed on NSE's own record id, so re-collecting
+  a window you already have upserts instead of duplicating
+- **Off-cycle filings are a free signal** — SEBI only requires one after a capital change over 2%,
+  so a period that isn't a quarter end is itself a corporate-action flag (~154 of 2,466 a quarter)
+- **Pace, not just size** — cumulative move over the last four filings, tagged *gradual* or *one
+  step* depending on whether a single filing carried most of it, with a sparkline of the shape
+- Backfills 1–5 years on demand; a background job sweeps the newest window once per IST day
+- Full manual: [docs/shareholding.md](docs/shareholding.md)
+
 ### `11` Backtesting
 
 A `/backtesting` page split into **Auto** and **Manual** tabs

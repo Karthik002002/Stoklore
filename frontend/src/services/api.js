@@ -379,3 +379,21 @@ export const getPaperStatus = () => fetch('/api/paper/status').then(json)
 // Force one sweep. The backend loop only runs during market hours, so this is what refreshes
 // prices on demand outside them.
 export const pollPaperEngine = () => fetch('/api/paper/poll', { method: 'POST' }).then(json)
+
+// --- Shareholding pattern -------------------------------------------------------------------
+// The screener returns one row per symbol with the change already classified server-side (see
+// app/core/shareholding.py) - nothing here recomputes it, so the page and the stock detail block
+// can never disagree about what a move was.
+export const getShareholding = (params = {}) => {
+  const query = new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v != null && v !== ''),
+  ).toString()
+  return fetch(`/api/shareholding${query ? `?${query}` : ''}`).then(json)
+}
+
+export const getShareholdingSymbol = (symbol) => fetch(`/api/shareholding/${symbol}`).then(json)
+
+export const getShareholdingStatus = () => fetch('/api/shareholding/status').then(json)
+
+export const syncShareholding = (years = 1) =>
+  fetch(`/api/shareholding/sync?years=${years}`, { method: 'POST' }).then(json)

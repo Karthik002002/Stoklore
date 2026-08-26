@@ -9,6 +9,7 @@ import PaperTrading from './paper/PaperTrading'
 import PaperPositionChart from './paper/PaperPositionChart'
 import StockDetail from './StockDetail'
 import StocksList from './StocksList'
+import Shareholding from './Shareholding'
 import TopNews from './TopNews'
 import TradeSimulation from './TradeSimulation'
 
@@ -74,6 +75,15 @@ const holdingsRoute = createRoute({
       search.kite_login === 'success' || search.kite_login === 'failed' ? search.kite_login : undefined,
   }),
   component: Holdings,
+})
+
+// Deliberately NOT /holdings - that one is the broker portfolio (what YOU own). This is the
+// companies' own shareholding pattern (who owns THEM), and the two would be a coin-flip to guess
+// apart from the URL alone.
+const shareholdingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/shareholding',
+  component: Shareholding,
 })
 
 const backtestingRoute = createRoute({
@@ -161,6 +171,7 @@ const routeTree = rootRoute.addChildren([
   eventsRoute,
   topNewsRoute,
   holdingsRoute,
+  shareholdingRoute,
   backtestingRoute,
   paperRoute,
   paperPositionRoute,

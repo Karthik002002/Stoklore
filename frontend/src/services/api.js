@@ -324,6 +324,10 @@ export const searchStocksMaster = (q = '', board) =>
 
 // `board` forces every row onto that board; omitted, each row's board comes from its SERIES code
 // (SM/ST = NSE EMERGE), which is what makes one importer handle both CSVs.
+// No file to upload: BSE serves its whole active-equity list as one JSON call, so this is a button
+// rather than a file picker. Merges onto existing NSE rows by ISIN - see db.upsert_bse_master.
+export const importBseMaster = () => fetch('/api/stocks-master/import-bse', { method: 'POST' }).then(json)
+
 export const importStocksMaster = (file, board) => {
   const form = new FormData()
   form.append('file', file)

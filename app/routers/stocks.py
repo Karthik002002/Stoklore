@@ -6,6 +6,7 @@ from fastapi import File, HTTPException, UploadFile
 from app.core import db
 from app.core import prices
 from app.core import scraper
+from app.core import bse_master
 from app.core import stocks_master
 
 from app.deps import _cached
@@ -99,6 +100,26 @@ async def stocks_master_import(file: UploadFile = File(...), board: str | None =
         "imported_main": len(rows) - imported_sme,
         **db.count_stocks_master(),
     }
+
+
+@router.post("/api/stocks-master/import-bse")
+def stocks_master_import_bse():
+    """Pull BSE's active-equity scrip list and merge it into the same master (no file to upload -
+    BSE serves the whole list as one JSON call, unlike NSE's CSV exports).
+
+    The reply separates `merged` from `added` because those are the two different things that
+    happen: `merged` is a company already listed on NSE gaining its BSE scrip code, `added` is a
+    genuinely BSE-exclusive listing becoming a new row. A first import that reports thousands of
+    merges and a few hundred adds is the expected shape - most of BSE is also on NSE.
+    """
+    try:
+        rows = bse_master.fetch_scrips()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"BSE scrip list unavailable: {e}") from e
+    if not rows:
+        raise HTTPException(status_code=422, detail="BSE returned no usable scrips")
+    result = db.upsert_bse_master(rows)
+    return {"fetched": len(rows), **result, **db.count_stocks_master()}
 
 
 @router.delete("/api/stocks-master/{symbol}")

@@ -502,6 +502,21 @@ CREATE TABLE IF NOT EXISTS market_movers (
 );
 
 ALTER TABLE stocks_master ADD COLUMN IF NOT EXISTS board TEXT NOT NULL DEFAULT 'MAIN';
+
+-- Which exchange this row's `symbol` is a symbol ON, and its BSE scrip code when it has one.
+--
+-- ONE ROW PER COMPANY, not per listing. Most BSE names are the same companies already listed on
+-- NSE, and a row each would double the master, split every watchlist and give one company two
+-- stock pages. So a dual-listed company stays a single row under its NSE symbol and merely gains
+-- `bse_code`; only BSE-EXCLUSIVE scrips get a row of their own, with exchange = 'BSE'. The join is
+-- the ISIN, which both exchanges publish (see db.upsert_bse_master).
+--
+-- Everything downstream - watchlists, price history, events, the trade journal, Bar Replay - still
+-- stores a bare symbol and needed no migration at all; `exchange` only decides which ticker suffix
+-- price fetching uses (.NS vs .BO) and which badge the UI shows.
+ALTER TABLE stocks_master ADD COLUMN IF NOT EXISTS exchange TEXT NOT NULL DEFAULT 'NSE';
+ALTER TABLE stocks_master ADD COLUMN IF NOT EXISTS bse_code TEXT;
+CREATE INDEX IF NOT EXISTS stocks_master_isin_idx ON stocks_master (isin);
 ALTER TABLE stocks_master ADD COLUMN IF NOT EXISTS market_lot INTEGER;
 ALTER TABLE stocks_master ADD COLUMN IF NOT EXISTS face_value REAL;
 """
@@ -1861,8 +1876,8 @@ def search_stocks_master(query="", limit=30, board=None):
     like = f"%{query}%"
     with connect() as conn:
         return conn.execute(
-            "SELECT symbol, name, series, listing_date, isin, board, market_lot, face_value "
-            "FROM stocks_master "
+            "SELECT symbol, name, series, listing_date, isin, board, market_lot, face_value, "
+            "exchange, bse_code FROM stocks_master "
             "WHERE (symbol ILIKE %s OR name ILIKE %s OR isin ILIKE %s) "
             "AND (%s::text IS NULL OR board = %s) "
             "ORDER BY (symbol ILIKE %s) DESC, (symbol ILIKE %s) DESC, symbol LIMIT %s",
@@ -1871,12 +1886,38 @@ def search_stocks_master(query="", limit=30, board=None):
 
 
 def count_stocks_master():
-    """Total rows plus a per-board breakdown - the settings tab reports both, and 'how many SME
-    names did that import actually add' is the only way to tell an SME CSV landed correctly."""
+    """Total rows, split by board AND by exchange - the settings tab reports both.
+
+    The two splits answer different questions. Board ('how many SME names did that import actually
+    add') is the only way to tell an SME CSV landed correctly. Exchange tells you what the BSE
+    import did, and needs three buckets rather than two because a row is not simply one or the
+    other: `both` is a company listed on NSE *and* BSE, held as one row carrying a scrip code, and
+    counting it under each exchange would report more stocks than exist.
+
+        nse_only + both + bse_only == total
+    """
     with connect() as conn:
-        rows = conn.execute("SELECT board, count(*) AS n FROM stocks_master GROUP BY board").fetchall()
-    by_board = {r["board"]: r["n"] for r in rows}
-    return {"total": sum(by_board.values()), "main": by_board.get("MAIN", 0), "sme": by_board.get("SME", 0)}
+        row = conn.execute(
+            "SELECT count(*) AS total, "
+            "count(*) FILTER (WHERE board = 'MAIN') AS main, "
+            "count(*) FILTER (WHERE board = 'SME') AS sme, "
+            "count(*) FILTER (WHERE exchange = 'NSE') AS nse, "
+            "count(*) FILTER (WHERE exchange = 'BSE') AS bse_only, "
+            "count(*) FILTER (WHERE exchange = 'NSE' AND bse_code IS NOT NULL) AS both "
+            "FROM stocks_master"
+        ).fetchone()
+    return {
+        "total": row["total"],
+        "main": row["main"],
+        "sme": row["sme"],
+        # Every NSE-listed row, dual-listed ones included - "how many stocks can I trade on NSE".
+        "nse": row["nse"],
+        "nse_only": row["nse"] - row["both"],
+        "bse_only": row["bse_only"],
+        # Tradable on BSE: its exclusives plus every dual listing.
+        "bse": row["bse_only"] + row["both"],
+        "both": row["both"],
+    }
 
 
 def delete_stock_master(symbol):
@@ -1972,3 +2013,75 @@ def get_last_shareholding_sync_date():
 
 def set_last_shareholding_sync_date(iso_date):
     _set_setting("last_shareholding_sync_date", iso_date)
+
+
+# --- BSE master ----------------------------------------------------------------------------------
+
+
+def upsert_bse_master(rows):
+    """BSE scrips in; returns {merged, added} - how many attached to an existing NSE row and how
+    many were genuinely new listings.
+
+    The merge is the whole point. A row whose ISIN is already in the master is the SAME COMPANY
+    listed on both exchanges, so it only donates its scrip code; its symbol, name and listing date
+    are left alone, because the NSE symbol is the one every watchlist, trade and URL in this app
+    already uses and renaming it would orphan all of them.
+
+    Symbol collisions across exchanges are handled by the same rule: a BSE scrip whose symbol
+    already exists under a different ISIN is skipped rather than overwriting an NSE row - two
+    different companies sharing a ticker is exactly the case where guessing does damage.
+    """
+    if not rows:
+        return {"merged": 0, "added": 0}
+
+    with connect() as conn:
+        existing_isins = {
+            r["isin"]: r["symbol"]
+            for r in conn.execute(
+                "SELECT symbol, isin FROM stocks_master WHERE isin IS NOT NULL"
+            ).fetchall()
+        }
+        existing_symbols = {
+            r["symbol"] for r in conn.execute("SELECT symbol FROM stocks_master").fetchall()
+        }
+
+        merges, inserts = [], []
+        for row in rows:
+            twin = existing_isins.get(row["isin"]) if row["isin"] else None
+            if twin:
+                merges.append((row["bse_code"], twin))
+            elif row["symbol"] not in existing_symbols:
+                inserts.append(row)
+
+        if merges:
+            conn.cursor().executemany(
+                "UPDATE stocks_master SET bse_code = %s, updated_at = now() WHERE symbol = %s",
+                merges,
+            )
+        if inserts:
+            conn.cursor().executemany(
+                "INSERT INTO stocks_master (symbol, name, series, listing_date, isin, board, "
+                "market_lot, face_value, exchange, bse_code, updated_at) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now()) "
+                "ON CONFLICT (symbol) DO UPDATE SET name = excluded.name, isin = excluded.isin, "
+                "bse_code = excluded.bse_code, updated_at = now()",
+                [
+                    (
+                        r["symbol"], r["name"], r["series"], r["listing_date"], r["isin"],
+                        r["board"], r["market_lot"], r["face_value"], "BSE", r["bse_code"],
+                    )
+                    for r in inserts
+                ],
+            )
+    return {"merged": len(merges), "added": len(inserts)}
+
+
+def exchange_of(symbol):
+    """'NSE' or 'BSE' for a symbol - which one its prices should be fetched from. Defaults to NSE
+    for anything not in the master at all, which is what every symbol did before BSE existed (and
+    what a hand-typed journal symbol still does)."""
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT exchange FROM stocks_master WHERE symbol = %s", (symbol,)
+        ).fetchone()
+    return (row or {}).get("exchange") or "NSE"

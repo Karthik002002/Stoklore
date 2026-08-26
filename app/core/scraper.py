@@ -13,6 +13,7 @@ import yfinance as yf
 from bs4 import BeautifulSoup
 from ddgs import DDGS
 
+from app.core import db
 from app.core import netfetch
 
 NSE_BASE = "https://www.nseindia.com"
@@ -23,6 +24,26 @@ FINANCIAL_FIELDS = ("marketCap", "trailingPE", "forwardPE", "sector", "shortName
 def _ticker(symbol):
     """yfinance Ticker routed through the configured proxy (no-op when none is set)."""
     return yf.Ticker(symbol, session=netfetch.yf_session())
+
+
+# Yahoo suffixes the exchange onto Indian tickers: RELIANCE.NS is the NSE line, RELIANCE.BO the BSE
+# one. Which one a symbol takes is a property of the stock, so it is read from the master rather
+# than hardcoded at thirteen call sites the way ".NS" used to be.
+YF_SUFFIX = {"NSE": "NS", "BSE": "BO"}
+
+
+def _stock_ticker(symbol):
+    """The yfinance Ticker for a stock, on whichever exchange the master says it trades.
+
+    A symbol not in the master at all resolves to NSE - which is what every symbol did before BSE
+    support existed, and what a hand-typed journal symbol still does.
+
+    ponytail: one indexed primary-key lookup per call, uncached. An lru_cache here would go stale
+    the moment a master import runs, and this is a local DB read in front of a network fetch that
+    costs several orders of magnitude more.
+    """
+    exchange = db.exchange_of(symbol)
+    return _ticker(f"{symbol}.{YF_SUFFIX.get(exchange, 'NS')}")
 
 
 def _nse_json(path):
@@ -316,7 +337,7 @@ COGENCIS_HEADERS_BASE = {
 
 def get_isin(symbol):
     """NSE ISIN for a symbol - Cogencis news (below) is keyed/matched by ISIN, not NSE symbol."""
-    return _ticker(f"{symbol}.NS").isin
+    return _stock_ticker(symbol).isin
 
 
 def _cogencis_rows(token, params):
@@ -367,7 +388,7 @@ def get_news(symbol, limit=10):
     """Returns list of {title, summary, url, published_at, source, origin} for an NSE symbol's
     recent news."""
     items = []
-    for item in _ticker(f"{symbol}.NS").news[:limit]:
+    for item in _stock_ticker(symbol).news[:limit]:
         c = item.get("content", {})
         pub_date = c.get("pubDate")
         items.append({
@@ -437,7 +458,7 @@ def get_price(symbol):
     # (KeyError 'exchangeTimezoneName') while trying to read metadata that isn't there. Catching it
     # here is what lets the fallback run at all.
     try:
-        quote = _fast_quote(_ticker(f"{symbol}.NS"))
+        quote = _fast_quote(_stock_ticker(symbol))
     except Exception:
         quote = {"price": None, "changePercent": None}
     if quote.get("price") is not None:
@@ -462,7 +483,7 @@ def get_quote(symbol):
     engine, the stocks list) actually needs.
     """
     try:
-        info = _ticker(f"{symbol}.NS").info
+        info = _stock_ticker(symbol).info
     except Exception:
         info = {}
     quote = {k: info.get(k) for k in QUOTE_FIELDS}
@@ -539,7 +560,7 @@ def _chart_bars(ticker, range_key):
 
 
 def get_chart(symbol, range_key):
-    return _chart_bars(_ticker(f"{symbol}.NS"), range_key)
+    return _chart_bars(_stock_ticker(symbol), range_key)
 
 
 def get_index_chart(name, range_key):
@@ -598,7 +619,7 @@ def get_all_indices():
 
 def get_history(symbol, start, end):
     """Summarizes OHLCV price history between two YYYY-MM-DD dates. Returns None if no data."""
-    df = _ticker(f"{symbol}.NS").history(start=start, end=end)
+    df = _stock_ticker(symbol).history(start=start, end=end)
     if df.empty:
         return None
     return {
@@ -616,7 +637,7 @@ def get_history(symbol, start, end):
 
 def get_financial_statements(symbol):
     """Quarterly + TTM income statement as a table: oldest-to-newest columns, Yahoo's row order."""
-    ticker = _ticker(f"{symbol}.NS")
+    ticker = _stock_ticker(symbol)
     quarterly = ticker.quarterly_income_stmt
     if quarterly.empty:
         return None
@@ -641,7 +662,7 @@ def get_daily_bars(symbol, start=None, period="1y"):
     `period` backfill (default 1y, pass period="max" for a symbol's entire available history);
     start='YYYY-MM-DD' fetches only bars from that date forward (incremental gap-fill, ignores
     `period`)."""
-    ticker = _ticker(f"{symbol}.NS")
+    ticker = _stock_ticker(symbol)
     df = ticker.history(period=period, interval="1d") if start is None else ticker.history(start=start, interval="1d")
     return [
         {
@@ -663,7 +684,7 @@ def get_intraday_bars(symbol, period, interval):
     `date` is the IST calendar day (what Bar Replay's date-jump/start-date pickers match on) and
     `time` the IST-shifted unix seconds lightweight-charts plots - same two-field shape
     minute_data.get_minute_bars returns, and the same pre-shift trick _chart_bars uses."""
-    ticker = _ticker(f"{symbol}.NS")
+    ticker = _stock_ticker(symbol)
     df = ticker.history(period=period, interval=interval)
     return [
         {
@@ -684,7 +705,7 @@ def get_corporate_actions(symbol, since_days=30):
     Verified against yfinance 1.5.1: .actions is a DataFrame with a tz-aware date index and
     'Dividends'/'Stock Splits' columns; .calendar is a dict with an 'Earnings Date' date list
     (used instead of get_earnings_dates(), which needs the lxml package)."""
-    ticker = _ticker(f"{symbol}.NS")
+    ticker = _stock_ticker(symbol)
     events = []
 
     actions = ticker.actions
@@ -710,7 +731,7 @@ def get_corporate_actions(symbol, since_days=30):
 
 def get_financials(symbol):
     """Returns dict of key financial stats for an NSE symbol. marketCap is INR (NSE), formatted with ₹."""
-    info = _ticker(f"{symbol}.NS").info
+    info = _stock_ticker(symbol).info
     financials = {k: info.get(k) for k in FINANCIAL_FIELDS}
     if financials.get("marketCap") is not None:
         financials["marketCap"] = f"₹{financials['marketCap']:,}"

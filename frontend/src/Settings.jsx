@@ -8,6 +8,7 @@ import {
   BookmarkIcon,
   CheckCircle2Icon,
   DatabaseIcon,
+  DownloadIcon,
   ExternalLinkIcon,
   PlusIcon,
   Trash2Icon,
@@ -68,6 +69,7 @@ import {
   getWatchlistNames,
   getKiteLoginUrl,
   getManualBacktestSettings,
+  importBseMaster,
   importStocksMaster,
   searchStocksMaster,
   setActiveModel,
@@ -914,6 +916,20 @@ function StocksMasterTab() {
   // The board split in the toast is the receipt: an SME export whose rows came back as 0 SME means
   // the file wasn't the EMERGE one (or its SERIES column was empty), and that's worth seeing
   // immediately rather than discovering later via a missing badge.
+  // BSE arrives as one API call rather than a file. The toast splits merged from added because
+  // those are the two different outcomes: a company already on NSE gaining its scrip code, versus a
+  // BSE-exclusive listing becoming a new row. Mostly merges is the healthy shape.
+  const importBse = useMutation({
+    mutationFn: importBseMaster,
+    onSuccess: ({ merged, added }) => {
+      queryClient.invalidateQueries({ queryKey: ['stocksMaster'] })
+      toast.success(
+        `BSE: ${merged.toLocaleString()} matched to existing stocks, ${added.toLocaleString()} new`,
+      )
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
   const importCsv = useMutation({
     mutationFn: (file) => importStocksMaster(file),
     onSuccess: ({ imported, imported_sme: sme }) => {
@@ -933,13 +949,30 @@ function StocksMasterTab() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
         <div>
-          <p className="text-sm font-medium">NSE listed-equity master</p>
+          <p className="text-sm font-medium">Listed-equity master</p>
           <p className="text-xs text-muted-foreground">
-            {data
-              ? `${(data.total ?? 0).toLocaleString()} stocks — ${(data.main ?? 0).toLocaleString()} main board, ${(data.sme ?? 0).toLocaleString()} SME`
-              : 'Loading…'}
+            {data ? (
+              <>
+                {(data.total ?? 0).toLocaleString()} stocks — {(data.main ?? 0).toLocaleString()} main board,{' '}
+                {(data.sme ?? 0).toLocaleString()} SME. By exchange:{' '}
+                {/* Three buckets, not two, and they add up to the total: a dual-listed company is
+                    ONE row, so counting it under both exchanges would claim more stocks than
+                    exist. The NSE/BSE totals beside each are what's tradable on that exchange -
+                    exclusives plus the dual listings. */}
+                <strong>{(data.nse ?? 0).toLocaleString()}</strong> on NSE (
+                {(data.nse_only ?? 0).toLocaleString()} only there),{' '}
+                <strong>{(data.bse ?? 0).toLocaleString()}</strong> on BSE (
+                {(data.bse_only ?? 0).toLocaleString()} only there), {(data.both ?? 0).toLocaleString()} on
+                both
+              </>
+            ) : (
+              'Loading…'
+            )}
             . Import NSE's EQUITY_L.csv for the main board and the EMERGE (SME) export for SME — same columns,
-            and each row's board is read from its series code. Search shows up to 30 matches.
+            and each row's board is read from its series code. <strong>Import BSE</strong> pulls BSE's whole
+            active-equity list in one call and matches it onto these rows by ISIN, so a company listed on both
+            exchanges stays one stock (gaining its BSE code) instead of becoming two. Search shows up to 30
+            matches.
           </p>
         </div>
         <input
@@ -953,15 +986,26 @@ function StocksMasterTab() {
             e.target.value = ''
           }}
         />
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={() => fileInput.current?.click()}
-          disabled={importCsv.isPending}
-        >
-          {importCsv.isPending ? <Spinner className="size-4" /> : <UploadIcon className="size-4" />}
-          Import CSV
-        </Button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => fileInput.current?.click()}
+            disabled={importCsv.isPending}
+          >
+            {importCsv.isPending ? <Spinner className="size-4" /> : <UploadIcon className="size-4" />}
+            Import CSV
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => importBse.mutate()}
+            disabled={importBse.isPending}
+          >
+            {importBse.isPending ? <Spinner className="size-4" /> : <DownloadIcon className="size-4" />}
+            Import BSE
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -991,6 +1035,7 @@ function StocksMasterTab() {
             <TableHead>Symbol</TableHead>
             <TableHead>Name</TableHead>
             <TableHead>Board</TableHead>
+            <TableHead>Exchange</TableHead>
             <TableHead>Series</TableHead>
             <TableHead className="text-right">Lot</TableHead>
             <TableHead>Listed</TableHead>
@@ -1011,6 +1056,20 @@ function StocksMasterTab() {
                   <span className="text-amber-600 dark:text-amber-400">SME</span>
                 ) : (
                   <span className="text-muted-foreground">Main</span>
+                )}
+              </TableCell>
+              {/* Where this stock's prices come from. 'NSE + BSE' is a company listed on both,
+                  held as ONE row - the BSE code rides along for BSE's own APIs, while charts and
+                  quotes stay on the NSE line. */}
+              <TableCell className="text-xs whitespace-nowrap">
+                {s.exchange === 'BSE' ? (
+                  <span className="text-sky-600 dark:text-sky-400">BSE</span>
+                ) : s.bse_code ? (
+                  <span className="text-muted-foreground" title={`BSE code ${s.bse_code}`}>
+                    NSE + BSE
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">NSE</span>
                 )}
               </TableCell>
               <TableCell>{s.series}</TableCell>

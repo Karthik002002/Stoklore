@@ -149,6 +149,13 @@ def paper_status():
 @router.post("/api/paper/poll")
 def paper_poll_now():
     """Force one sweep. The loop only runs during market hours; this is how the UI refreshes on
-    demand outside them, and how a test drives the engine without waiting."""
+    demand outside them, and how a test drives the engine without waiting.
+
+    Reconciles first. The live sweep can only ever see the CURRENT price, so a level crossed while
+    the app was shut is invisible to it - which is how a stopped-out position stays open for days.
+    Doing the catch-up here means the Refresh button actually fixes that, instead of politely
+    re-reading a price that agrees the stop is long gone.
+    """
+    caught_up = paper.reconcile()
     triggered = paper.poll_once(paper_price)
-    return {"triggered": triggered, "last_poll": paper.state["last_poll"]}
+    return {"triggered": triggered, "caught_up": caught_up, "last_poll": paper.state["last_poll"]}

@@ -647,6 +647,12 @@ one click from the historical journal makes the two easy to confuse.
   quotes every symbol with an open position through the app's existing TTL
   quote cache and fires what the price reached — so exits happen with the tab
   closed. A **Refresh prices** button forces one sweep on demand
+- **Catches up on what it slept through** — the poller only sees the current price, only during
+  market hours, so a level crossed while the app was shut never happened as far as it was
+  concerned: a stopped-out position would sit open for days. Every open position is now also
+  reconciled against the daily bars that printed while nobody was watching (at startup, once a day,
+  and on **Refresh prices**), closing it **on the day it was actually hit** rather than the day it
+  was noticed — the bar's high/low decides it, since a stop is hit intrabar
 - **Honest-but-pessimistic fills** — polling can jump clean past a level
   between samples, so a stop that gapped through fills at the *worse observed
   price*, never the level you set. For a practice tool, erring against the

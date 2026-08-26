@@ -15,7 +15,7 @@ applies to paper trades with no second implementation.
 """
 import threading
 import time
-from datetime import datetime
+from datetime import date, datetime
 
 from zoneinfo import ZoneInfo
 
@@ -113,6 +113,76 @@ def check_position(position, price):
     return fills, False
 
 
+# --- catching up on what the poller never saw -----------------------------------------------------
+# The live poller only ever sees the CURRENT price, and only while the market is open. That leaves a
+# hole it cannot close by itself: if the app is not running when a level is crossed - a laptop shut
+# for the evening, a restart, ./scripts/kill.sh, a weekend - the crossing simply never happens as far
+# as the engine is concerned, and the position stays open indefinitely with its stop long since
+# blown. That is not a rare edge: a local tool is off far more often than it is on.
+#
+# So every open position is also reconciled against the daily bars that printed while nobody was
+# watching. Same pessimistic rule as the live path (see _fill_price): a gap through a stop fills at
+# the gap, never at the level.
+
+
+def missed_fills(position, bar):
+    """Which legs a single already-printed daily bar would have triggered, oldest-first semantics.
+
+    Reads the bar's HIGH and LOW, not its close: a stop is hit intrabar, and a bar that dipped
+    through the level and recovered still took the trade out. That is precisely what a poller
+    sampling every 20s (or not running at all) misses.
+
+    Stops win over targets within one bar - which came first inside it is unknowable, so the
+    pessimistic reading wins, the same rule check_position applies to a live tick.
+    """
+    direction = position["direction"]
+    entry = position["entry_price"]
+    low, high = bar["low"], bar["high"]
+
+    fills = []
+    for leg in legs_by_proximity(position.get("stop_losses") or [], entry):
+        hit = low <= leg["price"] if direction == "long" else high >= leg["price"]
+        if hit:
+            # A bar that OPENED past the stop gapped through it overnight; _fill_price takes the
+            # worse of the level and that open, so the fill is the gap, not a level nobody could
+            # have traded at.
+            fills.append({
+                "leg": leg,
+                "price": _fill_price(direction, leg["price"], bar["open"], True),
+                "reason": "stop_loss",
+                "qty": leg["qty"],
+                "at": bar["date"],
+            })
+    if fills:
+        return fills
+
+    for leg in legs_by_proximity(position.get("targets") or [], entry):
+        hit = high >= leg["price"] if direction == "long" else low <= leg["price"]
+        if hit:
+            fills.append({
+                "leg": leg,
+                "price": _fill_price(direction, leg["price"], bar["open"], False),
+                "reason": "target",
+                "qty": leg["qty"],
+                "at": bar["date"],
+            })
+    return fills
+
+
+def catch_up(position, bars):
+    """The fills from the FIRST bar that would have triggered anything, or [].
+
+    Only the first: once a leg fills the position changes shape, and replaying later bars against a
+    stale snapshot would close quantity that no longer exists. The caller re-reads and can run
+    again, so a ladder unwinds one bar per pass rather than all at once from stale state.
+    """
+    for bar in bars:
+        fills = missed_fills(position, bar)
+        if fills:
+            return fills
+    return []
+
+
 def unrealized_pnl(position, price):
     if price is None or position["status"] != "open":
         return None
@@ -168,7 +238,10 @@ def _journal_close(position, fill, account_id):
         classify(position["direction"], fill["qty"], position["entry_price"], fill["price"]),
         None, ["paper", CLOSE_REASONS[fill["reason"]]], None,
         opened.isoformat() if hasattr(opened, "isoformat") else (opened or now),
-        account_id=account_id, exited_at=now,
+        # A live fill closed just now; a CATCH-UP fill closed on the bar it was found on, possibly
+        # days ago. Stamping that one with now() would file a trade the journal then dates, sorts
+        # and charts on the wrong day - and the equity curve reads market dates.
+        account_id=account_id, exited_at=fill.get("at") or now,
     )
 
 
@@ -216,6 +289,58 @@ def close_position(position, price, qty=None, reason="manual"):
 state = {"running": False, "last_poll": None, "last_error": None, "prices": {}, "checked": 0}
 
 
+def _synced_bars(symbol, start):
+    """This symbol's daily bars from `start`, after making sure the table actually reaches today.
+
+    The sync is the part that is easy to leave out and fatal to omit. price_history is only filled
+    by an explicit price sync, so on a machine where nobody ran one it can sit days behind - and a
+    catch-up reading a table that stops before the crossing finds nothing wrong and leaves the
+    position open, which is the same bug wearing a different hat. sync_symbol is incremental and
+    returns immediately when there is nothing new, so this costs one request per open symbol per
+    day at most.
+    """
+    from app.core import prices  # local import: prices imports scraper, which imports db
+
+    try:
+        prices.sync_symbol(symbol)
+    except Exception as e:  # noqa: BLE001 - stale bars are better than no reconciliation at all
+        state["last_error"] = f"{symbol} sync: {e}"
+    # price_history_since, NOT bars_between: that one prefers price_history_max, which is a
+    # one-shot "Collect max history" table nothing refreshes afterwards. Reading it here found bars
+    # stopping days before the crossing and cheerfully reported nothing wrong - the deepest history
+    # is the wrong thing to want when the question is "what happened since Monday". price_history is
+    # the incrementally-synced one, and the sync above has just brought it to today.
+    return db.price_history_since(symbol, start)
+
+
+def reconcile(bars_fn=None):
+    """Close whatever the poller was not around to see. Returns the number of legs filled.
+
+    Scanning from the position's own open date each time makes it idempotent: a level that was
+    already honoured has no position left to close, and one that was missed gets closed on the day
+    it was actually hit.
+    """
+    bars_fn = bars_fn or _synced_bars
+    filled = 0
+    for position in db.list_paper_positions():
+        if position["status"] != "open":
+            continue
+        opened = position.get("opened_at")
+        start = opened.date() if hasattr(opened, "date") else date.today()
+        try:
+            bars = bars_fn(position["symbol"], start)
+        except Exception as e:  # noqa: BLE001 - one unreadable symbol must not stop the rest
+            state["last_error"] = f"{position['symbol']} catch-up: {e}"
+            continue
+        fills = catch_up(position, bars)
+        if fills:
+            apply_fills(position, fills)
+            filled += len(fills)
+    if filled:
+        state["last_error"] = None
+    return filled
+
+
 def poll_once(quote_fn):
     """One sweep: quote every symbol that has something open, trigger what the price reached.
 
@@ -252,8 +377,16 @@ def poll_once(quote_fn):
 
 
 def _loop(quote_fn):
+    # Reconciled once per calendar day, not every tick: the daily bars it reads only change
+    # overnight, and re-scanning them 1,080 times a session would be pure waste. Running it before
+    # the first poll of a day is what covers everything the engine slept through.
+    caught_up_on = None
     while True:
         try:
+            today = datetime.now(IST).date()
+            if caught_up_on != today:
+                caught_up_on = today
+                reconcile()
             if market_is_open():
                 poll_once(quote_fn)
         except Exception as e:  # noqa: BLE001 - the loop must outlive any single failure

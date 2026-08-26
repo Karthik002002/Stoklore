@@ -73,6 +73,38 @@ Trades tab shows them; so does
 tabs work on them like any other trade — filter by the paper account there for
 the deeper breakdowns.
 
+## Catching up on what the engine slept through
+
+The live poller only ever sees the **current** price, and only between 09:15 and 15:30 IST. That
+leaves a hole it cannot close by itself: if the app is not running when a level is crossed — a
+laptop shut for the evening, a restart, `./scripts/kill.sh`, a weekend — the crossing never happens
+as far as the engine is concerned, and the position stays open indefinitely with its stop long
+since blown. On a tool that runs on your own machine, that is not a rare edge; it is most of the
+week.
+
+So every open position is also **reconciled against the daily bars that printed while nobody was
+watching** — at startup, once per calendar day, and whenever you hit **Refresh prices**. Each
+position is scanned from its own open date, which makes it idempotent: a level already honoured has
+no position left to close, and a missed one is closed **on the day it was actually hit**, not on the
+day it was noticed. The journal entry carries that date, so the equity curve and every date filter
+place the trade in the session it belongs to.
+
+The bar's **high and low** decide it, not its close: a stop is hit intrabar, and a bar that dipped
+through a level and recovered still took the trade out. Fills follow the same pessimistic rule as
+the live path — a bar that *gapped* through a stop fills at the open, never at a level nobody could
+have traded at, while a target that gapped up fills at the target rather than the spike. Within one
+bar the stop wins over the target, because which came first inside it is unknowable.
+
+Two things this depends on, both of which were once wrong and are worth stating:
+
+- It syncs `price_history` for the symbol **before** reading it. That table is only filled by an
+  explicit price sync, so on a machine where nobody ran one it sits days behind — and a catch-up
+  reading a table that stops before the crossing finds nothing wrong, which is the same bug wearing
+  a different hat.
+- It reads `price_history_since`, **not** `bars_between`. The latter prefers `price_history_max`,
+  the one-shot "Collect max history" table that nothing refreshes afterwards. The deepest history is
+  the wrong thing to want when the question is "what happened since Monday".
+
 ## How it works
 
 `app/core/paper.py` is a background thread started at API startup (`paper.start`,

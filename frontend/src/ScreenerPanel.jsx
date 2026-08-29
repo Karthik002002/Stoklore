@@ -27,12 +27,14 @@ function StatementTable({ table, showChange }) {
       {
         id: 'label',
         header: 'Breakdown',
+        size: 200,
         cell: ({ row }) => row.original.label,
         meta: { className: 'sticky left-0 z-[1] bg-card font-medium', headClassName: 'left-0 z-20' },
       },
       ...table.periods.map((period, i) => ({
         id: `${period}-${i}`,
         header: period,
+        size: 104,
         cell: ({ row }) => {
           const value = row.original.values[i]
           // Screener prints oldest quarter first, so the predecessor is the cell to the left.
@@ -61,6 +63,7 @@ function StatementTable({ table, showChange }) {
       columns={columns}
       data={table.rows}
       getRowId={(row) => row.label}
+      resizable
       containerClassName="max-h-[460px] rounded-xl border bg-card"
     />
   )

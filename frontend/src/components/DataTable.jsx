@@ -1,5 +1,7 @@
 import { useRef } from 'react'
 import {
+  columnResizingFeature,
+  columnSizingFeature,
   createSortedRowModel,
   rowSortingFeature,
   sortFn_alphanumeric,
@@ -19,11 +21,13 @@ import { cn } from '@/lib/utils'
 // every hand-written table in this app already uses, so adopting it changes behaviour and not
 // the way anything looks.
 //
-// Deliberately narrow: sorting and virtualization, nothing else. No pagination, no selection, no
-// column visibility - none of this app's tables ask for them, and a shared component grows props
-// far faster than it grows callers.
+// Deliberately narrow: sorting, resizing and virtualization, nothing else. No pagination, no
+// selection, no column visibility - none of this app's tables ask for them, and a shared component
+// grows props far faster than it grows callers.
 
 const FEATURES = tableFeatures({
+  columnResizingFeature,
+  columnSizingFeature,
   rowSortingFeature,
   sortedRowModel: createSortedRowModel(),
   sortFns: {
@@ -43,12 +47,18 @@ const VIRTUALIZE_FROM = 60
  *                 `meta.headClassName` on its header - which is where a caller puts right
  *                 alignment, a sticky first column, or a highlighted TTM column.
  * @param sortable Turns on header sorting; individual columns opt out with `enableSorting: false`.
+ * @param resizable Drag the edge of a header to set its width, double-click it to put it back.
+ *                  It switches the table to `table-fixed`, because a browser laying columns out
+ *                  from their content will happily ignore the width you just dragged - so every
+ *                  column needs a `size` in its definition, and cells clip instead of pushing the
+ *                  column wider, which is the whole reason to want a drag handle.
  */
 export default function DataTable({
   columns,
   data,
   getRowId,
   sortable = false,
+  resizable = false,
   initialSorting,
   emptyMessage = 'Nothing to show.',
   containerClassName,
@@ -63,6 +73,12 @@ export default function DataTable({
     data,
     getRowId,
     enableSorting: sortable,
+    enableColumnResizing: resizable,
+    // Widths follow the pointer instead of snapping on release. These tables are tens of rows, not
+    // thousands, so a re-render per mousemove is cheaper than the lag of guessing where you meant
+    // to stop. A table that ever renders a virtualized 2,000 rows should pass 'onEnd' instead.
+    columnResizeMode: 'onChange',
+    defaultColumn: { minSize: 56 },
     initialState: initialSorting ? { sorting: initialSorting } : undefined,
   })
 
@@ -86,7 +102,11 @@ export default function DataTable({
   const drawn = virtualized ? items.map((item) => [rows[item.index], item.index]) : rows.map((r, i) => [r, i])
 
   return (
-    <Table containerRef={scrollRef} containerClassName={containerClassName}>
+    <Table
+      containerRef={scrollRef}
+      containerClassName={containerClassName}
+      className={resizable ? 'table-fixed' : undefined}
+    >
       <TableHeader>
         {table.getHeaderGroups().map((group) => (
           <TableRow key={group.id} className="hover:bg-transparent">
@@ -98,7 +118,11 @@ export default function DataTable({
                 sorted === 'asc' ? ArrowUpIcon : sorted === 'desc' ? ArrowDownIcon : ArrowUpDownIcon
               const label = <table.FlexRender header={header} />
               return (
-                <TableHead key={header.id} className={cn('sticky top-0 z-10 bg-card', meta.headClassName)}>
+                <TableHead
+                  key={header.id}
+                  style={resizable ? { width: header.getSize() } : undefined}
+                  className={cn('sticky top-0 z-10 bg-card', resizable && 'relative', meta.headClassName)}
+                >
                   {canSort ? (
                     <button
                       type="button"
@@ -114,6 +138,23 @@ export default function DataTable({
                     </button>
                   ) : (
                     label
+                  )}
+                  {resizable && header.column.getCanResize() && (
+                    /* Sits in the header's padding, invisible until you go near it. touch-none
+                       stops the browser scrolling the table sideways mid-drag on a trackpad or
+                       touchscreen. */
+                    <span
+                      role="separator"
+                      aria-orientation="vertical"
+                      onMouseDown={header.getResizeHandler()}
+                      onTouchStart={header.getResizeHandler()}
+                      onDoubleClick={() => header.column.resetSize()}
+                      title="Drag to resize, double-click to reset"
+                      className={cn(
+                        'absolute top-0 right-0 h-full w-1 cursor-col-resize touch-none select-none bg-border opacity-0 transition-opacity hover:opacity-100',
+                        header.column.getIsResizing() && 'bg-primary opacity-100',
+                      )}
+                    />
                   )}
                 </TableHead>
               )
@@ -141,7 +182,13 @@ export default function DataTable({
             ref={virtualized ? virtualizer.measureElement : undefined}
           >
             {row.getAllCells().map((cell) => (
-              <TableCell key={cell.id} className={cell.column.columnDef.meta?.className}>
+              <TableCell
+                key={cell.id}
+                className={cn(
+                  resizable && 'overflow-hidden text-ellipsis',
+                  cell.column.columnDef.meta?.className,
+                )}
+              >
                 <table.FlexRender cell={cell} />
               </TableCell>
             ))}

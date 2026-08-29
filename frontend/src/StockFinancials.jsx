@@ -45,12 +45,14 @@ export default function StockFinancials({ symbol }) {
       {
         id: 'label',
         header: 'Breakdown',
+        size: 200,
         cell: ({ row }) => row.original.label,
         meta: { className: 'sticky left-0 z-[1] bg-card font-medium', headClassName: 'left-0 z-20' },
       },
       ...data.periods.map((period, i) => ({
         id: `${period}-${i}`,
         header: period,
+        size: 108,
         cell: ({ row }) => (
           <Cell
             value={row.original.values[i]}
@@ -88,6 +90,7 @@ export default function StockFinancials({ symbol }) {
       columns={columns}
       data={data.rows}
       getRowId={(row) => row.label}
+      resizable
       containerClassName="max-h-[500px] rounded-xl border bg-card"
     />
   )

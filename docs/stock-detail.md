@@ -68,6 +68,16 @@ changed no styling. A caller passes column definitions; `meta.className` /
 `meta.headClassName` carry per-column alignment, the sticky first column, and
 the highlighted TTM column.
 
+Column widths are draggable on both tables — grab a header's right edge,
+double-click it to put the column back. Turning that on switches the table to
+`table-fixed`: a browser that lays columns out from their content will happily
+ignore the width you just dragged. That is also why cells clip to an ellipsis
+there instead of pushing the column wider — a cell that can force its own width
+is a cell that undoes the drag, and a truncated line item is the reason you
+wanted the handle in the first place. Widths follow the pointer rather than
+snapping on release; a table rendering thousands of virtualized rows should
+switch that to `'onEnd'`.
+
 Rows are windowed only past 60 of them — below that the measuring pass and the
 spacer rows buy nothing, so neither table on this page virtualizes today. The
 windowing uses spacer rows rather than absolutely positioned ones: a `<tr>`

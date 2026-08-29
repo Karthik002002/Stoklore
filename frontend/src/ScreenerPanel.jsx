@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ExternalLinkIcon, MinusCircleIcon, PlusCircleIcon } from 'lucide-react'
+import DataTable from '@/components/DataTable'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
+import { cellChange } from '@/lib/screenerTable'
 import { getScreenerData } from '@/services/api'
 
 // Values arrive as display strings ("1,027", "-2,145", "8%", "₹ 590") rather than numbers - one
@@ -13,37 +14,55 @@ import { getScreenerData } from '@/services/api'
 // what carries the meaning. Only the sign is interpreted, for colour.
 const isNegative = (v) => typeof v === 'string' && v.trim().startsWith('-')
 
-function StatementTable({ table }) {
+// The quarter-on-quarter delta is drawn for the shareholding tab only. Everywhere else the rows
+// mix units within one table (₹ Cr against %, against per-share), so a column of deltas would be
+// four different quantities; shareholding is the one table where every row asks the same question
+// - what share of the company, held by whom - once a quarter.
+
+function StatementTable({ table, showChange }) {
+  // Pivoted: a row per line item, a column per period, so the period index lives on the column and
+  // not on the row - which is also what makes "vs the previous quarter" a column-local question.
+  const columns = useMemo(
+    () => [
+      {
+        id: 'label',
+        header: 'Breakdown',
+        cell: ({ row }) => row.original.label,
+        meta: { className: 'sticky left-0 z-[1] bg-card font-medium', headClassName: 'left-0 z-20' },
+      },
+      ...table.periods.map((period, i) => ({
+        id: `${period}-${i}`,
+        header: period,
+        cell: ({ row }) => {
+          const value = row.original.values[i]
+          // Screener prints oldest quarter first, so the predecessor is the cell to the left.
+          const change = showChange && i > 0 ? cellChange(value, row.original.values[i - 1]) : null
+          return (
+            <>
+              <span className={isNegative(value) ? 'text-down' : undefined}>
+                {value || <span className="text-muted-foreground">—</span>}
+              </span>
+              {change && (
+                <span className={`block text-[11px] ${change.up ? 'text-up' : 'text-down'}`}>
+                  {change.text}
+                </span>
+              )}
+            </>
+          )
+        },
+        meta: { className: 'text-right', headClassName: 'text-right' },
+      })),
+    ],
+    [table, showChange],
+  )
+
   return (
-    <Table containerClassName="max-h-[460px] rounded-xl border bg-card">
-      <TableHeader>
-        <TableRow className="hover:bg-transparent">
-          <TableHead className="sticky top-0 left-0 z-20 bg-card">Breakdown</TableHead>
-          {table.periods.map((p) => (
-            <TableHead key={p} className="sticky top-0 z-10 bg-card text-right whitespace-nowrap">
-              {p}
-            </TableHead>
-          ))}
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {table.rows.map((row) => (
-          <TableRow key={row.label}>
-            <TableCell className="sticky left-0 z-[1] bg-card whitespace-nowrap font-medium">
-              {row.label}
-            </TableCell>
-            {row.values.map((v, i) => (
-              <TableCell
-                key={i}
-                className={`text-right tabular-nums whitespace-nowrap ${isNegative(v) ? 'text-down' : ''}`}
-              >
-                {v || <span className="text-muted-foreground">—</span>}
-              </TableCell>
-            ))}
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <DataTable
+      columns={columns}
+      data={table.rows}
+      getRowId={(row) => row.label}
+      containerClassName="max-h-[460px] rounded-xl border bg-card"
+    />
   )
 }
 
@@ -213,7 +232,13 @@ export default function ScreenerPanel({ symbol }) {
           </TabsList>
           {tableEntries.map(([id, table]) => (
             <TabsPanel key={id} value={id} className="mt-3">
-              <StatementTable table={table} />
+              {id === 'shareholding' && (
+                <p className="mb-2 text-xs text-muted-foreground">
+                  The small figure under each cell is the change from the previous quarter — percentage points
+                  of shares outstanding for the holder rows, shareholders for the count.
+                </p>
+              )}
+              <StatementTable table={table} showChange={id === 'shareholding'} />
             </TabsPanel>
           ))}
         </Tabs>

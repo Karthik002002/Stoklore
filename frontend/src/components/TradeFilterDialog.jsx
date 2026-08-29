@@ -7,7 +7,6 @@ import { Input } from '@/components/ui/input'
 import {
   activeCount,
   EMPTY_FILTERS,
-  FACETS,
   facetFilter,
   facetLabel,
   facetValues,
@@ -15,6 +14,7 @@ import {
   isEmpty,
   setFacet,
   toggleValue,
+  TRADE_SPEC,
 } from '@/lib/tradeFilters'
 
 // Two-pane filter panel: facets down the left, that facet's values with counts on the right.
@@ -22,7 +22,19 @@ import {
 // Edits are staged in local state and only committed on Apply. Every tab downstream recomputes an
 // equity curve and a statistics table off this selection, so live-applying each checkbox would
 // mean recomputing the whole page between two clicks of the same list.
-export default function TradeFilterDialog({ open, onOpenChange, trades, filters, onApply, tolerancePct }) {
+//
+// `spec` is what it filters (see lib/tradeFilters.js) - the journal by default, the shareholding
+// screener when that page passes its own facets. Nothing below knows what a trade is.
+export default function TradeFilterDialog({
+  open,
+  onOpenChange,
+  trades,
+  filters,
+  onApply,
+  tolerancePct,
+  spec = TRADE_SPEC,
+}) {
+  const FACETS = spec.facets
   const [draft, setDraft] = useState(filters)
   const [active, setActive] = useState(FACETS[0].key)
   const [search, setSearch] = useState('')
@@ -42,13 +54,17 @@ export default function TradeFilterDialog({ open, onOpenChange, trades, filters,
   // picking one symbol would drop every other symbol's count to zero and there'd be nothing left
   // to pick.
   const scoped = useMemo(
-    () => filterTrades(trades, setFacet(draft, facet.key, { mode: 'include', values: [] }), tolerancePct),
-    [trades, draft, facet.key, tolerancePct],
+    () =>
+      filterTrades(trades, setFacet(draft, facet.key, { mode: 'include', values: [] }), tolerancePct, spec),
+    [trades, draft, facet.key, tolerancePct, spec],
   )
   const values = useMemo(() => facetValues(facet, scoped, tolerancePct), [facet, scoped, tolerancePct])
   const shown = search ? values.filter((v) => v.label.toLowerCase().includes(search.toLowerCase())) : values
 
-  const matched = useMemo(() => filterTrades(trades, draft, tolerancePct), [trades, draft, tolerancePct])
+  const matched = useMemo(
+    () => filterTrades(trades, draft, tolerancePct, spec),
+    [trades, draft, tolerancePct, spec],
+  )
 
   const setMode = (mode) => setDraft((d) => setFacet(d, facet.key, { ...facetFilter(d, facet.key), mode }))
   const setRange = (key) => (e) => setDraft((d) => ({ ...d, [key]: e.target.value }))
@@ -60,7 +76,7 @@ export default function TradeFilterDialog({ open, onOpenChange, trades, filters,
           <DialogTitle>Filters</DialogTitle>
           <div className="flex items-center gap-3">
             <span className="text-sm text-muted-foreground">
-              {matched.length} of {trades.length} trades match
+              {matched.length} of {trades.length} {spec.noun} match
             </span>
             {!isEmpty(draft) && (
               <Button size="sm" variant="ghost" onClick={() => setDraft(EMPTY_FILTERS)}>
@@ -111,7 +127,7 @@ export default function TradeFilterDialog({ open, onOpenChange, trades, filters,
             })}
 
             <div className="mt-3 space-y-1.5 border-t px-3 pt-3">
-              <p className="text-xs text-muted-foreground">R multiple</p>
+              <p className="text-xs text-muted-foreground">{spec.range.label}</p>
               <div className="flex gap-1.5">
                 <Input
                   type="number"
@@ -130,9 +146,7 @@ export default function TradeFilterDialog({ open, onOpenChange, trades, filters,
                   className="h-8"
                 />
               </div>
-              <p className="text-[11px] text-muted-foreground">
-                Needs a planned risk — trades without one drop out.
-              </p>
+              <p className="text-[11px] text-muted-foreground">{spec.range.hint}</p>
             </div>
           </nav>
 
@@ -170,7 +184,7 @@ export default function TradeFilterDialog({ open, onOpenChange, trades, filters,
               </div>
               <p className="text-xs text-muted-foreground">
                 {current.mode === 'exclude'
-                  ? 'Ticked values are dropped from every tab. Everything else stays, including values added later.'
+                  ? 'Ticked values are dropped. Everything else stays, including values added later.'
                   : 'Ticked values are kept. Nothing ticked means this filter is off.'}
               </p>
             </div>
@@ -224,9 +238,10 @@ export function FilterButton({ filters, onOpen }) {
  * The active filters, as removable chips - so the page says what it's hiding without opening the
  * panel. Renders nothing when no filter is on, which is what keeps it out of the way of the tabs.
  */
-export function FilterChips({ filters, onChange }) {
+export function FilterChips({ filters, onChange, spec = TRADE_SPEC }) {
   const count = activeCount(filters)
   if (count === 0) return null
+  const FACETS = spec.facets
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -252,7 +267,7 @@ export function FilterChips({ filters, onChange }) {
           className="cursor-pointer gap-1"
           onClick={() => onChange({ ...filters, minR: '', maxR: '' })}
         >
-          R {filters.minR || '−∞'} to {filters.maxR || '∞'}
+          {spec.range.label} {filters.minR || '−∞'} to {filters.maxR || '∞'}
           <XIcon className="size-3" />
         </Badge>
       )}

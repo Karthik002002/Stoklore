@@ -98,15 +98,47 @@ hour catches up when it wakes. Same shape as the daily watchlist event scan.
 | Column | What it says |
 |---|---|
 | **Promoter** | Latest promoter + promoter group % |
-| **Δ latest** | Change at the most recent filing, in percentage points |
+| **Δ latest** | Change at the most recent filing, written as % (it is a change in percentage points of shares outstanding: 26.89% → 30.53% shows as **+3.64%**, not a 13.5% gain on the holding) |
 | **Δ window** | Cumulative change over the last four filings, tagged *gradual* or *one step* — "one step" means a single filing carried more than 75% of the move |
 | **Shape** | The last several filings as bars: a steady climb and a cliff look different at a glance |
 | **Flag** | `Organic` / `Verify` / `Quiet` — the sort key that does the work |
 | **What happened** | The verdict, plus shares created and the change in public shareholder count when the detail has been read |
 | **Period** | The filing period, badged `off-cycle` when it isn't a quarter end |
 
-Filters: symbol/company search, flag (**Moved** by default, or Needs verifying / Organic only /
-Everything), and a minimum move in pp — though off-cycle filings are always shown regardless.
+### Sorting
+
+Every underlined header sorts, and the sort runs **server-side** over all ~2,400 collected
+companies — not over the rows on screen, so "the ten biggest falls" is a real answer and not the
+biggest fall in the first page. Companies with no value for the column (no filed promoter %, no
+change yet) park at the bottom in *both* directions: an unknown is not a small number.
+
+**Δ latest** carries three questions, so it cycles: biggest increase → biggest fall → biggest move
+either way (the page's default — a −4% exit is as worth reading as a +4% accumulation).
+
+The rows dropdown (50 / 100 / 250 / All) is how much of that order the table draws.
+
+### Filters
+
+Four inline controls: symbol/company search, a minimum move in % (off-cycle filings are shown
+regardless), the row count, and **Filters** — the same include/exclude panel the trade journal
+uses, pointed at this table instead ([lib/tradeFilters.js](../frontend/src/lib/tradeFilters.js)):
+
+| Facet | Answers |
+|---|---|
+| **Flag** | Organic / Needs verifying / Quiet |
+| **What happened** | The verdict — issued to promoter, organic buy, diluted, detail missing… |
+| **How it arrived** | Gradual or one step |
+| **Direction** | Promoter up / down / flat |
+| **Filing timing** | Off-cycle or quarter end |
+| **Share counts** | Whether the XBRL detail has been read yet |
+| **Latest period** | Which filing period the row's latest reading is from |
+
+Plus a **Promoter %** min/max — the holding itself, which is a different question from anything
+the Δ columns ask ("every 70%+ promoter that sold").
+
+Each facet is include *or* exclude, with live counts scoped to what the other facets already
+allow. The default view is one exclude chip — `not flag: quiet` — so the page's opinion about what
+is worth reading is visible and one click undoes it.
 
 ## Nothing derived is stored
 
@@ -120,7 +152,10 @@ to answer it landed.
 ```
 
 Checks the AJOONI pair above (the same +3.64pp read both ways), every verdict, the detail gating,
-window tiling, revision handling and the screener's own sort.
+window tiling, revision handling and the screener's own sort, including the column sorts and where
+the rows with nothing to sort by land.
+
+The filter engine has its own: `node frontend/src/lib/tradeFilters.selfcheck.mjs`.
 
 ## Limits
 

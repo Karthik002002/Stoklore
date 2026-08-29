@@ -201,4 +201,23 @@ assert by_symbol["QUIET"]["flag"] == "quiet"
 assert by_symbol["SLOW"]["window"]["gradual"] is True, "the pace still reads without the detail"
 assert by_symbol["QUIET"]["has_detail"] is False
 
-print("ok - shareholding: AJOONI mechanism split, verdicts, detail gating, windows, master parsing, screener")
+# --- column sorting -------------------------------------------------------------------------------
+# The screener is the whole universe, so the sort has to be right for rows the table never renders.
+# The one that bites: a company with no reading must not float to the top of an ascending sort.
+sortable = [
+    {"symbol": "AAA", "promoter_pct": 10.0, "period_date": date(2026, 6, 30), "filings": 3,
+     "last_change": {"promoter_pp": -4.0}, "window": {"total_pp": -4.0}},
+    {"symbol": "BBB", "promoter_pct": 50.0, "period_date": date(2026, 3, 31), "filings": 2,
+     "last_change": {"promoter_pp": 1.0}, "window": {"total_pp": 1.0}},
+    {"symbol": "CCC", "promoter_pct": None, "period_date": date(2026, 6, 30), "filings": 1,
+     "last_change": None, "window": {"total_pp": None}},
+]
+assert [r["symbol"] for r in sh.sort_rows(sortable)] == ["AAA", "BBB", "CCC"], "biggest move, sign ignored"
+assert [r["symbol"] for r in sh.sort_rows(sortable, "delta", "asc")] == ["AAA", "BBB", "CCC"], "signed: the sell first"
+assert [r["symbol"] for r in sh.sort_rows(sortable, "delta", "desc")] == ["BBB", "AAA", "CCC"]
+assert [r["symbol"] for r in sh.sort_rows(sortable, "promoter", "asc")] == ["AAA", "BBB", "CCC"], "unknown% stays last"
+assert [r["symbol"] for r in sh.sort_rows(sortable, "promoter", "desc")] == ["BBB", "AAA", "CCC"]
+assert [r["symbol"] for r in sh.sort_rows(sortable, "symbol", "asc")] == ["AAA", "BBB", "CCC"]
+assert [r["symbol"] for r in sh.sort_rows(sortable, "nonsense")] == ["AAA", "BBB", "CCC"], "bad key falls back"
+
+print("ok - shareholding: AJOONI mechanism split, verdicts, detail gating, windows, master parsing, screener, sorting")

@@ -29,7 +29,21 @@ export const FACETS = [
   { key: 'risk', label: 'Risk sizing', of: (t, tol) => riskStatus(t, tol), label_: RISK_LABEL },
 ]
 
-const FACET_BY_KEY = Object.fromEntries(FACETS.map((f) => [f.key, f]))
+// The journal's own spec, and the default for every function below. A spec is just "which facets
+// and which numeric range" - the include/exclude engine, the counts and the panel are the same
+// either way, which is what lets the shareholding screener pass its own and get the same filter
+// UI without a second copy of it.
+export const TRADE_SPEC = {
+  noun: 'trades',
+  facets: FACETS,
+  range: {
+    label: 'R multiple',
+    hint: 'Needs a planned risk — trades without one drop out.',
+    of: expectedR,
+  },
+}
+
+const byKey = (spec) => Object.fromEntries(spec.facets.map((f) => [f.key, f]))
 
 export const facetLabel = (facet, value) => (value === NONE ? 'Not set' : (facet.label_?.[value] ?? value))
 
@@ -70,15 +84,16 @@ export function toggleValue(filters, key, value) {
   return setFacet(filters, key, { ...current, values })
 }
 
-export function filterTrades(trades, filters, tolerancePct = 10) {
+export function filterTrades(trades, filters, tolerancePct = 10, spec = TRADE_SPEC) {
   if (isEmpty(filters)) return trades
+  const facets = byKey(spec)
   const entries = Object.entries(filters.facets ?? {}).filter(([, f]) => f.values?.length)
   const min = filters.minR === '' || filters.minR == null ? null : Number(filters.minR)
   const max = filters.maxR === '' || filters.maxR == null ? null : Number(filters.maxR)
 
   return trades.filter((t) => {
     for (const [key, { mode, values }] of entries) {
-      const facet = FACET_BY_KEY[key]
+      const facet = facets[key]
       if (!facet) continue
       // A trade "hits" a facet when any of its values was picked - so a trade tagged
       // [breakout, revenge] is excluded by an exclude-revenge filter even though `breakout`
@@ -88,7 +103,7 @@ export function filterTrades(trades, filters, tolerancePct = 10) {
       if (mode === 'exclude' ? hit : !hit) return false
     }
     if (min != null || max != null) {
-      const r = expectedR(t)
+      const r = spec.range?.of(t, tolerancePct)
       if (r == null) return false
       if (min != null && r < min) return false
       if (max != null && r > max) return false
@@ -120,16 +135,18 @@ export function facetValues(facet, trades, tolerancePct = 10) {
 const MODE_CODE = { include: 'i', exclude: 'x' }
 const CODE_MODE = { i: 'include', x: 'exclude' }
 
-export function serializeFilters(filters) {
+export function serializeFilters(filters, spec = TRADE_SPEC) {
+  const known = byKey(spec)
   const parts = Object.entries(filters.facets ?? {})
-    .filter(([key, f]) => FACET_BY_KEY[key] && f.values?.length)
+    .filter(([key, f]) => known[key] && f.values?.length)
     .map(([key, f]) => `${key}:${MODE_CODE[f.mode] ?? 'i'}:${f.values.map(encodeURIComponent).join(',')}`)
   if (filters.minR || filters.maxR) parts.push(`r:${filters.minR ?? ''},${filters.maxR ?? ''}`)
   return parts.join('|') || undefined
 }
 
-export function parseFilters(str) {
+export function parseFilters(str, spec = TRADE_SPEC) {
   if (!str) return EMPTY_FILTERS
+  const known = byKey(spec)
   const out = { facets: {}, minR: '', maxR: '' }
   for (const part of String(str).split('|')) {
     const [key, a, b] = part.split(':')
@@ -139,7 +156,7 @@ export function parseFilters(str) {
       out.maxR = maxR
       continue
     }
-    if (!FACET_BY_KEY[key] || !b) continue
+    if (!known[key] || !b) continue
     const values = b.split(',').filter(Boolean).map(decodeURIComponent)
     if (values.length) out.facets[key] = { mode: CODE_MODE[a] ?? 'include', values }
   }

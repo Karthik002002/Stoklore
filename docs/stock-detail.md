@@ -12,6 +12,12 @@
 - The EMA Crossover panel takes two periods (or a preset like 20/50) and
   reports a golden/death cross, or the current %-spread if there's no
   crossover.
+- The Screener.in panel's **Shareholding Pattern** tab prints the
+  quarter-on-quarter change under each cell — percentage points of shares
+  outstanding for the holder rows, shareholders for the count row. The
+  other statement tabs don't: their rows mix ₹ Cr, % and per-share units
+  within one table, so a column of deltas would be several different
+  quantities stacked in one place.
 
 ## How it works
 
@@ -42,3 +48,33 @@ history first).
 **Backtest summary card** reads the same `backtests` table Backtesting →
 Auto/Manual write to — nothing computed specially for this page, it's just
 surfaced here too so past results aren't buried on a separate tab.
+
+**Shareholding deltas** — the screener's cells are display strings ("74.90%",
+"1,02,345", "—"), so the change is read back out of them by
+`cellChange` in [`lib/screenerTable.js`](../frontend/src/lib/screenerTable.js).
+An absent quarter is written `—` and must read as *missing*, not as zero — a
+zero there would print a 75-point collapse under a holding that simply wasn't
+filed. Pinned by `node frontend/src/lib/screenerTable.selfcheck.mjs`.
+
+For the promoter-move screener that reads NSE's own filings (share counts, not
+percentages, so a promoter *buying* is told apart from a promoter being *given*
+shares), see [Shareholding](shareholding.md).
+
+**Tables** — the Financials and Screener.in statement tables render through
+one shared [`DataTable`](../frontend/src/components/DataTable.jsx): TanStack
+Table for the row model, TanStack Virtual for windowing, drawn with the same
+`ui/table` primitives as every hand-written table in the app, so adopting it
+changed no styling. A caller passes column definitions; `meta.className` /
+`meta.headClassName` carry per-column alignment, the sticky first column, and
+the highlighted TTM column.
+
+Rows are windowed only past 60 of them — below that the measuring pass and the
+spacer rows buy nothing, so neither table on this page virtualizes today. The
+windowing uses spacer rows rather than absolutely positioned ones: a `<tr>`
+taken out of flow stops sharing the table's column widths, which the sticky
+first column depends on. Sorting is off unless a caller asks for it, and only
+columns with an accessor can sort.
+
+Both tables here are pivoted — a row per line item, a column per period — so
+the period index lives on the column definition, which is what makes "vs the
+previous quarter" a column-local question.

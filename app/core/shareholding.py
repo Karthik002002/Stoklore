@@ -426,7 +426,32 @@ def pace(changes, span):
     }
 
 
-def screener_rows(filings, span=4):
+# What a column header can sort by. Server-side because the screener is the whole collected
+# universe (~2,400 companies), not a page of it: "the ten biggest drops" has to be asked of every
+# row, and a client that has only rendered the top hundred cannot answer it.
+SORT_KEYS = {
+    # The default, and the only key that ignores direction: the screener's question is "what moved",
+    # and a -4pp exit is as worth reading as a +4pp buy.
+    "move": lambda r: abs((r["last_change"] or {}).get("promoter_pp") or 0),
+    "delta": lambda r: (r["last_change"] or {}).get("promoter_pp"),
+    "window": lambda r: r["window"]["total_pp"],
+    "promoter": lambda r: r["promoter_pct"],
+    "period": lambda r: r["period_date"],
+    "symbol": lambda r: r["symbol"],
+    "filings": lambda r: r["filings"],
+}
+
+
+def sort_rows(rows, sort="move", order="desc"):
+    """Sort in place of the default "biggest move first", with rows that have no value for the
+    column parked at the bottom in BOTH directions - a company whose promoter% was never filed is
+    not the smallest holding, it is an unknown, and sorting ascending must not hand it the top."""
+    key = SORT_KEYS.get(sort) or SORT_KEYS["move"]
+    known = sorted((r for r in rows if key(r) is not None), key=key, reverse=order != "asc")
+    return known + [r for r in rows if key(r) is None]
+
+
+def screener_rows(filings, span=4, sort="move", order="desc"):
     """One row per symbol for the screener table, newest movement first.
 
     `flag` is the sort key that does the actual work: 'verify' for a move whose mechanism is either
@@ -473,7 +498,6 @@ def screener_rows(filings, span=4):
             ],
         })
 
-    # Biggest recent move first, and a symbol with no move at all last - the screener's job is to
-    # put the handful worth reading at the top.
-    rows.sort(key=lambda r: abs((r["last_change"] or {}).get("promoter_pp") or 0), reverse=True)
-    return rows
+    # Biggest recent move first by default, and a symbol with no move at all last - the screener's
+    # job is to put the handful worth reading at the top.
+    return sort_rows(rows, sort, order)

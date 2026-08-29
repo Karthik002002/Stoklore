@@ -18,16 +18,25 @@ DEFAULT_HISTORY_DAYS = 760
 
 
 @router.get("/api/shareholding")
-def shareholding_screener(symbols: str | None = None, days: int = DEFAULT_HISTORY_DAYS, span: int = 4):
+def shareholding_screener(
+    symbols: str | None = None,
+    days: int = DEFAULT_HISTORY_DAYS,
+    span: int = 4,
+    sort: str = "move",
+    order: str = "desc",
+):
     """The screener table: one row per symbol, biggest recent promoter move first.
 
     `symbols` is a comma-separated filter (the frontend passes a watchlist); omitted means every
     company collected. `span` is how many filings the cumulative "gradual or a jump" window covers.
+    `sort`/`order` are the column headers (see shareholding.SORT_KEYS); an unknown key falls back
+    to the default rather than 422-ing, since it only ever costs a different row order.
     """
     wanted = [s.strip().upper() for s in (symbols or "").split(",") if s.strip()] or None
     filings = db.list_shareholding_filings(symbols=wanted, since=date.today() - timedelta(days=days))
     return {
-        "rows": shareholding.screener_rows(filings, span=span),
+        "rows": shareholding.screener_rows(filings, span=span, sort=sort, order=order),
+        "sort": {"key": sort if sort in shareholding.SORT_KEYS else "move", "order": order},
         "coverage": db.shareholding_coverage(),
         "verdicts": shareholding.VERDICTS,
     }

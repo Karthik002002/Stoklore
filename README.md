@@ -446,6 +446,10 @@ percentage cannot tell the two apart.
   so a period that isn't a quarter end is itself a corporate-action flag (~154 of 2,466 a quarter)
 - **Pace, not just size** — cumulative move over the last four filings, tagged *gradual* or *one
   step* depending on whether a single filing carried most of it, with a sparkline of the shape
+- **Sorted and filtered like the journal** — every column header sorts server-side over all ~2,400
+  companies (rows with nothing to sort by park at the bottom either way), and the trade journal's
+  own include/exclude filter panel is pointed at this table: verdict, pace, direction, filing
+  timing, whether the share counts have been read, period, and a promoter % range
 - Backfills 1–5 years on demand, or any explicit date range off a calendar picker; a background
   job sweeps the newest window once per IST day
 - Full manual: [docs/shareholding.md](docs/shareholding.md)

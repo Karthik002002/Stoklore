@@ -2,9 +2,13 @@ import * as React from 'react'
 
 import { cn } from '@/lib/utils'
 
-function Table({ className, containerClassName, ...props }) {
+function Table({ className, containerClassName, containerRef, ...props }) {
   return (
-    <div data-slot="table-container" className={cn('relative w-full overflow-auto', containerClassName)}>
+    <div
+      ref={containerRef}
+      data-slot="table-container"
+      className={cn('relative w-full overflow-auto', containerClassName)}
+    >
       {/* text-xs + tabular-nums app-wide: terminal density, and numeric columns line up by digit
           without every call site having to remember to ask for it. */}
       <table

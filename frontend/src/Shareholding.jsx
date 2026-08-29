@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { RefreshCwIcon } from 'lucide-react'
+import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, RefreshCwIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { DateRangePicker } from '@/components/DatePicker'
+import TradeFilterDialog, { FilterButton, FilterChips } from '@/components/TradeFilterDialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { compact, formatDate } from '@/lib/format'
+import { EMPTY_FILTERS, filterTrades, setFacet } from '@/lib/tradeFilters'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { getShareholding, getShareholdingStatus, syncShareholding } from '@/services/api'
 
@@ -38,7 +40,11 @@ const FLAGS = {
   quiet: { label: 'Quiet', variant: 'outline', hint: 'Nothing material moved this filing.' },
 }
 
-const pp = (value) => (value == null ? '—' : `${value > 0 ? '+' : ''}${value.toFixed(2)}pp`)
+// Written as %, not pp. It IS a change in percentage points - a promoter going 26.89% -> 30.53%
+// moved +3.64 of them, not by 3.64% of their holding - and the column headers say so, but every
+// other number on this page is a % of shares outstanding and switching units mid-row read worse
+// than the ambiguity does.
+const pp = (value) => (value == null ? '—' : `${value > 0 ? '+' : ''}${value.toFixed(2)}%`)
 
 const toneFor = (value) =>
   value == null || Math.abs(value) < 0.005 ? '' : value > 0 ? 'text-up' : 'text-down'
@@ -61,6 +67,75 @@ function Spark({ points }) {
         />
       ))}
     </span>
+  )
+}
+
+const FLAG_LABEL = { verify: 'Needs verifying', organic: 'Organic', quiet: 'Quiet' }
+
+/** What the journal's filter panel filters here instead of trades (see lib/tradeFilters.js). The
+ *  facets are the questions the four inline controls can't ask: not "did it move" but "did it move
+ *  the same way, at the same pace, in a quarter whose share counts have actually been read". */
+const specFor = (verdicts) => ({
+  noun: 'companies',
+  facets: [
+    { key: 'flag', label: 'Flag', of: (r) => r.flag, label_: FLAG_LABEL },
+    { key: 'verdict', label: 'What happened', of: (r) => r.last_change?.verdict, label_: verdicts },
+    {
+      key: 'shape',
+      label: 'How it arrived',
+      of: (r) => (r.window?.gradual == null ? null : r.window.gradual ? 'Gradual' : 'One step'),
+    },
+    {
+      key: 'direction',
+      label: 'Direction',
+      of: (r) => {
+        const pp = r.last_change?.promoter_pp
+        return pp == null ? null : pp > 0.005 ? 'Promoter up' : pp < -0.005 ? 'Promoter down' : 'Flat'
+      },
+    },
+    { key: 'timing', label: 'Filing timing', of: (r) => (r.off_cycle ? 'Off-cycle' : 'Quarter end') },
+    { key: 'detail', label: 'Share counts', of: (r) => (r.has_detail ? 'Read' : 'Not read yet') },
+    { key: 'period', label: 'Latest period', of: (r) => r.period_date },
+  ],
+  // The holding itself, as opposed to the change - "show me every 70%+ promoter that sold" is a
+  // different question from anything the Δ columns can express.
+  range: {
+    label: 'Promoter %',
+    hint: 'The holding, not the change. A company with no filed promoter % drops out.',
+    of: (r) => r.promoter_pct,
+  },
+})
+
+// The default view, expressed as a filter rather than as a hidden rule: everything except the
+// quiet rows, which is most of the market most quarters. It shows up as a removable chip, so the
+// page's opinion is visible and one click undoes it.
+const DEFAULT_FILTERS = setFacet(EMPTY_FILTERS, 'flag', { mode: 'exclude', values: ['quiet'] })
+
+const ROW_LIMITS = ['50', '100', '250', 'all']
+
+/** A sortable column header. The sort is a server round trip, not a re-render of what's on screen:
+ *  the table shows a slice of ~2,400 companies, and "the ten biggest falls" is a question about the
+ *  rows that aren't rendered. */
+function SortHead({ id, sort, onSort, title, className, children }) {
+  const active = sort.key === id || (id === 'delta' && sort.key === 'move')
+  const Icon = !active
+    ? ArrowUpDownIcon
+    : sort.key === 'move'
+      ? ArrowUpDownIcon
+      : sort.order === 'asc'
+        ? ArrowUpIcon
+        : ArrowDownIcon
+  return (
+    <TableHead className={className} title={title}>
+      <button
+        type="button"
+        onClick={() => onSort(id)}
+        className={`flex items-center gap-1 whitespace-nowrap ${active ? 'text-foreground' : 'hover:text-foreground'}`}
+      >
+        {children}
+        <Icon className={`size-3 ${active ? '' : 'opacity-30'}`} />
+      </button>
+    </TableHead>
   )
 }
 
@@ -135,7 +210,10 @@ function Row({ row, verdicts }) {
 export default function Shareholding() {
   usePageTitle('Shareholding')
   const queryClient = useQueryClient()
-  const [flag, setFlag] = useState('moved')
+  const [filters, setFilters] = useState(DEFAULT_FILTERS)
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [sort, setSort] = useState({ key: 'move', order: 'desc' })
+  const [limit, setLimit] = useState('100')
   const [minPp, setMinPp] = useState('0.5')
   const [search, setSearch] = useState('')
   const [years, setYears] = useState('1')
@@ -144,7 +222,14 @@ export default function Shareholding() {
   const [range, setRange] = useState({ from: '', to: '' })
   const ranged = !!(range.from && range.to)
 
-  const { data, isLoading } = useQuery({ queryKey: ['shareholding'], queryFn: () => getShareholding() })
+  // The sort is part of the key: the server orders the whole collected universe, and the table
+  // renders the head of it. keepPreviousData is what stops the table blanking between two clicks
+  // of the same header.
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: ['shareholding', sort.key, sort.order],
+    queryFn: () => getShareholding({ sort: sort.key, order: sort.order }),
+    placeholderData: keepPreviousData,
+  })
   // Polled only while a sweep is running - the collector is a background thread, and there is
   // nothing to watch the rest of the time.
   const { data: status } = useQuery({
@@ -170,22 +255,44 @@ export default function Shareholding() {
     onError: (e) => toast.error(e.message),
   })
 
+  const spec = useMemo(() => specFor(data?.verdicts ?? {}), [data?.verdicts])
+
+  // Server order in, server order out - filtering never reorders, so the header still describes
+  // what the table is showing.
   const rows = useMemo(() => {
     const all = data?.rows ?? []
     const floor = Number(minPp) || 0
     const needle = search.trim().toUpperCase()
-    return all.filter((r) => {
+    const matched = all.filter((r) => {
       if (needle && !r.symbol.includes(needle) && !(r.company ?? '').toUpperCase().includes(needle)) {
         return false
       }
-      if (flag === 'verify' && r.flag !== 'verify') return false
-      if (flag === 'organic' && r.flag !== 'organic') return false
-      // 'moved' is the default view: everything that actually changed, either way, which is the
-      // list this page exists to produce.
-      if (flag === 'moved' && r.flag === 'quiet') return false
+      // The off-cycle escape: a filing NSE only required because capital changed by over 2% is
+      // worth reading whatever the percentage did.
       return Math.abs(r.last_change?.promoter_pp ?? 0) >= floor || r.off_cycle
     })
-  }, [data, flag, minPp, search])
+    return filterTrades(matched, filters, 0, spec)
+  }, [data, filters, minPp, search, spec])
+
+  const shown = useMemo(() => (limit === 'all' ? rows : rows.slice(0, Number(limit))), [rows, limit])
+
+  // Δ latest is three questions, not one: biggest buy, biggest sell, then biggest move either way
+  // (the default - a -4pp exit is as worth reading as a +4pp accumulation). Every other column is
+  // an ordinary asc/desc toggle.
+  const onSort = (key) =>
+    setSort((s) => {
+      if (key !== 'delta') {
+        if (s.key === key) return { key, order: s.order === 'asc' ? 'desc' : 'asc' }
+        return { key, order: key === 'symbol' ? 'asc' : 'desc' }
+      }
+      const cycle = [
+        { key: 'delta', order: 'desc' },
+        { key: 'delta', order: 'asc' },
+        { key: 'move', order: 'desc' },
+      ]
+      const at = cycle.findIndex((c) => c.key === s.key && c.order === s.order)
+      return cycle[(at + 1) % cycle.length]
+    })
 
   const coverage = data?.coverage
 
@@ -254,17 +361,7 @@ export default function Shareholding() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <Select value={flag} onValueChange={setFlag}>
-          <SelectTrigger size="sm" className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="moved">Moved</SelectItem>
-            <SelectItem value="verify">Needs verifying</SelectItem>
-            <SelectItem value="organic">Organic only</SelectItem>
-            <SelectItem value="all">Everything</SelectItem>
-          </SelectContent>
-        </Select>
+        <FilterButton filters={filters} onOpen={() => setFilterOpen(true)} />
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted-foreground">Min move</span>
           <Input
@@ -275,14 +372,39 @@ export default function Shareholding() {
             value={minPp}
             onChange={(e) => setMinPp(e.target.value)}
           />
-          <span className="text-xs text-muted-foreground">pp</span>
+          <span className="text-xs text-muted-foreground">%</span>
         </div>
-        <span className="ml-auto text-xs text-muted-foreground">
+        <Select value={limit} onValueChange={setLimit}>
+          <SelectTrigger size="sm" className="w-28">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ROW_LIMITS.map((n) => (
+              <SelectItem key={n} value={n}>
+                {n === 'all' ? 'All rows' : `${n} rows`}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+          {isFetching && <Spinner className="size-3" />}
+          {shown.length < rows.length && `showing ${shown.length} of `}
           {rows.length} of {data?.rows?.length ?? 0} companies
           {coverage?.latest_period && ` · newest filing ${formatDate(coverage.latest_period)}`}
           {coverage?.without_detail > 0 && ` · ${coverage.without_detail} without share counts`}
         </span>
       </div>
+
+      <FilterChips filters={filters} onChange={setFilters} spec={spec} />
+      <TradeFilterDialog
+        open={filterOpen}
+        onOpenChange={setFilterOpen}
+        trades={data?.rows ?? []}
+        filters={filters}
+        onApply={setFilters}
+        tolerancePct={0}
+        spec={spec}
+      />
 
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
@@ -297,20 +419,43 @@ export default function Shareholding() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Company</TableHead>
-                <TableHead>Promoter</TableHead>
-                <TableHead title="Change at the latest filing">Δ latest</TableHead>
-                <TableHead title="Cumulative change over the last four filings, and whether it arrived steadily or in one step">
+                <SortHead id="symbol" sort={sort} onSort={onSort}>
+                  Company
+                </SortHead>
+                <SortHead
+                  id="promoter"
+                  sort={sort}
+                  onSort={onSort}
+                  title="Promoter + promoter group holding at the latest filing, as a % of shares outstanding"
+                >
+                  Promoter
+                </SortHead>
+                <SortHead
+                  id="delta"
+                  sort={sort}
+                  onSort={onSort}
+                  title="Change at the latest filing, in percentage points of shares outstanding (26.89% → 30.53% shows as +3.64%). Clicks cycle: biggest increase, biggest fall, then biggest move either way."
+                >
+                  Δ latest
+                </SortHead>
+                <SortHead
+                  id="window"
+                  sort={sort}
+                  onSort={onSort}
+                  title="Cumulative change over the last four filings, in percentage points of shares outstanding, and whether it arrived steadily or in one step"
+                >
                   Δ window
-                </TableHead>
+                </SortHead>
                 <TableHead>Shape</TableHead>
                 <TableHead>Flag</TableHead>
                 <TableHead>What happened</TableHead>
-                <TableHead>Period</TableHead>
+                <SortHead id="period" sort={sort} onSort={onSort} title="Date of the latest filing held">
+                  Period
+                </SortHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((row) => (
+              {shown.map((row) => (
                 <Row key={row.symbol} row={row} verdicts={data.verdicts} />
               ))}
             </TableBody>

@@ -1,5 +1,6 @@
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import DataTable from '@/components/DataTable'
 import { Spinner } from '@/components/ui/spinner'
 import { compact, fmt } from '@/lib/format'
 import { getStockFinancials } from '@/services/api'
@@ -35,6 +36,37 @@ export default function StockFinancials({ symbol }) {
     retry: false,
   })
 
+  // One column per period, plus the sticky label column. The quarter-on-quarter comparison is the
+  // column's own business: it needs the index, which is what pivoted data (rows of values, columns
+  // of periods) doesn't carry on the row.
+  const columns = useMemo(() => {
+    if (!data) return []
+    return [
+      {
+        id: 'label',
+        header: 'Breakdown',
+        cell: ({ row }) => row.original.label,
+        meta: { className: 'sticky left-0 z-[1] bg-card font-medium', headClassName: 'left-0 z-20' },
+      },
+      ...data.periods.map((period, i) => ({
+        id: `${period}-${i}`,
+        header: period,
+        cell: ({ row }) => (
+          <Cell
+            value={row.original.values[i]}
+            // TTM is a trailing twelve months total sitting next to a quarter - comparing the two
+            // would report a 300% jump every time.
+            prevValue={i > 0 && period !== 'TTM' ? row.original.values[i - 1] : null}
+          />
+        ),
+        meta: {
+          className: 'text-right',
+          headClassName: `text-right ${period === 'TTM' ? 'font-semibold' : ''}`,
+        },
+      })),
+    ]
+  }, [data])
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center gap-2 rounded-xl border bg-card py-16 text-muted-foreground">
@@ -52,35 +84,11 @@ export default function StockFinancials({ symbol }) {
   }
 
   return (
-    <Table containerClassName="max-h-[500px] rounded-xl border bg-card">
-      <TableHeader>
-        <TableRow className="hover:bg-transparent">
-          <TableHead className="sticky top-0 left-0 z-20 bg-card">Breakdown</TableHead>
-          {data.periods.map((p) => (
-            <TableHead
-              key={p}
-              className={`sticky top-0 z-10 bg-card text-right whitespace-nowrap ${p === 'TTM' ? 'font-semibold' : ''}`}
-            >
-              {p}
-            </TableHead>
-          ))}
-        </TableRow>
-      </TableHeader>
-
-      <TableBody>
-        {data.rows.map((row) => (
-          <TableRow key={row.label}>
-            <TableCell className="sticky left-0 z-[1] bg-card whitespace-nowrap font-medium">
-              {row.label}
-            </TableCell>
-            {row.values.map((v, i) => (
-              <TableCell key={i} className="text-right tabular-nums whitespace-nowrap">
-                <Cell value={v} prevValue={i > 0 && data.periods[i] !== 'TTM' ? row.values[i - 1] : null} />
-              </TableCell>
-            ))}
-          </TableRow>
-        ))}
-      </TableBody>
-    </Table>
+    <DataTable
+      columns={columns}
+      data={data.rows}
+      getRowId={(row) => row.label}
+      containerClassName="max-h-[500px] rounded-xl border bg-card"
+    />
   )
 }

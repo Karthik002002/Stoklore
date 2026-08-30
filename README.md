@@ -681,6 +681,39 @@ Full details: [docs/paper-trading.md](docs/paper-trading.md).
 
 </div>
 
+### `13.5` Live Trading (Dhan)
+
+A `/live` page that places **real orders** through your own Dhan account, manages the position on
+the chart, and tells you what the broker did — plus price alerts, which share the same feed.
+
+> Ships **switched off**. Read [docs/live-trading.md](docs/live-trading.md) before turning it on,
+> and test against Dhan's free sandbox first.
+
+- **Nothing is simulated.** Paper trading decides its own fills; this one never does — Dhan's order
+  and position books are mirrored every 5 seconds and every screen reads the mirror. Where the app
+  and the broker disagree, the broker is right
+- **Exits live at the broker** — a stop or target makes the entry a Dhan **Super Order**, so the
+  protection survives this app being closed. Dragging the stop line on the chart sends a modify;
+  there is no local copy to drift
+- **Guardrails before the network, all in one pass** — off/halted, per-order value cap, orders per
+  day, a daily realised-loss stop that trips itself, and a stop-on-the-wrong-side check. A refused
+  order comes back with every reason at once
+- **No retries, ever** — every intent is written with a correlation id *before* the request goes
+  out, and a timeout is resolved by asking the broker what happened, never by sending again
+- **Kill switch** halts for the day and cancels working orders — deliberately *not* liquidating,
+  because a panic button that trades for you is worse than the problem
+- **Round trips journal themselves** into `manual_trades` tagged `live`, read off positions going
+  flat rather than by stitching orders — so partial exits and averaging in still file as one trade
+- **Alerts** — price levels you arm, plus fills, rejections and closures written by the mirror, in
+  one feed
+- Full details, and what is *not* verified yet: [docs/live-trading.md](docs/live-trading.md)
+
+<div align="right">
+
+[![][back-to-top]](#readme-top)
+
+</div>
+
 ### `*` What's more
 
 - **One date control everywhere** — shadcn's Base UI `Calendar` (added through the CLI, so it

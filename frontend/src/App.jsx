@@ -1,5 +1,6 @@
 import { Link, Outlet } from '@tanstack/react-router'
 import {
+  IconBolt,
   IconChartCandle,
   IconChartHistogram,
   IconFlask,
@@ -31,6 +32,7 @@ const NAV_ITEMS = [
   { to: '/shareholding', icon: IconUsersGroup, label: 'Shareholding' },
   { to: '/backtesting', icon: IconFlask, label: 'Backtesting' },
   { to: '/paper', icon: IconChartCandle, label: 'Paper Trading' },
+  { to: '/live', icon: IconBolt, label: 'Live Trading' },
   { to: '/simulation', icon: IconChartHistogram, label: 'Trade Simulation' },
 ]
 

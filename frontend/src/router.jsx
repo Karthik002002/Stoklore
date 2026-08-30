@@ -7,6 +7,8 @@ import EventsFeed from './EventsFeed'
 import Holdings from './Holdings'
 import PaperTrading from './paper/PaperTrading'
 import PaperPositionChart from './paper/PaperPositionChart'
+import LiveTrading from './live/LiveTrading'
+import LivePositionChart from './live/LivePositionChart'
 import StockDetail from './StockDetail'
 import StocksList from './StocksList'
 import Shareholding from './Shareholding'
@@ -138,6 +140,22 @@ const paperPositionRoute = createRoute({
   component: PaperPositionChart,
 })
 
+// Real orders, mirrored from Dhan. A sibling of /paper rather than a tab inside it: the two pages
+// look alike on purpose, and the one thing that must never happen is clicking the wrong tab.
+const liveRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/live',
+  component: LiveTrading,
+})
+
+// One live position on the Bar Replay chart, where the stop and target lines are legs of a Super
+// Order at the broker - dragging one sends a modify.
+const livePositionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/live/$symbol',
+  component: LivePositionChart,
+})
+
 const simulationRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/simulation',
@@ -175,6 +193,8 @@ const routeTree = rootRoute.addChildren([
   backtestingRoute,
   paperRoute,
   paperPositionRoute,
+  liveRoute,
+  livePositionRoute,
   simulationRoute,
   autoBacktestDetailRoute,
   barReplayRoute,

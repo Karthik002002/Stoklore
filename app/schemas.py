@@ -237,3 +237,46 @@ class PaperModifyRequest(BaseModel):
 
 class PaperCloseRequest(BaseModel):
     quantity: float | None = None  # partial close; omitted = the whole remaining position
+
+
+class LiveOrderRequest(BaseModel):
+    """One real order. `stop_price`/`target_price` turn it into a Dhan Super Order, which is the
+    shape worth wanting: the exits then live at the broker instead of in this app's poller."""
+    symbol: str
+    direction: str  # "long" | "short"
+    quantity: int
+    limit_price: float | None = None  # omitted = market order
+    stop_price: float | None = None
+    target_price: float | None = None
+    trailing_jump: float | None = None
+    product: Literal["INTRADAY", "CNC", "MARGIN", "MTF"] | None = None
+    # What the UI showed the user when they pressed the button. Sizing guardrails are checked
+    # against this for a market order, so the cap means something before the fill price exists.
+    reference_price: float | None = None
+
+
+class LiveModifyRequest(BaseModel):
+    leg: Literal["ENTRY_LEG", "TARGET_LEG", "STOP_LOSS_LEG"]
+    price: float | None = None
+    quantity: int | None = None
+    target_price: float | None = None
+    stop_price: float | None = None
+    trailing_jump: float | None = None
+
+
+class LiveSettingsRequest(BaseModel):
+    enabled: bool | None = None
+    max_order_value: float | None = None
+    max_orders_per_day: int | None = None
+    daily_loss_limit: float | None = None
+    product: Literal["INTRADAY", "CNC", "MARGIN", "MTF"] | None = None
+    account_id: int | None = None
+    api_base_url: str | None = None  # set to Dhan's sandbox while testing; blank = live
+
+
+class AlertRequest(BaseModel):
+    symbol: str
+    condition: Literal["above", "below"]
+    price: float
+    note: str | None = None
+    recurring: bool = False

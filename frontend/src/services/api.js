@@ -405,3 +405,79 @@ export const syncShareholding = ({ years = 1, from, to } = {}) => {
   const query = new URLSearchParams(from && to ? { from_date: from, to_date: to } : { years: String(years) })
   return fetch(`/api/shareholding/sync?${query}`, { method: 'POST' }).then(json)
 }
+
+// --- Live trading (Dhan) ----------------------------------------------------------------------
+// Real money. Every mutating call here can be refused by the backend's guardrails, which answer
+// with a LIST of reasons rather than one message (see app/core/dhan_orders.py) - `json()` above
+// only unpacks a string detail, so these unpack the list themselves and join it.
+async function liveJson(res) {
+  if (!res.ok) {
+    const { detail } = await res.json().catch(() => ({}))
+    const errors = detail?.errors
+    throw new Error(Array.isArray(errors) ? errors.join(' ') : detail || `${res.status} ${res.statusText}`)
+  }
+  return res.json()
+}
+
+const post = (url, payload) =>
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: payload === undefined ? undefined : JSON.stringify(payload),
+  }).then(liveJson)
+
+export const getLiveStatus = () => fetch('/api/live/status').then(json)
+
+export const updateLiveSettings = (payload) =>
+  fetch('/api/live/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).then(liveJson)
+
+export const getLiveOrders = (openOnly = false) =>
+  fetch(`/api/live/orders${openOnly ? '?open_only=true' : ''}`).then(json)
+
+export const getLivePositions = () => fetch('/api/live/positions').then(json)
+
+export const syncLive = () => post('/api/live/sync')
+
+export const placeLiveOrder = (payload) => post('/api/live/orders', payload)
+
+export const modifyLiveOrder = (orderId, payload) =>
+  fetch(`/api/live/orders/${orderId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).then(liveJson)
+
+export const cancelLiveOrder = (orderId, leg) =>
+  fetch(`/api/live/orders/${orderId}${leg ? `?leg=${leg}` : ''}`, { method: 'DELETE' }).then(liveJson)
+
+export const closeLivePosition = (securityId) => post(`/api/live/positions/${securityId}/close`)
+
+// Halts for the day and cancels everything still working. Does NOT close open positions - see the
+// endpoint's own note on why a panic button must not trade.
+export const livePanic = () => post('/api/live/panic')
+
+export const resumeLive = () => post('/api/live/resume')
+
+// The supported answer to a send that timed out: ask the broker what became of it. Never re-send.
+export const recoverLiveOrder = (correlationId) =>
+  post(`/api/live/recover?correlation_id=${encodeURIComponent(correlationId)}`)
+
+// --- Alerts -----------------------------------------------------------------------------------
+// One feed for two kinds: price levels you armed, and what the broker did (fills, rejections,
+// positions going flat) written by the live mirror.
+export const getAlerts = (params = {}) => {
+  const query = new URLSearchParams(
+    Object.entries(params).filter(([, v]) => v != null && v !== ''),
+  ).toString()
+  return fetch(`/api/alerts${query ? `?${query}` : ''}`).then(json)
+}
+
+export const createAlert = (payload) => post('/api/alerts', payload)
+
+export const acknowledgeAlerts = (ids) => post('/api/alerts/acknowledge', ids ?? null)
+
+export const deleteAlert = (id) => fetch(`/api/alerts/${id}`, { method: 'DELETE' }).then(liveJson)

@@ -519,6 +519,84 @@ ALTER TABLE stocks_master ADD COLUMN IF NOT EXISTS bse_code TEXT;
 CREATE INDEX IF NOT EXISTS stocks_master_isin_idx ON stocks_master (isin);
 ALTER TABLE stocks_master ADD COLUMN IF NOT EXISTS market_lot INTEGER;
 ALTER TABLE stocks_master ADD COLUMN IF NOT EXISTS face_value REAL;
+
+-- Alerts: levels the user asked to be told about, and things the broker did. One feed, two kinds
+-- (see app/core/alerts.py). A fired alert is kept, not deleted - "what did I get told and when"
+-- is the whole point of a feed.
+CREATE TABLE IF NOT EXISTS alerts (
+  id SERIAL PRIMARY KEY,
+  kind TEXT NOT NULL DEFAULT 'price',  -- 'price' (armed by the user) | 'order' (written by the mirror)
+  symbol TEXT,
+  condition TEXT,                      -- 'above' | 'below', price alerts only
+  price REAL,                          -- the level being watched
+  note TEXT,
+  recurring BOOLEAN NOT NULL DEFAULT false,  -- re-arms itself after firing
+  active BOOLEAN NOT NULL DEFAULT true,
+  triggered_at TIMESTAMPTZ,
+  triggered_price REAL,
+  message TEXT,
+  meta JSONB NOT NULL DEFAULT '{}'::jsonb,
+  acknowledged_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS alerts_active_idx ON alerts (active, kind);
+
+-- The broker's order book, mirrored. Dhan's own book is intraday-only, so this is also the record
+-- of what was sent today after the day ends. Keyed on Dhan's order id: this table never invents a
+-- row, it only ever copies one.
+CREATE TABLE IF NOT EXISTS live_orders (
+  order_id TEXT PRIMARY KEY,
+  parent_order_id TEXT,
+  correlation_id TEXT,
+  status TEXT,
+  symbol TEXT,
+  security_id TEXT,
+  side TEXT,
+  product TEXT,
+  order_type TEXT,
+  leg TEXT,
+  quantity REAL,
+  filled_qty REAL,
+  avg_price REAL,
+  price REAL,
+  trigger_price REAL,
+  error TEXT,
+  raw JSONB NOT NULL DEFAULT '{}'::jsonb,
+  first_seen TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS live_orders_seen_idx ON live_orders (first_seen);
+
+-- The broker's position book, mirrored. Replaced wholesale every sweep, because a position that
+-- vanished from Dhan's book is flat and a leftover row would say otherwise.
+CREATE TABLE IF NOT EXISTS live_positions (
+  security_id TEXT PRIMARY KEY,
+  symbol TEXT,
+  product TEXT,
+  position_type TEXT,
+  net_qty REAL,
+  buy_qty REAL,
+  sell_qty REAL,
+  buy_avg REAL,
+  sell_avg REAL,
+  realised REAL,
+  unrealised REAL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Every order this app tried to send, written BEFORE the request goes out. Its reason to exist is
+-- the request that times out: the correlation id is here, so the order book can be searched for it
+-- instead of the order being sent a second time.
+CREATE TABLE IF NOT EXISTS live_intents (
+  correlation_id TEXT PRIMARY KEY,
+  symbol TEXT,
+  payload JSONB NOT NULL,
+  order_id TEXT,
+  status TEXT,           -- null while in flight, then Dhan's answer, or 'unconfirmed'
+  error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  settled_at TIMESTAMPTZ
+);
 """
 
 
@@ -2085,3 +2163,236 @@ def exchange_of(symbol):
             "SELECT exchange FROM stocks_master WHERE symbol = %s", (symbol,)
         ).fetchone()
     return (row or {}).get("exchange") or "NSE"
+
+
+# --- alerts + live trading -----------------------------------------------------------------------
+# The live tables are mirrors of Dhan's own books (see app/core/live.py) with one exception:
+# live_intents, which is written before a request goes out and is the only record of an order this
+# app tried to place but never heard back about.
+
+# Public wrappers - the live module stores a handful of scalars (halt flag, halt reason) that need
+# no dedicated accessor each, and reaching into _get_setting from another module would be worse.
+def get_setting_value(key, default=None):
+    return _get_setting(key, default)
+
+
+def set_setting_value(key, value):
+    _set_setting(key, value)
+
+
+LIVE_DEFAULTS = {
+    # Off. A fresh install, a restored backup and a machine that just had its settings wiped all
+    # land here, and all three should refuse to trade until somebody says otherwise.
+    "enabled": False,
+    "max_order_value": 25000.0,
+    "max_orders_per_day": 20,
+    "daily_loss_limit": 5000.0,
+    "product": "INTRADAY",
+    "account_id": None,
+}
+
+
+def get_live_trading_settings():
+    """The user's ceilings for real-money orders. Typed on the way out - settings are stored as
+    text, and a limit that arrives as the string "25000" compares wrong against a number."""
+    out = dict(LIVE_DEFAULTS)
+    out["enabled"] = _get_setting("live_enabled") == "true"
+    for key in ("max_order_value", "daily_loss_limit"):
+        value = _get_setting(f"live_{key}")
+        if value not in (None, ""):
+            out[key] = float(value)
+    for key in ("max_orders_per_day", "account_id"):
+        value = _get_setting(f"live_{key}")
+        if value not in (None, ""):
+            out[key] = int(value)
+    product = _get_setting("live_product")
+    if product:
+        out["product"] = product
+    return out
+
+
+def set_live_trading_settings(**fields):
+    for key, value in fields.items():
+        if key not in LIVE_DEFAULTS:
+            raise ValueError(f"unknown live trading setting {key!r}")
+        _set_setting(
+            f"live_{key}", "" if value is None else ("true" if value is True else
+                                                     "false" if value is False else str(value))
+        )
+
+
+def get_dhan_api_base_url():
+    """Empty unless the user has pointed the app at Dhan's sandbox. Not defaulted to a guessed
+    sandbox URL - an endpoint that receives orders is not something to infer."""
+    return _get_setting("dhan_api_base_url") or None
+
+
+def set_dhan_api_base_url(url):
+    _set_setting("dhan_api_base_url", (url or "").strip())
+
+
+def list_alerts(active=None, limit=200):
+    sql = "SELECT * FROM alerts"
+    params = []
+    if active is not None:
+        sql += " WHERE active = %s"
+        params.append(active)
+    sql += " ORDER BY COALESCE(triggered_at, created_at) DESC LIMIT %s"
+    params.append(limit)
+    with connect() as conn:
+        return conn.execute(sql, params).fetchall()
+
+
+def create_alert(kind="price", symbol=None, condition=None, price=None, note=None,
+                 recurring=False, active=True, triggered_at=None, message=None, meta=None):
+    with connect() as conn:
+        row = conn.execute(
+            "INSERT INTO alerts (kind, symbol, condition, price, note, recurring, active, "
+            "triggered_at, message, meta) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+            "RETURNING id",
+            (kind, symbol, condition, price, note, recurring, active, triggered_at, message,
+             Jsonb(meta or {})),
+        ).fetchone()
+    return row["id"]
+
+
+def fire_alert(alert_id, price, message):
+    """Stamp an alert as triggered. A one-shot alert disarms itself in the same statement, which is
+    what stops the poller re-firing it every five seconds for the rest of the session."""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE alerts SET triggered_at = now(), triggered_price = %s, message = %s, "
+            "active = recurring WHERE id = %s",
+            (price, message, alert_id),
+        )
+
+
+def acknowledge_alerts(ids=None):
+    with connect() as conn:
+        if ids:
+            conn.execute("UPDATE alerts SET acknowledged_at = now() WHERE id = ANY(%s)", (list(ids),))
+        else:
+            conn.execute(
+                "UPDATE alerts SET acknowledged_at = now() "
+                "WHERE acknowledged_at IS NULL AND triggered_at IS NOT NULL"
+            )
+
+
+def delete_alert(alert_id):
+    with connect() as conn:
+        conn.execute("DELETE FROM alerts WHERE id = %s", (alert_id,))
+
+
+def upsert_live_order(order):
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO live_orders (order_id, parent_order_id, correlation_id, status, symbol, "
+            "security_id, side, product, order_type, leg, quantity, filled_qty, avg_price, price, "
+            "trigger_price, error, raw, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, "
+            "%s, %s, %s, %s, %s, %s, %s, %s, now()) "
+            "ON CONFLICT (order_id) DO UPDATE SET status = EXCLUDED.status, "
+            "filled_qty = EXCLUDED.filled_qty, avg_price = EXCLUDED.avg_price, "
+            "price = EXCLUDED.price, trigger_price = EXCLUDED.trigger_price, "
+            "error = EXCLUDED.error, raw = EXCLUDED.raw, updated_at = now()",
+            (order["order_id"], order.get("parent_order_id"), order.get("correlation_id"),
+             order.get("status"), order.get("symbol"), order.get("security_id"), order.get("side"),
+             order.get("product"), order.get("order_type"), order.get("leg"), order.get("quantity"),
+             order.get("filled_qty"), order.get("avg_price"), order.get("price"),
+             order.get("trigger_price"), order.get("error"), Jsonb(order)),
+        )
+
+
+def list_live_orders(open_only=False, limit=200):
+    sql = "SELECT * FROM live_orders"
+    params = []
+    if open_only:
+        sql += " WHERE status = ANY(%s)"
+        params.append(["TRANSIT", "PENDING", "PART_TRADED"])
+    sql += " ORDER BY updated_at DESC LIMIT %s"
+    params.append(limit)
+    with connect() as conn:
+        return conn.execute(sql, params).fetchall()
+
+
+def count_live_orders_today():
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT count(*) AS n FROM live_orders WHERE first_seen::date = current_date"
+        ).fetchone()
+    return row["n"]
+
+
+def list_live_positions():
+    with connect() as conn:
+        return conn.execute("SELECT * FROM live_positions ORDER BY symbol").fetchall()
+
+
+def replace_live_positions(positions):
+    """Wholesale replace, in one transaction: a position missing from the broker's book is flat,
+    and merging would leave the old row asserting an exposure that no longer exists."""
+    with connect() as conn:
+        with conn.transaction():
+            conn.execute("DELETE FROM live_positions")
+            for p in positions:
+                conn.execute(
+                    "INSERT INTO live_positions (security_id, symbol, product, position_type, "
+                    "net_qty, buy_qty, sell_qty, buy_avg, sell_avg, realised, unrealised, "
+                    "updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())",
+                    (p["security_id"], p.get("symbol"), p.get("product"), p.get("position_type"),
+                     p.get("net_qty"), p.get("buy_qty"), p.get("sell_qty"), p.get("buy_avg"),
+                     p.get("sell_avg"), p.get("realised"), p.get("unrealised")),
+                )
+
+
+def live_realised_today():
+    with connect() as conn:
+        row = conn.execute("SELECT COALESCE(sum(realised), 0) AS pnl FROM live_positions").fetchone()
+    return row["pnl"]
+
+
+def record_live_intent(correlation_id, symbol, payload):
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO live_intents (correlation_id, symbol, payload) VALUES (%s, %s, %s) "
+            "ON CONFLICT (correlation_id) DO NOTHING",
+            (correlation_id, symbol, Jsonb(payload)),
+        )
+
+
+def confirm_live_intent(correlation_id, order_id, status):
+    with connect() as conn:
+        conn.execute(
+            "UPDATE live_intents SET order_id = %s, status = %s, settled_at = now() "
+            "WHERE correlation_id = %s",
+            (order_id, status, correlation_id),
+        )
+
+
+def mark_live_intent_unconfirmed(correlation_id, error):
+    with connect() as conn:
+        conn.execute(
+            "UPDATE live_intents SET status = 'unconfirmed', error = %s WHERE correlation_id = %s",
+            (error, correlation_id),
+        )
+
+
+def list_unconfirmed_intents():
+    """Orders this app sent but never got an answer for. Anything here needs reconciling against
+    the broker before another order in the same symbol is sensible."""
+    with connect() as conn:
+        return conn.execute(
+            "SELECT * FROM live_intents WHERE status = 'unconfirmed' ORDER BY created_at DESC"
+        ).fetchall()
+
+
+def create_manual_trade_from_live(account_id, symbol, direction, quantity, entry_price, exit_price,
+                                  source_ref=None):
+    """A finished real trade, filed in the journal like any other - same table, same statistics,
+    same simulation input. Tagged 'live' so it can be told from one typed in by hand, and the
+    result is left to the journal's own rule rather than computed here."""
+    return create_manual_trade(
+        symbol=symbol, direction=direction, quantity=quantity, entry_price=entry_price,
+        exit_price=exit_price, stop_loss=None, target=None, is_open=False, result=None,
+        emotion=None, tags=["live"], notes=f"Auto-journaled from Dhan ({source_ref})"
+        if source_ref else "Auto-journaled from Dhan", traded_at=None, account_id=account_id,
+    )

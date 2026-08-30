@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.core import backup
 from app.core import db
+from app.core import live
 from app.core import llm
 from app.core import paper
 
@@ -36,6 +37,10 @@ def _startup():
     # Watches open paper positions against live prices and fires simulated exits. Idempotent, and
     # idles outside market hours - see paper.py.
     paper.start(paper_price)
+    # Mirrors Dhan's order and position books while the market is open and sweeps price alerts.
+    # Alerts run whether or not live trading is switched on; the mirror only runs when it is and
+    # credentials exist - see app/core/live.py.
+    live.start(paper_price)
 
 
 # Every mutating request marks the database dirty; backup.py's background thread turns that into

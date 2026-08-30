@@ -24,6 +24,7 @@ from fastapi import APIRouter
 
 from app.routers import (
     activity,
+    alerts,
     backtest,
     backup,
     chat,
@@ -31,6 +32,7 @@ from app.routers import (
     holdings,
     indices,
     kite_auth,
+    live_trading,
     manual_trades,
     paper_trading,
     prices,
@@ -59,6 +61,8 @@ for _module in (
     backtest,
     manual_trades,
     paper_trading,
+    live_trading,
+    alerts,
     trade_accounts,
     activity,
     system,

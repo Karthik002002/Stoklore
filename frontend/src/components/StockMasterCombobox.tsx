@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type * as React from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { CheckIcon, ChevronsUpDownIcon } from 'lucide-react'
 import { toast } from 'sonner'
@@ -19,7 +20,16 @@ import { searchStocksMaster } from '@/services/api'
 // search string. Pasted symbols aren't validated against stocks_master here - an unknown/misspelt
 // one just shows up as a per-symbol error in the bulk collector's results afterward, same as any
 // other failure there.
-export default function StockMasterCombobox({ selected, onSelect, className }) {
+export default function StockMasterCombobox({
+  selected,
+  onSelect,
+  className,
+}: {
+  /** Symbols already picked - used to skip duplicates on a bulk paste. */
+  selected: string[]
+  onSelect: (symbol: string) => void
+  className?: string
+}) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
 
@@ -29,7 +39,7 @@ export default function StockMasterCombobox({ selected, onSelect, className }) {
   })
   const matches = data?.stocks ?? []
 
-  const handlePaste = (e) => {
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     const text = e.clipboardData.getData('text')
     if (!text.includes(',') && !text.includes('\n')) return // a single symbol - paste normally
     e.preventDefault()

@@ -6,7 +6,19 @@ import { copyText, downloadMd } from '@/lib/exportFile'
 
 /** Copy / download the markdown of whatever panel it sits in. `build` is a thunk so a large
  *  report is only assembled when it's actually asked for, not on every render of the page. */
-export default function MdActions({ build, name, disabled = false, className = '' }) {
+export default function MdActions({
+  build,
+  name,
+  disabled = false,
+  className = '',
+}: {
+  /** A thunk, so a large report is assembled only when asked for. */
+  build: () => string
+  /** Filename stem for the download; the date is appended by downloadMd. */
+  name: string
+  disabled?: boolean
+  className?: string
+}) {
   const [copied, setCopied] = useState(false)
 
   const copy = async () => {

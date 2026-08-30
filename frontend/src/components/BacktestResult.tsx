@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { fmt, formatDate, inr } from '@/lib/format'
 
-export function ReturnBadge({ pct }) {
+export function ReturnBadge({ pct }: { pct: number }) {
   const up = pct >= 0
   const Icon = up ? TrendingUpIcon : TrendingDownIcon
   return (
@@ -15,7 +15,28 @@ export function ReturnBadge({ pct }) {
   )
 }
 
-export function TradesTable({ trades }) {
+/** One completed (or still open) trade, as every backtest path reports it - the EMA crossover
+ *  backend and the Pine Script runner produce the same shape. */
+export type BacktestTrade = {
+  entry_date: string
+  exit_date: string
+  entry_price: number
+  exit_price: number
+  return_pct: number
+  open?: boolean
+}
+
+/** A plotted series from an indicator-only Pine script: PineTS hands back either bare numbers or
+ *  {time, value} points depending on the plot. */
+export type PlotPoint = number | { value?: number } | null
+
+/** A finished run: the trades and the three headline numbers. */
+export type BacktestResult = {
+  trades: BacktestTrade[]
+  summary: { total_return_pct: number; num_trades: number; win_rate: number }
+}
+
+export function TradesTable({ trades }: { trades: BacktestTrade[] }) {
   if (trades.length === 0) {
     return <p className="text-sm text-muted-foreground">No completed trades in this window.</p>
   }
@@ -59,7 +80,7 @@ export function TradesTable({ trades }) {
 // Summary badges + trade breakdown for a {summary, trades} backtest result - shared by the
 // manual EMA-crossover form and the auto (Pine Script) preview/execute views, since both
 // produce the same shape (see backtest.run_ema_crossover and lib/runPineScript.js).
-export function BacktestResultView({ result }) {
+export function BacktestResultView({ result }: { result: BacktestResult }) {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-4">
@@ -76,7 +97,7 @@ export function BacktestResultView({ result }) {
 
 // Indicator-only Pine scripts (plot() but no strategy()) have no trades - just show each named
 // plot's most recent values.
-export function PlotsResultView({ plots }) {
+export function PlotsResultView({ plots }: { plots: Record<string, PlotPoint[]> }) {
   const names = Object.keys(plots)
   if (names.length === 0) {
     return <p className="text-sm text-muted-foreground">Script produced no plots.</p>
@@ -89,7 +110,7 @@ export function PlotsResultView({ plots }) {
           <div key={name} className="rounded-lg border bg-card p-3 text-sm">
             <p className="mb-1 font-medium">{name}</p>
             <p className="text-muted-foreground tabular-nums">
-              {values.map((v) => fmt(v?.value ?? v, 2)).join(', ')}
+              {values.map((v) => fmt(typeof v === 'number' ? v : (v?.value ?? null), 2)).join(', ')}
             </p>
           </div>
         )

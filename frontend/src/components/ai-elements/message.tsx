@@ -1,4 +1,6 @@
 'use client'
+import type { ComponentProps, ReactNode } from 'react'
+import { isValidElement } from 'react'
 import { Button } from '@/components/ui/button'
 import { ButtonGroup, ButtonGroupText } from '@/components/ui/button-group'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -15,7 +17,17 @@ import { Streamdown } from 'streamdown'
 // Streamdown's own link-safety confirmation (its default before navigating to any link in
 // rendered markdown) is a manually-built overlay with no way to restyle from the outside - this
 // swaps it for our own Dialog, matching this app's UI instead of the library's.
-function LinkSafetyModal({ url, isOpen, onClose, onConfirm }) {
+function LinkSafetyModal({
+  url,
+  isOpen,
+  onClose,
+  onConfirm,
+}: {
+  url: string
+  isOpen: boolean
+  onClose: () => void
+  onConfirm: () => void
+}) {
   const [copied, setCopied] = useState(false)
 
   const copyLink = async () => {
@@ -60,7 +72,11 @@ function LinkSafetyModal({ url, isOpen, onClose, onConfirm }) {
   )
 }
 
-export const Message = ({ className, from, ...props }) => (
+export const Message = ({
+  className,
+  from,
+  ...props
+}: ComponentProps<'div'> & { from?: 'user' | 'assistant' }) => (
   <div
     className={cn(
       'group flex w-full max-w-[95%] flex-col gap-2',
@@ -71,7 +87,7 @@ export const Message = ({ className, from, ...props }) => (
   />
 )
 
-export const MessageContent = ({ children, className, ...props }) => (
+export const MessageContent = ({ children, className, ...props }: ComponentProps<'div'>) => (
   <div
     className={cn(
       'is-user:dark flex w-fit min-w-0 max-w-full flex-col gap-2 overflow-hidden text-sm',
@@ -85,7 +101,7 @@ export const MessageContent = ({ children, className, ...props }) => (
   </div>
 )
 
-export const MessageActions = ({ className, children, ...props }) => (
+export const MessageActions = ({ className, children, ...props }: ComponentProps<'div'>) => (
   <div className={cn('flex items-center gap-1', className)} {...props}>
     {children}
   </div>
@@ -98,7 +114,7 @@ export const MessageAction = ({
   variant = 'ghost',
   size = 'icon-sm',
   ...props
-}) => {
+}: ComponentProps<typeof Button> & { tooltip?: ReactNode; label?: string }) => {
   const button = (
     <Button size={size} type="button" variant={variant} {...props}>
       {children}
@@ -122,7 +138,18 @@ export const MessageAction = ({
   return button
 }
 
-const MessageBranchContext = createContext(null)
+/** What the branch switcher shares with its children: which alternative reply is showing, and
+ *  how to move between them. */
+type MessageBranchState = {
+  currentBranch: number
+  branches: ReactNode[]
+  setBranches: (branches: ReactNode[]) => void
+  goToNext: () => void
+  goToPrevious: () => void
+  totalBranches: number
+}
+
+const MessageBranchContext = createContext<MessageBranchState | null>(null)
 
 const useMessageBranch = () => {
   const context = useContext(MessageBranchContext)
@@ -134,12 +161,17 @@ const useMessageBranch = () => {
   return context
 }
 
-export const MessageBranch = ({ defaultBranch = 0, onBranchChange, className, ...props }) => {
+export const MessageBranch = ({
+  defaultBranch = 0,
+  onBranchChange,
+  className,
+  ...props
+}: ComponentProps<'div'> & { defaultBranch?: number; onBranchChange?: (branch: number) => void }) => {
   const [currentBranch, setCurrentBranch] = useState(defaultBranch)
-  const [branches, setBranches] = useState([])
+  const [branches, setBranches] = useState<ReactNode[]>([])
 
   const handleBranchChange = useCallback(
-    (newBranch) => {
+    (newBranch: number) => {
       setCurrentBranch(newBranch)
       onBranchChange?.(newBranch)
     },
@@ -175,7 +207,7 @@ export const MessageBranch = ({ defaultBranch = 0, onBranchChange, className, ..
   )
 }
 
-export const MessageBranchContent = ({ children, ...props }) => {
+export const MessageBranchContent = ({ children, ...props }: ComponentProps<'div'>) => {
   const { currentBranch, setBranches, branches } = useMessageBranch()
   const childrenArray = useMemo(() => (Array.isArray(children) ? children : [children]), [children])
 
@@ -189,7 +221,7 @@ export const MessageBranchContent = ({ children, ...props }) => {
   return childrenArray.map((branch, index) => (
     <div
       className={cn('grid gap-2 overflow-hidden [&>div]:pb-0', index === currentBranch ? 'block' : 'hidden')}
-      key={branch.key}
+      key={isValidElement(branch) ? branch.key : index}
       {...props}
     >
       {branch}
@@ -197,7 +229,7 @@ export const MessageBranchContent = ({ children, ...props }) => {
   ))
 }
 
-export const MessageBranchSelector = ({ className, ...props }) => {
+export const MessageBranchSelector = ({ className, ...props }: ComponentProps<typeof ButtonGroup>) => {
   const { totalBranches } = useMessageBranch()
 
   // Don't render if there's only one branch
@@ -214,7 +246,7 @@ export const MessageBranchSelector = ({ className, ...props }) => {
   )
 }
 
-export const MessageBranchPrevious = ({ children, ...props }) => {
+export const MessageBranchPrevious = ({ children, ...props }: ComponentProps<typeof Button>) => {
   const { goToPrevious, totalBranches } = useMessageBranch()
 
   return (
@@ -232,7 +264,7 @@ export const MessageBranchPrevious = ({ children, ...props }) => {
   )
 }
 
-export const MessageBranchNext = ({ children, ...props }) => {
+export const MessageBranchNext = ({ children, ...props }: ComponentProps<typeof Button>) => {
   const { goToNext, totalBranches } = useMessageBranch()
 
   return (
@@ -250,7 +282,7 @@ export const MessageBranchNext = ({ children, ...props }) => {
   )
 }
 
-export const MessageBranchPage = ({ className, ...props }) => {
+export const MessageBranchPage = ({ className, ...props }: ComponentProps<typeof ButtonGroupText>) => {
   const { currentBranch, totalBranches } = useMessageBranch()
 
   return (
@@ -264,10 +296,19 @@ export const MessageBranchPage = ({ className, ...props }) => {
 }
 
 const streamdownPlugins = { cjk, code, math, mermaid }
-const linkSafety = { enabled: true, renderModal: (props) => <LinkSafetyModal {...props} /> }
+const linkSafety = {
+  enabled: true,
+  renderModal: (props: ComponentProps<typeof LinkSafetyModal>) => <LinkSafetyModal {...props} />,
+}
+
+type MessageResponseProps = ComponentProps<typeof Streamdown> & {
+  /** Set while a reply is still streaming - the memo below compares it so a finished message
+   *  stops re-rendering. */
+  isAnimating?: boolean
+}
 
 export const MessageResponse = memo(
-  ({ className, ...props }) => (
+  ({ className, ...props }: MessageResponseProps) => (
     <Streamdown
       className={cn('size-full [&>*:first-child]:mt-0 [&>*:last-child]:mb-0', className)}
       plugins={streamdownPlugins}
@@ -281,7 +322,7 @@ export const MessageResponse = memo(
 
 MessageResponse.displayName = 'MessageResponse'
 
-export const MessageToolbar = ({ className, children, ...props }) => (
+export const MessageToolbar = ({ className, children, ...props }: ComponentProps<'div'>) => (
   <div className={cn('mt-4 flex w-full items-center justify-between gap-4', className)} {...props}>
     {children}
   </div>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import type * as React from 'react'
 import { ChevronRightIcon, SearchIcon, SlidersHorizontalIcon, XIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -16,6 +17,8 @@ import {
   toggleValue,
   TRADE_SPEC,
 } from '@/lib/tradeFilters'
+import type { FacetFilter, Filters, FilterSpec } from '@/lib/tradeFilters'
+import type { Trade } from '@/lib/types'
 
 // Two-pane filter panel: facets down the left, that facet's values with counts on the right.
 //
@@ -25,14 +28,24 @@ import {
 //
 // `spec` is what it filters (see lib/tradeFilters.js) - the journal by default, the shareholding
 // screener when that page passes its own facets. Nothing below knows what a trade is.
-export default function TradeFilterDialog({
+export default function TradeFilterDialog<Row = Trade>({
   open,
   onOpenChange,
   trades,
   filters,
   onApply,
   tolerancePct,
-  spec = TRADE_SPEC,
+  spec = TRADE_SPEC as FilterSpec<Row>,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  /** The rows to filter and count over - trades by default, whatever `spec` describes otherwise. */
+  trades: Row[]
+  filters: Filters
+  onApply: (filters: Filters) => void
+  /** Risk-sizing tolerance, passed through to any facet that needs it (see lib/tradeFilters). */
+  tolerancePct?: number
+  spec?: FilterSpec<Row>
 }) {
   const FACETS = spec.facets
   const [draft, setDraft] = useState(filters)
@@ -66,8 +79,10 @@ export default function TradeFilterDialog({
     [trades, draft, tolerancePct, spec],
   )
 
-  const setMode = (mode) => setDraft((d) => setFacet(d, facet.key, { ...facetFilter(d, facet.key), mode }))
-  const setRange = (key) => (e) => setDraft((d) => ({ ...d, [key]: e.target.value }))
+  const setMode = (mode: FacetFilter['mode']) =>
+    setDraft((d) => setFacet(d, facet.key, { ...facetFilter(d, facet.key), mode }))
+  const setRange = (key: 'minR' | 'maxR') => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setDraft((d) => ({ ...d, [key]: e.target.value }))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -155,7 +170,7 @@ export default function TradeFilterDialog({
               <div className="flex items-center justify-between gap-2">
                 <p className="font-medium">{facet.label}</p>
                 <div className="flex overflow-hidden rounded-lg border text-xs">
-                  {['include', 'exclude'].map((mode) => (
+                  {(['include', 'exclude'] as const).map((mode) => (
                     <button
                       key={mode}
                       type="button"
@@ -219,7 +234,7 @@ export default function TradeFilterDialog({
 }
 
 /** Opens the panel; carries how many filters are on, so the toolbar shows it without a chip row. */
-export function FilterButton({ filters, onOpen }) {
+export function FilterButton({ filters, onOpen }: { filters: Filters; onOpen: () => void }) {
   const count = activeCount(filters)
   return (
     <Button size="sm" variant={count > 0 ? 'default' : 'outline'} onClick={onOpen}>
@@ -238,7 +253,15 @@ export function FilterButton({ filters, onOpen }) {
  * The active filters, as removable chips - so the page says what it's hiding without opening the
  * panel. Renders nothing when no filter is on, which is what keeps it out of the way of the tabs.
  */
-export function FilterChips({ filters, onChange, spec = TRADE_SPEC }) {
+export function FilterChips<Row = Trade>({
+  filters,
+  onChange,
+  spec = TRADE_SPEC as FilterSpec<Row>,
+}: {
+  filters: Filters
+  onChange: (filters: Filters) => void
+  spec?: FilterSpec<Row>
+}) {
   const count = activeCount(filters)
   if (count === 0) return null
   const FACETS = spec.facets

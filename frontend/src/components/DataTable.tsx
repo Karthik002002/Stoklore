@@ -12,6 +12,7 @@ import {
   useTable,
 } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import type { ColumnDef, Row, RowData, SortingState } from '@tanstack/react-table'
 import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon } from 'lucide-react'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
@@ -25,7 +26,19 @@ import { cn } from '@/lib/utils'
 // selection, no column visibility - none of this app's tables ask for them, and a shared component
 // grows props far faster than it grows callers.
 
+/** Per-column styling, carried on the column definition's `meta`. Declared as this feature set's
+ *  own columnMeta slot rather than by augmenting the library's global ColumnMeta - a global
+ *  augmentation would put these fields on every TanStack table in the app, including ones with
+ *  nothing to do with this component. */
+type ColumnStyles = {
+  /** Applied to every cell of the column - alignment, a sticky first column, tabular numerals. */
+  className?: string
+  /** Applied to the column's header only. */
+  headClassName?: string
+}
+
 const FEATURES = tableFeatures({
+  columnMeta: {} as ColumnStyles,
   columnResizingFeature,
   columnSizingFeature,
   rowSortingFeature,
@@ -53,7 +66,7 @@ const VIRTUALIZE_FROM = 60
  *                  column needs a `size` in its definition, and cells clip instead of pushing the
  *                  column wider, which is the whole reason to want a drag handle.
  */
-export default function DataTable({
+export default function DataTable<TData extends RowData>({
   columns,
   data,
   getRowId,
@@ -64,10 +77,24 @@ export default function DataTable({
   containerClassName,
   estimateRowHeight = 28,
   virtualizeFrom = VIRTUALIZE_FROM,
+}: {
+  // Generic over the row, so a call site's `columns` are checked against the `data` it passes and
+  // every cell renderer knows what a row is - which is the reason to route tables through one
+  // component rather than hand-writing each.
+  columns: ColumnDef<typeof FEATURES, TData>[]
+  data: TData[]
+  getRowId?: (row: TData, index: number) => string
+  sortable?: boolean
+  resizable?: boolean
+  initialSorting?: SortingState
+  emptyMessage?: string
+  containerClassName?: string
+  estimateRowHeight?: number
+  virtualizeFrom?: number
 }) {
   const scrollRef = useRef(null)
 
-  const table = useTable({
+  const table = useTable<typeof FEATURES, TData>({
     features: FEATURES,
     columns,
     data,
@@ -99,7 +126,11 @@ export default function DataTable({
   const items = virtualized ? virtualizer.getVirtualItems() : []
   const before = items.length ? items[0].start : 0
   const after = items.length ? virtualizer.getTotalSize() - items[items.length - 1].end : 0
-  const drawn = virtualized ? items.map((item) => [rows[item.index], item.index]) : rows.map((r, i) => [r, i])
+  // Explicit tuples: a bare [row, index] literal infers as (Row | number)[], and the two halves
+  // are then indistinguishable where they're destructured below.
+  const drawn: [Row<typeof FEATURES, TData>, number][] = virtualized
+    ? items.map((item) => [rows[item.index], item.index])
+    : rows.map((r, i) => [r, i])
 
   return (
     <Table

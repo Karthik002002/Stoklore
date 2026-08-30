@@ -2,7 +2,7 @@ import { formatDate, formatDuration } from '@/lib/format'
 
 // Fixed intensity buckets by seconds spent that day - same idea as GitHub's contribution graph,
 // just keyed to time-on-app instead of commit count.
-function intensityClass(seconds) {
+function intensityClass(seconds: number) {
   if (seconds <= 0) return 'bg-muted/40'
   if (seconds < 900) return 'bg-success/25' // <15m
   if (seconds < 1800) return 'bg-success/45' // 15-30m
@@ -14,12 +14,15 @@ function intensityClass(seconds) {
 // GET /api/activity/summary. Columns are calendar weeks (Sun-Sat), padded so the first real day
 // lands in its correct weekday row - same hand-rolled-grid technique as ManualOverview's month
 // calendar, just a different shape.
-export default function UsageCommitGraph({ days }) {
+/** One day of the year graph, as GET /api/activity/summary returns it. */
+type ActivityDay = { date: string; seconds_active: number }
+
+export default function UsageCommitGraph({ days }: { days: ActivityDay[] }) {
   if (days.length === 0) return null
 
   const startWeekday = new Date(days[0].date).getDay()
-  const padded = [...Array(startWeekday).fill(null), ...days]
-  const weeks = []
+  const padded: (ActivityDay | null)[] = [...Array(startWeekday).fill(null), ...days]
+  const weeks: (ActivityDay | null)[][] = []
   for (let i = 0; i < padded.length; i += 7) weeks.push(padded.slice(i, i + 7))
 
   return (

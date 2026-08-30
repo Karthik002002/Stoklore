@@ -1,10 +1,24 @@
+import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 // Shared chrome for the dashboard's terminal panels (StocksList): a thin accent bar + uppercase
 // monospace title, optional right-aligned actions, and a bordered body. `accent` is a text-color
 // class so each panel can carry its own hue the way a Bloomberg-style layout does - it's applied
 // to both the leading bar and the title, nothing else.
-export default function TerminalPanel({ title, accent = 'text-primary', actions, className, children }) {
+export default function TerminalPanel({
+  title,
+  accent = 'text-primary',
+  actions,
+  className,
+  children,
+}: {
+  title: ReactNode
+  /** A text-colour class - it paints the leading bar and the title, nothing else. */
+  accent?: string
+  actions?: ReactNode
+  className?: string
+  children?: ReactNode
+}) {
   return (
     <div className={cn('flex flex-col overflow-hidden rounded-md border bg-card/40', className)}>
       <div className="flex shrink-0 items-center gap-1.5 border-b bg-muted/30 px-2 py-1.5">
@@ -21,7 +35,17 @@ export default function TerminalPanel({ title, accent = 'text-primary', actions,
 
 // Dense monospace row used inside panels - a label on the left, a value (usually numeric, so
 // tabular-nums) on the right. The one shape most of the dashboard's metric lists need.
-export function TerminalRow({ label, value, valueClassName, className }) {
+export function TerminalRow({
+  label,
+  value,
+  valueClassName,
+  className,
+}: {
+  label: ReactNode
+  value: ReactNode
+  valueClassName?: string
+  className?: string
+}) {
   return (
     <div
       className={cn(

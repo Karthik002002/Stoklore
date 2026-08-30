@@ -4,7 +4,15 @@ import { XIcon } from 'lucide-react'
 // Creatable multi-value tag chips: type + Enter/comma adds a chip, Backspace on an empty input
 // removes the last one. Folds "Setup"/"Mistake"-style categorization into one freeform field
 // rather than separate fixed inputs - the user types whatever tag makes sense.
-export default function TagInput({ value, onChange, placeholder = 'Add a tag, press Enter…' }) {
+export default function TagInput({
+  value,
+  onChange,
+  placeholder = 'Add a tag, press Enter…',
+}: {
+  value: string[]
+  onChange: (tags: string[]) => void
+  placeholder?: string
+}) {
   const [text, setText] = useState('')
 
   const addTag = () => {
@@ -13,7 +21,7 @@ export default function TagInput({ value, onChange, placeholder = 'Add a tag, pr
     setText('')
   }
 
-  const removeTag = (tag) => onChange(value.filter((t) => t !== tag))
+  const removeTag = (tag: string) => onChange(value.filter((t) => t !== tag))
 
   return (
     <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-input px-2.5 py-1.5 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">

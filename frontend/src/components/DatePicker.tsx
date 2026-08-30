@@ -15,11 +15,23 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 // them. Converting at the edges here keeps that single representation instead of spreading Date
 // juggling across five call sites.
 
+/** What both pickers share. Every date here is a "YYYY-MM-DD" string - the app's own currency -
+ *  and Date objects never leave this file. */
+type DateFieldProps = {
+  placeholder?: string
+  className?: string
+  disabled?: boolean
+  /** Bounds, inclusive, as "YYYY-MM-DD". */
+  min?: string | null
+  max?: string | null
+  align?: 'start' | 'center' | 'end'
+}
+
 // Not exported: the whole app speaks "YYYY-MM-DD" and only this file needs Date objects, so
 // keeping them private also keeps fast refresh working for the components below.
 /** "YYYY-MM-DD" -> Date, in the LOCAL timezone. Deliberately not new Date("2026-08-25"), which the
  *  spec parses as UTC midnight and renders as the 24th anywhere west of Greenwich. */
-function toDate(value) {
+function toDate(value: string | null | undefined): Date | undefined {
   if (!value) return undefined
   const [y, m, d] = String(value).slice(0, 10).split('-').map(Number)
   if (!y || !m || !d) return undefined
@@ -28,13 +40,21 @@ function toDate(value) {
 }
 
 /** Date -> "YYYY-MM-DD", local again for the same reason. */
-function toValue(date) {
+function toValue(date: Date | undefined) {
   if (!date) return ''
-  const pad = (n) => String(n).padStart(2, '0')
+  const pad = (n: number) => String(n).padStart(2, '0')
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
 }
 
-const label = (value, placeholder) =>
+/** The calendar's disabled-day matchers for the configured bounds. Undefined bounds produce no
+ *  matcher at all rather than a matcher of undefined, which react-day-picker rejects. */
+const bounds = (min: string | null | undefined, max: string | null | undefined) => {
+  const before = toDate(min)
+  const after = toDate(max)
+  return [...(before ? [{ before }] : []), ...(after ? [{ after }] : [])]
+}
+
+const label = (value: string | null | undefined, placeholder: string) =>
   value
     ? toDate(value)?.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
     : placeholder
@@ -49,7 +69,7 @@ export default function DatePicker({
   min,
   max,
   align = 'start',
-}) {
+}: DateFieldProps & { value?: string | null; onChange: (value: string) => void }) {
   return (
     <Popover>
       <PopoverTrigger
@@ -75,7 +95,7 @@ export default function DatePicker({
           defaultMonth={toDate(value)}
           selected={toDate(value)}
           onSelect={(date) => onChange(toValue(date))}
-          disabled={[...(min ? [{ before: toDate(min) }] : []), ...(max ? [{ after: toDate(max) }] : [])]}
+          disabled={bounds(min, max)}
           captionLayout="dropdown"
           startMonth={toDate(min) ?? new Date(1990, 0, 1)}
           endMonth={toDate(max) ?? new Date(new Date().getFullYear() + 1, 11, 31)}
@@ -99,6 +119,11 @@ export function DateRangePicker({
   min,
   max,
   align = 'start',
+}: DateFieldProps & {
+  from?: string | null
+  to?: string | null
+  /** Fires on every click, so the range is briefly half-picked - see the note above. */
+  onChange: (range: { from: string; to: string }) => void
 }) {
   const range = { from: toDate(from), to: toDate(to) }
   const text = from || to ? `${label(from, 'Start') ?? 'Start'} → ${label(to, 'End') ?? 'End'}` : placeholder
@@ -127,7 +152,7 @@ export function DateRangePicker({
           defaultMonth={range.from}
           selected={range}
           onSelect={(next) => onChange({ from: toValue(next?.from), to: toValue(next?.to) })}
-          disabled={[...(min ? [{ before: toDate(min) }] : []), ...(max ? [{ after: toDate(max) }] : [])]}
+          disabled={bounds(min, max)}
           captionLayout="dropdown"
           startMonth={toDate(min) ?? new Date(1990, 0, 1)}
           endMonth={toDate(max) ?? new Date(new Date().getFullYear() + 1, 11, 31)}

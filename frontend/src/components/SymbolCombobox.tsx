@@ -13,7 +13,15 @@ import { searchStocksMaster } from '@/services/api'
 // and SME/EMERGE, regardless of whether it has been scraped yet, so no "Add <SYMBOL>" fallback is
 // needed (any valid NSE ticker is already searchable). Shared by Auto backtesting's run view and
 // the manual trade journal.
-export default function SymbolCombobox({ value, onChange, className }) {
+export default function SymbolCombobox({
+  value,
+  onChange,
+  className,
+}: {
+  value: string
+  onChange: (symbol: string) => void
+  className?: string
+}) {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
 

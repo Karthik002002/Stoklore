@@ -9,8 +9,11 @@ const DONUT_SIZE = 112
 const DONUT_RADIUS = DONUT_SIZE / 2
 const MAX_SLICES = 5
 
-const color = (i) => `var(--${CHART_COLORS[i % CHART_COLORS.length]})`
-const pct = (value, total) => (total > 0 ? Math.round((value / total) * 1000) / 10 : 0)
+/** One wedge: a name and an amount. Anything else on the object is ignored. */
+type Slice = { label: string; value: number }
+
+const color = (i: number) => `var(--${CHART_COLORS[i % CHART_COLORS.length]})`
+const pct = (value: number, total: number) => (total > 0 ? Math.round((value / total) * 1000) / 10 : 0)
 
 /**
  * Donut + legend for "where the money sits". Slices are `{ label, value }`; anything past the
@@ -21,8 +24,16 @@ const pct = (value, total) => (total > 0 ? Math.round((value / total) * 1000) / 
  * Zero/negative values are dropped: a pie can't draw them, and silently rendering a 0% wedge is
  * worse than omitting the row.
  */
-export default function AllocationDonut({ title, slices, note }) {
-  const { tooltipData, tooltipLeft, tooltipTop, tooltipOpen, showTooltip, hideTooltip } = useTooltip()
+export default function AllocationDonut({
+  title,
+  slices,
+  note,
+}: {
+  title: string
+  slices: Slice[]
+  note?: string
+}) {
+  const { tooltipData, tooltipLeft, tooltipTop, tooltipOpen, showTooltip, hideTooltip } = useTooltip<Slice>()
 
   const sorted = slices.filter((s) => s.value > 0).sort((a, b) => b.value - a.value)
   const other = sorted.slice(MAX_SLICES).reduce((sum, s) => sum + s.value, 0)
@@ -43,7 +54,7 @@ export default function AllocationDonut({ title, slices, note }) {
             <Group top={DONUT_RADIUS} left={DONUT_RADIUS}>
               <Pie
                 data={shown}
-                pieValue={(d) => d.value}
+                pieValue={(d: Slice) => d.value}
                 outerRadius={DONUT_RADIUS}
                 innerRadius={DONUT_RADIUS - 20}
                 padAngle={0.01}
@@ -52,7 +63,9 @@ export default function AllocationDonut({ title, slices, note }) {
                   pie.arcs.map((arc, i) => (
                     <path
                       key={arc.data.label}
-                      d={pie.path(arc)}
+                      // visx types the path builder as possibly returning null; an arc always
+                      // has one, and an empty `d` is the correct nothing anyway.
+                      d={pie.path(arc) ?? undefined}
                       fill={color(i)}
                       onMouseMove={(e) => {
                         const point = localPoint(e) ?? { x: 0, y: 0 }

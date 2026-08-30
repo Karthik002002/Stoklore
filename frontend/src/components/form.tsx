@@ -1,4 +1,6 @@
 import { Controller } from 'react-hook-form'
+import type { FieldError, FieldValues, Path, UseFormReturn } from 'react-hook-form'
+import type { ComponentProps, ReactNode } from 'react'
 import DatePicker from '@/components/DatePicker'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -14,7 +16,29 @@ import TagInput from '@/components/TagInput'
 // sharing one label/error shell.
 
 /** Label + control + error message. The shell every field below renders into. */
-export function Field({ label, error, hint, children, className = '' }) {
+/** What every field below needs: the form it belongs to, and which key on it. Generic over the
+ *  form's own values, so `name` is checked against the schema rather than being any string. */
+type FieldProps<T extends FieldValues> = {
+  form: UseFormReturn<T>
+  name: Path<T>
+  label?: ReactNode
+  hint?: ReactNode
+  className?: string
+}
+
+export function Field({
+  label,
+  error,
+  hint,
+  children,
+  className = '',
+}: {
+  label?: ReactNode
+  error?: FieldError
+  hint?: ReactNode
+  children?: ReactNode
+  className?: string
+}) {
   return (
     <div className={`space-y-1 ${className}`}>
       {label && <label className="text-xs text-muted-foreground">{label}</label>}
@@ -27,8 +51,15 @@ export function Field({ label, error, hint, children, className = '' }) {
 
 /** Text/number input bound via register(). `type="number"` values stay strings - the zod schemas
  *  coerce them (see lib/schemas.js), so blank stays distinguishable from 0. */
-export function TextField({ form, name, label, hint, className, ...props }) {
-  const error = form.formState.errors[name]
+export function TextField<T extends FieldValues>({
+  form,
+  name,
+  label,
+  hint,
+  className,
+  ...props
+}: FieldProps<T> & Omit<ComponentProps<typeof Input>, 'form' | 'name'>) {
+  const error = form.formState.errors[name] as FieldError | undefined
   return (
     <Field label={label} error={error} hint={hint} className={className}>
       <Input {...props} {...form.register(name)} aria-invalid={!!error} />
@@ -36,8 +67,15 @@ export function TextField({ form, name, label, hint, className, ...props }) {
   )
 }
 
-export function TextAreaField({ form, name, label, hint, className, ...props }) {
-  const error = form.formState.errors[name]
+export function TextAreaField<T extends FieldValues>({
+  form,
+  name,
+  label,
+  hint,
+  className,
+  ...props
+}: FieldProps<T> & Omit<ComponentProps<typeof Textarea>, 'form' | 'name'>) {
+  const error = form.formState.errors[name] as FieldError | undefined
   return (
     <Field label={label} error={error} hint={hint} className={className}>
       <Textarea {...props} {...form.register(name)} aria-invalid={!!error} />
@@ -45,12 +83,15 @@ export function TextAreaField({ form, name, label, hint, className, ...props }) 
   )
 }
 
+/** One option in a SelectField. */
+export type SelectOption = { value: string; label: ReactNode; disabled?: boolean }
+
 /** Select bound through Controller. `options` is [{value, label}]; `nullValue` maps a sentinel
  *  option back to null on the way out (base-ui renders '' as the placeholder, never as a
  *  selectable item - the same NO_ACCOUNT/ALL_ACCOUNTS trick the app already used by hand).
  *  `parse` converts the selected string before it reaches the form (e.g. Number for account ids),
  *  and `onSelect` fires after, for the "flip resultManual once the user picks" case. */
-export function SelectField({
+export function SelectField<T extends FieldValues>({
   form,
   name,
   label,
@@ -63,8 +104,19 @@ export function SelectField({
   value: valueOverride,
   className,
   disabled,
+}: FieldProps<T> & {
+  options: SelectOption[]
+  placeholder?: string
+  /** The sentinel option that means "none" - mapped back to null on the way out. */
+  nullValue?: string
+  /** Converts the picked string before it reaches the form (Number, for account ids). */
+  parse?: (value: string) => unknown
+  onSelect?: (value: unknown) => void
+  /** Overrides the field's own value, for the rare controlled-from-outside case. */
+  value?: unknown
+  disabled?: boolean
 }) {
-  const error = form.formState.errors[name]
+  const error = form.formState.errors[name] as FieldError | undefined
   return (
     <Field label={label} error={error} hint={hint} className={className}>
       <Controller
@@ -76,7 +128,10 @@ export function SelectField({
             <Select
               disabled={disabled}
               value={shown == null ? (nullValue ?? '') : String(shown)}
-              onValueChange={(v) => {
+              onValueChange={(raw) => {
+                // Base UI types a select value as unknown; every option this form renders carries
+                // a string, and `parse` is where a caller turns it into something else.
+                const v = raw as string
                 const next = nullValue != null && v === nullValue ? null : parse ? parse(v) : v
                 field.onChange(next)
                 onSelect?.(next)
@@ -100,8 +155,15 @@ export function SelectField({
   )
 }
 
-export function TagField({ form, name, label, hint, placeholder, className }) {
-  const error = form.formState.errors[name]
+export function TagField<T extends FieldValues>({
+  form,
+  name,
+  label,
+  hint,
+  placeholder,
+  className,
+}: FieldProps<T> & { placeholder?: string }) {
+  const error = form.formState.errors[name] as FieldError | undefined
   return (
     <Field label={label} error={error} hint={hint} className={className}>
       <Controller
@@ -117,9 +179,21 @@ export function TagField({ form, name, label, hint, placeholder, className }) {
 
 /** A date field bound to react-hook-form. Controller rather than `register` for the same reason
  *  SelectField needs it: DatePicker is a controlled component with no ref or onBlur to register. */
-export function DateField({ form, name, label, hint, className, ...props }) {
+export function DateField<T extends FieldValues>({
+  form,
+  name,
+  label,
+  hint,
+  className,
+  ...props
+}: FieldProps<T> & Omit<ComponentProps<typeof DatePicker>, 'value' | 'onChange'>) {
   return (
-    <Field label={label} hint={hint} error={form.formState.errors[name]} className={className}>
+    <Field
+      label={label}
+      hint={hint}
+      error={form.formState.errors[name] as FieldError | undefined}
+      className={className}
+    >
       <Controller
         control={form.control}
         name={name}

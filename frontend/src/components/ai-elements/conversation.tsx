@@ -1,11 +1,12 @@
 'use client'
+import type { ComponentProps, ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { ArrowDownIcon, DownloadIcon } from 'lucide-react'
 import { useCallback } from 'react'
 import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom'
 
-export const Conversation = ({ className, ...props }) => (
+export const Conversation = ({ className, ...props }: ComponentProps<typeof StickToBottom>) => (
   <StickToBottom
     className={cn('relative flex-1 overflow-y-hidden', className)}
     initial="smooth"
@@ -15,7 +16,10 @@ export const Conversation = ({ className, ...props }) => (
   />
 )
 
-export const ConversationContent = ({ className, ...props }) => (
+export const ConversationContent = ({
+  className,
+  ...props
+}: ComponentProps<typeof StickToBottom.Content>) => (
   <StickToBottom.Content className={cn('flex flex-col gap-8 p-4', className)} {...props} />
 )
 
@@ -26,7 +30,7 @@ export const ConversationEmptyState = ({
   icon,
   children,
   ...props
-}) => (
+}: ComponentProps<'div'> & { title?: ReactNode; description?: ReactNode; icon?: ReactNode }) => (
   <div
     className={cn('flex size-full flex-col items-center justify-center gap-3 p-8 text-center', className)}
     {...props}
@@ -43,7 +47,7 @@ export const ConversationEmptyState = ({
   </div>
 )
 
-export const ConversationScrollButton = ({ className, ...props }) => {
+export const ConversationScrollButton = ({ className, ...props }: ComponentProps<typeof Button>) => {
   const { isAtBottom, scrollToBottom } = useStickToBottomContext()
 
   const handleScrollToBottom = useCallback(() => {
@@ -69,19 +73,25 @@ export const ConversationScrollButton = ({ className, ...props }) => {
   )
 }
 
-const getMessageText = (message) =>
+/** A chat message as the AI SDK models it: a role and a list of parts, of which this file only
+ *  reads the text ones. */
+type ChatMessage = { role: string; parts: { type: string; text?: string }[] }
+
+const getMessageText = (message: ChatMessage) =>
   message.parts
     .filter((part) => part.type === 'text')
-    .map((part) => part.text)
+    .map((part) => part.text ?? '')
     .join('')
 
-const defaultFormatMessage = (message) => {
+const defaultFormatMessage = (message: ChatMessage, _index?: number) => {
   const roleLabel = message.role.charAt(0).toUpperCase() + message.role.slice(1)
   return `**${roleLabel}:** ${getMessageText(message)}`
 }
 
-export const messagesToMarkdown = (messages, formatMessage = defaultFormatMessage) =>
-  messages.map((msg, i) => formatMessage(msg, i)).join('\n\n')
+export const messagesToMarkdown = (
+  messages: ChatMessage[],
+  formatMessage: (message: ChatMessage, index: number) => string = defaultFormatMessage,
+) => messages.map((msg, i) => formatMessage(msg, i)).join('\n\n')
 
 export const ConversationDownload = ({
   messages,
@@ -90,6 +100,10 @@ export const ConversationDownload = ({
   className,
   children,
   ...props
+}: ComponentProps<typeof Button> & {
+  messages: ChatMessage[]
+  filename?: string
+  formatMessage?: (message: ChatMessage, index: number) => string
 }) => {
   const handleDownload = useCallback(() => {
     const markdown = messagesToMarkdown(messages, formatMessage)

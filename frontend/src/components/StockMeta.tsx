@@ -1,4 +1,5 @@
 import { Badge } from '@/components/ui/badge'
+import type { StockMasterRow } from '@/lib/types'
 
 // "What is this ticker, exactly" - shared by every symbol search in the app (SymbolCombobox,
 // StockMasterCombobox, the replay quick-switcher, Settings > Manage stocks) so a symbol never
@@ -8,10 +9,20 @@ import { Badge } from '@/components/ui/badge'
 // only in fixed market lots, on a much thinner book, and are frequently missing from the intraday
 // dataset (bar replay falls back to Yahoo's shallower history for them). Series is shown only when
 // it isn't plain EQ - stamping "EQ" on 2,000 rows is noise, but BE/BZ/SM/ST are worth knowing.
-export function StockBadges({ stock, showExchange = false, showLot = false, className = '' }) {
+export function StockBadges({
+  stock,
+  showExchange = false,
+  showLot = false,
+  className = '',
+}: {
+  stock?: Partial<StockMasterRow> | null
+  showExchange?: boolean
+  showLot?: boolean
+  className?: string
+}) {
   const sme = stock?.board === 'SME'
   const series = stock?.series && stock.series !== 'EQ' ? stock.series : null
-  const lot = showLot && stock?.market_lot > 1 ? stock.market_lot : null
+  const lot = showLot && (stock?.market_lot ?? 0) > 1 ? stock?.market_lot : null
   if (!sme && !series && !lot && !showExchange) return null
   return (
     <span className={`flex shrink-0 items-center gap-1 ${className}`}>
@@ -39,7 +50,7 @@ export function StockBadges({ stock, showExchange = false, showLot = false, clas
 }
 
 /** Second line for the roomier pickers: ISIN, listing date, and the lot an SME scrip trades in. */
-export function StockSubline({ stock }) {
+export function StockSubline({ stock }: { stock?: Partial<StockMasterRow> | null }) {
   const bits = [
     stock?.isin,
     stock?.listing_date ? `listed ${stock.listing_date}` : null,

@@ -123,3 +123,18 @@ export interface DailyBar {
   close: number
   volume?: number | null
 }
+
+/** One row of `stocks_master`: what a ticker actually is. Shared by every symbol picker, so a
+ *  symbol never reads as one thing in one search box and another elsewhere. */
+export interface StockMasterRow {
+  symbol: string
+  name: string
+  series: string | null
+  listing_date: string | null
+  isin: string | null
+  /** 'MAIN' or 'SME' (NSE EMERGE) - derived from the series code at import time. */
+  board: 'MAIN' | 'SME' | null
+  /** SME scrips trade only in fixed lots; 1 on the main board. */
+  market_lot: number | null
+  face_value: number | null
+}

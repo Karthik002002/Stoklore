@@ -15,7 +15,7 @@
 // rather than an `undefined` at runtime. Adding return annotations to the routers in app/ would
 // let these be generated too; until then, this file is the record.
 import type { components } from './api.types.ts'
-import type { Bar, DailyBar, Trade, TradeAccount } from '@/lib/types'
+import type { Bar, DailyBar, StockMasterRow, Trade, TradeAccount } from '@/lib/types'
 
 /** The request bodies FastAPI validates, from its own schema. */
 type Schemas = components['schemas']
@@ -132,6 +132,9 @@ export type CollectStatus = {
   total?: number
   symbol?: string | null
 }
+
+/** The master search: matching rows, plus the per-board totals so a caller can show the split. */
+export type StockMasterSearch = { stocks: StockMasterRow[]; main: number; sme: number; total: number }
 
 /** Which price_sources plugin can fetch history, and which one is picked by default. */
 export type PriceSources = { sources: string[]; default: string }
@@ -471,7 +474,8 @@ export const setActivitySettings = (settings: ActivitySettingsRequest) =>
     body: JSON.stringify(settings),
   }).then(json)
 
-export const searchStocks = (q = '') => fetch(`/api/stocks/search?q=${encodeURIComponent(q)}`).then(json)
+export const searchStocks = (q = '') =>
+  fetch(`/api/stocks/search?q=${encodeURIComponent(q)}`).then(json<StockMasterSearch>)
 
 export const addStock = (symbol: string) =>
   fetch('/api/stocks', {
@@ -488,7 +492,9 @@ export const getMarketMovers = (refresh = false) =>
   fetch(`/api/market-movers${refresh ? '?refresh=1' : ''}`).then(json)
 
 export const searchStocksMaster = (q = '', board?: string) =>
-  fetch(`/api/stocks-master?q=${encodeURIComponent(q)}${board ? `&board=${board}` : ''}`).then(json)
+  fetch(`/api/stocks-master?q=${encodeURIComponent(q)}${board ? `&board=${board}` : ''}`).then(
+    json<StockMasterSearch>,
+  )
 
 // `board` forces every row onto that board; omitted, each row's board comes from its SERIES code
 // (SM/ST = NSE EMERGE), which is what makes one importer handle both CSVs.

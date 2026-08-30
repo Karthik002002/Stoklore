@@ -1,22 +1,24 @@
+import type { VariantProps } from 'class-variance-authority'
+import type { ComponentProps } from 'react'
 import * as React from 'react'
 import { AlertDialog as AlertDialogPrimitive } from '@base-ui/react/alert-dialog'
 
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 
-function AlertDialog({ ...props }) {
+function AlertDialog({ ...props }: ComponentProps<typeof AlertDialogPrimitive.Root>) {
   return <AlertDialogPrimitive.Root data-slot="alert-dialog" {...props} />
 }
 
-function AlertDialogTrigger({ ...props }) {
+function AlertDialogTrigger({ ...props }: ComponentProps<typeof AlertDialogPrimitive.Trigger>) {
   return <AlertDialogPrimitive.Trigger data-slot="alert-dialog-trigger" {...props} />
 }
 
-function AlertDialogPortal({ ...props }) {
+function AlertDialogPortal({ ...props }: ComponentProps<typeof AlertDialogPrimitive.Portal>) {
   return <AlertDialogPrimitive.Portal data-slot="alert-dialog-portal" {...props} />
 }
 
-function AlertDialogOverlay({ className, ...props }) {
+function AlertDialogOverlay({ className, ...props }: ComponentProps<typeof AlertDialogPrimitive.Backdrop>) {
   return (
     <AlertDialogPrimitive.Backdrop
       data-slot="alert-dialog-overlay"
@@ -29,7 +31,13 @@ function AlertDialogOverlay({ className, ...props }) {
   )
 }
 
-function AlertDialogContent({ className, size = 'default', ...props }) {
+function AlertDialogContent({
+  className,
+  size = 'default',
+  ...props
+  // `size` is this app's own prop, not the primitive's: it lands as data-size and the CSS above
+  // keys off it. 'sm' is the compact confirm dialog; 'default' the roomier one.
+}: ComponentProps<typeof AlertDialogPrimitive.Popup> & { size?: 'default' | 'sm' }) {
   return (
     <AlertDialogPortal>
       <AlertDialogOverlay />
@@ -46,7 +54,7 @@ function AlertDialogContent({ className, size = 'default', ...props }) {
   )
 }
 
-function AlertDialogHeader({ className, ...props }) {
+function AlertDialogHeader({ className, ...props }: ComponentProps<'div'>) {
   return (
     <div
       data-slot="alert-dialog-header"
@@ -59,7 +67,7 @@ function AlertDialogHeader({ className, ...props }) {
   )
 }
 
-function AlertDialogFooter({ className, ...props }) {
+function AlertDialogFooter({ className, ...props }: ComponentProps<'div'>) {
   return (
     <div
       data-slot="alert-dialog-footer"
@@ -72,7 +80,7 @@ function AlertDialogFooter({ className, ...props }) {
   )
 }
 
-function AlertDialogMedia({ className, ...props }) {
+function AlertDialogMedia({ className, ...props }: ComponentProps<'div'>) {
   return (
     <div
       data-slot="alert-dialog-media"
@@ -85,7 +93,7 @@ function AlertDialogMedia({ className, ...props }) {
   )
 }
 
-function AlertDialogTitle({ className, ...props }) {
+function AlertDialogTitle({ className, ...props }: ComponentProps<typeof AlertDialogPrimitive.Title>) {
   return (
     <AlertDialogPrimitive.Title
       data-slot="alert-dialog-title"
@@ -98,7 +106,10 @@ function AlertDialogTitle({ className, ...props }) {
   )
 }
 
-function AlertDialogDescription({ className, ...props }) {
+function AlertDialogDescription({
+  className,
+  ...props
+}: ComponentProps<typeof AlertDialogPrimitive.Description>) {
   return (
     <AlertDialogPrimitive.Description
       data-slot="alert-dialog-description"
@@ -111,11 +122,16 @@ function AlertDialogDescription({ className, ...props }) {
   )
 }
 
-function AlertDialogAction({ className, ...props }) {
+function AlertDialogAction({ className, ...props }: ComponentProps<typeof Button>) {
   return <Button data-slot="alert-dialog-action" className={cn(className)} {...props} />
 }
 
-function AlertDialogCancel({ className, variant = 'outline', size = 'default', ...props }) {
+function AlertDialogCancel({
+  className,
+  variant = 'outline',
+  size = 'default',
+  ...props
+}: ComponentProps<typeof AlertDialogPrimitive.Close> & VariantProps<typeof buttonVariants>) {
   return (
     <AlertDialogPrimitive.Close
       data-slot="alert-dialog-cancel"

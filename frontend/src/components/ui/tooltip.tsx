@@ -1,18 +1,25 @@
 'use client'
 
+import type { ComponentProps } from 'react'
+
 import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip'
 
 import { cn } from '@/lib/utils'
 
-function TooltipProvider({ delay = 0, ...props }) {
+/** A popup wrapper's props: the popup's own, plus the placement props it forwards to the
+ *  positioner (which is a separate element in Base UI, but one prop set to the caller). */
+type PositionedPopupProps = ComponentProps<typeof TooltipPrimitive.Popup> &
+  Pick<ComponentProps<typeof TooltipPrimitive.Positioner>, 'side' | 'align' | 'sideOffset' | 'alignOffset'>
+
+function TooltipProvider({ delay = 0, ...props }: ComponentProps<typeof TooltipPrimitive.Provider>) {
   return <TooltipPrimitive.Provider data-slot="tooltip-provider" delay={delay} {...props} />
 }
 
-function Tooltip({ ...props }) {
+function Tooltip({ ...props }: ComponentProps<typeof TooltipPrimitive.Root>) {
   return <TooltipPrimitive.Root data-slot="tooltip" {...props} />
 }
 
-function TooltipTrigger({ ...props }) {
+function TooltipTrigger({ ...props }: ComponentProps<typeof TooltipPrimitive.Trigger>) {
   return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
 }
 
@@ -24,7 +31,7 @@ function TooltipContent({
   alignOffset = 0,
   children,
   ...props
-}) {
+}: PositionedPopupProps) {
   return (
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Positioner

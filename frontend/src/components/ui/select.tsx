@@ -1,8 +1,24 @@
+import type { ComponentProps } from 'react'
 import * as React from 'react'
 import { Select as SelectPrimitive } from '@base-ui/react/select'
 
 import { cn } from '@/lib/utils'
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from 'lucide-react'
+
+/** A popup wrapper's props: the popup's own, plus the placement props it forwards to the
+ *  positioner (which is a separate element in Base UI, but one prop set to the caller). */
+/** One option, as collected off the JSX children so <SelectValue /> can show a label. Shaped to
+ *  match what the primitive's own `items` prop accepts, since that is where these end up. */
+// ts: `any` on value, because Base UI's own `items` prop declares it that way - a value here is
+// whatever the caller put on <SelectItem value={...}>, and narrowing to unknown makes this
+// unassignable to the prop it exists to feed. Remove if the library ever generifies it.
+type SelectItemLabel = { value: any; label: React.ReactNode }
+
+type PositionedPopupProps = ComponentProps<typeof SelectPrimitive.Popup> &
+  Pick<
+    ComponentProps<typeof SelectPrimitive.Positioner>,
+    'side' | 'align' | 'sideOffset' | 'alignOffset' | 'alignItemWithTrigger'
+  >
 
 // Base UI's <Select.Value> shows the raw selected value ("2", "daily") unless the root is given
 // an `items` map of {value, label} - it can't derive a label from <Select.Item> children on its
@@ -12,19 +28,21 @@ import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from 'lucide-react'
 // once per render, pulls {value, label} out of every <SelectItem>, and feeds that to the root -
 // so <SelectValue /> shows the item's label everywhere, by default, with zero per-caller wiring.
 // An explicit `items` prop (or an explicit SelectValue children function) still wins over this.
-function collectItemLabels(children, items) {
+function collectItemLabels(children: React.ReactNode, items: SelectItemLabel[]): SelectItemLabel[] {
   React.Children.forEach(children, (child) => {
     if (!React.isValidElement(child)) return
     if (child.type === SelectItem) {
-      items.push({ value: child.props.value, label: child.props.children })
+      const { value, children: label } = child.props as { value: unknown; children: React.ReactNode }
+      items.push({ value, label })
       return
     }
-    if (child.props?.children != null) collectItemLabels(child.props.children, items)
+    const nested = (child.props as { children?: React.ReactNode }).children
+    if (nested != null) collectItemLabels(nested, items)
   })
   return items
 }
 
-function Select({ items, children, ...props }) {
+function Select({ items, children, ...props }: ComponentProps<typeof SelectPrimitive.Root>) {
   const derivedItems = React.useMemo(() => items ?? collectItemLabels(children, []), [items, children])
   return (
     <SelectPrimitive.Root items={derivedItems} {...props}>
@@ -33,13 +51,13 @@ function Select({ items, children, ...props }) {
   )
 }
 
-function SelectGroup({ className, ...props }) {
+function SelectGroup({ className, ...props }: ComponentProps<typeof SelectPrimitive.Group>) {
   return (
     <SelectPrimitive.Group data-slot="select-group" className={cn('scroll-my-1 p-1', className)} {...props} />
   )
 }
 
-function SelectValue({ className, ...props }) {
+function SelectValue({ className, ...props }: ComponentProps<typeof SelectPrimitive.Value>) {
   return (
     <SelectPrimitive.Value
       data-slot="select-value"
@@ -49,7 +67,13 @@ function SelectValue({ className, ...props }) {
   )
 }
 
-function SelectTrigger({ className, size = 'default', children, ...props }) {
+function SelectTrigger({
+  className,
+  size = 'default',
+  children,
+  ...props
+  // `size` is this app's, not the primitive's - it lands as data-size for the CSS below.
+}: ComponentProps<typeof SelectPrimitive.Trigger> & { size?: 'default' | 'sm' }) {
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
@@ -77,7 +101,7 @@ function SelectContent({
   alignOffset = 0,
   alignItemWithTrigger = true,
   ...props
-}) {
+}: PositionedPopupProps) {
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Positioner
@@ -106,7 +130,7 @@ function SelectContent({
   )
 }
 
-function SelectLabel({ className, ...props }) {
+function SelectLabel({ className, ...props }: ComponentProps<typeof SelectPrimitive.GroupLabel>) {
   return (
     <SelectPrimitive.GroupLabel
       data-slot="select-label"
@@ -116,7 +140,7 @@ function SelectLabel({ className, ...props }) {
   )
 }
 
-function SelectItem({ className, children, ...props }) {
+function SelectItem({ className, children, ...props }: ComponentProps<typeof SelectPrimitive.Item>) {
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
@@ -140,7 +164,7 @@ function SelectItem({ className, children, ...props }) {
   )
 }
 
-function SelectSeparator({ className, ...props }) {
+function SelectSeparator({ className, ...props }: ComponentProps<typeof SelectPrimitive.Separator>) {
   return (
     <SelectPrimitive.Separator
       data-slot="select-separator"
@@ -150,7 +174,7 @@ function SelectSeparator({ className, ...props }) {
   )
 }
 
-function SelectScrollUpButton({ className, ...props }) {
+function SelectScrollUpButton({ className, ...props }: ComponentProps<typeof SelectPrimitive.ScrollUpArrow>) {
   return (
     <SelectPrimitive.ScrollUpArrow
       data-slot="select-scroll-up-button"
@@ -165,7 +189,10 @@ function SelectScrollUpButton({ className, ...props }) {
   )
 }
 
-function SelectScrollDownButton({ className, ...props }) {
+function SelectScrollDownButton({
+  className,
+  ...props
+}: ComponentProps<typeof SelectPrimitive.ScrollDownArrow>) {
   return (
     <SelectPrimitive.ScrollDownArrow
       data-slot="select-scroll-down-button"

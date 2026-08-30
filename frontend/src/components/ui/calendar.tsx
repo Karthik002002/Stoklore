@@ -1,5 +1,8 @@
+import type { ComponentProps } from 'react'
+import type { VariantProps } from 'class-variance-authority'
 import * as React from 'react'
 import { DayPicker, getDefaultClassNames } from 'react-day-picker'
+import type { DayButton } from 'react-day-picker'
 
 import { cn } from '@/lib/utils'
 import { Button, buttonVariants } from '@/components/ui/button'
@@ -15,7 +18,7 @@ function Calendar({
   formatters,
   components,
   ...props
-}) {
+}: ComponentProps<typeof DayPicker> & { buttonVariant?: VariantProps<typeof buttonVariants>['variant'] }) {
   const defaultClassNames = getDefaultClassNames()
 
   return (
@@ -134,10 +137,17 @@ function Calendar({
   )
 }
 
-function CalendarDayButton({ className, day, modifiers, locale, ...props }) {
+function CalendarDayButton({
+  className,
+  day,
+  modifiers,
+  locale,
+  ...props
+  // `locale` is passed down by DayPicker's formatters but isn't on DayButton's own props.
+}: ComponentProps<typeof DayButton> & { locale?: { code?: string } }) {
   const defaultClassNames = getDefaultClassNames()
 
-  const ref = React.useRef(null)
+  const ref = React.useRef<HTMLButtonElement>(null)
   React.useEffect(() => {
     if (modifiers.focused) ref.current?.focus()
   }, [modifiers.focused])

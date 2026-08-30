@@ -1,14 +1,21 @@
 'use client'
 
+import type { ComponentProps } from 'react'
+
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover'
 
 import { cn } from '@/lib/utils'
 
-function Popover({ ...props }) {
+/** A popup wrapper's props: the popup's own, plus the placement props it forwards to the
+ *  positioner (which is a separate element in Base UI, but one prop set to the caller). */
+type PositionedPopupProps = ComponentProps<typeof PopoverPrimitive.Popup> &
+  Pick<ComponentProps<typeof PopoverPrimitive.Positioner>, 'side' | 'align' | 'sideOffset' | 'alignOffset'>
+
+function Popover({ ...props }: ComponentProps<typeof PopoverPrimitive.Root>) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />
 }
 
-function PopoverTrigger({ ...props }) {
+function PopoverTrigger({ ...props }: ComponentProps<typeof PopoverPrimitive.Trigger>) {
   return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />
 }
 
@@ -19,7 +26,7 @@ function PopoverContent({
   align = 'center',
   alignOffset = 0,
   ...props
-}) {
+}: PositionedPopupProps) {
   return (
     <PopoverPrimitive.Portal data-slot="popover-portal">
       <PopoverPrimitive.Positioner

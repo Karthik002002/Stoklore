@@ -1,3 +1,4 @@
+import type { ComponentProps } from 'react'
 import * as React from 'react'
 import { Dialog as DialogPrimitive } from '@base-ui/react/dialog'
 
@@ -5,23 +6,27 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { XIcon } from 'lucide-react'
 
-function Dialog({ ...props }) {
+function Dialog({ ...props }: ComponentProps<typeof DialogPrimitive.Root>) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />
 }
 
-function DialogTrigger({ ...props }) {
+function DialogTrigger({ ...props }: ComponentProps<typeof DialogPrimitive.Trigger>) {
   return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />
 }
 
-function DialogPortal({ ...props }) {
+function DialogPortal({ ...props }: ComponentProps<typeof DialogPrimitive.Portal>) {
   return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />
 }
 
-function DialogClose({ ...props }) {
+function DialogClose({ ...props }: ComponentProps<typeof DialogPrimitive.Close>) {
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />
 }
 
-function DialogOverlay({ className, blur = true, ...props }) {
+function DialogOverlay({
+  className,
+  blur = true,
+  ...props
+}: ComponentProps<typeof DialogPrimitive.Backdrop> & { blur?: boolean }) {
   return (
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
@@ -35,7 +40,18 @@ function DialogOverlay({ className, blur = true, ...props }) {
   )
 }
 
-function DialogContent({ className, children, showCloseButton = true, blurBackground = true, ...props }) {
+function DialogContent({
+  className,
+  children,
+  showCloseButton = true,
+  blurBackground = true,
+  ...props
+  // Both are this app's own, not the primitive's: whether to draw the corner close button, and
+  // whether the backdrop blurs behind it.
+}: ComponentProps<typeof DialogPrimitive.Popup> & {
+  showCloseButton?: boolean
+  blurBackground?: boolean
+}) {
   return (
     <DialogPortal>
       <DialogOverlay blur={blurBackground} />
@@ -62,11 +78,16 @@ function DialogContent({ className, children, showCloseButton = true, blurBackgr
   )
 }
 
-function DialogHeader({ className, ...props }) {
+function DialogHeader({ className, ...props }: ComponentProps<'div'>) {
   return <div data-slot="dialog-header" className={cn('flex flex-col gap-2', className)} {...props} />
 }
 
-function DialogFooter({ className, showCloseButton = false, children, ...props }) {
+function DialogFooter({
+  className,
+  showCloseButton = false,
+  children,
+  ...props
+}: ComponentProps<'div'> & { showCloseButton?: boolean }) {
   return (
     <div
       data-slot="dialog-footer"
@@ -84,7 +105,7 @@ function DialogFooter({ className, showCloseButton = false, children, ...props }
   )
 }
 
-function DialogTitle({ className, ...props }) {
+function DialogTitle({ className, ...props }: ComponentProps<typeof DialogPrimitive.Title>) {
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
@@ -94,7 +115,7 @@ function DialogTitle({ className, ...props }) {
   )
 }
 
-function DialogDescription({ className, ...props }) {
+function DialogDescription({ className, ...props }: ComponentProps<typeof DialogPrimitive.Description>) {
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"

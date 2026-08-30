@@ -1,14 +1,23 @@
 'use client'
 
+import type { ComponentProps } from 'react'
+
 import { PreviewCard as PreviewCardPrimitive } from '@base-ui/react/preview-card'
 
 import { cn } from '@/lib/utils'
 
-function HoverCard({ ...props }) {
+/** The popup's own props plus the placement ones it forwards to the positioner. */
+type PositionedPopupProps = ComponentProps<typeof PreviewCardPrimitive.Popup> &
+  Pick<
+    ComponentProps<typeof PreviewCardPrimitive.Positioner>,
+    'side' | 'align' | 'sideOffset' | 'alignOffset'
+  >
+
+function HoverCard({ ...props }: ComponentProps<typeof PreviewCardPrimitive.Root>) {
   return <PreviewCardPrimitive.Root data-slot="hover-card" {...props} />
 }
 
-function HoverCardTrigger({ ...props }) {
+function HoverCardTrigger({ ...props }: ComponentProps<typeof PreviewCardPrimitive.Trigger>) {
   return <PreviewCardPrimitive.Trigger data-slot="hover-card-trigger" {...props} />
 }
 
@@ -19,7 +28,7 @@ function HoverCardContent({
   align = 'center',
   alignOffset = 4,
   ...props
-}) {
+}: PositionedPopupProps) {
   return (
     <PreviewCardPrimitive.Portal data-slot="hover-card-portal">
       <PreviewCardPrimitive.Positioner

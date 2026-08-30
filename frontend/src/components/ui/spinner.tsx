@@ -1,7 +1,8 @@
+import type { ComponentProps } from 'react'
 import { cn } from '@/lib/utils'
 import { Loader2Icon } from 'lucide-react'
 
-function Spinner({ className, ...props }) {
+function Spinner({ className, ...props }: ComponentProps<typeof Loader2Icon>) {
   return (
     <Loader2Icon
       data-slot="spinner"

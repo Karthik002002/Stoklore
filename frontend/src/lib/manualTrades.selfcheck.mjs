@@ -2,7 +2,7 @@
 // path with branches, so it gets a runnable check. Plain node, no test framework:
 //   node src/lib/manualTrades.selfcheck.mjs
 import assert from 'node:assert/strict'
-import { autoResult, NEUTRAL_PNL_BAND, tradePnl, tradeRR, tradeRRDisplay } from './manualTrades.js'
+import { autoResult, NEUTRAL_PNL_BAND, tradePnl, tradeRR, tradeRRDisplay } from './manualTrades.ts'
 
 const long = (exit, qty = 1) => ({
   direction: 'long',

@@ -1,3 +1,13 @@
+import type { DailyBar } from './types.ts'
+
+/** What the measure tool needs off a bar. Deliberately looser than Bar or DailyBar: the replay
+ *  chart feeds it whichever of the two the current timeframe produced, and the only fields it
+ *  reads are the stamp and the volume. */
+type MeasureBar = { time?: number | string; date?: string; volume?: number | null }
+
+/** A point the user dragged to on the chart - a fractional bar index and an arbitrary price. */
+type MeasureAnchor = { index: number; price: number }
+
 // Timeframe list for Bar Replay's picker, fine -> coarse. The two halves come from completely
 // different sources: 1D/1W/1Mo are rolled up from the daily bars this app syncs itself
 // (price_history_max, via aggregateBars below), while everything marked `intraday` is fetched
@@ -17,7 +27,7 @@ export const REPLAY_TIMEFRAMES = [
   { value: '1Mo', label: '1 Month', available: true },
 ]
 
-export const isIntraday = (timeframe) => REPLAY_TIMEFRAMES.some((t) => t.value === timeframe && t.intraday)
+export const isIntraday = (timeframe: string) => REPLAY_TIMEFRAMES.some((t) => t.value === timeframe && t.intraday)
 
 export const REPLAY_SPEEDS = [
   { value: 2000, label: '0.5x' },
@@ -28,24 +38,24 @@ export const REPLAY_SPEEDS = [
 
 // Monday of the ISO week containing dateStr, as "YYYY-MM-DD" - used as the aggregated weekly
 // candle's representative time.
-function weekKey(dateStr) {
+function weekKey(dateStr: string) {
   const d = new Date(`${dateStr}T00:00:00Z`)
   const diffToMonday = (d.getUTCDay() + 6) % 7
   d.setUTCDate(d.getUTCDate() - diffToMonday)
   return d.toISOString().slice(0, 10)
 }
 
-function monthKey(dateStr) {
+function monthKey(dateStr: string) {
   return `${dateStr.slice(0, 7)}-01`
 }
 
 // Rolls up ascending daily {date, open, high, low, close, volume} bars into weekly/monthly
 // candles. '1D' (or an already-empty list) passes through unchanged.
-export function aggregateBars(dailyBars, timeframe) {
+export function aggregateBars(dailyBars: DailyBar[], timeframe: string): DailyBar[] {
   if (timeframe === '1D' || dailyBars.length === 0) return dailyBars
   const keyFn = timeframe === '1W' ? weekKey : monthKey
-  const order = []
-  const buckets = new Map()
+  const order: string[] = []
+  const buckets = new Map<string, DailyBar>()
   for (const bar of dailyBars) {
     const key = keyFn(bar.date)
     const bucket = buckets.get(key)
@@ -63,10 +73,10 @@ export function aggregateBars(dailyBars, timeframe) {
       bucket.high = Math.max(bucket.high, bar.high)
       bucket.low = Math.min(bucket.low, bar.low)
       bucket.close = bar.close
-      bucket.volume += bar.volume
+      bucket.volume = (bucket.volume ?? 0) + (bar.volume ?? 0)
     }
   }
-  return order.map((k) => buckets.get(k))
+  return order.map((k) => buckets.get(k)!)
 }
 
 // --- Measure tool -------------------------------------------------------------------------------
@@ -77,7 +87,7 @@ export function aggregateBars(dailyBars, timeframe) {
 /** Milliseconds a bar's `time` stands for. Intraday bars key on a unix timestamp, daily ones on a
  *  "YYYY-MM-DD" business day (see ReplayChart's stamp) - so this is the one place that has to know
  *  both, and everything downstream just subtracts. */
-function barMs(bar) {
+function barMs(bar: MeasureBar | undefined) {
   if (!bar) return null
   if (typeof bar.time === 'number') return bar.time * 1000
   return Date.parse(`${bar.date ?? bar.time}T00:00:00Z`)
@@ -85,7 +95,7 @@ function barMs(bar) {
 
 /** Elapsed time as the shortest thing worth reading: days once there is at least one, otherwise
  *  hours and minutes. Null when either end has no bar under it. */
-export function elapsedLabel(ms) {
+export function elapsedLabel(ms: number | null) {
   if (ms == null) return null
   const abs = Math.abs(ms)
   const days = Math.round(abs / 86400000)
@@ -106,12 +116,12 @@ export function elapsedLabel(ms) {
  *  clamped, so a measurement dragged into that space still counts the bars it actually covered
  *  rather than reporting nothing.
  */
-export function measureRange(bars, a, b) {
+export function measureRange(bars: MeasureBar[], a: MeasureAnchor, b: MeasureAnchor) {
   const change = b.price - a.price
   const pct = a.price ? (change / a.price) * 100 : null
 
   const last = bars.length - 1
-  const clamp = (i) => Math.max(0, Math.min(last, Math.round(i)))
+  const clamp = (i: number) => Math.max(0, Math.min(last, Math.round(i)))
   const from = clamp(Math.min(a.index, b.index))
   const to = clamp(Math.max(a.index, b.index))
 

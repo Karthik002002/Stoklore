@@ -10,7 +10,7 @@ import {
   journalTrades,
   positionSizeCap,
   tradesForAccount,
-} from './tradeAccounts.js'
+} from './tradeAccounts.ts'
 
 const account = {
   id: 1,

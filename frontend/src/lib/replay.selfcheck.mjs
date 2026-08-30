@@ -1,7 +1,7 @@
 // Self-check for the Bar Replay pure helpers. Plain node, no test framework:
 //   node src/lib/replay.selfcheck.mjs
 import assert from 'node:assert/strict'
-import { aggregateBars, elapsedLabel, measureRange } from './replay.js'
+import { aggregateBars, elapsedLabel, measureRange } from './replay.ts'
 
 const daily = (date, close, volume = 1000) => ({
   date,

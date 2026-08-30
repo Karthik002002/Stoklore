@@ -1,7 +1,19 @@
 import { PineTS } from 'pinets'
 import { getPriceHistory } from '@/services/api'
+import type { DailyBar } from './types.ts'
 
-function toCandles(rows) {
+/** PineTS's own trade shape. Typed here rather than imported - the package ships no types, and
+ *  these are the five fields this file reads. */
+type PineTrade = {
+  entry_price: number
+  exit_price?: number | null
+  entry_time: number
+  exit_time?: number | null
+  size: number
+  status: string
+}
+
+function toCandles(rows: DailyBar[]) {
   return rows.map((r) => ({
     open: r.open,
     high: r.high,
@@ -17,7 +29,7 @@ function toCandles(rows) {
 // {trades, summary} shape backtest.run_ema_crossover uses, so the existing TradesTable/
 // ReturnBadge components work unmodified. Indicator-only scripts (just plot()) come back as
 // {plots} instead - there's no strategy/trades to show.
-export async function runPineScriptOnRows(script, rows) {
+export async function runPineScriptOnRows(script: string, rows: DailyBar[]) {
   if (rows.length === 0) {
     throw new Error('No price history available to run against.')
   }
@@ -28,10 +40,14 @@ export async function runPineScriptOnRows(script, rows) {
   const { strategy, plots } = await pineTS.run(script)
 
   if (!strategy) {
-    return { plots: Object.fromEntries(Object.entries(plots ?? {}).map(([name, p]) => [name, p.data])) }
+    return {
+      plots: Object.fromEntries(
+        Object.entries(plots ?? {}).map(([name, p]) => [name, (p as { data: unknown }).data]),
+      ),
+    }
   }
 
-  const trades = [...strategy.closedtrades, ...strategy.opentrades].map((t) => {
+  const trades = [...strategy.closedtrades, ...strategy.opentrades].map((t: PineTrade) => {
     const exitPrice = t.exit_price ?? lastCandle.close
     const pct = ((exitPrice - t.entry_price) / t.entry_price) * 100 * (t.size < 0 ? -1 : 1)
     return {
@@ -57,7 +73,7 @@ export async function runPineScriptOnRows(script, rows) {
 
 // Quick-preview variant (Add-script modal) - fetches the default 1y price_history window itself
 // rather than requiring the caller to have collected full max history first.
-export async function runPineScript(script, symbol, days = 365) {
+export async function runPineScript(script: string, symbol: string, days = 365) {
   const rows = await getPriceHistory(symbol, days)
   if (rows.length === 0) {
     throw new Error(`No synced price history for '${symbol}' yet - run a price sync first`)

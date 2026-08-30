@@ -15,6 +15,17 @@ import { useHotkey } from '@tanstack/react-hotkeys'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+/** What this browser has rebound, keyed by shortcut id. '' means "off", which is why an entry
+ *  being present-but-empty is different from it being absent. */
+export type Bindings = Record<string, string>
+
+type ShortcutStore = {
+  bindings: Bindings
+  setBinding: (id: string, key: string) => void
+  resetBinding: (id: string) => void
+  resetAll: () => void
+}
+
 /** The registry. `id` is a stable storage key - renaming a label is free, renaming an id resets
  *  whatever the user had bound. `scope` is only a display grouping; every binding is checked for
  *  conflicts against every other one, because the replay page has the global shortcuts live too. */
@@ -51,18 +62,18 @@ const DEFAULTS = Object.fromEntries(SHORTCUTS.map((s) => [s.id, s.default]))
 /** The binding in force for `id`: what the user set, or the default when they haven't touched it.
  *  An EMPTY STRING is a real, deliberate value - "this shortcut is off" - and is why unset can't
  *  simply be represented by a missing/blank binding. */
-export function bindingFor(bindings, id) {
+export function bindingFor(bindings: Bindings, id: string) {
   return bindings[id] ?? DEFAULTS[id] ?? ''
 }
 
-export const defaultFor = (id) => DEFAULTS[id] ?? ''
+export const defaultFor = (id: string) => DEFAULTS[id] ?? ''
 
 // Modifier keys pressed alone are not shortcuts - a capture field must keep listening rather than
 // recording "shift".
 const MODIFIER_KEYS = new Set(['Shift', 'Control', 'Alt', 'Meta', 'CapsLock'])
 
 // KeyboardEvent.key -> the name react-hotkeys uses.
-const KEY_NAMES = {
+const KEY_NAMES: Record<string, string> = {
   ArrowUp: 'up',
   ArrowDown: 'down',
   ArrowLeft: 'left',
@@ -80,7 +91,7 @@ const KEY_NAMES = {
  *  Ctrl and Cmd both become 'Mod', which is how the hotkey library spells "the platform's command
  *  modifier" - binding a literal Ctrl on a Mac would be a shortcut the user can't comfortably press
  *  and doesn't match the ⌘ printed everywhere else in the UI. */
-export function keyFromEvent(event) {
+export function keyFromEvent(event: KeyboardEvent) {
   if (MODIFIER_KEYS.has(event.key)) return null
   const parts = []
   if (event.metaKey || event.ctrlKey) parts.push('Mod')
@@ -94,10 +105,10 @@ export function keyFromEvent(event) {
 
 const isMac = () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform ?? '')
 
-const SYMBOLS = { shift: '⇧', alt: '⌥', up: '↑', down: '↓', left: '←', right: '→' }
+const SYMBOLS: Record<string, string> = { shift: '⇧', alt: '⌥', up: '↑', down: '↓', left: '←', right: '→' }
 
 /** A binding as a person reads it: 'shift+b' -> '⇧ B', 'Mod+K' -> '⌘ K' (or 'Ctrl K'). */
-export function formatShortcut(key, mac = isMac()) {
+export function formatShortcut(key: string, mac = isMac()) {
   if (!key) return 'Off'
   return key
     .split('+')
@@ -111,14 +122,14 @@ export function formatShortcut(key, mac = isMac()) {
 /** Ids sharing a binding with something else, as a Set. Two shortcuts on one key means one of them
  *  silently never fires, so this is surfaced in the Settings tab rather than left to be discovered
  *  mid-session. Disabled ('') bindings never conflict - any number of them can be off. */
-export function conflictingIds(bindings) {
-  const byKey = new Map()
+export function conflictingIds(bindings: Bindings) {
+  const byKey = new Map<string, string[]>()
   for (const { id } of SHORTCUTS) {
     const key = bindingFor(bindings, id)
     if (!key) continue
     byKey.set(key, [...(byKey.get(key) ?? []), id])
   }
-  const clashing = new Set()
+  const clashing = new Set<string>()
   for (const ids of byKey.values()) {
     if (ids.length > 1) for (const id of ids) clashing.add(id)
   }
@@ -130,12 +141,12 @@ export function conflictingIds(bindings) {
 // reaches everyone who hadn't deliberately rebound that action, instead of being frozen into every
 // browser's localStorage the first time the tab was opened.
 
-export const useShortcutStore = create(
+export const useShortcutStore = create<ShortcutStore>()(
   persist(
     (set) => ({
       bindings: {},
-      setBinding: (id, key) => set((s) => ({ bindings: { ...s.bindings, [id]: key } })),
-      resetBinding: (id) =>
+      setBinding: (id: string, key: string) => set((s) => ({ bindings: { ...s.bindings, [id]: key } })),
+      resetBinding: (id: string) =>
         set((s) => {
           const { [id]: _dropped, ...rest } = s.bindings
           return { bindings: rest }
@@ -150,12 +161,20 @@ export const useShortcutStore = create(
  *
  *  A binding of '' is off: the hotkey is registered against a key nobody has (so the hook's own
  *  rules about hook order still hold) and disabled outright. */
-export function useShortcut(id, handler, options) {
+export function useShortcut(
+  id: string,
+  handler: Parameters<typeof useHotkey>[1],
+  options?: Parameters<typeof useHotkey>[2],
+) {
   const key = useShortcutStore((s) => bindingFor(s.bindings, id))
-  useHotkey(key || 'f24', handler, { ...options, enabled: !!key && (options?.enabled ?? true) })
+  // The library's key type is a literal union of every valid combination; a stored binding is
+  // user data (captured by keyFromEvent, which only ever emits valid ones) and cannot be narrowed
+  // to it statically. The cast is the boundary, and it is the only one in this file.
+  const hotkey = (key || 'f24') as Parameters<typeof useHotkey>[0]
+  useHotkey(hotkey, handler, { ...options, enabled: !!key && (options?.enabled ?? true) })
 }
 
 /** The display string for a shortcut, reactive to rebinding - for tooltips and hint labels. */
-export function useShortcutLabel(id) {
+export function useShortcutLabel(id: string) {
   return formatShortcut(useShortcutStore((s) => bindingFor(s.bindings, id)))
 }

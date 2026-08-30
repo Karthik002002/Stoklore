@@ -5,11 +5,22 @@
 // candle ({time, date, open, high, low, close}) - see INDICATOR_TYPES' note at the bottom.
 //
 // Self-check: node frontend/src/lib/indicators.selfcheck.mjs
+import type { Bar } from './types.ts'
 
-export function computeEma(bars, period) {
+/** What every indicator returns: a value per bar time, ready for lightweight-charts. */
+export type Point = { time: number; value: number }
+
+/** An indicator series aligned index-for-index with the bars it was computed from. The leading
+ *  entries are null: a 20-period average has no value until the 20th bar. */
+export type Series = (number | null)[]
+
+/** One session's OHLC, accumulated bar by bar for the previous-day levels. */
+type DayOhlc = { open: number; high: number; low: number; close: number }
+
+export function computeEma(bars: Bar[], period: number) {
   if (bars.length < period) return []
   const k = 2 / (period + 1)
-  const sma = bars.slice(0, period).reduce((sum, b) => sum + b.close, 0) / period
+  const sma = bars.slice(0, period).reduce((sum: number, b: Bar) => sum + b.close, 0) / period
   const out = [{ time: bars[period - 1].time, value: sma }]
   let prev = sma
   for (let i = period; i < bars.length; i++) {
@@ -19,10 +30,10 @@ export function computeEma(bars, period) {
   return out
 }
 
-export function computeSma(bars, period) {
+export function computeSma(bars: Bar[], period: number) {
   if (bars.length < period) return []
   const out = []
-  let windowSum = bars.slice(0, period).reduce((sum, b) => sum + b.close, 0)
+  let windowSum = bars.slice(0, period).reduce((sum: number, b: Bar) => sum + b.close, 0)
   out.push({ time: bars[period - 1].time, value: windowSum / period })
   for (let i = period; i < bars.length; i++) {
     windowSum += bars[i].close - bars[i - period].close
@@ -33,7 +44,7 @@ export function computeSma(bars, period) {
 
 // Wilder's smoothing (the standard RSI, matching TradingView's default) - a plain N-bar average
 // of gains/losses to seed, then an exponential-style rolling average from there.
-export function computeRsi(bars, period) {
+export function computeRsi(bars: Bar[], period: number) {
   if (bars.length <= period) return []
   let gainSum = 0
   let lossSum = 0
@@ -44,7 +55,7 @@ export function computeRsi(bars, period) {
   }
   let avgGain = gainSum / period
   let avgLoss = lossSum / period
-  const rsiFrom = (gain, loss) => (loss === 0 ? 100 : 100 - 100 / (1 + gain / loss))
+  const rsiFrom = (gain: number, loss: number) => (loss === 0 ? 100 : 100 - 100 / (1 + gain / loss))
   const out = [{ time: bars[period].time, value: rsiFrom(avgGain, avgLoss) }]
   for (let i = period + 1; i < bars.length; i++) {
     const diff = bars[i].close - bars[i - 1].close
@@ -64,30 +75,34 @@ export function computeRsi(bars, period) {
 // Nulls only ever appear as a leading run - no indicator here punches holes in the middle - so
 // each helper just finds the first real value and windows from there.
 
-function smaArr(values, period) {
+function smaArr(values: Series, period: number): Series {
   const out = new Array(values.length).fill(null)
   const start = values.findIndex((v) => v != null)
   if (start < 0) return out
+  // Past `start` there are no more nulls (see the note above), which is what lets the arithmetic
+  // below read the array as plain numbers.
+  const nums = values as number[]
   let sum = 0
   for (let i = start; i < values.length; i++) {
-    sum += values[i]
-    if (i - start >= period) sum -= values[i - period]
+    sum += nums[i]
+    if (i - start >= period) sum -= nums[i - period]
     if (i - start >= period - 1) out[i] = sum / period
   }
   return out
 }
 
-function emaArr(values, period) {
+function emaArr(values: Series, period: number): Series {
   const out = new Array(values.length).fill(null)
   const start = values.findIndex((v) => v != null)
   if (start < 0 || values.length - start < period) return out
+  const nums = values as number[]
   const k = 2 / (period + 1)
   let prev = 0
-  for (let i = start; i < start + period; i++) prev += values[i]
+  for (let i = start; i < start + period; i++) prev += nums[i]
   prev /= period // seeded with an SMA, same convention as computeEma above
   out[start + period - 1] = prev
   for (let i = start + period; i < values.length; i++) {
-    prev = values[i] * k + prev * (1 - k)
+    prev = nums[i] * k + prev * (1 - k)
     out[i] = prev
   }
   return out
@@ -96,16 +111,17 @@ function emaArr(values, period) {
 // Wilder's smoothing - what ATR, ADX and RSI use. NOT an EMA of the same period: its smoothing
 // constant is 1/n rather than 2/(n+1), so a 14-period Wilder average reacts like a 27-period EMA.
 // Mixing the two up is the usual reason a hand-rolled ADX doesn't match TradingView.
-function wilderArr(values, period) {
+function wilderArr(values: Series, period: number): Series {
   const out = new Array(values.length).fill(null)
   const start = values.findIndex((v) => v != null)
   if (start < 0 || values.length - start < period) return out
+  const nums = values as number[]
   let prev = 0
-  for (let i = start; i < start + period; i++) prev += values[i]
+  for (let i = start; i < start + period; i++) prev += nums[i]
   prev /= period
   out[start + period - 1] = prev
   for (let i = start + period; i < values.length; i++) {
-    prev = (prev * (period - 1) + values[i]) / period
+    prev = (prev * (period - 1) + nums[i]) / period
     out[i] = prev
   }
   return out
@@ -113,8 +129,8 @@ function wilderArr(values, period) {
 
 // True range: the bar's own range, or its gap from the previous close if that's wider. Bar 0 has
 // no previous close, so it falls back to the plain range.
-function trueRangeArr(bars) {
-  return bars.map((b, i) => {
+function trueRangeArr(bars: Bar[]) {
+  return bars.map((b: Bar, i: number) => {
     if (i === 0) return b.high - b.low
     const prevClose = bars[i - 1].close
     return Math.max(b.high - b.low, Math.abs(b.high - prevClose), Math.abs(b.low - prevClose))
@@ -122,7 +138,7 @@ function trueRangeArr(bars) {
 }
 
 // Highest high / lowest low of the `period` bars ending at i, or null before the window fills.
-function extremes(bars, i, period) {
+function extremes(bars: Bar[], i: number, period: number) {
   if (i < period - 1) return null
   let hh = -Infinity
   let ll = Infinity
@@ -135,10 +151,11 @@ function extremes(bars, i, period) {
 
 // Pairs values with their bar's time, dropping the warm-up nulls (and any non-finite value, which
 // would otherwise poison a pane's autoscale).
-function points(bars, values) {
-  const out = []
+function points(bars: Bar[], values: Series): Point[] {
+  const out: Point[] = []
   for (let i = 0; i < bars.length; i++) {
-    if (values[i] != null && Number.isFinite(values[i])) out.push({ time: bars[i].time, value: values[i] })
+    const v = values[i]
+    if (v != null && Number.isFinite(v)) out.push({ time: bars[i].time, value: v })
   }
   return out
 }
@@ -148,20 +165,26 @@ function points(bars, values) {
 // Two EMAs' distance apart (the MACD line), an EMA of that (signal), and the gap between them
 // (histogram - the part that crosses zero when momentum turns). Fixed 12/26/9: the classic
 // settings, and one period box can't express three.
-export function computeMacd(bars) {
-  const closes = bars.map((b) => b.close)
+export function computeMacd(bars: Bar[]) {
+  const closes = bars.map((b: Bar) => b.close)
   const fast = emaArr(closes, 12)
   const slow = emaArr(closes, 26)
-  const macd = closes.map((_, i) => (fast[i] != null && slow[i] != null ? fast[i] - slow[i] : null))
+  const macd = closes.map((_, i: number) => {
+    const [f, sl] = [fast[i], slow[i]]
+    return f != null && sl != null ? f - sl : null
+  })
   const signal = emaArr(macd, 9)
-  const histogram = macd.map((m, i) => (m != null && signal[i] != null ? m - signal[i] : null))
+  const histogram = macd.map((m, i: number) => {
+    const sig = signal[i]
+    return m != null && sig != null ? m - sig : null
+  })
   return { macd: points(bars, macd), signal: points(bars, signal), histogram: points(bars, histogram) }
 }
 
 // Trend STRENGTH, direction-blind: ADX rising means the move is committed, whichever way it's
 // going. +DI/-DI carry the direction, and are plotted alongside because ADX alone can't tell you
 // which side is winning. Above ~25 is conventionally "trending", below ~20 chop.
-export function computeAdx(bars, period = 14) {
+export function computeAdx(bars: Bar[], period = 14) {
   const plusDM = []
   const minusDM = []
   for (let i = 0; i < bars.length; i++) {
@@ -199,8 +222,8 @@ export function computeAdx(bars, period = 14) {
 
 // Where the close sits in the period's high-low range, smoothed (%K), plus a moving average of
 // that (%D). Unlike CLV above, the range is the whole lookback window, not one candle.
-export function computeStochastic(bars, period = 14) {
-  const raw = bars.map((b, i) => {
+export function computeStochastic(bars: Bar[], period = 14) {
+  const raw = bars.map((b: Bar, i: number) => {
     const e = extremes(bars, i, period)
     if (!e) return null
     return e.hh === e.ll ? 50 : (100 * (b.close - e.ll)) / (e.hh - e.ll)
@@ -212,10 +235,10 @@ export function computeStochastic(bars, period = 14) {
 // The same reading as stochastic %K, inverted and shifted: 0 means closing at the top of the
 // range, -100 at the bottom. Kept as its own indicator because the -80/-20 bands are what people
 // actually read it against.
-export function computeWilliamsR(bars, period = 14) {
+export function computeWilliamsR(bars: Bar[], period = 14) {
   return points(
     bars,
-    bars.map((b, i) => {
+    bars.map((b: Bar, i: number) => {
       const e = extremes(bars, i, period)
       if (!e) return null
       return e.hh === e.ll ? -50 : (-100 * (e.hh - b.close)) / (e.hh - e.ll)
@@ -227,8 +250,8 @@ export function computeWilliamsR(bars, period = 14) {
 
 // An SMA with bands at ±mult standard deviations. The bands widen with volatility, so price
 // touching one says "far from average *for current conditions*", not a fixed distance.
-export function computeBollinger(bars, period = 20, mult = 2) {
-  const closes = bars.map((b) => b.close)
+export function computeBollinger(bars: Bar[], period = 20, mult = 2) {
+  const closes = bars.map((b: Bar) => b.close)
   const middle = smaArr(closes, period)
   const upper = []
   const lower = []
@@ -238,11 +261,12 @@ export function computeBollinger(bars, period = 20, mult = 2) {
       lower.push(null)
       continue
     }
+    const mid = middle[i] as number
     let sq = 0
-    for (let j = i - period + 1; j <= i; j++) sq += (closes[j] - middle[i]) ** 2
+    for (let j = i - period + 1; j <= i; j++) sq += (closes[j] - mid) ** 2
     const sd = Math.sqrt(sq / period)
-    upper.push(middle[i] + mult * sd)
-    lower.push(middle[i] - mult * sd)
+    upper.push(mid + mult * sd)
+    lower.push(mid - mult * sd)
   }
   return { upper: points(bars, upper), middle: points(bars, middle), lower: points(bars, lower) }
 }
@@ -250,25 +274,29 @@ export function computeBollinger(bars, period = 20, mult = 2) {
 // Average true range - volatility in price units, so it's what a stop distance should be sized
 // against. Its own pane, and deliberately NOT range-bounded: ₹2 of ATR on a ₹40 stock and ₹200 on
 // a ₹5000 one are both normal.
-export function computeAtr(bars, period = 14) {
+export function computeAtr(bars: Bar[], period = 14) {
   return points(bars, wilderArr(trueRangeArr(bars), period))
 }
 
 // Keltner: an EMA with ATR-scaled bands. Same idea as Bollinger but driven by true range rather
 // than standard deviation, so gaps widen it where Bollinger (close-only) doesn't notice them.
-export function computeKeltner(bars, period = 20, mult = 2) {
+export function computeKeltner(bars: Bar[], period = 20, mult = 2) {
   const middle = emaArr(
-    bars.map((b) => b.close),
+    bars.map((b: Bar) => b.close),
     period,
   )
   const atr = wilderArr(trueRangeArr(bars), period)
-  const band = (sign) => middle.map((m, i) => (m != null && atr[i] != null ? m + sign * mult * atr[i] : null))
+  const band = (sign: number) =>
+    middle.map((m, i) => {
+      const a = atr[i]
+      return m != null && a != null ? m + sign * mult * a : null
+    })
   return { upper: points(bars, band(1)), middle: points(bars, middle), lower: points(bars, band(-1)) }
 }
 
 // Donchian: the literal highest high and lowest low of the last N bars. No averaging at all - the
 // upper band IS the breakout level, which is what makes it the honest one to trade against.
-export function computeDonchian(bars, period = 20) {
+export function computeDonchian(bars: Bar[], period = 20) {
   const upper = []
   const middle = []
   const lower = []
@@ -289,7 +317,7 @@ export function computeDonchian(bars, period = 20) {
 //
 // On a daily timeframe every bar is its own session, so this degenerates to the bar's typical
 // price. That's correct rather than useful: VWAP is an intraday tool.
-export function computeVwap(bars) {
+export function computeVwap(bars: Bar[]) {
   const out = []
   let day = null
   let cumPv = 0
@@ -310,8 +338,8 @@ export function computeVwap(bars) {
 
 // Money Flow Index - RSI weighted by volume, so a push higher on thin volume scores lower than
 // the same push on heavy volume. Same 0-100 scale and 20/80 convention as RSI.
-export function computeMfi(bars, period = 14) {
-  const typical = bars.map((b) => (b.high + b.low + b.close) / 3)
+export function computeMfi(bars: Bar[], period = 14) {
+  const typical = bars.map((b: Bar) => (b.high + b.low + b.close) / 3)
   const values = new Array(bars.length).fill(null)
   for (let i = period; i < bars.length; i++) {
     let positive = 0
@@ -329,8 +357,8 @@ export function computeMfi(bars, period = 14) {
 // Volume as a multiple of its own recent average - 1 is a normal bar, 3 is a bar that traded
 // three times its usual size. Raw volume can't be compared across symbols or across months of the
 // same symbol; this can, which is what makes a "spike" a spike.
-export function computeRelativeVolume(bars, period = 20) {
-  const volumes = bars.map((b) => b.volume ?? 0)
+export function computeRelativeVolume(bars: Bar[], period = 20) {
+  const volumes = bars.map((b: Bar) => b.volume ?? 0)
   const average = smaArr(volumes, period)
   return points(
     bars,
@@ -342,14 +370,15 @@ export function computeRelativeVolume(bars, period = 20) {
 
 // Linearly weighted MA - the newest bar carries `period` units of weight, the oldest 1. HMA is
 // built entirely out of these.
-function wmaArr(values, period) {
+function wmaArr(values: Series, period: number): Series {
   const out = new Array(values.length).fill(null)
   const start = values.findIndex((v) => v != null)
   if (start < 0) return out
+  const nums = values as number[]
   const denom = (period * (period + 1)) / 2
   for (let i = start + period - 1; i < values.length; i++) {
     let sum = 0
-    for (let j = 0; j < period; j++) sum += values[i - j] * (period - j)
+    for (let j = 0; j < period; j++) sum += nums[i - j] * (period - j)
     out[i] = sum / denom
   }
   return out
@@ -358,17 +387,18 @@ function wmaArr(values, period) {
 // Rolling mean and POPULATION standard deviation (divide by n, not n-1). Population is the right
 // choice here: the window is the entire thing being described, not a sample drawn from something
 // larger, and it matches what charting packages plot.
-function rollingStats(values, period) {
+function rollingStats(values: Series, period: number) {
   const mean = new Array(values.length).fill(null)
   const sd = new Array(values.length).fill(null)
   const start = values.findIndex((v) => v != null)
   if (start < 0) return { mean, sd }
+  const nums = values as number[]
   for (let i = start + period - 1; i < values.length; i++) {
     let sum = 0
-    for (let j = i - period + 1; j <= i; j++) sum += values[j]
+    for (let j = i - period + 1; j <= i; j++) sum += nums[j]
     const m = sum / period
     let sq = 0
-    for (let j = i - period + 1; j <= i; j++) sq += (values[j] - m) ** 2
+    for (let j = i - period + 1; j <= i; j++) sq += (nums[j] - m) ** 2
     mean[i] = m
     sd[i] = Math.sqrt(sq / period)
   }
@@ -378,11 +408,11 @@ function rollingStats(values, period) {
 // Pearson correlation of two equal-length windows. Returns 0 rather than NaN when either side is
 // constant (zero variance) - "no relationship" is the honest reading, and a NaN would poison the
 // pane's autoscale.
-function pearson(xs, ys) {
+function pearson(xs: number[], ys: number[]) {
   const n = xs.length
   if (n === 0) return 0
-  const mx = xs.reduce((s, v) => s + v, 0) / n
-  const my = ys.reduce((s, v) => s + v, 0) / n
+  const mx = xs.reduce((s: number, v: number) => s + v, 0) / n
+  const my = ys.reduce((s: number, v: number) => s + v, 0) / n
   let num = 0
   let dx = 0
   let dy = 0
@@ -398,8 +428,8 @@ function pearson(xs, ys) {
 }
 
 // Bar-to-bar fractional returns. Index 0 has no predecessor, so it's null.
-function returnsArr(bars) {
-  return bars.map((b, i) => {
+function returnsArr(bars: Bar[]) {
+  return bars.map((b: Bar, i: number) => {
     if (i === 0) return null
     const prev = bars[i - 1].close
     return prev === 0 ? null : (b.close - prev) / prev
@@ -416,8 +446,8 @@ function returnsArr(bars) {
 // below, nothing if unchanged. The crudest possible split - a real delta would allocate each
 // trade to the bid or the ask - but it does separate heavy up-bars from heavy down-bars, which
 // raw volume cannot.
-export function computeVolumeDelta(bars) {
-  return bars.map((b) => ({
+export function computeVolumeDelta(bars: Bar[]) {
+  return bars.map((b: Bar) => ({
     time: b.time,
     value: Math.sign(b.close - b.open) * (b.volume ?? 0),
   }))
@@ -426,22 +456,23 @@ export function computeVolumeDelta(bars) {
 // Velocity is price change over `period` bars; acceleration is the change in that velocity. A
 // move that is still accelerating is being pushed by someone who wants filled now - the "speed
 // strike" signature. Both are in price units, so they autoscale.
-export function computeVelocity(bars, period = 5) {
-  const closes = bars.map((b) => b.close)
-  const velocity = closes.map((c, i) => (i < period ? null : c - closes[i - period]))
-  const acceleration = velocity.map((v, i) =>
-    v == null || velocity[i - period] == null ? null : v - velocity[i - period],
-  )
+export function computeVelocity(bars: Bar[], period = 5) {
+  const closes = bars.map((b: Bar) => b.close)
+  const velocity = closes.map((c, i: number) => (i < period ? null : c - closes[i - period]))
+  const acceleration = velocity.map((v, i: number) => {
+    const prev = velocity[i - period]
+    return v == null || prev == null ? null : v - prev
+  })
   return { velocity: points(bars, velocity), acceleration: points(bars, acceleration) }
 }
 
 // Range per unit of volume: how far price had to travel to absorb each share. Spikes mark thin,
 // slippery conditions (a big range on little volume); troughs mark heavy two-way trade going
 // nowhere. Scale is symbol-specific, so read it against its own history, not an absolute number.
-export function computeVolumeWeightedSpread(bars) {
+export function computeVolumeWeightedSpread(bars: Bar[]) {
   return points(
     bars,
-    bars.map((b) => {
+    bars.map((b: Bar) => {
       const volume = b.volume ?? 0
       return volume === 0 ? null : (b.high - b.low) / volume
     }),
@@ -451,12 +482,12 @@ export function computeVolumeWeightedSpread(bars) {
 // How many standard deviations this bar's volume sits above its own rolling average. 2+ is a
 // genuine climax; sustained 3+ usually marks exhaustion rather than the start of something. Uses
 // a z-score rather than a fixed multiple so it adapts to how noisy the symbol's volume normally is.
-export function computeVolumeClimax(bars, period = 20) {
-  const volumes = bars.map((b) => b.volume ?? 0)
+export function computeVolumeClimax(bars: Bar[], period = 20) {
+  const volumes = bars.map((b: Bar) => b.volume ?? 0)
   const { mean, sd } = rollingStats(volumes, period)
   return points(
     bars,
-    volumes.map((v, i) => (mean[i] == null || !sd[i] ? null : (v - mean[i]) / sd[i])),
+    volumes.map((v: number, i: number) => (mean[i] == null || !sd[i] ? null : (v - mean[i]) / sd[i])),
   )
 }
 
@@ -465,13 +496,13 @@ export function computeVolumeClimax(bars, period = 20) {
 // Rolling correlation between price and its own volume. Positive means moves come with
 // participation (a trend being funded); near zero or negative means price is drifting on nothing,
 // which is where reversals live.
-export function computeRollingCorrelation(bars, period = 20) {
+export function computeRollingCorrelation(bars: Bar[], period = 20) {
   const values = new Array(bars.length).fill(null)
   for (let i = period - 1; i < bars.length; i++) {
     const window = bars.slice(i - period + 1, i + 1)
     values[i] = pearson(
-      window.map((b) => b.close),
-      window.map((b) => b.volume ?? 0),
+      window.map((b: Bar) => b.close),
+      window.map((b: Bar) => b.volume ?? 0),
     )
   }
   return points(bars, values)
@@ -480,12 +511,15 @@ export function computeRollingCorrelation(bars, period = 20) {
 // How many standard deviations the close sits from its own rolling mean. The mean-reversion
 // workhorse: ±2 is the classic stretched reading (and is exactly where a Bollinger band sits,
 // since both are built from the same rolling sigma).
-export function computeZScore(bars, period = 20) {
-  const closes = bars.map((b) => b.close)
+export function computeZScore(bars: Bar[], period = 20) {
+  const closes = bars.map((b: Bar) => b.close)
   const { mean, sd } = rollingStats(closes, period)
   return points(
     bars,
-    closes.map((c, i) => (mean[i] == null || !sd[i] ? null : (c - mean[i]) / sd[i])),
+    closes.map((c, i: number) => {
+      const [m, s] = [mean[i], sd[i]]
+      return m == null || !s ? null : (c - m) / s
+    }),
   )
 }
 
@@ -493,7 +527,7 @@ export function computeZScore(bars, period = 20) {
 // Positive = momentum regime (trend-following should work), negative = mean-reverting regime
 // (fade the move), near zero = a random walk where neither edge exists. This is a regime filter,
 // not a signal.
-export function computeAutocorrelation(bars, period = 20) {
+export function computeAutocorrelation(bars: Bar[], period = 20) {
   const returns = returnsArr(bars)
   const values = new Array(bars.length).fill(null)
   for (let i = 0; i < bars.length; i++) {
@@ -501,7 +535,7 @@ export function computeAutocorrelation(bars, period = 20) {
     if (i < period + 1) continue
     const current = returns.slice(i - period + 1, i + 1)
     const lagged = returns.slice(i - period, i)
-    values[i] = pearson(current, lagged)
+    values[i] = pearson(current as number[], lagged as number[])
   }
   return points(bars, values)
 }
@@ -509,7 +543,7 @@ export function computeAutocorrelation(bars, period = 20) {
 // Standard deviation of bar-to-bar returns, as a percentage. Variance is simply this squared -
 // plotted as sigma rather than sigma-squared because sigma is in the same units as the returns
 // themselves, which makes it directly comparable to a stop distance.
-export function computeRollingVolatility(bars, period = 20) {
+export function computeRollingVolatility(bars: Bar[], period = 20) {
   const returns = returnsArr(bars)
   const { sd } = rollingStats(returns, period)
   return points(
@@ -528,7 +562,7 @@ export function computeRollingVolatility(bars, period = 20) {
 // A swing-pivot implementation (literal HH/HL/LH/LL labelling) would need to look forward to
 // confirm each pivot, which repaints - unusable in a replay where the whole discipline is only
 // seeing what you'd have seen at the time.
-export function computeMarketStructure(bars, period = 20) {
+export function computeMarketStructure(bars: Bar[], period = 20) {
   const values = new Array(bars.length).fill(null)
   let state = 0
   for (let i = 0; i < bars.length; i++) {
@@ -549,7 +583,7 @@ export function computeMarketStructure(bars, period = 20) {
 // NOT the Asia/London/New York split that this idea usually comes with: NSE trades one 9:15-15:30
 // session, so those three windows would be one bucket and two empty ones. Grouping by trading day
 // is the version of "which session controls the volume" that means anything on this instrument.
-export function computeSessionVolume(bars) {
+export function computeSessionVolume(bars: Bar[]) {
   const out = []
   let day = null
   let cumulative = 0
@@ -566,7 +600,7 @@ export function computeSessionVolume(bars) {
 
 // Overnight gap: the session's open against the previous session's close, in percent. Held flat
 // across the day, so on an intraday chart every bar shows the gap the day started with.
-export function computeGapPercent(bars) {
+export function computeGapPercent(bars: Bar[]) {
   const values = new Array(bars.length).fill(null)
   let prevClose = null
   let dayOpen = null
@@ -577,17 +611,17 @@ export function computeGapPercent(bars) {
       day = bars[i].date
       dayOpen = bars[i].open
     }
-    if (prevClose) values[i] = ((dayOpen - prevClose) / prevClose) * 100
+    if (prevClose && dayOpen != null) values[i] = ((dayOpen - prevClose) / prevClose) * 100
   }
   return points(bars, values)
 }
 
 // +1 outside bar (this bar's range engulfs the previous one - expansion, both sides taken out),
 // -1 inside bar (engulfed by the previous - compression, often coiling before a move), 0 neither.
-export function computeInsideOutside(bars) {
+export function computeInsideOutside(bars: Bar[]) {
   return points(
     bars,
-    bars.map((b, i) => {
+    bars.map((b: Bar, i: number) => {
       if (i === 0) return null
       const prev = bars[i - 1]
       if (b.high > prev.high && b.low < prev.low) return 1
@@ -602,11 +636,14 @@ export function computeInsideOutside(bars) {
 // Hull MA: WMA(2*WMA(n/2) - WMA(n), sqrt(n)). The doubled half-length WMA overshoots forward far
 // enough to cancel most of the lag, and the sqrt(n) smoothing pass cleans up the noise that
 // overshoot introduces. Much faster to turn than an EMA of the same period.
-export function computeHma(bars, period = 20) {
-  const closes = bars.map((b) => b.close)
+export function computeHma(bars: Bar[], period = 20) {
+  const closes = bars.map((b: Bar) => b.close)
   const half = wmaArr(closes, Math.max(1, Math.round(period / 2)))
   const full = wmaArr(closes, period)
-  const raw = closes.map((_, i) => (half[i] != null && full[i] != null ? 2 * half[i] - full[i] : null))
+  const raw = closes.map((_, i: number) => {
+    const [h, f] = [half[i], full[i]]
+    return h != null && f != null ? 2 * h - f : null
+  })
   return points(bars, wmaArr(raw, Math.max(1, Math.round(Math.sqrt(period)))))
 }
 
@@ -614,8 +651,8 @@ export function computeHma(bars, period = 20) {
 // distance travelled to get there - is ~1 for a clean directional run and ~0 for chop. That ratio
 // scales the smoothing constant between a fast EMA (2) and a slow one (30), so KAMA tracks price
 // closely in a trend and goes nearly flat in a range, which is exactly when a normal MA whipsaws.
-export function computeKama(bars, period = 10) {
-  const closes = bars.map((b) => b.close)
+export function computeKama(bars: Bar[], period = 10) {
+  const closes = bars.map((b: Bar) => b.close)
   const fastest = 2 / (2 + 1)
   const slowest = 2 / (30 + 1)
   const values = new Array(bars.length).fill(null)
@@ -637,8 +674,8 @@ export function computeKama(bars, period = 10) {
 // Chande Momentum Oscillator: the same up/down sums RSI uses, but differenced over their total
 // instead of ratioed, and with NO Wilder smoothing. That makes it react a bar or two sooner than
 // RSI at the cost of a noisier line. Scale is -100..+100, so its neutral point is 0, not 50.
-export function computeCmo(bars, period = 14) {
-  const closes = bars.map((b) => b.close)
+export function computeCmo(bars: Bar[], period = 14) {
+  const closes = bars.map((b: Bar) => b.close)
   const values = new Array(bars.length).fill(null)
   for (let i = period; i < closes.length; i++) {
     let up = 0
@@ -661,8 +698,8 @@ export function computeCmo(bars, period = 14) {
 
 // Where the close sits inside the bar's range: +1 closed on the high (buyers held it there), -1
 // closed on the low, 0 dead centre.
-export function computeClv(bars) {
-  return bars.map((b) => {
+export function computeClv(bars: Bar[]) {
+  return bars.map((b: Bar) => {
     const range = b.high - b.low
     return { time: b.time, value: range === 0 ? 0 : (b.close - b.low - (b.high - b.close)) / range }
   })
@@ -670,8 +707,8 @@ export function computeClv(bars) {
 
 // How much of the bar's range is real body. Near 1 = a decisive candle that opened one end and
 // closed the other; near 0 = a long-wicked candle that went somewhere and got rejected.
-export function computeBodyRatio(bars) {
-  return bars.map((b) => {
+export function computeBodyRatio(bars: Bar[]) {
+  return bars.map((b: Bar) => {
     const range = b.high - b.low
     return { time: b.time, value: range === 0 ? 0 : Math.abs(b.close - b.open) / range }
   })
@@ -680,8 +717,8 @@ export function computeBodyRatio(bars) {
 // Upper wick minus lower wick, as a fraction of the range: +1 all upper wick (supply rejecting
 // price from above), -1 all lower wick (demand absorbing it from below). Body + both wicks always
 // sum to the range, so this can never leave [-1, 1].
-export function computeWickAsymmetry(bars) {
-  return bars.map((b) => {
+export function computeWickAsymmetry(bars: Bar[]) {
+  return bars.map((b: Bar) => {
     const range = b.high - b.low
     if (range === 0) return { time: b.time, value: 0 }
     const upper = b.high - Math.max(b.open, b.close)
@@ -698,17 +735,17 @@ export function computeWickAsymmetry(bars) {
 // lib/replay.js), NOT by "the bar before this one": on a 15m chart the previous day is ~25 bars
 // back, and on a daily chart it is exactly one, and this handles both without a special case.
 // The first day has nothing before it, so it gets no points rather than a fabricated flat line.
-export function computePrevDayLevel(bars, field) {
-  const out = []
-  let prev = null // the completed previous day's OHLC
-  let current = null
-  let currentDate = null
+export function computePrevDayLevel(bars: Bar[], field: keyof DayOhlc) {
+  const out: Point[] = []
+  let prev: DayOhlc | null = null // the completed previous day's OHLC
+  let current: DayOhlc | null = null
+  let currentDate: string | undefined
   for (const b of bars) {
     if (b.date !== currentDate) {
       if (current) prev = current
       currentDate = b.date
       current = { open: b.open, high: b.high, low: b.low, close: b.close }
-    } else {
+    } else if (current) {
       current.high = Math.max(current.high, b.high)
       current.low = Math.min(current.low, b.low)
       current.close = b.close
@@ -928,25 +965,25 @@ export const INDICATOR_TYPES = {
   },
   pdh: {
     label: 'Prev day high',
-    compute: (bars) => computePrevDayLevel(bars, 'high'),
+    compute: (bars: Bar[]) => computePrevDayLevel(bars, 'high'),
     periodless: true,
     lineStyle: 2,
   },
   pdl: {
     label: 'Prev day low',
-    compute: (bars) => computePrevDayLevel(bars, 'low'),
+    compute: (bars: Bar[]) => computePrevDayLevel(bars, 'low'),
     periodless: true,
     lineStyle: 2,
   },
   pdo: {
     label: 'Prev day open',
-    compute: (bars) => computePrevDayLevel(bars, 'open'),
+    compute: (bars: Bar[]) => computePrevDayLevel(bars, 'open'),
     periodless: true,
     lineStyle: 2,
   },
   pdc: {
     label: 'Prev day close',
-    compute: (bars) => computePrevDayLevel(bars, 'close'),
+    compute: (bars: Bar[]) => computePrevDayLevel(bars, 'close'),
     periodless: true,
     lineStyle: 2,
   },

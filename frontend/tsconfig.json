@@ -1,0 +1,38 @@
+{
+  // Phase 0 of the TypeScript migration. Three settings do the load-bearing work:
+  //
+  //   allowJs + checkJs:false  - a .ts file may import the 130-odd .js/.jsx files, and none of
+  //                              them are ever analysed. Turning checkJs on would surface
+  //                              thousands of errors in files nobody is converting this month.
+  //   strict                   - applies only to files that have actually been converted, so
+  //                              every module lands fully typed instead of needing a second pass.
+  //   noEmit                   - tsc only ever checks. Vite does the building, and it compiles
+  //                              TypeScript by erasing types without reading them, so a type
+  //                              error can never break the app or the build.
+  //
+  // Replaces jsconfig.json (deleted) - two path maps would leave the editor resolving @/ twice.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+
+    "strict": true,
+    "noEmit": true,
+    "allowJs": true,
+    "checkJs": false,
+    // Lets a converted self-check import './x.ts' by its real extension, which is what Node's
+    // native type stripping needs to run it directly.
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "skipLibCheck": true,
+    // Node's own types, for the self-checks and tests that run under plain `node` (they import
+    // node:assert). Nothing in src/ uses them at runtime - the app is browser-only.
+    "types": ["node"],
+
+    // No baseUrl: TypeScript 7 removed it, and paths now resolve relative to this file.
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["src"]
+}

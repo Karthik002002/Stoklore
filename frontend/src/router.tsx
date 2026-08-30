@@ -1,4 +1,5 @@
 import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
+import type { SearchSchemaInput } from '@tanstack/react-router'
 import App from './App'
 import AutoBacktestDetail from './AutoBacktestDetail'
 import Backtesting from './Backtesting'
@@ -15,6 +16,20 @@ import Shareholding from './Shareholding'
 import TopNews from './TopNews'
 import TradeSimulation from './TradeSimulation'
 
+// Search params arrive as `unknown` - they came off a URL somebody could have hand-edited. Every
+// validateSearch below is the same shape it has always been; the only thing TypeScript adds is
+// that the value each one hands back now has a type the pages can rely on.
+
+/** True when `value` is one of `allowed`, and narrows it to that literal union. Replaces the bare
+ *  `.includes()` calls this file used to make: identical at runtime (a non-string is never in a
+ *  list of strings), but it tells the caller WHICH string it got. */
+const oneOf = <T extends string>(allowed: readonly T[], value: unknown): value is T =>
+  typeof value === 'string' && (allowed as readonly string[]).includes(value)
+
+/** A number from the URL, or undefined - the same guard every account param already used. */
+const numeric = (value: unknown) =>
+  Number.isFinite(Number(value)) && value ? Number(value) : undefined
+
 const SETTINGS_TABS = [
   'model',
   'litellm',
@@ -28,16 +43,25 @@ const SETTINGS_TABS = [
   'backtesting',
   'accounts',
   'paper-accounts',
-]
+] as const
 
 // Lives on the root route (not a leaf) since the Settings dialog is mounted in App.jsx's layout,
 // on top of every page - any page can open it to a specific tab via the same `settings` param,
 // and `broker` here is the one shared by Holdings' own broker picker (see holdingsRoute below),
 // so Settings' Broker sub-tabs and Holdings' broker selection are always in sync.
+type SettingsTab = (typeof SETTINGS_TABS)[number]
+type Broker = 'dhan' | 'kite'
+
 const rootRoute = createRootRoute({
   component: App,
-  validateSearch: (search) => ({
-    settings: SETTINGS_TABS.includes(search.settings) ? search.settings : undefined,
+  // `broker` always comes OUT of here (it defaults to dhan), but a link never has to put it in -
+  // which is what SearchSchemaInput expresses: the parameter type is what callers may pass, the
+  // return type is what pages read back. Without it, every typed <Link> in the app would be made
+  // to spell out `search={{ broker }}` to satisfy a param this function fills in itself.
+  validateSearch: (
+    search: { settings?: SettingsTab; broker?: Broker } & SearchSchemaInput,
+  ): { settings?: SettingsTab; broker: Broker } => ({
+    settings: oneOf(SETTINGS_TABS, search.settings) ? search.settings : undefined,
     broker: search.broker === 'kite' ? 'kite' : 'dhan',
   }),
 })
@@ -45,7 +69,7 @@ const rootRoute = createRootRoute({
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  validateSearch: (search) => ({
+  validateSearch: (search): { list?: string } => ({
     list: typeof search.list === 'string' && search.list ? search.list : undefined,
   }),
   component: StocksList,
@@ -72,7 +96,7 @@ const topNewsRoute = createRoute({
 const holdingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/holdings',
-  validateSearch: (search) => ({
+  validateSearch: (search): { kiteLogin?: 'success' | 'failed' } => ({
     kiteLogin:
       search.kite_login === 'success' || search.kite_login === 'failed' ? search.kite_login : undefined,
   }),
@@ -88,6 +112,9 @@ const shareholdingRoute = createRoute({
   component: Shareholding,
 })
 
+const BACKTESTING_VIEWS = ['overview', 'trades', 'statistics', 'goals'] as const
+type BacktestingView = (typeof BACKTESTING_VIEWS)[number]
+
 const backtestingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/backtesting',
@@ -98,9 +125,9 @@ const backtestingRoute = createRoute({
   // facet (eight facets × value list + mode would be sixteen). Its grammar and validation live in
   // lib/tradeFilters.js - parseFilters drops anything it doesn't recognise, so a hand-mangled URL
   // degrades to fewer filters instead of a crash.
-  validateSearch: (search) => ({
-    view: ['overview', 'trades', 'statistics', 'goals'].includes(search.view) ? search.view : 'overview',
-    account: Number.isFinite(Number(search.account)) && search.account ? Number(search.account) : undefined,
+  validateSearch: (search): { view: BacktestingView; account?: number; f?: string } => ({
+    view: oneOf(BACKTESTING_VIEWS, search.view) ? search.view : 'overview',
+    account: numeric(search.account),
     f: typeof search.f === 'string' && search.f ? search.f : undefined,
   }),
   component: Backtesting,
@@ -110,12 +137,15 @@ const backtestingRoute = createRoute({
 // simulated money moving right now, and having it one click from the historical journal makes the
 // two easy to confuse. `account` is in the URL for the same reason it is on /backtesting - a
 // per-account view should survive a reload.
+const PAPER_VIEWS = ['overview', 'holdings', 'trades'] as const
+type PaperView = (typeof PAPER_VIEWS)[number]
+
 const paperRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/paper',
-  validateSearch: (search) => ({
-    view: ['overview', 'holdings', 'trades'].includes(search.view) ? search.view : 'overview',
-    account: Number.isFinite(Number(search.account)) && search.account ? Number(search.account) : undefined,
+  validateSearch: (search): { view: PaperView; account?: number } => ({
+    view: oneOf(PAPER_VIEWS, search.view) ? search.view : 'overview',
+    account: numeric(search.account),
   }),
   component: PaperTrading,
 })
@@ -134,9 +164,7 @@ const paperRoute = createRoute({
 const paperPositionRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/paper/$symbol',
-  validateSearch: (search) => ({
-    account: Number.isFinite(Number(search.account)) && search.account ? Number(search.account) : undefined,
-  }),
+  validateSearch: (search): { account?: number } => ({ account: numeric(search.account) }),
   component: PaperPositionChart,
 })
 
@@ -159,9 +187,11 @@ const livePositionRoute = createRoute({
 const simulationRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/simulation',
-  validateSearch: (search) => ({
+  validateSearch: (
+    search,
+  ): { mode: 'single' | 'multiple'; account?: number; accounts?: string; view?: string } => ({
     mode: search.mode === 'multiple' ? 'multiple' : 'single',
-    account: Number.isFinite(Number(search.account)) && search.account ? Number(search.account) : undefined,
+    account: numeric(search.account),
     accounts: typeof search.accounts === 'string' && search.accounts ? search.accounts : undefined,
     view: typeof search.view === 'string' && search.view ? search.view : undefined,
   }),
@@ -201,3 +231,13 @@ const routeTree = rootRoute.addChildren([
 ])
 
 export const router = createRouter({ routeTree })
+
+// Registers this router's shape with the library's own types, which is what makes `<Link to>`,
+// `useSearch({ from })` and `navigate({ search })` check against the real route tree instead of
+// accepting any string. It only reaches files that have been converted - a .jsx page is not
+// type-checked, so nothing breaks while the rest of the app is still JavaScript.
+declare module '@tanstack/react-router' {
+  interface Register {
+    router: typeof router
+  }
+}

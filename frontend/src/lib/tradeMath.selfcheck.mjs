@@ -10,7 +10,7 @@ import {
   riskPaths,
   rng,
   streakSurvival,
-} from './tradeMath.js'
+} from './tradeMath.ts'
 
 // --- expectancy -----------------------------------------------------------------------------
 // 50% at 2:1 wins 2R half the time, loses 1R half the time -> +0.5R per trade.

@@ -8,9 +8,10 @@ import {
   systemQualityNumber,
   underwaterSeries,
   winStreaks,
-} from './manualTrades.js'
+} from './manualTrades.ts'
+import type { TradeLike } from './manualTrades.ts'
 
-function trade(pnl) {
+function trade(pnl: number): TradeLike {
   // direction long, quantity 1 - exit_price - entry_price === pnl
   return { direction: 'long', quantity: 1, entry_price: 100, exit_price: 100 + pnl }
 }
@@ -57,7 +58,11 @@ assert.equal(recoveryFactor(500, 250), 2)
 // the replay jumped around. Market-date order says the run ended on a win; logged order - the order
 // they were actually taken in - says it is two losses deep and still going.
 {
-  const at = (created, traded, pnl) => ({ ...trade(pnl), created_at: created, traded_at: traded })
+  const at = (created: string, traded: string, pnl: number) => ({
+    ...trade(pnl),
+    created_at: created,
+    traded_at: traded,
+  })
   const session = [
     at('2026-08-23T10:00:00Z', '2013-04-02', 5),
     at('2026-08-23T10:05:00Z', '2024-01-09', -2),

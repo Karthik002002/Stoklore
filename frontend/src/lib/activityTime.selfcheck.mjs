@@ -1,7 +1,7 @@
 // Self-check for the local activity-time ledger. Plain node, no framework:
 //   node src/lib/activityTime.selfcheck.mjs
 import assert from 'node:assert/strict'
-import { addSeconds, dayKey, markSynced, pendingSync, prune, secondsOn } from './activityTime.js'
+import { addSeconds, dayKey, markSynced, pendingSync, prune, secondsOn } from './activityTime.ts'
 
 // --- day keys -----------------------------------------------------------------------------------
 // Local, not UTC: an 11pm session belongs to the evening it happened in, not to tomorrow.

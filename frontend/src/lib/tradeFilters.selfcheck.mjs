@@ -18,7 +18,7 @@ import {
   serializeFilters,
   setFacet,
   toggleValue,
-} from './tradeFilters.js'
+} from './tradeFilters.ts'
 
 const facet = (key) => FACETS.find((f) => f.key === key)
 

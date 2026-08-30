@@ -8,10 +8,13 @@
 //
 // Self-check: node src/lib/tradeMath.selfcheck.mjs
 
+/** A point on one of the curves below: trade number, and the balance as a percentage of start. */
+type Point = { x: number; value: number }
+
 // Deterministic PRNG (mulberry32). The simulations below must produce the same picture on every
 // render - Math.random() would reshuffle the curves on any parent re-render, which reads as the
 // numbers being unstable rather than as a sample.
-export function rng(seed) {
+export function rng(seed: number) {
   let a = seed >>> 0
   return () => {
     a = (a + 0x6d2b79f5) >>> 0
@@ -23,13 +26,13 @@ export function rng(seed) {
 
 // Expectancy in R: what one average trade returns, in units of the amount risked.
 // Positive = the edge is real; 0 = breakeven; negative = the system loses money by design.
-export function expectancyR(winRate, payoff) {
+export function expectancyR(winRate: number, payoff: number) {
   return winRate * payoff - (1 - winRate)
 }
 
 // Win rate at which a given payoff ratio exactly breaks even - the boundary running through the
 // expectancy grid below.
-export function breakevenWinRate(payoff) {
+export function breakevenWinRate(payoff: number) {
   return 1 / (1 + payoff)
 }
 
@@ -38,7 +41,7 @@ export const GRID_PAYOFFS = [1, 2, 3, 4, 5, 6, 8]
 
 // `1` Expectancy grid: every (win rate x payoff) cell's expectancy in R. Rendered as a heatmap so
 // the profitable region and its boundary are visible at a glance rather than as a formula.
-export function expectancyGrid(winRates = GRID_WIN_RATES, payoffs = GRID_PAYOFFS) {
+export function expectancyGrid(winRates: number[] = GRID_WIN_RATES, payoffs: number[] = GRID_PAYOFFS) {
   return payoffs.map((payoff) => ({
     payoff,
     cells: winRates.map((winRate) => ({
@@ -54,7 +57,19 @@ export function expectancyGrid(winRates = GRID_WIN_RATES, payoffs = GRID_PAYOFFS
 // now, where would the account be, and how long until it's back above water".
 // Fixed-fractional compounding (each trade risks `riskPct` of the *current* balance), so the
 // losing phase decays rather than falling linearly.
-export function streakSurvival({ winRate, payoff, riskPct, streakLen, trades = 75 }) {
+export function streakSurvival({
+  winRate,
+  payoff,
+  riskPct,
+  streakLen,
+  trades = 75,
+}: {
+  winRate: number
+  payoff: number
+  riskPct: number
+  streakLen: number
+  trades?: number
+}) {
   const risk = riskPct / 100
   const perTrade = expectancyR(winRate, payoff) * risk
   let balance = 1
@@ -76,7 +91,19 @@ export function streakSurvival({ winRate, payoff, riskPct, streakLen, trades = 7
 // `3` Same trade sequence, different position size. One shared win/loss sequence drawn from the
 // seeded PRNG means the three curves differ *only* by risk per trade - which is the whole point,
 // and why this isn't three independent samples.
-export function riskPaths({ winRate, payoff, riskPcts, trades = 100, seed = 7 }) {
+export function riskPaths({
+  winRate,
+  payoff,
+  riskPcts,
+  trades = 100,
+  seed = 7,
+}: {
+  winRate: number
+  payoff: number
+  riskPcts: number[]
+  trades?: number
+  seed?: number
+}) {
   const next = rng(seed)
   const wins = Array.from({ length: trades }, () => next() < winRate)
   return riskPcts.map((riskPct) => {
@@ -112,11 +139,19 @@ export const SWEET_SPOT = { from: 3, to: 6 }
 // `5` Compounding asymmetry: the same percentage, won or lost repeatedly, does not cancel out.
 // (1+g)^n grows without bound while (1-l)^n is floored at -100%, so the down curve flattens as
 // the up curve accelerates - the visual argument for why a big drawdown is so expensive.
-export function compoundingDivergence({ gainPct, lossPct, trades = 100 }) {
+export function compoundingDivergence({
+  gainPct,
+  lossPct,
+  trades = 100,
+}: {
+  gainPct: number
+  lossPct: number
+  trades?: number
+}) {
   const g = gainPct / 100
   const l = lossPct / 100
-  const gains = []
-  const losses = []
+  const gains: Point[] = []
+  const losses: Point[] = []
   for (let i = 0; i <= trades; i++) {
     gains.push({ x: i, value: Math.round(((1 + g) ** i - 1) * 1000) / 10 })
     losses.push({ x: i, value: Math.round(((1 - l) ** i - 1) * 1000) / 10 })
@@ -146,6 +181,14 @@ export function drawdownProbabilities({
   threshold = 0.5,
   paths = 2000,
   seed = 11,
+}: {
+  winRate: number
+  payoff: number
+  riskPcts: number[]
+  trades?: number
+  threshold?: number
+  paths?: number
+  seed?: number
 }) {
   return riskPcts.map((riskPct) => {
     const risk = riskPct / 100

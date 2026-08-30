@@ -4,6 +4,10 @@
 // writing one with no compression is ~60 lines - cheaper than adding a megabyte-class spreadsheet
 // dependency for "export this table".
 
+/** A cell as the exporters accept it: a number stays a number so Excel can sum the column. */
+export type CellValue = string | number | null | undefined
+export type SheetData = { sheet?: string; headers: CellValue[]; rows: CellValue[][] }
+
 const enc = new TextEncoder()
 
 const CRC_TABLE = (() => {
@@ -16,7 +20,7 @@ const CRC_TABLE = (() => {
   return t
 })()
 
-function crc32(bytes) {
+function crc32(bytes: Uint8Array) {
   let c = 0xffffffff
   for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xff] ^ (c >>> 8)
   return (c ^ 0xffffffff) >>> 0
@@ -24,9 +28,11 @@ function crc32(bytes) {
 
 /** Store-only (uncompressed) zip. Excel reads stored entries fine, and skipping deflate is what
  *  keeps this small enough to justify not taking a dependency. */
-function zip(files, type) {
-  const parts = []
-  const dir = []
+function zip(files: [string, string][], type: string) {
+  // Uint8Array<ArrayBuffer>, not the plain alias: only an ArrayBuffer-backed view is a BlobPart,
+  // and the default `ArrayBufferLike` (which includes SharedArrayBuffer) is not accepted by Blob.
+  const parts: Uint8Array<ArrayBuffer>[] = []
+  const dir: Uint8Array<ArrayBuffer>[] = []
   let offset = 0
   for (const [name, text] of files) {
     const nameB = enc.encode(name)
@@ -75,7 +81,7 @@ function zip(files, type) {
   return new Blob([...parts, ...dir, end], { type })
 }
 
-const xmlEscape = (v) =>
+const xmlEscape = (v: unknown) =>
   String(v)
     // biome-ignore lint/suspicious/noControlCharactersInRegex: these are illegal in XML 1.0 and Excel rejects the file
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')
@@ -83,13 +89,13 @@ const xmlEscape = (v) =>
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
 
-function colName(i) {
+function colName(i: number) {
   let s = ''
   for (let n = i; n >= 0; n = Math.floor(n / 26) - 1) s = String.fromCharCode(65 + (n % 26)) + s
   return s
 }
 
-const cell = (ref, v) => {
+const cell = (ref: string, v: CellValue) => {
   if (v == null || v === '') return ''
   if (typeof v === 'number' && Number.isFinite(v)) return `<c r="${ref}"><v>${v}</v></c>`
   return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(v)}</t></is></c>`
@@ -97,7 +103,7 @@ const cell = (ref, v) => {
 
 /** One sheet, header row bolded via a single style. Values are written as numbers when they are
  *  numbers, so Excel can sum a P&L column without the user retyping it. */
-export function xlsxBlob({ sheet = 'Sheet1', headers, rows }) {
+export function xlsxBlob({ sheet = 'Sheet1', headers, rows }: SheetData) {
   const body = [headers, ...rows]
     .map((r, y) => {
       const cells = r.map((v, x) => cell(`${colName(x)}${y + 1}`, y === 0 ? String(v) : v)).join('')
@@ -139,7 +145,7 @@ export function xlsxBlob({ sheet = 'Sheet1', headers, rows }) {
 
 const stamp = () => new Date().toISOString().slice(0, 10)
 
-export function download(blobOrText, filename, type = 'text/plain;charset=utf-8') {
+export function download(blobOrText: Blob | string, filename: string, type = 'text/plain;charset=utf-8') {
   const blob = typeof blobOrText === 'string' ? new Blob([blobOrText], { type }) : blobOrText
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -149,16 +155,16 @@ export function download(blobOrText, filename, type = 'text/plain;charset=utf-8'
   URL.revokeObjectURL(url)
 }
 
-export const downloadXlsx = (sheetData, name) => download(xlsxBlob(sheetData), `${name}-${stamp()}.xlsx`)
+export const downloadXlsx = (sheetData: SheetData, name: string) => download(xlsxBlob(sheetData), `${name}-${stamp()}.xlsx`)
 
-export const downloadMd = (text, name) =>
+export const downloadMd = (text: string, name: string) =>
   download(text, `${name}-${stamp()}.md`, 'text/markdown;charset=utf-8')
 
-export const copyText = (text) => navigator.clipboard.writeText(text)
+export const copyText = (text: string) => navigator.clipboard.writeText(text)
 
 /** Markdown pipe table. Cell pipes are escaped - one unescaped `|` shifts every column after it. */
-export function mdTable(headers, rows) {
-  const cellText = (v) => (v == null || v === '' ? '—' : String(v).replace(/\|/g, '\\|').replace(/\n/g, ' '))
+export function mdTable(headers: CellValue[], rows: CellValue[][]) {
+  const cellText = (v: CellValue) => (v == null || v === '' ? '—' : String(v).replace(/\|/g, '\\|').replace(/\n/g, ' '))
   return [
     `| ${headers.map(cellText).join(' | ')} |`,
     `| ${headers.map(() => '---').join(' | ')} |`,

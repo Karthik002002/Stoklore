@@ -11,7 +11,7 @@ import {
   defaultFor,
   formatShortcut,
   keyFromEvent,
-} from './shortcuts.js'
+} from './shortcuts.ts'
 
 // --- the registry itself ------------------------------------------------------------------------
 // Ids are storage keys; a duplicate would make two actions fight over one saved binding.

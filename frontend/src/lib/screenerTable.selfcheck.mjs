@@ -5,7 +5,7 @@
 // The case worth pinning is the em dash: screener writes an absent quarter as "—", and reading it
 // as 0 would print a 75-point collapse under a holding that simply wasn't filed.
 import assert from 'node:assert/strict'
-import { cellChange, cellNumber } from './screenerTable.js'
+import { cellChange, cellNumber } from './screenerTable.ts'
 
 assert.equal(cellNumber('74.90%'), 74.9)
 assert.equal(cellNumber('1,02,345'), 102345)

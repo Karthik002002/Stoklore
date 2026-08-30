@@ -19,7 +19,7 @@ import {
   tradeGapRows,
   trendSeries,
   whenYouTrade,
-} from './tradeStats.js'
+} from './tradeStats.ts'
 
 const trade = (over) => ({
   symbol: 'TCS',

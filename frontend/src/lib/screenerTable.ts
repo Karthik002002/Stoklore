@@ -7,7 +7,7 @@
 /** The number inside a screener cell, or null when the cell is a placeholder rather than a value.
  *  The em dash matters: stripping non-digits from "—" leaves "", which Number() happily calls 0 -
  *  and a missing quarter read as zero invents a 75-point collapse in the holding. */
-export function cellNumber(value) {
+export function cellNumber(value: unknown): number | null {
   const digits = String(value ?? '').replace(/[^0-9.-]/g, '')
   const n = Number(digits)
   return /\d/.test(digits) && Number.isFinite(n) ? n : null
@@ -15,7 +15,7 @@ export function cellNumber(value) {
 
 /** Change from the previous quarter's cell, in the unit the cell is already printed in - or null
  *  when either quarter is missing, or when the move is below what that unit can show. */
-export function cellChange(current, previous) {
+export function cellChange(current: unknown, previous: unknown): { text: string; up: boolean } | null {
   const [now, before] = [cellNumber(current), cellNumber(previous)]
   if (now == null || before == null) return null
   const delta = now - before

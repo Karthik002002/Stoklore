@@ -17,6 +17,13 @@
 //
 // Days are LOCAL calendar days (see dayKey) - the user's day, not the database server's UTC one.
 
+/** One day's tally: seconds counted here, and how many the server already knows about. */
+export type DayTally = { total: number; synced: number }
+/** The whole ledger, keyed by local calendar day. */
+export type ActivityStore = Record<string, DayTally>
+/** One day's backlog, as sent to the server. */
+export type PendingDay = { date: string; seconds: number }
+
 export const STORAGE_KEY = 'activity.time'
 
 // A day older than this is dropped: unsynced time from two weeks ago is not worth carrying, and
@@ -34,7 +41,7 @@ export function dayKey(at = new Date()) {
 
 /** Adds seconds to a day's tally. Returns a NEW store; negative/zero/NaN adds are ignored rather
  *  than corrupting the total (a clock jumping backwards is the realistic source of those). */
-export function addSeconds(store, day, seconds) {
+export function addSeconds(store: ActivityStore, day: string, seconds: number): ActivityStore {
   if (!(seconds > 0)) return store
   const prev = store[day] ?? { total: 0, synced: 0 }
   return { ...store, [day]: { ...prev, total: prev.total + seconds } }
@@ -43,7 +50,7 @@ export function addSeconds(store, day, seconds) {
 /** What the server hasn't been told yet, oldest day first. Each entry is one day's backlog, so a
  *  session that spanned midnight (or a sync that failed all evening) still lands on the day it
  *  was actually spent. */
-export function pendingSync(store) {
+export function pendingSync(store: ActivityStore): PendingDay[] {
   return Object.entries(store)
     .map(([date, day]) => ({ date, seconds: Math.round(day.total - day.synced) }))
     .filter((d) => d.seconds > 0)
@@ -55,7 +62,7 @@ export function pendingSync(store) {
  *  Re-reads `total` from the CURRENT store rather than trusting what was sent: time keeps being
  *  counted while the request is in flight, and setting synced = total here would silently swallow
  *  whatever accumulated in between. */
-export function markSynced(store, sent) {
+export function markSynced(store: ActivityStore, sent: PendingDay[]): ActivityStore {
   const next = { ...store }
   for (const { date, seconds } of sent) {
     const day = next[date]
@@ -65,14 +72,14 @@ export function markSynced(store, sent) {
 }
 
 /** Drops days older than KEEP_DAYS, synced or not. */
-export function prune(store, today = dayKey()) {
+export function prune(store: ActivityStore, today = dayKey()): ActivityStore {
   const cutoff = new Date(`${today}T00:00:00`)
   cutoff.setDate(cutoff.getDate() - KEEP_DAYS)
   const oldest = dayKey(cutoff)
   return Object.fromEntries(Object.entries(store).filter(([date]) => date >= oldest))
 }
 
-export const secondsOn = (store, day = dayKey()) => Math.round(store[day]?.total ?? 0)
+export const secondsOn = (store: ActivityStore, day = dayKey()) => Math.round(store[day]?.total ?? 0)
 
 // --- live readout -------------------------------------------------------------------------------
 // The ledger is only written every ~10s (see ActivityTracker), which is right for persistence and
@@ -84,11 +91,11 @@ export const secondsOn = (store, day = dayKey()) => Math.round(store[day]?.total
 // skips the whole per-second path when the set is empty, which is every moment the Profile modal
 // is closed.
 
-const liveListeners = new Set()
+const liveListeners = new Set<(seconds: number) => void>()
 
 export const liveWatchers = () => liveListeners.size
 
-export function publishLive(seconds) {
+export function publishLive(seconds: number) {
   for (const fn of liveListeners) fn(seconds)
 }
 
@@ -98,7 +105,7 @@ export function publishLive(seconds) {
  *  watching, so that value is from whenever the previous watcher left and replaying it would tick
  *  the counter BACKWARDS for the one second before the next publish. Subscribers seed themselves
  *  from the store instead (which is at most one save interval behind, and never wrong). */
-export function subscribeLive(fn) {
+export function subscribeLive(fn: (seconds: number) => void) {
   liveListeners.add(fn)
   return () => liveListeners.delete(fn)
 }
@@ -108,7 +115,7 @@ export function subscribeLive(fn) {
 // because localStorage throws outright in some privacy modes - and a consistency tracker must never
 // be the reason the app fails to render.
 
-export function readStore() {
+export function readStore(): ActivityStore {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     const parsed = raw ? JSON.parse(raw) : {}
@@ -118,7 +125,7 @@ export function readStore() {
   }
 }
 
-export function writeStore(store) {
+export function writeStore(store: ActivityStore) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(store))
   } catch {

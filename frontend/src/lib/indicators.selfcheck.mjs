@@ -39,7 +39,7 @@ import {
   computeWickAsymmetry,
   computeWilliamsR,
   INDICATOR_TYPES,
-} from './indicators.js'
+} from './indicators.ts'
 
 const bar = (date, o, h, l, c) => ({ time: `${date}T00:00`, date, open: o, high: h, low: l, close: c })
 const values = (out) => out.map((p) => p.value)

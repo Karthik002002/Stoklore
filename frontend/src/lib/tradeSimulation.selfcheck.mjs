@@ -15,7 +15,7 @@ import {
   toComparisonCsv,
   toCsv,
   tradeRange,
-} from './tradeSimulation.js'
+} from './tradeSimulation.ts'
 
 // A deliberately simple log: 3 wins of +200, 2 losses of -100. PF = 600/200 = 3.
 const LOG = [200, -100, 200, -100, 200]

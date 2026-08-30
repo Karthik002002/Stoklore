@@ -8,10 +8,10 @@
 import { z } from 'zod'
 
 // '' | null | undefined -> null; anything else -> Number. Keeps "left blank" distinct from 0.
-const emptyToNull = (v) => (v === '' || v == null ? null : Number(v))
+const emptyToNull = (v: unknown) => (v === '' || v == null ? null : Number(v))
 
 /** Optional number field: blank is allowed, but a filled-in value must be a real number. */
-export const optionalNumber = (label) =>
+export const optionalNumber = (label: string) =>
   z.preprocess(
     emptyToNull,
     z
@@ -21,7 +21,7 @@ export const optionalNumber = (label) =>
   )
 
 /** Required positive number (prices, quantities). */
-export const positiveNumber = (label) =>
+export const positiveNumber = (label: string) =>
   z.preprocess(
     emptyToNull,
     z
@@ -31,7 +31,7 @@ export const positiveNumber = (label) =>
   )
 
 /** Optional number that must be >= 0 when provided (balances, risk amounts). */
-export const optionalNonNegative = (label) =>
+export const optionalNonNegative = (label: string) =>
   z.preprocess(
     emptyToNull,
     z

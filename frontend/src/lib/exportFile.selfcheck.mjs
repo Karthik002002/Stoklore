@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { mdTable, xlsxBlob } from './exportFile.js'
+import { mdTable, xlsxBlob } from './exportFile.ts'
 
 const blob = xlsxBlob({
   sheet: 'Trades',

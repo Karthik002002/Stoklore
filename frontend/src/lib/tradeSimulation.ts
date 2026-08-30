@@ -7,8 +7,8 @@
 //
 // Self-check: node src/lib/tradeSimulation.selfcheck.mjs
 
-import { mdTable } from './exportFile.js'
-import { rng } from './tradeMath.js'
+import { mdTable } from './exportFile.ts'
+import { rng } from './tradeMath.ts'
 
 // --- pool preparation -------------------------------------------------------------------------
 
@@ -26,11 +26,70 @@ import { rng } from './tradeMath.js'
  *  rejected - that is what lets one range apply across accounts of different lengths in the
  *  Multiple tab, where an account simply contributes whatever part of the range it has.
  */
-export function tradeRange(total, from = null, to = null) {
-  const blank = (v) => v == null || v === ''
+/** How each simulated trade is sized. 'as-logged' replays the rupee amounts; the other two
+ *  re-express every trade in R and re-size it. */
+export type Sizing =
+  | { mode: 'as-logged' }
+  | { mode: 'fixed-amount'; amount: number }
+  | { mode: 'fixed-pct'; pct: number }
+
+export type SimulationConfig = {
+  pnls: number[]
+  startBalance?: number
+  runs?: number
+  length?: number
+  model?: 'bootstrap' | 'shuffle'
+  slip?: number
+  removeTopWins?: boolean
+  sizing?: Sizing
+  liquidateAt?: number
+  keepPaths?: number
+  seed?: number
+}
+
+/** What `simulate` hands back. Typed structurally rather than restated field by field: the
+ *  function is the definition, and duplicating its shape here is how the two drift apart. */
+export type SimulationResult = NonNullable<ReturnType<typeof simulate>>
+
+/** One cell of the correlation matrix: the coefficient, and how many shared days it rests on. */
+export type CorrelationCell = { r: number | null; overlap: number }
+
+/** One account in the Multiple tab's comparison export. */
+export type ComparisonEntry = {
+  name: string
+  /** An abbreviated name for the correlation matrix's headers, where the full one won't fit. */
+  short?: string
+  result: SimulationResult
+}
+
+/** The UI's own settings object (TradeSimulation.jsx, also what the saved preset holds). Flatter
+ *  than SimulationConfig - the page keeps the sizing mode and its two amounts as separate fields
+ *  because they are separate inputs - and it is what the exported report describes. */
+export type PresetConfig = {
+  startBalance: number
+  runs: number
+  length: number
+  model: 'bootstrap' | 'shuffle'
+  slip: number
+  sizingMode: 'as-logged' | 'fixed-amount' | 'fixed-pct'
+  riskAmount?: number
+  riskPct?: number
+  liquidateAt: number
+  removeTopWins?: boolean
+  rangeFrom?: number | string | null
+  rangeTo?: number | string | null
+}
+
+export function tradeRange(
+  total: number,
+  // Straight off a <input type="number">, so a blank one is '' and a cleared one is null.
+  from: number | string | null = null,
+  to: number | string | null = null,
+) {
+  const blank = (v: number | string | null) => v == null || v === ''
   const f = blank(from) ? 1 : Math.floor(Number(from))
   const t = blank(to) ? total : Math.floor(Number(to))
-  const fail = (error) => ({ start: 0, end: total, count: total, error })
+  const fail = (error: string) => ({ start: 0, end: total, count: total, error })
 
   if (!Number.isFinite(f) || !Number.isFinite(t)) return fail('Range must be whole numbers')
   if (f < 1) return fail('From must be at least 1')
@@ -46,19 +105,19 @@ export function tradeRange(total, from = null, to = null) {
  *  that is what a manual trader's stop actually cost on average - a mean over all trades would be
  *  dragged around by the winners, which is the wrong scale for sizing. Null when there are no
  *  losses to measure (an all-winners log can't be re-sized, only replayed as logged). */
-export function riskUnitOf(pnls) {
-  const losses = pnls.filter((p) => p < 0)
+export function riskUnitOf(pnls: number[]) {
+  const losses = pnls.filter((p: number) => p < 0)
   if (!losses.length) return null
-  return losses.reduce((s, p) => s + Math.abs(p), 0) / losses.length
+  return losses.reduce((s: number, p: number) => s + Math.abs(p), 0) / losses.length
 }
 
 /** Descriptive stats of the pool the simulation will draw from - shown before running so the user
  *  can see what "the DNA" actually is. profitFactor is null (not Infinity) when nothing was lost. */
-export function poolStats(pnls) {
-  const wins = pnls.filter((p) => p > 0)
-  const losses = pnls.filter((p) => p < 0)
-  const gross = wins.reduce((s, p) => s + p, 0)
-  const bled = Math.abs(losses.reduce((s, p) => s + p, 0))
+export function poolStats(pnls: number[]) {
+  const wins = pnls.filter((p: number) => p > 0)
+  const losses = pnls.filter((p: number) => p < 0)
+  const gross = wins.reduce((s: number, p: number) => s + p, 0)
+  const bled = Math.abs(losses.reduce((s: number, p: number) => s + p, 0))
   return {
     n: pnls.length,
     winRate: pnls.length ? (wins.length / pnls.length) * 100 : null,
@@ -66,7 +125,7 @@ export function poolStats(pnls) {
     avgWin: wins.length ? gross / wins.length : null,
     avgLoss: losses.length ? -bled / losses.length : null,
     largestLoss: losses.length ? Math.min(...losses) : null,
-    expectancy: pnls.length ? pnls.reduce((s, p) => s + p, 0) / pnls.length : null,
+    expectancy: pnls.length ? pnls.reduce((s: number, p: number) => s + p, 0) / pnls.length : null,
   }
 }
 
@@ -74,20 +133,20 @@ export function poolStats(pnls) {
  *  three lucky trades carrying two years of mediocrity. Removes the top `fraction` of the WINNING
  *  trades (not of all trades) - 5% of winners is the meaningful cut, 5% of a log that is 70%
  *  losers barely removes anything. */
-export function eraseTopWins(pnls, fraction = 0.05) {
+export function eraseTopWins(pnls: number[], fraction = 0.05) {
   // Cut by position, not by value: two trades that both made exactly ₹5,000 are two trades, and a
   // value filter would delete both when only one belongs in the cut.
-  const winners = pnls.map((p, i) => i).filter((i) => pnls[i] > 0)
+  const winners = pnls.map((p: number, i: number) => i).filter((i: number) => pnls[i] > 0)
   const drop = Math.ceil(winners.length * fraction)
   if (drop <= 0) return pnls.slice()
-  const cut = new Set(winners.sort((a, b) => pnls[b] - pnls[a]).slice(0, drop))
-  return pnls.filter((_, i) => !cut.has(i))
+  const cut = new Set(winners.sort((a: number, b: number) => pnls[b] - pnls[a]).slice(0, drop))
+  return pnls.filter((_, i: number) => !cut.has(i))
 }
 
 // --- percentiles ------------------------------------------------------------------------------
 
 /** Linear-interpolated percentile over an already-sorted ascending array. */
-export function percentile(sorted, p) {
+export function percentile(sorted: ArrayLike<number>, p: number) {
   if (!sorted.length) return null
   const idx = (sorted.length - 1) * p
   const lo = Math.floor(idx)
@@ -97,7 +156,7 @@ export function percentile(sorted, p) {
 
 export const PERCENTILES = [0.1, 0.25, 0.5, 0.75, 0.9]
 
-const spread = (values) => {
+const spread = (values: ArrayLike<number>) => {
   const sorted = Float64Array.from(values).sort()
   return PERCENTILES.map((p) => percentile(sorted, p))
 }
@@ -116,8 +175,8 @@ const spread = (values) => {
 
 /** [{ date, pnl }] -> Map<isoDate, summed P&L>. Several trades closed on one day are one
  *  observation: two accounts that both traded Tuesday agree or disagree once, not six times. */
-export function dailyTotals(entries) {
-  const byDay = new Map()
+export function dailyTotals(entries: { date: string | null; pnl: number | null }[]) {
+  const byDay = new Map<string, number>()
   for (const { date, pnl } of entries) {
     if (!date || pnl == null) continue
     const day = String(date).slice(0, 10)
@@ -126,11 +185,11 @@ export function dailyTotals(entries) {
   return byDay
 }
 
-export function pearson(xs, ys) {
+export function pearson(xs: number[], ys: number[]) {
   const n = xs.length
   if (n < 3) return null
-  const mx = xs.reduce((s, v) => s + v, 0) / n
-  const my = ys.reduce((s, v) => s + v, 0) / n
+  const mx = xs.reduce((s: number, v: number) => s + v, 0) / n
+  const my = ys.reduce((s: number, v: number) => s + v, 0) / n
   let num = 0
   let dx = 0
   let dy = 0
@@ -151,20 +210,20 @@ export function pearson(xs, ys) {
  *  when the truth is it wasn't trading, and padding with those manufactures correlation out of
  *  nothing but calendar overlap. `overlap` is returned so a 4-day intersection can be labelled as
  *  the non-answer it is. */
-export function correlationPair(mapA, mapB) {
-  const xs = []
-  const ys = []
+export function correlationPair(mapA: Map<string, number>, mapB: Map<string, number>) {
+  const xs: number[] = []
+  const ys: number[] = []
   for (const [day, v] of mapA) {
     if (mapB.has(day)) {
       xs.push(v)
-      ys.push(mapB.get(day))
+      ys.push(mapB.get(day) as number)
     }
   }
   return { r: pearson(xs, ys), overlap: xs.length }
 }
 
 /** Full n x n matrix. Diagonal is 1 by definition; the rest is symmetric and computed once. */
-export function correlationMatrix(maps) {
+export function correlationMatrix(maps: Map<string, number>[]) {
   const n = maps.length
   const out = Array.from({ length: n }, () => new Array(n).fill(null))
   for (let i = 0; i < n; i++) {
@@ -196,7 +255,7 @@ export const SIZING = {
 }
 
 /** Drawdown series (% below running peak, values >= 0) for one balance curve. */
-export function drawdownCurve(curve) {
+export function drawdownCurve(curve: ArrayLike<number>) {
   let peak = curve[0]
   const out = new Float64Array(curve.length)
   for (let i = 0; i < curve.length; i++) {
@@ -229,7 +288,7 @@ export function simulate({
   liquidateAt = 0,
   keepPaths = 80,
   seed = 12345,
-}) {
+}: SimulationConfig) {
   const pool = removeTopWins ? eraseTopWins(pnls) : pnls.slice()
   if (!pool.length || runs < 1 || length < 1) return null
 
@@ -237,7 +296,7 @@ export function simulate({
   // Both re-sizing modes are expressed in R, so they need a risk unit to divide by. Without one
   // (a log with no losing trades) the only honest thing is to replay the amounts as they were.
   const mode = sizing.mode !== 'as-logged' && !riskUnit ? 'as-logged' : sizing.mode
-  const rescaled = mode === 'as-logged' ? null : pool.map((p) => p / riskUnit)
+  const rescaled = mode === 'as-logged' || !riskUnit ? null : pool.map((p: number) => p / riskUnit)
 
   const steps = length + 1
   const curves = new Float64Array(runs * steps)
@@ -298,8 +357,9 @@ export function simulate({
       }
 
       let pnl
-      if (mode === 'fixed-amount') pnl = rescaled[draw] * sizing.amount
-      else if (mode === 'fixed-pct') pnl = rescaled[draw] * balance * (sizing.pct / 100)
+      if (mode === 'fixed-amount' && rescaled) pnl = rescaled[draw] * (sizing as { amount: number }).amount
+      else if (mode === 'fixed-pct' && rescaled)
+        pnl = rescaled[draw] * balance * ((sizing as { pct: number }).pct / 100)
       else pnl = pool[draw]
 
       // Friction last, and unconditionally: a manual trader pays the spread and the hesitation on
@@ -353,8 +413,8 @@ export function simulate({
 
   // Rank runs by where they ended, then hand back the actual run sitting at each percentile.
   const order = Array.from({ length: runs }, (_, i) => i).sort((a, b) => endBalance[a] - endBalance[b])
-  const runAt = (p) => order[Math.min(Math.round((runs - 1) * p), runs - 1)]
-  const curveOf = (r) => curves.subarray(r * steps, r * steps + steps)
+  const runAt = (p: number) => order[Math.min(Math.round((runs - 1) * p), runs - 1)]
+  const curveOf = (r: number) => curves.subarray(r * steps, r * steps + steps)
 
   const bandRuns = { p10: runAt(0.1), p50: runAt(0.5), p90: runAt(0.9) }
   const bands = {
@@ -417,7 +477,7 @@ export function simulate({
 
 /** Distribution of "the worst losing streak this run hit", as a % of runs. Tail streaks beyond the
  *  9th are pooled into a `10+` bucket so one freak run doesn't stretch the chart flat. */
-function histogram(streaks, runs) {
+function histogram(streaks: ArrayLike<number>, runs: number) {
   const counts = new Array(11).fill(0)
   for (let i = 0; i < streaks.length; i++) counts[Math.min(streaks[i], 10)] += 1
   return counts
@@ -427,7 +487,7 @@ function histogram(streaks, runs) {
 
 // --- exports ----------------------------------------------------------------------------------
 
-const CSV_ROWS = [
+const CSV_ROWS: [label: string, key: keyof SimulationResult['table']][] = [
   ['Ending balance', 'endBalance'],
   ['Max drawdown %', 'maxDD'],
   ['Max consecutive losses', 'maxLossStreak'],
@@ -438,7 +498,7 @@ const CSV_ROWS = [
 
 /** Two sections in one file: the percentile summary, then every run. One file rather than two
  *  downloads - a spreadsheet can split it, a second click can't be un-clicked. */
-export function toCsv(result) {
+export function toCsv(result: SimulationResult) {
   const lines = [
     'Percentile summary',
     ['Metric', '10th', '25th', '50th', '75th', '90th'].join(','),
@@ -467,7 +527,7 @@ export function toCsv(result) {
 
 /** The multi-account view's export: every metric at every percentile for every account, plus the
  *  correlation matrix. One file, so the comparison stays a comparison outside the app too. */
-export function toComparisonCsv(entries, matrix) {
+export function toComparisonCsv(entries: ComparisonEntry[], matrix: CorrelationCell[][] | null) {
   const lines = [
     'Percentile comparison',
     ['Metric', 'Account', '10th', '25th', '50th', '75th', '90th'].join(','),
@@ -494,11 +554,11 @@ export function toComparisonCsv(entries, matrix) {
       'Daily P&L correlation (shared trading days)',
       ['', ...entries.map((e) => quote(e.name))].join(','),
     )
-    matrix.forEach((row, i) => {
+    matrix.forEach((row, i: number) => {
       lines.push([quote(entries[i].name), ...row.map((c) => (c?.r == null ? '' : round(c.r)))].join(','))
     })
     lines.push('', 'Shared trading days', ['', ...entries.map((e) => quote(e.name))].join(','))
-    matrix.forEach((row, i) => {
+    matrix.forEach((row, i: number) => {
       lines.push([quote(entries[i].name), ...row.map((c) => c?.overlap ?? '')].join(','))
     })
   }
@@ -512,7 +572,7 @@ export function toComparisonCsv(entries, matrix) {
 
 const PCT_COLS = ['10th', '25th', '50th', '75th', '90th']
 
-const configLines = (config) => [
+const configLines = (config: PresetConfig) => [
   `- Starting balance: ${config.startBalance}`,
   `- Runs x length: ${config.runs} x ${config.length} trades`,
   `- Model: ${config.model === 'bootstrap' ? 'bootstrap (with replacement)' : 'shuffle (without replacement)'}`,
@@ -533,7 +593,7 @@ const configLines = (config) => [
     : []),
 ]
 
-export function toMd(result, { title, config }) {
+export function toMd(result: SimulationResult, { title, config }: { title: string; config: PresetConfig }) {
   return [
     `# Trade log simulation — ${title}`,
     `Pool: ${result.pool.n} closed trades · win rate ${round(result.pool.winRate)}% · profit factor ${
@@ -563,7 +623,11 @@ export function toMd(result, { title, config }) {
   ].join('\n\n')
 }
 
-export function toComparisonMd(entries, matrix, { config }) {
+export function toComparisonMd(
+  entries: ComparisonEntry[],
+  matrix: CorrelationCell[][] | null,
+  { config }: { config: PresetConfig },
+) {
   const parts = [
     `# Trade log simulation — ${entries.length} accounts compared`,
     '## Configuration',
@@ -607,7 +671,7 @@ export function toComparisonMd(entries, matrix, { config }) {
       `Pearson correlation of realised daily P&L over the days each pair both traded; cells with fewer than ${MIN_OVERLAP} shared days are too thin to read as a finding. Shared days in brackets.`,
       mdTable(
         ['', ...entries.map((e) => e.short ?? e.name)],
-        matrix.map((row, i) => [
+        matrix.map((row, i: number) => [
           entries[i].short ?? entries[i].name,
           ...row.map((c) => (c?.r == null ? '—' : `${round(c.r)} (${c.overlap}d)`)),
         ]),
@@ -619,6 +683,6 @@ export function toComparisonMd(entries, matrix, { config }) {
 }
 
 // Account names are user-typed and routinely contain a comma ("Swing, v2").
-const quote = (s) => `"${String(s).replace(/"/g, '""')}"`
+const quote = (s: unknown) => `"${String(s).replace(/"/g, '""')}"`
 
-const round = (v) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : '')
+const round = (v: number | null | undefined) => (Number.isFinite(v) ? Math.round((v as number) * 100) / 100 : '')

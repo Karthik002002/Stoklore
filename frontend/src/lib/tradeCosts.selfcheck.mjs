@@ -10,7 +10,7 @@ import {
   tradeCosts,
   tradeNetPnl,
   tradeNetReturnPct,
-} from './tradeCosts.js'
+} from './tradeCosts.ts'
 
 // A ₹20-a-side discount broker: 20 flat, 0.1% of turnover in statutory charges, 5 paise a share of
 // slippage.

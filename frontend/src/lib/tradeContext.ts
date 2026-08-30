@@ -9,16 +9,22 @@
 // reading from "unknown" - `mae_pct: 0` means the trade never went against you.
 // Relative import with the extension, no '@/' alias - tradeStats.js imports this file, and its
 // selfcheck runs under plain `node` with no bundler to resolve either.
-import { expectedR } from './manualTrades.js'
+import { expectedR } from './manualTrades.ts'
+import type { TradeLike } from './manualTrades.ts'
+import type { Trade } from './types.ts'
 
-export function hasContext(t) {
+/** A trade with its captured snapshot. Everything here reads `trade_context`; `excursionReading`
+ *  also needs the prices, to express the excursion in R. */
+type ContextualTrade = TradeLike & Pick<Trade, 'trade_context'>
+
+export function hasContext(t: ContextualTrade | null | undefined) {
   const c = t?.trade_context
   return !!c && !c.context_insufficient
 }
 
 /** Why a trade has no usable context, or null when it has one. Distinguishes the two cases so the
  *  UI can explain rather than just showing blanks. */
-export function contextGap(t) {
+export function contextGap(t: ContextualTrade | null | undefined) {
   const c = t?.trade_context
   if (!c) return 'No price history was available for this symbol when the trade was logged.'
   if (c.context_insufficient) {
@@ -27,28 +33,32 @@ export function contextGap(t) {
   return null
 }
 
-export const hasExcursion = (t) => t?.trade_context?.mae_pct != null
+export const hasExcursion = (t: ContextualTrade | null | undefined) => t?.trade_context?.mae_pct != null
 
 // --- Buckets, for grouping trades in the Statistics tab --------------------------------------
 // Coarse on purpose. Slicing 100 trades across many fine buckets is how you find patterns that
 // are pure noise - fewer, wider buckets keep the per-bucket sample big enough to mean something.
 
-export const TREND_LABEL = { up: 'Uptrend', down: 'Downtrend', chop: 'Sideways' }
-export const REGIME_LABEL = { low: 'Low volatility', normal: 'Normal volatility', high: 'High volatility' }
+export const TREND_LABEL: Record<'up' | 'down' | 'chop', string> = { up: 'Uptrend', down: 'Downtrend', chop: 'Sideways' }
+export const REGIME_LABEL: Record<'low' | 'normal' | 'high', string> = {
+  low: 'Low volatility',
+  normal: 'Normal volatility',
+  high: 'High volatility',
+}
 
-export function volRegimeBucket(t) {
+export function volRegimeBucket(t: ContextualTrade | null | undefined) {
   const c = t?.trade_context
   return c?.vol_regime ? REGIME_LABEL[c.vol_regime] : null
 }
 
-export function trendAlignmentBucket(t) {
+export function trendAlignmentBucket(t: ContextualTrade | null | undefined) {
   const c = t?.trade_context
   if (c?.with_trend == null) return c?.trend === 'chop' ? 'Sideways market' : null
   return c.with_trend ? 'With trend' : 'Against trend'
 }
 
 /** How far from the 20-EMA the entry was, in ATRs. The "was I chasing" axis. */
-export function extensionBucket(t) {
+export function extensionBucket(t: ContextualTrade | null | undefined) {
   const e = t?.trade_context?.extension_atr
   if (e == null) return null
   if (e < -0.5) return 'Early (below mean)'
@@ -58,7 +68,7 @@ export function extensionBucket(t) {
   return 'Very extended (3+ ATR)'
 }
 
-export function rangePosBucket(t) {
+export function rangePosBucket(t: ContextualTrade | null | undefined) {
   const p = t?.trade_context?.range_pos
   if (p == null) return null
   if (p > 1) return 'Breakout (above range)'
@@ -67,14 +77,22 @@ export function rangePosBucket(t) {
   return 'Bottom of range'
 }
 
+/** One line of the trade detail modal's context panel: what was captured, and what it means. */
+type ContextReading = {
+  label: string
+  value: string | null
+  tone: 'good' | 'warn' | 'bad' | 'neutral'
+  note: string
+}
+
 // --- Plain-English readings, for the trade detail modal ---------------------------------------
 // A number like "extension_atr: 3.81" means nothing on its own. These turn each captured value
 // into the sentence a person would actually say about the trade.
 
-export function contextReadings(t) {
+export function contextReadings(t: ContextualTrade | null | undefined): ContextReading[] {
   const c = t?.trade_context
-  if (!hasContext(t)) return []
-  const out = []
+  if (!hasContext(t) || !c) return []
+  const out: ContextReading[] = []
 
   if (c.extension_atr != null) {
     const e = c.extension_atr
@@ -98,7 +116,7 @@ export function contextReadings(t) {
       label: 'Trend',
       value: c.with_trend ? 'With trend' : 'Against trend',
       tone: c.with_trend ? 'good' : 'warn',
-      note: `20/50 EMA had the symbol in a ${TREND_LABEL[c.trend]?.toLowerCase() ?? c.trend}.`,
+      note: `20/50 EMA had the symbol in a ${(c.trend ? TREND_LABEL[c.trend] : undefined)?.toLowerCase() ?? c.trend}.`,
     })
   } else if (c.trend === 'chop') {
     out.push({
@@ -139,9 +157,9 @@ export function contextReadings(t) {
       value: `${c.vol_ratio}× average`,
       tone: 'neutral',
       note:
-        c.vol_ratio >= 1.5
+        (c.vol_ratio ?? 0) >= 1.5
           ? 'Well above the 20-day average — real participation.'
-          : c.vol_ratio < 0.7
+          : (c.vol_ratio ?? 0) < 0.7
             ? 'Below the 20-day average — thin tape.'
             : 'Around the 20-day average.',
     })
@@ -149,7 +167,7 @@ export function contextReadings(t) {
 
   const spike = c.vol_spike
   if (spike?.max_ratio != null) {
-    const hit = spike.count > 0
+    const hit = (spike.count ?? 0) > 0
     out.push({
       label: 'Volume spike',
       value: hit
@@ -170,7 +188,7 @@ export function contextReadings(t) {
 /** How the entry sat against the account's volume-spike threshold, for grouping in Statistics.
  *  Null for trades logged before the scan existed, which keeps them out of the buckets rather
  *  than lumping them in with genuine no-spike entries. */
-export function volSpikeBucket(t) {
+export function volSpikeBucket(t: ContextualTrade | null | undefined) {
   const spike = t?.trade_context?.vol_spike
   if (spike?.count == null) return null
   return spike.count > 0 ? 'Volume spike before entry' : 'No volume spike'
@@ -179,8 +197,8 @@ export function volSpikeBucket(t) {
 /** The excursion read: heat taken vs profit that was actually on the table.
  *  This is the one that catches exiting winners early - MFE says how far it ran, `capturedR` how
  *  much of that was kept. Returns null when the exit date was never recorded. */
-export function excursionReading(t) {
-  if (!hasExcursion(t)) return null
+export function excursionReading(t: ContextualTrade | null | undefined) {
+  if (!hasExcursion(t) || !t?.trade_context) return null
   const c = t.trade_context
   const captured = expectedR(t)
   const left = c.mfe_r != null && captured != null ? Math.round((c.mfe_r - captured) * 100) / 100 : null

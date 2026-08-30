@@ -9,7 +9,7 @@ import {
   GOAL_METRICS,
   goalLabel,
   periodKey,
-} from './tradeGoals.js'
+} from './tradeGoals.ts'
 
 const trade = (over) => ({
   symbol: 'TCS',

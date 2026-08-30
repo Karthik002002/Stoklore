@@ -8,7 +8,7 @@ import { collectMaxHistory, getMaxHistory, getMaxHistoryStatus, getPriceSources 
 // the exact same query/mutation/effect logic with only their button markup differing. Backend
 // source failures are surfaced via `status.error` (see price_sources/) rather than silently
 // logged, so a banned/broken endpoint is visible in the UI instead of just not working.
-export function useMaxHistoryCollector(symbol) {
+export function useMaxHistoryCollector(symbol: string) {
   const queryClient = useQueryClient()
   const wasRunning = useRef(false)
 
@@ -42,7 +42,7 @@ export function useMaxHistoryCollector(symbol) {
   const collect = useMutation({
     mutationFn: () => collectMaxHistory(symbol, source || sourcesData?.default),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['maxHistoryStatus', symbol] }),
-    onError: (e) => toast.error(e.message),
+    onError: (e: Error) => toast.error(e.message),
   })
 
   return {

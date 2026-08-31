@@ -1,3 +1,6 @@
+import type { ComponentType, ReactNode } from 'react'
+import type { TradeAccount } from '@/lib/types'
+import type { IndicatorConfig, ReplayBar, ReplayOrder } from './store'
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
@@ -63,7 +66,91 @@ const NO_ACCOUNT = 'none'
 // The keys shown come from the shortcut registry (useShortcutLabel), not from literals here, so a
 // rebind in Settings > Shortcuts is reflected in every tooltip immediately and a hint can never
 // advertise a key that no longer fires.
-function Hint({ label, keys, children }) {
+
+// BarReplay hands this bar four prop bags rather than thirty flat props - each one is a coherent
+// group with its own popover or control cluster, and naming them is what keeps the call site
+// readable. These are the contracts; BarReplay.tsx builds them.
+
+/** Everything the setup popover needs: which instrument, on which account, and whether there are
+ *  bars to replay yet. */
+export type SetupBag = {
+  symbol: string | null
+  onSymbolChange: (symbol: string) => void
+  accounts: TradeAccount[]
+  accountId: number | null
+  onAccountChange: (accountId: number | null) => void
+  timeframe: string
+  onTimeframeChange: (timeframe: string) => void
+  intraday: boolean
+  intradayLoading: boolean
+  intradayEmpty: boolean
+  /** True when an intraday request fell back to the shallower source. */
+  intradayFallback?: boolean
+  sources: string[]
+  source: string
+  onSourceChange: (source: string) => void
+  onCollect: () => void
+  collecting: boolean
+  collectError?: string | null
+  hasMaxData: boolean
+  canStart: boolean
+  bars: ReplayBar[]
+  startDate: string
+  onStartDateChange: (date: string) => void
+  onStart: () => void
+  barsReady: boolean
+  indicators: IndicatorConfig[]
+  onIndicatorsChange: (indicators: IndicatorConfig[]) => void
+}
+
+/** The transport: where the replay is, and how to move it. */
+export type PlaybackBag = {
+  started: boolean
+  playing: boolean
+  atEnd: boolean
+  /** Null until the replay starts; the controls only render once it has. */
+  currentIndex: number | null
+  total: number
+  onStepBack: () => void
+  onPlayToggle: () => void
+  onStepForward: () => void
+  speedMs: number
+  onSpeedChange: (ms: number) => void
+  bars: ReplayBar[]
+  dateDraft?: string | null
+  onJumpDate: (date: string) => void
+  onRandomBar: () => void
+  onRestart: () => void
+}
+
+/** The order controls, and what they act on. */
+export type TradeBag = {
+  visible: boolean
+  orders: ReplayOrder[]
+  lastBar: ReplayBar | null
+  onOpenTicket: (direction: 'long' | 'short') => void
+  onRequestClose: (order: ReplayOrder) => void
+  onRequestPartialClose: (order: ReplayOrder, qty: number) => void
+  /** Takes the id, not the order - BarReplay's handler looks it up itself. */
+  onMoveToBreakeven: (orderId: string) => void
+  onCancelPending: (orderId: string) => void
+  onRemoveLevel: (orderId: string, kind: 'stopLoss' | 'target', legId: string) => void
+  onMarketOrder: (direction: 'long' | 'short') => void
+  startingQty: number
+}
+
+/** The drawing tools. */
+export type DrawBag = {
+  tool: string | null
+  onToolChange: (tool: string | null) => void
+  count: number
+  /** Whether a drawing is currently selected. */
+  selected: boolean
+  onDeleteSelected: () => void
+  onClearAll: () => void
+}
+
+function Hint({ label, keys, children }: { label: string; keys?: string; children?: ReactNode }) {
   return (
     <Tooltip>
       <TooltipTrigger render={<span className="inline-flex" />}>{children}</TooltipTrigger>
@@ -79,7 +166,7 @@ function Hint({ label, keys, children }) {
   )
 }
 
-function SetupPopover({ setup }) {
+function SetupPopover({ setup }: { setup: SetupBag }) {
   const {
     symbol,
     onSymbolChange,
@@ -139,7 +226,7 @@ function SetupPopover({ setup }) {
             ))}
           </SelectContent>
         </Select>
-        <Select value={timeframe} onValueChange={onTimeframeChange}>
+        <Select value={timeframe} onValueChange={(v) => onTimeframeChange(v as string)}>
           <SelectTrigger className="w-full">
             <SelectValue>{(v) => REPLAY_TIMEFRAMES.find((t) => t.value === v)?.label ?? v}</SelectValue>
           </SelectTrigger>
@@ -214,7 +301,13 @@ function SetupPopover({ setup }) {
   )
 }
 
-function IndicatorsPopover({ indicators, onChange }) {
+function IndicatorsPopover({
+  indicators,
+  onChange,
+}: {
+  indicators: IndicatorConfig[]
+  onChange: (indicators: IndicatorConfig[]) => void
+}) {
   return (
     <Popover>
       <PopoverTrigger render={<Button variant="ghost" size="sm" className="gap-1.5" />}>
@@ -235,13 +328,17 @@ function IndicatorsPopover({ indicators, onChange }) {
 
 // Drawings: pick a tool here, draw on the chart. Same popover-off-the-bar shape as Indicators and
 // Positions - the chart itself stays uncovered, so the only thing on the candles is the drawing.
-function DrawingsPopover({ draw }) {
+function DrawingsPopover({ draw }: { draw: DrawBag }) {
   const { tool, onToolChange, count, selected, onDeleteSelected, onClearAll } = draw
-  const ICONS = { trendline: SlashIcon, hline: MinusIcon, rect: SquareIcon }
+  const ICONS: Record<string, ComponentType<{ className?: string }>> = {
+    trendline: SlashIcon,
+    hline: MinusIcon,
+    rect: SquareIcon,
+  }
   // Controlled, unlike the Indicators popover next to it: picking a tool is followed immediately by
   // drawing on the chart, and this panel sits over the chart. Every action here closes it.
   const [open, setOpen] = useState(false)
-  const act = (fn) => () => {
+  const act = (fn: () => void) => () => {
     fn()
     setOpen(false)
   }
@@ -306,7 +403,7 @@ function DrawingsPopover({ draw }) {
   )
 }
 
-function PlaybackControls({ playback }) {
+function PlaybackControls({ playback }: { playback: PlaybackBag }) {
   const {
     playing,
     atEnd,
@@ -391,7 +488,7 @@ function PlaybackControls({ playback }) {
         </Button>
       </Hint>
       <span className="px-1 text-xs whitespace-nowrap text-muted-foreground tabular-nums">
-        {currentIndex + 1}/{total}
+        {(currentIndex ?? 0) + 1}/{total}
       </span>
       <Button size="sm" variant="ghost" onClick={onRestart}>
         <RotateCcwIcon className="size-4" /> Restart
@@ -404,18 +501,19 @@ function PlaybackControls({ playback }) {
 // risk are visible without a click. Same numbers as PortfolioSummary inside PositionsList - kept
 // as separate render sites (not one component swapped in both places) so the bar's compact chip
 // and the panel's fuller row can style independently.
-function PortfolioChip({ orders, lastBar }) {
+function PortfolioChip({ orders, lastBar }: { orders: ReplayOrder[]; lastBar: ReplayBar | null }) {
   const openOrders = orders.filter((o) => o.status === 'open')
   if (openOrders.length === 0 || !lastBar) return null
+  const close = lastBar.close
   const unrealized = openOrders.reduce(
     (s, o) =>
       s +
-      tradePnl({
+      (tradePnl({
         direction: o.direction,
         entry_price: o.entryPrice,
-        exit_price: lastBar.close,
+        exit_price: close,
         quantity: o.quantity,
-      }),
+      }) ?? 0),
     0,
   )
   const totalRisk = openOrders.reduce(
@@ -432,7 +530,7 @@ function PortfolioChip({ orders, lastBar }) {
   )
 }
 
-function TradeControls({ trade }) {
+function TradeControls({ trade }: { trade: TradeBag }) {
   const {
     orders,
     lastBar,
@@ -507,12 +605,26 @@ function TradeControls({ trade }) {
   )
 }
 
-export default function BottomBar({ setup, playback, trade, draw, onOpenSettings }) {
+export default function BottomBar({
+  setup,
+  playback,
+  trade,
+  draw,
+  onOpenSettings,
+}: {
+  setup: SetupBag
+  playback: PlaybackBag
+  trade: TradeBag
+  draw: DrawBag
+  onOpenSettings: () => void
+}) {
   return (
     <div className="flex h-12 shrink-0 items-center gap-2 border-t bg-card px-2">
+      {/* No `search` any more: the Auto/Manual tabs are gone (Backtesting.jsx renders the manual
+          page directly), so ?tab=manual was a param the route no longer declares and nothing read.
+          The typed router is what surfaced it. */}
       <Link
         to="/backtesting"
-        search={{ tab: 'manual' }}
         aria-label="Back to backtesting"
         className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:text-foreground"
       >

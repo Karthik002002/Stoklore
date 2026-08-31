@@ -1,3 +1,4 @@
+import type { ChartSettings } from './store'
 import { useEffect, useState } from 'react'
 import { PlusIcon, XIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -7,7 +8,15 @@ import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/
 import { inr } from '@/lib/format'
 import { preferredQuantity } from './orderEngine'
 
-function ColorField({ label, value, onChange }) {
+function ColorField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+}) {
   return (
     <label className="flex items-center justify-between text-sm">
       {label}
@@ -25,9 +34,21 @@ function ColorField({ label, value, onChange }) {
 // balance - applied wherever a position is opened (order ticket, the market-order shortcuts).
 // The live preview under the % option is the whole point of showing it here: "10% of capital"
 // means nothing until you see it is 143 shares.
-function SizingFields({ draft, set, balance, price }) {
+function SizingFields({
+  draft,
+  set,
+  balance,
+  price,
+}: {
+  draft: ChartSettings
+  /** Curried by key: `set('defaultQty')(5)`. */
+  set: <K extends keyof ChartSettings>(key: K) => (value: ChartSettings[K]) => void
+  balance?: number | null
+  price?: number | null
+}) {
   const byPct = draft.sizeMode === 'pctCapital'
-  const preview = byPct && balance > 0 && price > 0 ? preferredQuantity(draft, balance, price) : null
+  const preview =
+    byPct && (balance ?? 0) > 0 && (price ?? 0) > 0 ? preferredQuantity(draft, balance, price) : null
 
   return (
     <div className="space-y-3">
@@ -88,18 +109,36 @@ function SizingFields({ draft, set, balance, price }) {
 //
 // `balance` and `price` are only here to preview what the sizing preference actually works out to
 // right now; both are null-safe (no account selected, replay not started).
-export default function SettingsDialog({ open, onOpenChange, settings, onSave, balance, price }) {
+export default function SettingsDialog({
+  open,
+  onOpenChange,
+  settings,
+  onSave,
+  balance,
+  price,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  settings: ChartSettings
+  onSave: (settings: ChartSettings) => void
+  balance?: number | null
+  price?: number | null
+}) {
   const [draft, setDraft] = useState(settings)
 
   useEffect(() => {
     if (open) setDraft(settings)
   }, [open, settings])
 
-  const set = (key) => (value) => setDraft((d) => ({ ...d, [key]: value }))
-  const setLevel = (i, value) =>
+  const set =
+    <K extends keyof ChartSettings>(key: K) =>
+    (value: ChartSettings[K]) =>
+      setDraft((d) => ({ ...d, [key]: value }))
+  const setLevel = (i: number, value: number) =>
     setDraft((d) => ({ ...d, rsiLevels: d.rsiLevels.map((l, li) => (li === i ? value : l)) }))
   const addLevel = () => setDraft((d) => ({ ...d, rsiLevels: [...d.rsiLevels, 50] }))
-  const removeLevel = (i) => setDraft((d) => ({ ...d, rsiLevels: d.rsiLevels.filter((_, li) => li !== i) }))
+  const removeLevel = (i: number) =>
+    setDraft((d) => ({ ...d, rsiLevels: d.rsiLevels.filter((_, li) => li !== i) }))
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

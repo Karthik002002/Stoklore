@@ -1,3 +1,5 @@
+import type { ReactNode } from 'react'
+import type { TradeAccount } from '@/lib/types'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { inr } from '@/lib/format'
@@ -17,7 +19,7 @@ import { accountHasCosts, roundTripCost } from '@/lib/tradeCosts'
 
 const PREVIEW_QTY = 100
 
-function Row({ label, children }) {
+function Row({ label, children }: { label: ReactNode; children?: ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-4 border-b py-1.5 last:border-0">
       <span className="text-xs tracking-wide text-muted-foreground uppercase">{label}</span>
@@ -26,7 +28,20 @@ function Row({ label, children }) {
   )
 }
 
-export default function StrategyDialog({ open, onOpenChange, account, balance, price }) {
+export default function StrategyDialog({
+  open,
+  onOpenChange,
+  account,
+  balance,
+  price,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  account?: TradeAccount | null
+  balance?: number | null
+  /** The current bar's price, for the "what would this size to" preview. */
+  price?: number | null
+}) {
   const cap = account ? positionSizeCap(account, balance) : null
   // Priced off the bar on screen, not a made-up number: "₹47 a round trip" lands differently when
   // it is this symbol at this price for a size you would actually take.

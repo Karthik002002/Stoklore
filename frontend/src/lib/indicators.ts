@@ -8,7 +8,7 @@
 import type { Bar } from './types.ts'
 
 /** What every indicator returns: a value per bar time, ready for lightweight-charts. */
-export type Point = { time: number; value: number }
+export type Point = { time: Bar['time']; value: number }
 
 /** An indicator series aligned index-for-index with the bars it was computed from. The leading
  *  entries are null: a 20-period average has no value until the 20th bar. */
@@ -777,7 +777,21 @@ export function computePrevDayLevel(bars: Bar[], field: keyof DayOhlc) {
 // volume}) - the moving averages only touch `close`, but everything below needs the whole candle.
 const BAND_COLOR = '#64748b'
 
-export const INDICATOR_TYPES = {
+/** One entry in the registry: what to compute, and how the chart should draw it. */
+export type IndicatorType = {
+  label: string
+  /** Either one series, or several named ones (MACD, ADX, Bollinger...). The periodless ones
+   *  (VWAP, previous-day levels) simply take fewer arguments. */
+  compute: (bars: Bar[], period: number) => Point[] | Record<string, Point[]>
+  pane?: 'separate'
+  range?: [number, number]
+  levels?: number[]
+  periodless?: boolean
+  lines?: { key: string; label: string; color: string; lineStyle?: number }[]
+  [key: string]: unknown
+}
+
+export const INDICATOR_TYPES: Record<string, IndicatorType> = {
   ema: { label: 'EMA', compute: computeEma },
   sma: { label: 'SMA', compute: computeSma },
   rsi: { label: 'RSI', compute: computeRsi, pane: 'separate', range: [0, 100], levels: [30, 70] },

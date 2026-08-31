@@ -1,4 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import type * as React from 'react'
+import type { ReactNode } from 'react'
 import {
   CandlestickSeries,
   CrosshairMode,
@@ -6,6 +8,17 @@ import {
   LineSeries,
   createChart,
 } from 'lightweight-charts'
+import type { IChartApi, ISeriesApi, IPriceLine, Time } from 'lightweight-charts'
+import type { Point } from '@/lib/indicators'
+import type {
+  ChartSettings,
+  Drawing,
+  IndicatorConfig,
+  ReplayBar,
+  ReplayLeg,
+  ReplayOrder,
+  ReplayView,
+} from './store'
 import { compact, inr } from '@/lib/format'
 import { INDICATOR_COLORS, INDICATOR_TYPES } from '@/lib/indicators'
 import { tradeReturnPct } from '@/lib/manualTrades'
@@ -19,7 +32,7 @@ const COLORS = { up: '#22c55e', down: '#ef4444', text: '#9ca3af', grid: 'rgba(14
 // bodyDownColor), just faded - so a user who customizes candle colors gets matching volume
 // without a second pair of color pickers, and the two always visually agree on which bars were
 // "up" ones.
-function fade(hex, alpha) {
+function fade(hex: string, alpha: number) {
   const n = parseInt(hex.slice(1), 16)
   const r = (n >> 16) & 255
   const g = (n >> 8) & 255
@@ -46,7 +59,7 @@ const PRICE_PANE_KEY = 'price'
 
 // Maps the user-configurable chart settings (see store.js) onto lightweight-charts'
 // candlestick series options - shared by the initial creation and the reactive re-apply below.
-function candleOptionsFrom(settings) {
+function candleOptionsFrom(settings: ChartSettings) {
   return {
     upColor: settings.bodyUpColor,
     downColor: settings.bodyDownColor,
@@ -67,6 +80,75 @@ const INITIAL_VISIBLE_BARS = 200
 // it for dragging - see the drag-to-adjust effect below.
 const DRAG_HIT_PX = 6
 
+/** What the chart can be asked to do from outside - BarReplay holds this through a ref. */
+export type ReplayChartHandle = {
+  /** A PNG of the chart as it stands, for the close dialog to attach to the journal entry. */
+  captureScreenshot: () => Promise<Blob | null>
+  /** Put the price scale back on autoscale, after a jump moved the bars out from under it. */
+  autoscalePrice: () => void
+}
+
+type ReplayChartProps = {
+  bars: ReplayBar[]
+  indicators: IndicatorConfig[]
+  orders: ReplayOrder[]
+  /** The order being composed in the ticket, drawn as dashed lines before it exists. Its own
+   *  shape, not a ReplayOrder: it carries bare prices, since a half-typed ladder has no legs. */
+  previewOrder?: PreviewOrder | null
+  /** Symbol + timeframe: changing it tears the chart down instead of updating it. */
+  resetKey?: string
+  onAdjustOrder?: (
+    orderId: string,
+    field: 'entry' | 'stopLoss' | 'target',
+    price: number,
+    legId: string,
+  ) => void
+  onPlaceLevel?: (orderId: string, kind: 'stopLoss' | 'target', price: number) => void
+  onRemoveLevel?: (orderId: string, kind: 'stopLoss' | 'target', legId: string) => void
+  onAdjustLegQty?: (orderId: string, kind: 'stopLoss' | 'target', legId: string, qty: number) => void
+  onRequestClose?: (order: ReplayOrder) => void
+  onMoveToBreakeven?: (orderId: string) => void
+  onCancelPending?: (orderId: string) => void
+  drawings?: Drawing[]
+  onDrawingsChange?: (drawings: Drawing[]) => void
+  drawTool?: string | null
+  onDrawToolChange?: (tool: string | null) => void
+  selectedDrawingId?: string | null
+  onSelectDrawing?: (id: string | null) => void
+  view?: ReplayView
+  onViewChange?: (view: Partial<ReplayView>) => void
+  settings?: ChartSettings
+}
+
+/** The framing a chart falls back to when nothing has been saved for it yet. */
+const DEFAULT_VIEW_STATE: ReplayView = { logicalRange: null, paneHeights: {}, priceRanges: {} }
+
+/** Which of an order's levels a drag is moving. 'entry' only exists while an order is pending. */
+type DragField = 'entry' | 'stopLoss' | 'target'
+
+/** A drag handle the pointer landed on. */
+type DragHandle = { orderId: string; field: DragField; legId?: string }
+
+/** One plotted line of an indicator. A single-line indicator stands in with a null key. */
+type IndicatorLine = { key: string | null; label?: string; color?: string; lineStyle?: number }
+
+/** The ticket's live preview: one entry price and the levels typed so far, no ids or quantities. */
+type PreviewOrder = {
+  direction: 'long' | 'short'
+  entry: number
+  stop_losses: number[]
+  targets: number[]
+}
+
+/** A pinned price window on a pane's scale, as lightweight-charts reports it. */
+type PriceRange = { minValue: number; maxValue: number }
+
+/** An anchor on the chart: a fractional bar index and a price, never pixels. */
+type Anchor = { index: number; price: number }
+
+/** The measure tool's two anchors, and whether the reading has been locked in place. */
+type MeasureState = { a: Anchor; b: Anchor; locked?: boolean }
+
 // --- drawings -----------------------------------------------------------------------------------
 //
 // Trendline / horizontal line / rectangle, drawn as one SVG layer over the canvas rather than as
@@ -74,7 +156,7 @@ const DRAG_HIT_PX = 6
 // still couldn't be hit-tested or dragged without the same pointer code this file already runs for
 // order lines. Every shape is stored as fractional bar index + price (never pixels), so pan, zoom,
 // autoscale and new bars all keep it pinned to the price action it was drawn against.
-export const DRAW_TOOLS = {
+export const DRAW_TOOLS: Record<string, { label: string; hint: string }> = {
   trendline: { label: 'Trend line', hint: 'Drag from one point to another' },
   hline: { label: 'Horizontal line', hint: 'Click a price' },
   rect: { label: 'Rectangle', hint: 'Drag out a zone' },
@@ -87,7 +169,7 @@ const DRAW_MIN_PX = 4
 
 // Distance from point p to segment ab, all in pixels. Used for both trendline hit-testing and each
 // edge of a rectangle.
-function distToSegment(px, py, ax, ay, bx, by) {
+function distToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number) {
   const dx = bx - ax
   const dy = by - ay
   const lenSq = dx * dx + dy * dy
@@ -98,51 +180,65 @@ function distToSegment(px, py, ax, ay, bx, by) {
 /** Re-places every drawn shape from its index/price anchors onto current pixels. React owns which
  *  elements exist (and their styling); this owns only where they sit, so the ~60x/s loop never
  *  touches React. Anchors ride in data-a/data-b as "index,price" strings. */
-function paintDrawings(chart, series, svg) {
+function paintDrawings(
+  chart: IChartApi | null,
+  series: ISeriesApi<any> | null,
+  svg: SVGSVGElement | null,
+) {
   if (!chart || !series || !svg) return
   const ts = chart.timeScale()
   const width = svg.clientWidth
-  const at = (attr) => {
+  const at = (attr: string | undefined) => {
     if (!attr) return null
     const [index, price] = attr.split(',').map(Number)
-    const x = ts.logicalToCoordinate(index)
+    const x = ts.logicalToCoordinate(index as never)
     const y = series.priceToCoordinate(price)
     return x == null || y == null ? null : { x, y }
   }
-  for (const el of svg.querySelectorAll('[data-a]')) {
+  for (const el of svg.querySelectorAll<SVGElement>('[data-a]')) {
     const a = at(el.dataset.a)
     const b = at(el.dataset.b)
+    // A shape with a second anchor needs both; a horizontal line has only the first.
     if (!a || (el.dataset.b && !b)) {
       el.style.visibility = 'hidden'
       continue
     }
     el.style.visibility = 'visible'
     if (el.dataset.shape === 'hline') {
-      el.setAttribute('x1', 0)
-      el.setAttribute('x2', width)
-      el.setAttribute('y1', a.y)
-      el.setAttribute('y2', a.y)
+      el.setAttribute('x1', String(0))
+      el.setAttribute('x2', String(width))
+      el.setAttribute('y1', String(a.y))
+      el.setAttribute('y2', String(a.y))
     } else if (el.dataset.shape === 'label') {
       // The measure readout, pinned above the middle of its own box and following it through pan,
       // zoom and autoscale like everything else here.
-      el.setAttribute('transform', `translate(${(a.x + b.x) / 2}, ${Math.min(a.y, b.y)})`)
+      el.setAttribute('transform', `translate(${(a.x + b!.x) / 2}, ${Math.min(a.y, b!.y)})`)
     } else if (el.dataset.shape === 'rect') {
-      el.setAttribute('x', Math.min(a.x, b.x))
-      el.setAttribute('y', Math.min(a.y, b.y))
-      el.setAttribute('width', Math.abs(b.x - a.x))
-      el.setAttribute('height', Math.abs(b.y - a.y))
+      el.setAttribute('x', String(Math.min(a.x, b!.x)))
+      el.setAttribute('y', String(Math.min(a.y, b!.y)))
+      el.setAttribute('width', String(Math.abs(b!.x - a.x)))
+      el.setAttribute('height', String(Math.abs(b!.y - a.y)))
     } else {
-      el.setAttribute('x1', a.x)
-      el.setAttribute('y1', a.y)
-      el.setAttribute('x2', b.x)
-      el.setAttribute('y2', b.y)
+      el.setAttribute('x1', String(a.x))
+      el.setAttribute('y1', String(a.y))
+      el.setAttribute('x2', String(b!.x))
+      el.setAttribute('y2', String(b!.y))
     }
   }
 }
 
 /** One drawing, positioned entirely by paintDrawings above - the geometry attributes here are just
  *  placeholders until the first frame runs. */
-function DrawnShape({ drawing, selected, dashed = false }) {
+function DrawnShape({
+  drawing,
+  selected,
+  dashed = false,
+}: {
+  /** A committed shape, or the one being dragged out - which has no id yet. */
+  drawing: Drawing | Omit<Drawing, 'id'>
+  selected?: boolean
+  dashed?: boolean
+}) {
   const [a, b] = drawing.points
   const anchors = {
     'data-shape': drawing.type === 'hline' ? 'hline' : drawing.type === 'rect' ? 'rect' : 'line',
@@ -169,7 +265,7 @@ function DrawnShape({ drawing, selected, dashed = false }) {
  *  The readout is a foreignObject rather than <text> lines: it is ordinary HTML in the app's own
  *  type and spacing, and it sizes itself to its content - three SVG <text> nodes would need their
  *  own width measured by hand to draw the pill behind them. */
-function MeasureBox({ measure, bars }) {
+function MeasureBox({ measure, bars }: { measure: MeasureState; bars: ReplayBar[] }) {
   const { a, b, locked } = measure
   const anchors = { 'data-a': `${a.index},${a.price}`, 'data-b': `${b.index},${b.price}` }
   const read = measureRange(bars, a, b)
@@ -222,7 +318,7 @@ function MeasureBox({ measure, bars }) {
 // What the pane at `index` is showing: the candles at 0, otherwise the oscillator type occupying
 // that slot. This is the key persisted heights are stored under, and both the effect that applies
 // them and the sampler that records them go through here so they can't disagree.
-function paneKeyAt(index, oscillatorTypes) {
+function paneKeyAt(index: number, oscillatorTypes: string[]) {
   if (index === 0) return PRICE_PANE_KEY
   return oscillatorTypes[index - FIRST_OSCILLATOR_PANE] ?? `pane${index}`
 }
@@ -230,27 +326,27 @@ function paneKeyAt(index, oscillatorTypes) {
 /** The price scale a pane is framed by, reached through its first series rather than
  *  pane.priceScale('right') - that throws when a pane has no right scale, and this runs on a timer
  *  over whatever panes happen to exist at the time. Pane 0's first series is the candles. */
-function paneScale(pane, index, candleSeries) {
+function paneScale(pane: any, index: number, candleSeries: ISeriesApi<'Candlestick'> | null) {
   return index === 0 ? (candleSeries?.priceScale() ?? null) : (pane.getSeries()[0]?.priceScale() ?? null)
 }
 
 /** Two saved price ranges, compared. null means "this pane is on autoscale", which is a state worth
  *  storing as much as a pinned range is - restoring a range onto a scale the user left on auto
  *  would freeze it at yesterday's prices. */
-function sameRange(a, b) {
+function sameRange(a: PriceRange | null, b: PriceRange | null) {
   if (!a || !b) return !a && !b
-  return a.from === b.from && a.to === b.to
+  return a.minValue === b.minValue && a.maxValue === b.maxValue
 }
 
 // Series-map key for one line of one indicator. A single-line indicator passes lineKey = null and
 // keys on its own id alone; a band keys on `id:upper`, `id:middle`, `id:lower`. Both the effect
 // that creates the series and the one that feeds them go through here, so they can't disagree.
-const seriesKey = (indicatorKey, lineKey) => (lineKey ? `${indicatorKey}:${lineKey}` : indicatorKey)
+const seriesKey = (indicatorKey: string, lineKey?: string | null) => (lineKey ? `${indicatorKey}:${lineKey}` : indicatorKey)
 
 // Signed percentage of `exit_price` away from entry, in the position's own direction (so a target
 // reads + and a stop reads - for a short exactly as for a long). Shared by the price-line labels
 // and the floating pills, which must never disagree about a level's distance.
-function pctFromEntry(trade) {
+function pctFromEntry(trade: Parameters<typeof tradeReturnPct>[0]) {
   const pct = tradeReturnPct(trade)
   if (pct == null) return '—'
   return `${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%`
@@ -285,18 +381,19 @@ const ReplayChart = forwardRef(function ReplayChart(
     view,
     onViewChange,
     settings = DEFAULT_CHART_SETTINGS,
-  },
-  ref,
+  }: ReplayChartProps,
+  ref: React.Ref<ReplayChartHandle>,
 ) {
-  const containerRef = useRef(null)
-  const overlayRef = useRef(null)
-  const drawLayerRef = useRef(null)
-  const chartRef = useRef(null)
-  const candleSeriesRef = useRef(null)
-  const volumeSeriesRef = useRef(null)
-  const indicatorSeriesRef = useRef(new Map())
-  const orderLinesRef = useRef(new Map())
-  const previewLinesRef = useRef([])
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const overlayRef = useRef<HTMLDivElement | null>(null)
+  const drawLayerRef = useRef<SVGSVGElement | null>(null)
+  const chartRef = useRef<IChartApi | null>(null)
+  const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
+  const indicatorSeriesRef = useRef(new Map<string, ISeriesApi<'Line'>>())
+  /** One price line per level, keyed `orderId:entry` or `orderId:stopLoss:legId`. */
+  const orderLinesRef = useRef(new Map<string, IPriceLine>())
+  const previewLinesRef = useRef<IPriceLine[]>([])
   const hasFitRef = useRef(false)
   // Pane keys whose saved price scale has already been applied. Applied ONCE each: after that the
   // scale belongs to the user, and re-applying on a later render would snap their drag back.
@@ -304,29 +401,32 @@ const ReplayChart = forwardRef(function ReplayChart(
   // Time of the bar under the crosshair, or null when the pointer is off the chart - drives the
   // OHLCV legend. Held as a ref too so the crosshair subscription can skip the setState on every
   // pixel of movement and only re-render when the pointer crosses into a different candle.
-  const [hoverTime, setHoverTime] = useState(null)
-  const hoverTimeRef = useRef(null)
+  const [hoverTime, setHoverTime] = useState<Time | null>(null)
+  const hoverTimeRef = useRef<Time | null>(null)
   // Right-click context menu state: null when closed, { x, y, price } while open. See the
   // ContextMenu render at the bottom of this component.
-  const [ctxMenu, setCtxMenu] = useState(null)
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; price: number } | null>(null)
   // The shape currently being dragged out, before it's committed to the store. Local because
   // nothing outside the chart can act on half a rectangle.
-  const [draft, setDraft] = useState(null)
+  const [draft, setDraft] = useState<Omit<Drawing, 'id'> | null>(null)
   // TradingView's measure tool: { a, b, locked }, both anchors in {index, price}. Shift+click
   // drops `a`, the pointer drags `b` around, and the next click locks the reading so it can be
   // read (and stays put through pan/zoom) until the click after that dismisses it. Local and
   // never persisted - a measurement is a question you ask once, not a drawing you keep.
-  const [measure, setMeasure] = useState(null)
-  const measureRef = useRef(null)
+  const [measure, setMeasure] = useState<MeasureState | null>(null)
+  const measureRef = useRef<MeasureState | null>(null)
   measureRef.current = measure
   const tool = drawTool
   const selectedId = selectedDrawingId
   // Through a ref, not called directly: the pointer listeners below are bound once per chart, so a
   // callback captured from the first render would go stale the moment BarReplay re-renders.
-  const drawCbRef = useRef(null)
+  const drawCbRef = useRef<{
+    onDrawToolChange?: (tool: string | null) => void
+    onSelectDrawing?: (id: string | null) => void
+  }>({})
   drawCbRef.current = { onDrawToolChange, onSelectDrawing }
-  const setTool = (next) => drawCbRef.current.onDrawToolChange?.(next)
-  const setSelectedId = (next) => drawCbRef.current.onSelectDrawing?.(next)
+  const setTool = (next: string | null) => drawCbRef.current.onDrawToolChange?.(next)
+  const setSelectedId = (next: string | null) => drawCbRef.current.onSelectDrawing?.(next)
 
   // Drag handlers close over ordersRef/onAdjustRef instead of orders/onAdjustOrder directly so
   // the pointer listeners only need attaching once per chart instance, not on every order change.
@@ -354,7 +454,7 @@ const ReplayChart = forwardRef(function ReplayChart(
   // Which oscillator type sits in each pane below the price pane, in order. Written by the
   // indicator effect, read by the height sampler - a ref so the sampler's interval doesn't have to
   // be torn down and restarted every time the indicator list changes.
-  const oscillatorTypesRef = useRef([])
+  const oscillatorTypesRef = useRef<string[]>([])
   const onViewChangeRef = useRef(onViewChange)
   onViewChangeRef.current = onViewChange
 
@@ -395,10 +495,10 @@ const ReplayChart = forwardRef(function ReplayChart(
       // null is how store.js spells "this pane is on autoscale" - and only the price key is
       // touched, so every oscillator pane keeps whatever it had saved.
       viewRef.current = {
-        ...viewRef.current,
+        ...(viewRef.current ?? DEFAULT_VIEW_STATE),
         priceRanges: { ...viewRef.current?.priceRanges, [PRICE_PANE_KEY]: null },
       }
-      onViewChangeRef.current?.({ priceRanges: viewRef.current.priceRanges })
+      onViewChangeRef.current?.({ priceRanges: viewRef.current?.priceRanges })
     },
   }))
 
@@ -418,7 +518,7 @@ const ReplayChart = forwardRef(function ReplayChart(
       // the pointer - and with anything placed AT the pointer, like a drawing or a click-placed
       // level. Normal keeps the crosshair exactly where the mouse is.
       crosshair: { mode: CrosshairMode.Normal },
-      localization: { priceFormatter: (p) => `₹${p.toFixed(2)}` },
+      localization: { priceFormatter: (p: number) => `₹${p.toFixed(2)}` },
     })
     chartRef.current = chart
     candleSeriesRef.current = chart.addSeries(CandlestickSeries, candleOptionsFrom(settings))
@@ -483,20 +583,21 @@ const ReplayChart = forwardRef(function ReplayChart(
     const chart = chartRef.current
     if (!container || !chart) return
 
-    let drag = null // { orderId, field, legId? }
-    let drawStart = null // { index, price } while a drawing tool is being dragged out
+    // What the pointer is currently dragging: an order level, or a shape being drawn out.
+    let drag: { orderId: string; field: DragField; legId?: string } | null = null
+    let drawStart: Anchor | null = null
 
-    const priceAt = (clientY) => {
+    const priceAt = (clientY: number) => {
       const rect = container.getBoundingClientRect()
       return candleSeriesRef.current?.coordinateToPrice(clientY - rect.top) ?? null
     }
-    const coordFor = (price) => candleSeriesRef.current?.priceToCoordinate(price) ?? null
+    const coordFor = (price: number) => candleSeriesRef.current?.priceToCoordinate(price) ?? null
 
     // The right-hand axis strip of whichever pane the cursor is over (price pane or any oscillator
     // pane below it), or null anywhere else. Everything in that strip belongs to the price scale -
     // drag- and wheel-zoom - not to the chart body. X comes from the container because a pane's own
     // element stops at the axis; Y comes from the pane element, which is exact (no separator drift).
-    const axisAt = (e) => {
+    const axisAt = (e: any) => {
       // X first, and from the candle scale: the right axis is one column shared by every pane (that
       // is why their labels line up), and a press in the chart body must reach the line-drag below
       // without touching a pane API at all.
@@ -520,7 +621,7 @@ const ReplayChart = forwardRef(function ReplayChart(
     // orderEngine.js/store.js) - each leg on either side is its own draggable line. Pending
     // orders' entry price is draggable too (limit price still un-fired); a filled position's
     // entry line is history and stays fixed.
-    const findHandle = (clientY) => {
+    const findHandle = (clientY: number): DragHandle | null => {
       const rect = container.getBoundingClientRect()
       const y = clientY - rect.top
       for (const order of ordersRef.current) {
@@ -530,10 +631,11 @@ const ReplayChart = forwardRef(function ReplayChart(
             return { orderId: order.id, field: 'entry' }
         }
         if (order.status !== 'open') continue
-        for (const [field, legs] of [
+        const sides: [Exclude<DragField, 'entry'>, ReplayLeg[]][] = [
           ['stopLoss', order.stopLosses ?? []],
           ['target', order.targets ?? []],
-        ]) {
+        ]
+        for (const [field, legs] of sides) {
           for (const leg of legs) {
             const coord = coordFor(leg.price)
             if (coord != null && Math.abs(coord - y) <= DRAG_HIT_PX)
@@ -546,7 +648,7 @@ const ReplayChart = forwardRef(function ReplayChart(
 
     // Where a pointer sits in chart terms: a fractional bar index and a price. Both survive pan,
     // zoom and autoscale, which is what makes a drawing stay on the price action it was drawn on.
-    const anchorAt = (e) => {
+    const anchorAt = (e: any) => {
       const rect = container.getBoundingClientRect()
       const x = e.clientX - rect.left
       const y = e.clientY - rect.top
@@ -560,15 +662,15 @@ const ReplayChart = forwardRef(function ReplayChart(
 
     // The topmost drawing within DRAW_HIT_PX of the pointer, newest first (last drawn sits on top,
     // same as it renders).
-    const hitDrawing = (e) => {
+    const hitDrawing = (e: any) => {
       const rect = container.getBoundingClientRect()
       const px = e.clientX - rect.left
       const py = e.clientY - rect.top
       const ts = chart.timeScale()
       const series = candleSeriesRef.current
       if (!series) return null
-      const at = (p) => {
-        const x = ts.logicalToCoordinate(p.index)
+      const at = (p: { index: number; price: number }) => {
+        const x = ts.logicalToCoordinate(p.index as never)
         const y = series.priceToCoordinate(p.price)
         return x == null || y == null ? null : { x, y }
       }
@@ -593,12 +695,13 @@ const ReplayChart = forwardRef(function ReplayChart(
           [b.x, b.y, a.x, b.y],
           [a.x, b.y, a.x, a.y],
         ]
-        if (edges.some((seg) => distToSegment(px, py, ...seg) <= DRAW_HIT_PX)) return d
+        if (edges.some((seg) => distToSegment(px, py, seg[0], seg[1], seg[2], seg[3]) <= DRAW_HIT_PX))
+          return d
       }
       return null
     }
 
-    const onPointerDown = (e) => {
+    const onPointerDown = (e: any) => {
       // Right-click is handled by onContextMenu below - do NOT grab a drag for it, or moving
       // the mouse between right-click and menu selection scrubs a level around.
       if (e.button !== 0) return
@@ -637,7 +740,7 @@ const ReplayChart = forwardRef(function ReplayChart(
       }
       // An order line always wins the press (checked above): the levels you can actually get
       // filled at matter more than a sketch drawn near them.
-      const armed = toolRef.current
+      const armed = toolRef.current as Drawing['type'] | null
       if (armed) {
         const anchor = anchorAt(e)
         if (!anchor) return
@@ -652,8 +755,8 @@ const ReplayChart = forwardRef(function ReplayChart(
       }
       setSelectedId(hitDrawing(e)?.id ?? null)
     }
-    const commitDrawing = (shape) => {
-      const drawing = { id: crypto.randomUUID(), ...shape }
+    const commitDrawing = (shape: Omit<Drawing, 'id'>) => {
+      const drawing: Drawing = { id: crypto.randomUUID(), ...shape }
       onDrawingsRef.current?.([...drawingsRef.current, drawing])
       setDraft(null)
       setSelectedId(drawing.id)
@@ -661,7 +764,7 @@ const ReplayChart = forwardRef(function ReplayChart(
       // going straight back to reading the chart.
       setTool(null)
     }
-    const onPointerMove = (e) => {
+    const onPointerMove = (e: any) => {
       const measuring = measureRef.current
       if (measuring && !measuring.locked) {
         const anchor = anchorAt(e)
@@ -670,7 +773,10 @@ const ReplayChart = forwardRef(function ReplayChart(
       }
       if (drawStart) {
         const anchor = anchorAt(e)
-        if (anchor) setDraft((d) => (d ? { ...d, points: [drawStart, anchor] } : d))
+        if (anchor && drawStart) {
+          const from = drawStart
+          setDraft((d) => (d ? { ...d, points: [from, anchor] } : d))
+        }
         return
       }
       if (!drag) return
@@ -682,7 +788,7 @@ const ReplayChart = forwardRef(function ReplayChart(
         drag.field === 'entry' ? `${drag.orderId}:entry` : `${drag.orderId}:${drag.field}:${drag.legId}`
       orderLinesRef.current.get(key)?.applyOptions({ price })
     }
-    const onPointerUp = (e) => {
+    const onPointerUp = (e: any) => {
       // Shift+DRAG is the same gesture with the button held: releasing after a real drag locks the
       // reading, exactly where a second click would have. A release that never moved is the first
       // half of the click-move-click form, so it leaves the band live and following the pointer.
@@ -690,7 +796,7 @@ const ReplayChart = forwardRef(function ReplayChart(
       if (measuring && !measuring.locked) {
         const ts = chart.timeScale()
         const rect = container.getBoundingClientRect()
-        const x0 = ts.logicalToCoordinate(measuring.a.index) ?? 0
+        const x0 = ts.logicalToCoordinate(measuring.a.index as never) ?? 0
         const y0 = candleSeriesRef.current?.priceToCoordinate(measuring.a.price) ?? 0
         if (Math.hypot(e.clientX - rect.left - x0, e.clientY - rect.top - y0) >= DRAW_MIN_PX) {
           chart.applyOptions({ handleScroll: true, handleScale: true })
@@ -705,12 +811,13 @@ const ReplayChart = forwardRef(function ReplayChart(
         const anchor = anchorAt(e)
         const rect = container.getBoundingClientRect()
         const ts = chart.timeScale()
-        const x0 = ts.logicalToCoordinate(start.index) ?? 0
+        const x0 = ts.logicalToCoordinate(start.index as never) ?? 0
         const y0 = candleSeriesRef.current?.priceToCoordinate(start.price) ?? 0
         // A click that never really moved is a mis-click, not a zero-size shape: drop it and leave
         // the tool armed so the next press still draws.
         const moved = Math.hypot(e.clientX - rect.left - x0, e.clientY - rect.top - y0) >= DRAW_MIN_PX
-        if (anchor && moved && type) commitDrawing({ type, points: [start, anchor] })
+        if (anchor && moved && type)
+          commitDrawing({ type: type as Drawing['type'], points: [start, anchor] })
         else setDraft(null)
         return
       }
@@ -720,12 +827,12 @@ const ReplayChart = forwardRef(function ReplayChart(
       drag = null
       chart.applyOptions({ handleScroll: true, handleScale: true })
       container.style.cursor = ''
-      if (price != null) onAdjustRef.current?.(orderId, field, price, legId)
+      if (price != null) onAdjustRef.current?.(orderId, field, price, legId ?? '')
     }
     // Two-finger scroll (or wheel) over the price axis zooms it, the same way dragging the axis
     // already does - lightweight-charts only wires the drag, so a trackpad leaves the axis inert.
     // Capture phase + stopPropagation so the chart's own wheel handler doesn't also zoom time.
-    const onWheel = (e) => {
+    const onWheel = (e: any) => {
       const axis = axisAt(e)
       if (!axis) return
       const range = axis.scale.getVisibleRange()
@@ -740,7 +847,7 @@ const ReplayChart = forwardRef(function ReplayChart(
       if (Math.abs(to - from) < 1e-6) return
       axis.scale.setVisibleRange({ from, to })
     }
-    const onContextMenu = (e) => {
+    const onContextMenu = (e: any) => {
       e.preventDefault()
       const rect = container.getBoundingClientRect()
       const price = priceAt(e.clientY)
@@ -781,7 +888,9 @@ const ReplayChart = forwardRef(function ReplayChart(
     // ref so the height sampler below can turn a pane index back into the type it's showing
     // without recomputing (or re-running on every indicator change).
     const oscillatorTypes = [
-      ...new Set(indicators.filter((i) => INDICATOR_TYPES[i.type]?.pane === 'separate').map((i) => i.type)),
+      ...new Set(
+        indicators.filter((i) => INDICATOR_TYPES[i.type]?.pane === 'separate').map((i) => i.type),
+      ),
     ]
     oscillatorTypesRef.current = oscillatorTypes
     // Drop panes left behind by a removed oscillator, highest first so the surviving indices below
@@ -789,14 +898,14 @@ const ReplayChart = forwardRef(function ReplayChart(
     for (let p = chart.panes().length - 1; p > oscillatorTypes.length; p--) chart.removePane(p)
 
     const next = new Map()
-    indicators.forEach((ind, i) => {
+    indicators.forEach((ind, i: number) => {
       const type = INDICATOR_TYPES[ind.type]
       const separatePane = type?.pane === 'separate'
       const paneIndex = separatePane ? FIRST_OSCILLATOR_PANE + oscillatorTypes.indexOf(ind.type) : 0
       // Multi-line types (bands, MACD, stochastic) declare their sub-series; single-line ones get
       // a synthetic one so this loop is the only code path. The map key carries the line, so the
       // data effect can address each series independently.
-      const lines = type?.lines ?? [{ key: null }]
+      const lines: IndicatorLine[] = type?.lines ?? [{ key: null }]
 
       lines.forEach((line, lineIndex) => {
         const series = chart.addSeries(
@@ -804,7 +913,7 @@ const ReplayChart = forwardRef(function ReplayChart(
           {
             color: line.color ?? INDICATOR_COLORS[(i + lineIndex) % INDICATOR_COLORS.length],
             lineWidth: 1,
-            lineStyle: line.lineStyle ?? type?.lineStyle ?? 0,
+            lineStyle: (line.lineStyle ?? type?.lineStyle ?? 0) as never,
             crosshairMarkerVisible: false,
             // Only the first line of a group gets a value badge on the axis - three bands would
             // otherwise stack three overlapping labels on one another.
@@ -885,15 +994,24 @@ const ReplayChart = forwardRef(function ReplayChart(
     // b.time, not b.date: for daily timeframes the two are the same "YYYY-MM-DD" business day,
     // but intraday bars carry a unix timestamp there (b.date stays the calendar day, which is
     // what the date-jump pickers match on). See lib/replay.js.
+    // The cast is the library boundary: a bar's `time` is a unix second or a "YYYY-MM-DD"
+    // business day, both of which lightweight-charts accepts, but its `Time` is a branded type
+    // that a plain number can't be widened into.
     candles.setData(
-      bars.map((b) => ({ time: b.time, open: b.open, high: b.high, low: b.low, close: b.close })),
+      bars.map((b) => ({
+        time: b.time,
+        open: b.open,
+        high: b.high,
+        low: b.low,
+        close: b.close,
+      })) as never,
     )
     volumeSeriesRef.current?.setData(
       bars.map((b) => ({
         time: b.time,
-        value: b.volume,
+        value: b.volume ?? 0,
         color: b.close >= b.open ? fade(settings.bodyUpColor, 0.5) : fade(settings.bodyDownColor, 0.5),
-      })),
+      })) as never,
     )
     // Full bars, not a {time, close} projection: the moving averages only read `close`, but the
     // candle-shape indicators need open/high/low, the volume ones need `volume`, and VWAP and the
@@ -902,12 +1020,13 @@ const ReplayChart = forwardRef(function ReplayChart(
       const type = INDICATOR_TYPES[ind.type]
       if (!type) return
       // Multi-line types return an object keyed by line; single-line ones return a bare array.
-      const computed = type.compute(bars, ind.period)
-      const lines = type.lines ?? [{ key: null }]
+      const computed = type.compute(bars, ind.period ?? 0)
+      const lines: IndicatorLine[] = type.lines ?? [{ key: null }]
       lines.forEach((line) => {
         const series = indicatorSeriesRef.current.get(seriesKey(ind.key, line.key))
         if (!series) return
-        series.setData((line.key ? computed[line.key] : computed) ?? [])
+        const data = line.key ? (computed as Record<string, Point[]>)[line.key] : (computed as Point[])
+        series.setData((data ?? []) as never)
       })
     })
     if (!hasFitRef.current) {
@@ -977,7 +1096,7 @@ const ReplayChart = forwardRef(function ReplayChart(
     if (!candles) return
     orderLinesRef.current.forEach((line) => candles.removePriceLine(line))
     const next = new Map()
-    orders.forEach((order) => {
+    orders.forEach((order: ReplayOrder) => {
       const pending = order.status === 'pending'
       next.set(
         `${order.id}:entry`,
@@ -990,7 +1109,7 @@ const ReplayChart = forwardRef(function ReplayChart(
         }),
       )
       const slLegs = order.stopLosses ?? []
-      slLegs.forEach((leg) => {
+      slLegs.forEach((leg: ReplayLeg) => {
         next.set(
           `${order.id}:stopLoss:${leg.id}`,
           candles.createPriceLine({
@@ -1005,7 +1124,7 @@ const ReplayChart = forwardRef(function ReplayChart(
         )
       })
       const targetLegs = order.targets ?? []
-      targetLegs.forEach((leg) => {
+      targetLegs.forEach((leg: ReplayLeg) => {
         next.set(
           `${order.id}:target:${leg.id}`,
           candles.createPriceLine({
@@ -1038,14 +1157,14 @@ const ReplayChart = forwardRef(function ReplayChart(
     if (!chart) return
     const timeScale = chart.timeScale()
 
-    const sample = (range) => {
+    const sample = (range?: { from: number; to: number } | null) => {
       // Before the initial framing has run, the range on offer is lightweight-charts' default -
       // storing it would overwrite the very window we are about to restore.
       if (!hasFitRef.current) return
 
       // Keyed by what each pane shows, not by its index - see store.js's paneHeights.
-      const heights = {}
-      const priceRanges = {}
+      const heights: Record<string, number> = {}
+      const priceRanges: ReplayView['priceRanges'] = {}
       chart.panes().forEach((pane, index) => {
         const key = paneKeyAt(index, oscillatorTypesRef.current)
         heights[key] = pane.getStretchFactor()
@@ -1056,20 +1175,22 @@ const ReplayChart = forwardRef(function ReplayChart(
         priceRanges[key] = priceScale.options().autoScale ? null : priceScale.getVisibleRange()
       })
 
-      const prev = viewRef.current ?? {}
+      const prev: Partial<ReplayView> = viewRef.current ?? {}
       const movedRange =
         range && (range.from !== prev.logicalRange?.from || range.to !== prev.logicalRange?.to)
       const movedPanes = Object.entries(heights).some(([key, value]) => prev.paneHeights?.[key] !== value)
       const movedScales = Object.entries(priceRanges).some(
-        ([key, value]) => !(key in (prev.priceRanges ?? {})) || !sameRange(prev.priceRanges[key], value),
+        ([key, value]) =>
+          !(key in (prev.priceRanges ?? {})) || !sameRange(prev.priceRanges?.[key] ?? null, value),
       )
       if (!movedRange && !movedPanes && !movedScales) return
 
       // The chart's own state is what the next sample diffs against - nothing flows back in from
       // the store, so this has to be kept current here.
       viewRef.current = {
+        ...DEFAULT_VIEW_STATE,
         ...prev,
-        ...(movedRange ? { logicalRange: { from: range.from, to: range.to } } : {}),
+        ...(movedRange && range ? { logicalRange: { from: range.from, to: range.to } } : {}),
         paneHeights: { ...prev.paneHeights, ...heights },
         priceRanges: { ...prev.priceRanges, ...priceRanges },
       }
@@ -1106,7 +1227,7 @@ const ReplayChart = forwardRef(function ReplayChart(
       const series = candleSeriesRef.current
       const root = overlayRef.current
       if (series && root) {
-        for (const el of root.querySelectorAll('[data-price]')) {
+        for (const el of root.querySelectorAll<HTMLElement>('[data-price]')) {
           const y = series.priceToCoordinate(Number(el.dataset.price))
           // Off-scale (scrolled out of the visible price range) hides rather than clamps - a pill
           // pinned to the top edge would claim a level is there when it isn't.
@@ -1142,7 +1263,7 @@ const ReplayChart = forwardRef(function ReplayChart(
   // focused element to hang a keydown on.
   useEffect(() => {
     if (!tool && !draft && !selectedId && !measure) return
-    const onKey = (e) => {
+    const onKey = (e: any) => {
       if (e.key === 'Escape') {
         setTool(null)
         setDraft(null)
@@ -1156,9 +1277,13 @@ const ReplayChart = forwardRef(function ReplayChart(
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
         const el = document.activeElement
         // Never eat a Backspace meant for a qty input or the symbol search.
-        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return
+        if (
+          el instanceof HTMLElement &&
+          (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)
+        )
+          return
         e.preventDefault()
-        onDrawingsRef.current?.(drawingsRef.current.filter((d) => d.id !== selectedId))
+        onDrawingsRef.current?.(drawingsRef.current.filter((d: Drawing) => d.id !== selectedId))
         setSelectedId(null)
       }
     }
@@ -1183,7 +1308,7 @@ const ReplayChart = forwardRef(function ReplayChart(
           title: previewOrder.direction === 'long' ? 'Buy' : 'Sell',
         }),
       )
-      ;(previewOrder.stop_losses ?? []).forEach((price, i, arr) => {
+      ;(previewOrder.stop_losses ?? []).forEach((price: number, i: number, arr) => {
         previewLinesRef.current.push(
           candles.createPriceLine({
             price,
@@ -1194,7 +1319,7 @@ const ReplayChart = forwardRef(function ReplayChart(
           }),
         )
       })
-      ;(previewOrder.targets ?? []).forEach((price, i, arr) => {
+      ;(previewOrder.targets ?? []).forEach((price: number, i: number, arr) => {
         previewLinesRef.current.push(
           candles.createPriceLine({
             price,
@@ -1211,7 +1336,7 @@ const ReplayChart = forwardRef(function ReplayChart(
   // The hovered bar, falling back to the newest one so the legend reads out the current candle
   // when the pointer is away - same as every charting package. Index, not just the bar, because
   // the change is against the previous close.
-  const legendIndex = hoverTime == null ? bars.length - 1 : bars.findIndex((b) => b.time === hoverTime)
+  const legendIndex = hoverTime == null ? bars.length - 1 : bars.findIndex((b: ReplayBar) => b.time === hoverTime)
   const legendBar = legendIndex >= 0 ? bars[legendIndex] : null
 
   return (
@@ -1231,7 +1356,7 @@ const ReplayChart = forwardRef(function ReplayChart(
         aria-hidden="true"
       >
         <title>Chart drawings</title>
-        {drawings.map((d) => (
+        {drawings.map((d: Drawing) => (
           <DrawnShape key={d.id} drawing={d} selected={d.id === selectedId} />
         ))}
         {draft && <DrawnShape drawing={draft} selected dashed />}
@@ -1263,7 +1388,7 @@ const ReplayChart = forwardRef(function ReplayChart(
           price-line titles are plain text - they can show the % but can't hold a button. The
           canvas underneath still owns dragging; these only add the actions. */}
       <div ref={overlayRef} className="pointer-events-none absolute inset-0 z-10">
-        {orders.map((order) => (
+        {orders.map((order: ReplayOrder) => (
           <PositionPills
             key={order.id}
             order={order}
@@ -1304,21 +1429,23 @@ export default ReplayChart
 // The hovered bar, read out TradingView-style. Prices are plain numbers rather than inr(): the
 // axis already carries the currency, and eight ₹ signs in one line is noise. Colour follows the
 // candle's own direction (close vs open), so the legend agrees with the bar it describes.
-function OhlcvLegend({ bar, prev }) {
+function OhlcvLegend({ bar, prev }: { bar: ReplayBar; prev: ReplayBar | null }) {
   const up = bar.close >= bar.open
   const tone = up ? 'text-up' : 'text-down'
   const change = prev ? bar.close - prev.close : null
-  const changePct = prev && prev.close ? (change / prev.close) * 100 : null
+  const changePct = prev && prev.close && change!==null ? (change / prev.close) * 100 : null
 
   return (
     <div className="flex flex-wrap items-center gap-x-2 rounded border bg-background/85 px-2 py-1 text-[11px] tabular-nums shadow-sm backdrop-blur-sm">
       <span className="text-muted-foreground">{stamp(bar)}</span>
-      {[
-        ['O', bar.open],
-        ['H', bar.high],
-        ['L', bar.low],
-        ['C', bar.close],
-      ].map(([label, value]) => (
+      {(
+        [
+          ['O', bar.open],
+          ['H', bar.high],
+          ['L', bar.low],
+          ['C', bar.close],
+        ] as [string, number][]
+      ).map(([label, value]) => (
         <span key={label}>
           <span className="text-muted-foreground">{label}</span> <span className={tone}>{price(value)}</span>
         </span>
@@ -1327,7 +1454,7 @@ function OhlcvLegend({ bar, prev }) {
         <span className={tone}>
           {change >= 0 ? '+' : ''}
           {price(change)} ({change >= 0 ? '+' : ''}
-          {changePct.toFixed(2)}%)
+          {changePct?.toFixed(2)}%)
         </span>
       )}
       <span>
@@ -1340,20 +1467,30 @@ function OhlcvLegend({ bar, prev }) {
 // Intraday bars key on a unix timestamp and daily ones on a "YYYY-MM-DD" business day, so the
 // legend follows the axis: date only for daily, date + time for intraday. UTC getters, because
 // intraday bar times are pre-shifted to IST and the chart renders them as UTC (see minute_data.py).
-const stamp = (bar) =>
+const stamp = (bar: ReplayBar) =>
   typeof bar.time === 'number'
     ? new Date(bar.time * 1000).toISOString().slice(0, 16).replace('T', ' ')
     : (bar.date ?? bar.time)
 
 // Two decimals, thousands separated - the axis format minus the ₹.
-const price = (v) =>
+const price = (v: number) =>
   v == null ? '—' : v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
 const PILL =
   'absolute left-[80%] -translate-x-1/2 -translate-y-1/2 pointer-events-auto flex items-center ' +
   'rounded border bg-background/90 text-[11px] whitespace-nowrap tabular-nums shadow-sm backdrop-blur-sm'
 
-function PillButton({ label, title, onClick, className = '' }) {
+function PillButton({
+  label,
+  title,
+  onClick,
+  className = '',
+}: {
+  label: ReactNode
+  title?: string
+  onClick?: () => void
+  className?: string
+}) {
   return (
     <button
       type="button"
@@ -1371,8 +1508,27 @@ function PillButton({ label, title, onClick, className = '' }) {
 // reverts. `draft` is null whenever the input is showing the committed value, so a REJECTED edit
 // (see orderEngine's setLegQty - the legs on one side can't sum past the position) needs nothing
 // but clearing it: the input snaps straight back to the leg's unchanged qty.
-function LegPill({ order, leg, label, kind, pct, tone, onRemoveLevel, onAdjustLegQty }) {
-  const [draft, setDraft] = useState(null)
+function LegPill({
+  order,
+  leg,
+  label,
+  kind,
+  pct,
+  tone,
+  onRemoveLevel,
+  onAdjustLegQty,
+}: {
+  order: ReplayOrder
+  leg: ReplayLeg
+  label: string
+  kind: 'stopLoss' | 'target'
+  /** Formats a price as its distance from entry - the caller owns the trade context. */
+  pct: (price: number) => string
+  tone?: string
+  onRemoveLevel?: (orderId: string, kind: 'stopLoss' | 'target', legId: string) => void
+  onAdjustLegQty?: (orderId: string, kind: 'stopLoss' | 'target', legId: string, qty: number) => void
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
   const commit = () => {
     const qty = Number(draft)
     if (draft != null && draft.trim() !== '' && qty !== leg.qty) onAdjustLegQty?.(order.id, kind, leg.id, qty)
@@ -1416,9 +1572,18 @@ function PositionPills({
   onRequestClose,
   onCancelPending,
   onMoveToBreakeven,
+}: {
+  order: ReplayOrder
+  /** The current bar's close, for the live P&L on the pill. */
+  lastClose?: number | null
+  onRemoveLevel?: (orderId: string, kind: 'stopLoss' | 'target', legId: string) => void
+  onAdjustLegQty?: (orderId: string, kind: 'stopLoss' | 'target', legId: string, qty: number) => void
+  onRequestClose?: (order: ReplayOrder) => void
+  onCancelPending?: (orderId: string) => void
+  onMoveToBreakeven?: (orderId: string) => void
 }) {
   const pending = order.status === 'pending'
-  const pct = (price) =>
+  const pct = (price: number) =>
     pctFromEntry({ direction: order.direction, entry_price: order.entryPrice, exit_price: price })
   const { rr } = riskReward({
     direction: order.direction,
@@ -1436,7 +1601,7 @@ function PositionPills({
         className={`${PILL} ${pending ? 'border-dashed border-amber-500/70 text-amber-600' : 'border-primary/60'}`}
       >
         <span className="border-r px-1.5 py-0.5 font-medium">
-          {pending ? `Limit ${order.quantity}` : `${order.quantity}  ${pct(lastClose)}`}
+          {pending ? `Limit ${order.quantity}` : `${order.quantity}  ${pct(lastClose ?? 0)}`}
         </span>
         {/* Move-to-breakeven only makes sense once the position has an SL to move. Absent for
             pending orders (nothing to move to what isn't entered yet) and for open positions
@@ -1466,7 +1631,7 @@ function PositionPills({
 
       {/* One pill per leg on each ladder. Removing a leg only drops its protection - it never
           closes any part of the position (see BarReplay's removeLevel). */}
-      {(order.targets ?? []).map((leg, i, arr) => (
+      {(order.targets ?? []).map((leg: ReplayLeg, i: number, arr) => (
         <LegPill
           key={leg.id}
           order={order}
@@ -1479,7 +1644,7 @@ function PositionPills({
           onAdjustLegQty={onAdjustLegQty}
         />
       ))}
-      {(order.stopLosses ?? []).map((leg, i, arr) => (
+      {(order.stopLosses ?? []).map((leg: ReplayLeg, i: number, arr) => (
         <LegPill
           key={leg.id}
           order={order}
@@ -1503,9 +1668,28 @@ function PositionPills({
 //
 // One section per order: single-position sessions collapse to one section (the common case),
 // multi-position sessions still work without any nearest-position guessing.
-function ContextMenu({ x, y, price, orders, onClose, onPlaceLevel, onMoveToBreakeven, onCancelPending }) {
+function ContextMenu({
+  x,
+  y,
+  price,
+  orders,
+  onClose,
+  onPlaceLevel,
+  onMoveToBreakeven,
+  onCancelPending,
+}: {
+  /** Where the right-click landed, in container pixels, and the price under it. */
+  x: number
+  y: number
+  price: number
+  orders: ReplayOrder[]
+  onClose: () => void
+  onPlaceLevel?: (orderId: string, kind: 'stopLoss' | 'target', price: number) => void
+  onMoveToBreakeven?: (orderId: string) => void
+  onCancelPending?: (orderId: string) => void
+}) {
   useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && onClose()
+    const onKey = (e: any) => e.key === 'Escape' && onClose()
     const onClick = () => onClose()
     // Delay attaching the outside-click listener a tick - otherwise the same click that opened
     // the menu (contextmenu fires first, then click on many systems) immediately dismisses it.
@@ -1523,7 +1707,7 @@ function ContextMenu({ x, y, price, orders, onClose, onPlaceLevel, onMoveToBreak
   const hasAny = openOrders.length + pendingOrders.length > 0
   if (!hasAny) return null
 
-  const label = (o) => `${o.direction} ${o.quantity} @ ${inr(o.entryPrice)}`
+  const label = (o: ReplayOrder) => `${o.direction} ${o.quantity} @ ${inr(o.entryPrice)}`
   return (
     <div
       className="absolute z-30 min-w-56 rounded-md border bg-popover p-1 text-sm shadow-md"
@@ -1533,7 +1717,7 @@ function ContextMenu({ x, y, price, orders, onClose, onPlaceLevel, onMoveToBreak
       onContextMenu={(e) => e.preventDefault()}
     >
       <div className="px-2 py-1 text-xs text-muted-foreground">At {inr(price)}</div>
-      {openOrders.map((order) => (
+      {openOrders.map((order: ReplayOrder) => (
         <div key={order.id} className="border-t pt-1 first:border-t-0">
           <div className="px-2 py-0.5 text-[10px] uppercase text-muted-foreground">{label(order)}</div>
           <MenuItem onClick={() => (onPlaceLevel?.(order.id, 'stopLoss', price), onClose())}>
@@ -1549,7 +1733,7 @@ function ContextMenu({ x, y, price, orders, onClose, onPlaceLevel, onMoveToBreak
           )}
         </div>
       ))}
-      {pendingOrders.map((order) => (
+      {pendingOrders.map((order: ReplayOrder) => (
         <div key={order.id} className="border-t pt-1">
           <div className="px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
             {label(order)} · pending
@@ -1561,7 +1745,7 @@ function ContextMenu({ x, y, price, orders, onClose, onPlaceLevel, onMoveToBreak
   )
 }
 
-function MenuItem({ onClick, children }) {
+function MenuItem({ onClick, children }: { onClick?: () => void; children?: ReactNode }) {
   return (
     <button
       type="button"

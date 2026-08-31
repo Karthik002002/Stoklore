@@ -1,3 +1,4 @@
+import type { ReplayBar, ReplayOrder } from './store'
 import { useState } from 'react'
 import { XIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
@@ -7,17 +8,31 @@ import { inr } from '@/lib/format'
 import { tradePnl } from '@/lib/manualTrades'
 import { riskReward } from './orderEngine'
 
-const FIELD_FOR_KIND = { stopLoss: 'stopLosses', target: 'targets' }
-const LABEL_FOR_KIND = { stopLoss: 'SL', target: 'T' }
+/** Which side of the exit ladder a leg belongs to. */
+type LegKind = 'stopLoss' | 'target'
 
-function legsFor(order, kind) {
+const FIELD_FOR_KIND: Record<LegKind, 'stopLosses' | 'targets'> = {
+  stopLoss: 'stopLosses',
+  target: 'targets',
+}
+const LABEL_FOR_KIND: Record<LegKind, string> = { stopLoss: 'SL', target: 'T' }
+
+function legsFor(order: ReplayOrder, kind: LegKind) {
   return order[FIELD_FOR_KIND[kind]] ?? []
 }
 
 // One line per leg (stop-loss OR target - a laddered exit on either side can have several,
 // each covering part of the quantity - see orderEngine.js/store.js) plus a remove button, since
 // legs are a list that can grow or shrink, not a single optional field.
-function LegList({ order, kind, onRemoveLevel }) {
+function LegList({
+  order,
+  kind,
+  onRemoveLevel,
+}: {
+  order: ReplayOrder
+  kind: LegKind
+  onRemoveLevel: (orderId: string, kind: LegKind, legId: string) => void
+}) {
   const legs = legsFor(order, kind)
   if (legs.length === 0) return null
   const label = LABEL_FOR_KIND[kind]
@@ -50,6 +65,15 @@ function OrderRow({
   onMoveToBreakeven,
   onCancelPending,
   onRemoveLevel,
+}: {
+  order: ReplayOrder
+  lastBar: ReplayBar | null
+  onRequestClose: (order: ReplayOrder) => void
+  onRequestPartialClose: (order: ReplayOrder, qty: number) => void
+  /** Takes the id, not the order - BarReplay's handler looks it up itself. */
+  onMoveToBreakeven: (orderId: string) => void
+  onCancelPending: (orderId: string) => void
+  onRemoveLevel: (orderId: string, kind: LegKind, legId: string) => void
 }) {
   const slLegs = legsFor(order, 'stopLoss')
   const targetLegs = legsFor(order, 'target')
@@ -87,19 +111,25 @@ function OrderRow({
     )
   }
 
-  const pnl = tradePnl({
-    direction: order.direction,
-    entry_price: order.entryPrice,
-    exit_price: lastBar.close,
-    quantity: order.quantity,
-  })
+  // Null until the replay has a bar on screen; the display below already reads a null P&L as
+  // an em dash rather than a zero.
+  const pnl = lastBar
+    ? tradePnl({
+        direction: order.direction,
+        entry_price: order.entryPrice,
+        exit_price: lastBar.close,
+        quantity: order.quantity,
+      })
+    : null
   return (
     <div className="space-y-1 rounded-lg border p-2 text-sm">
       <div className="flex items-center justify-between">
         <span className="font-medium capitalize">
           {order.direction} {order.quantity} @ {inr(order.entryPrice)}
         </span>
-        <span className={`font-semibold tabular-nums ${pnl >= 0 ? 'text-up' : 'text-down'}`}>{inr(pnl)}</span>
+        <span className={`font-semibold tabular-nums ${(pnl ?? 0) >= 0 ? 'text-up' : 'text-down'}`}>
+          {inr(pnl)}
+        </span>
       </div>
       <LegList order={order} kind="stopLoss" onRemoveLevel={onRemoveLevel} />
       <LegList order={order} kind="target" onRemoveLevel={onRemoveLevel} />
@@ -143,7 +173,10 @@ function OrderRow({
           <Button variant="ghost" size="sm" className="flex-1" onClick={() => setPartialOpen(true)}>
             Partial…
           </Button>
-          <Button variant="destructive" size="sm" className="flex-1" onClick={onRequestClose}>
+          {/* Passing the order, not the click event: this button used to hand onRequestClose a
+              MouseEvent, so the close queue got an entry whose `order` had no id, direction or
+              entry price. The chart's own close path always passed the order. */}
+          <Button variant="destructive" size="sm" className="flex-1" onClick={() => onRequestClose(order)}>
             Close all
           </Button>
         </div>
@@ -156,18 +189,19 @@ function OrderRow({
 // are running. Deliberately excludes pending orders' hypothetical risk (they haven't traded yet
 // and might never fill), and counts open positions' risk against their remaining unprotected
 // quantity too (a stop on 50 of 100 shares is only 50 shares of risk).
-function PortfolioSummary({ orders, lastBar }) {
+function PortfolioSummary({ orders, lastBar }: { orders: ReplayOrder[]; lastBar: ReplayBar | null }) {
   const openOrders = orders.filter((o) => o.status === 'open')
-  if (openOrders.length === 0) return null
+  // The same guard BottomBar's own portfolio chip has: with no bar there is nothing to mark to.
+  if (openOrders.length === 0 || !lastBar) return null
   const unrealized = openOrders.reduce(
     (s, o) =>
       s +
-      tradePnl({
+      (tradePnl({
         direction: o.direction,
         entry_price: o.entryPrice,
         exit_price: lastBar.close,
         quantity: o.quantity,
-      }),
+      }) ?? 0),
     0,
   )
   const totalRisk = openOrders.reduce(
@@ -209,7 +243,18 @@ export default function PositionsList({
   onMoveToBreakeven,
   onCancelPending,
   onRemoveLevel,
-}) {
+}: Omit<
+  {
+    order: ReplayOrder
+    lastBar: ReplayBar | null
+    onRequestClose: (order: ReplayOrder) => void
+    onRequestPartialClose: (order: ReplayOrder, qty: number) => void
+    onMoveToBreakeven: (orderId: string) => void
+    onCancelPending: (orderId: string) => void
+    onRemoveLevel: (orderId: string, kind: LegKind, legId: string) => void
+  },
+  'order'
+> & { orders: ReplayOrder[] }) {
   if (orders.length === 0) return <p className="text-sm text-muted-foreground">No open positions.</p>
   return (
     <div className="space-y-2">

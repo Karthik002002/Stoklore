@@ -125,7 +125,9 @@ const backtestingRoute = createRoute({
   // facet (eight facets × value list + mode would be sixteen). Its grammar and validation live in
   // lib/tradeFilters.js - parseFilters drops anything it doesn't recognise, so a hand-mangled URL
   // degrades to fewer filters instead of a crash.
-  validateSearch: (search): { view: BacktestingView; account?: number; f?: string } => ({
+  validateSearch: (
+    search: { view?: BacktestingView; account?: number; f?: string } & SearchSchemaInput,
+  ): { view: BacktestingView; account?: number; f?: string } => ({
     view: oneOf(BACKTESTING_VIEWS, search.view) ? search.view : 'overview',
     account: numeric(search.account),
     f: typeof search.f === 'string' && search.f ? search.f : undefined,
@@ -143,7 +145,9 @@ type PaperView = (typeof PAPER_VIEWS)[number]
 const paperRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/paper',
-  validateSearch: (search): { view: PaperView; account?: number } => ({
+  validateSearch: (
+    search: { view?: PaperView; account?: number } & SearchSchemaInput,
+  ): { view: PaperView; account?: number } => ({
     view: oneOf(PAPER_VIEWS, search.view) ? search.view : 'overview',
     account: numeric(search.account),
   }),
@@ -188,7 +192,12 @@ const simulationRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/simulation',
   validateSearch: (
-    search,
+    search: {
+      mode?: 'single' | 'multiple'
+      account?: number
+      accounts?: string
+      view?: string
+    } & SearchSchemaInput,
   ): { mode: 'single' | 'multiple'; account?: number; accounts?: string; view?: string } => ({
     mode: search.mode === 'multiple' ? 'multiple' : 'single',
     account: numeric(search.account),

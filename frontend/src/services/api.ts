@@ -133,6 +133,9 @@ export type CollectStatus = {
   symbol?: string | null
 }
 
+/** What a create endpoint answers with - the row's new id, and nothing else. */
+export type Created = { id: number }
+
 /** The master search: matching rows, plus the per-board totals so a caller can show the split. */
 export type StockMasterSearch = { stocks: StockMasterRow[]; main: number; sme: number; total: number }
 
@@ -373,7 +376,7 @@ export const createManualTrade = (trade: ManualTradeRequest) =>
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(trade),
-  }).then(json)
+  }).then(json<Created>)
 
 export const updateManualTrade = (id: number, trade: ManualTradeRequest) =>
   fetch(`/api/manual-trades/${id}`, {
@@ -384,7 +387,7 @@ export const updateManualTrade = (id: number, trade: ManualTradeRequest) =>
 
 export const deleteManualTrade = (id: number) => fetch(`/api/manual-trades/${id}`, { method: 'DELETE' }).then(json)
 
-export const uploadManualTradeImage = (id: number, file: File) => {
+export const uploadManualTradeImage = (id: number, file: File | Blob) => {
   const form = new FormData()
   form.append('file', file)
   return fetch(`/api/manual-trades/${id}/image`, { method: 'POST', body: form }).then(json)

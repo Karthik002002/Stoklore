@@ -12,7 +12,22 @@ import {
 // one. The date picker sits in the menu itself rather than behind a hidden native input calling
 // showPicker(): that trick needed a user gesture, wasn't supported everywhere, and put the one
 // control in the app the user couldn't see coming.
-export default function DateJumpMenu({ bars, value, onSelect, triggerClassName, placeholder = 'Date…' }) {
+export default function DateJumpMenu({
+  bars,
+  value,
+  onSelect,
+  triggerClassName,
+  placeholder = 'Date…',
+}: {
+  /** The bars the picker can jump to. Every one carries a date - the daily path stores it
+   *  directly, the intraday path stamps it (see lib/replay.ts). */
+  bars: { date: string; time?: number | string }[]
+  /** The currently-shown bar's date, as "YYYY-MM-DD". */
+  value?: string | null
+  onSelect: (date: string) => void
+  triggerClassName?: string
+  placeholder?: string
+}) {
   const hasBars = bars.length > 0
 
   return (

@@ -4,14 +4,46 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input'
 import { inr } from '@/lib/format'
 import { riskReward, sizeByRisk } from './orderEngine'
+import type { ReplayBar } from './store'
 
-const numeric = (v) => (v === '' || v == null ? null : Number(v))
+/** A ladder row while it is being typed: both fields are strings, and either can be mid-edit. */
+type DraftLevel = { id: string; price: string; qty: string }
+
+/** The order being composed. Every numeric field is a string here - it comes from an <input>, and
+ *  "" has to stay distinguishable from 0 until the ticket is submitted. */
+export type OrderDraft = {
+  direction: 'long' | 'short'
+  orderType: 'market' | 'limit'
+  entryPrice: string
+  qty: string
+  slEnabled: boolean
+  targetEnabled: boolean
+  stopLosses: DraftLevel[]
+  targets: DraftLevel[]
+  /** The risk-% typed into the size-by-risk row; "" until it is used. */
+  sizeRiskPct?: string
+  /** Chandelier trailing stop, armed from the ticket and carried onto the placed order. */
+  trailing?: { atrPeriod?: number; atrMult: number } | null
+  notes?: string
+}
+
+const numeric = (v: string | number | null | undefined) => (v === '' || v == null ? null : Number(v))
 
 // Position-sizing row under the Shares field: type a risk % (e.g. 0.5, 1) and hit "Size" to
 // back-solve the Shares field. Uses the sizer in orderEngine, which itself uses the tightest
 // stop leg as the divisor. Deliberately a manual Apply button (not live-computed into Shares)
 // so a user typing the % doesn't watch Shares wobble mid-keystroke.
-function SizeByRiskRow({ balance, riskPct, onRiskPctChange, onApply }) {
+function SizeByRiskRow({
+  balance,
+  riskPct,
+  onRiskPctChange,
+  onApply,
+}: {
+  balance: number
+  riskPct: number
+  onRiskPctChange: (value: string) => void
+  onApply: () => void
+}) {
   const cashRisk = riskPct > 0 ? balance * (riskPct / 100) : null
   return (
     <div className="flex items-center gap-1.5 pt-1">
@@ -36,13 +68,21 @@ function SizeByRiskRow({ balance, riskPct, onRiskPctChange, onApply }) {
   )
 }
 // Compact-inr helper so the "= ₹1,000" tail doesn't overflow a narrow ticket dialog.
-const inrShort = (n) =>
+const inrShort = (n: number) =>
   n >= 100000 ? `${(n / 100000).toFixed(2)}L` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : n.toFixed(0)
 
 // One row per level of a ladder (stop-loss or target - both work the same way, see
 // orderEngine.js/store.js): a price and how much of the position it covers, with a remove button
 // once there's more than one row.
-function LevelRows({ rows, onUpdate, onRemove }) {
+function LevelRows({
+  rows,
+  onUpdate,
+  onRemove,
+}: {
+  rows: DraftLevel[]
+  onUpdate: (id: string, patch: Partial<DraftLevel>) => void
+  onRemove: (id: string) => void
+}) {
   return rows.map((row, i) => (
     <div key={row.id} className="flex items-center gap-1.5">
       <Input
@@ -90,6 +130,17 @@ export default function OrderTicketDialog({
   lastBar,
   accountBalance,
   warningsFor,
+}: {
+  /** The order being composed, or null when the ticket is closed. */
+  draft: OrderDraft | null
+  onChange: (patch: Partial<OrderDraft>) => void
+  onCancel: () => void
+  onSubmit: () => void
+  symbol: string | null
+  lastBar: ReplayBar | null
+  accountBalance?: number | null
+  /** Advisory warnings for a candidate size (see orderEngine.orderWarnings). */
+  warningsFor: (quantity: number, price: number) => string[]
 }) {
   if (!draft) return null
   const marketPrice = lastBar?.close ?? 0
@@ -101,8 +152,8 @@ export default function OrderTicketDialog({
   // --- Stop loss ladder --------------------------------------------------------------------
   const addSlLevel = () =>
     onChange({ stopLosses: [...draft.stopLosses, { id: crypto.randomUUID(), price: '', qty: '' }] })
-  const removeSlLevel = (id) => onChange({ stopLosses: draft.stopLosses.filter((r) => r.id !== id) })
-  const updateSlLevel = (id, patch) =>
+  const removeSlLevel = (id: string) => onChange({ stopLosses: draft.stopLosses.filter((r) => r.id !== id) })
+  const updateSlLevel = (id: string, patch: Partial<DraftLevel>) =>
     onChange({ stopLosses: draft.stopLosses.map((r) => (r.id === id ? { ...r, ...patch } : r)) })
 
   const slRows = draft.slEnabled ? draft.stopLosses : []
@@ -110,7 +161,7 @@ export default function OrderTicketDialog({
   // (only price or only qty typed so far) just doesn't count yet rather than erroring immediately.
   const slLegs = slRows
     .map((r) => ({ price: numeric(r.price), qty: numeric(r.qty) }))
-    .filter((r) => r.price != null && r.qty != null)
+    .filter((r): r is { price: number; qty: number } => r.price != null && r.qty != null)
   const slAllocatedQty = slLegs.reduce((s, r) => s + r.qty, 0)
   const slQtyError =
     slAllocatedQty > qty ? `Stop-loss quantities (${slAllocatedQty}) exceed order size (${qty})` : null
@@ -130,14 +181,14 @@ export default function OrderTicketDialog({
   // --- Take profit ladder (same shape as stop loss, mirrored on the reward side) ------------
   const addTargetLevel = () =>
     onChange({ targets: [...draft.targets, { id: crypto.randomUUID(), price: '', qty: '' }] })
-  const removeTargetLevel = (id) => onChange({ targets: draft.targets.filter((r) => r.id !== id) })
-  const updateTargetLevel = (id, patch) =>
+  const removeTargetLevel = (id: string) => onChange({ targets: draft.targets.filter((r) => r.id !== id) })
+  const updateTargetLevel = (id: string, patch: Partial<DraftLevel>) =>
     onChange({ targets: draft.targets.map((r) => (r.id === id ? { ...r, ...patch } : r)) })
 
   const targetRows = draft.targetEnabled ? draft.targets : []
   const targetLegs = targetRows
     .map((r) => ({ price: numeric(r.price), qty: numeric(r.qty) }))
-    .filter((r) => r.price != null && r.qty != null)
+    .filter((r): r is { price: number; qty: number } => r.price != null && r.qty != null)
   const targetAllocatedQty = targetLegs.reduce((s, r) => s + r.qty, 0)
   const targetQtyError =
     targetAllocatedQty > qty
@@ -153,7 +204,7 @@ export default function OrderTicketDialog({
     : null
   const rewardPct = reward != null && entry && qty ? (reward / (entry * qty)) * 100 : null
 
-  const rr = risk > 0 && reward > 0 ? reward / risk : null
+  const rr = risk != null && reward != null && risk > 0 && reward > 0 ? reward / risk : null
 
   // What the position actually costs, and how much of the account that is. The rupee figure alone
   // says nothing about whether the size is sane - 50k is a rounding error on one account and the
@@ -162,8 +213,9 @@ export default function OrderTicketDialog({
   // `accountBalance` is null when no account is selected (Bar Replay allows that) or its balance
   // isn't known yet; the percentage is simply omitted then rather than shown against a guess.
   const orderValue = entry * qty
-  const valuePctOfAccount = accountBalance > 0 && orderValue > 0 ? (orderValue / accountBalance) * 100 : null
-  const riskPctOfAccount = accountBalance > 0 && risk != null ? (risk / accountBalance) * 100 : null
+  const balance = accountBalance ?? 0
+  const valuePctOfAccount = balance > 0 && orderValue > 0 ? (orderValue / balance) * 100 : null
+  const riskPctOfAccount = balance > 0 && risk != null ? (risk / balance) * 100 : null
   // Sizing-preference and account-cap warnings, live while the size is being typed - the same list
   // the confirmation gate uses on submit (orderEngine.orderWarnings), so nothing appears there that
   // wasn't already on screen here. Advisory: they never disable the button.
@@ -230,15 +282,15 @@ export default function OrderTicketDialog({
             {/* Position-sizing back-solve. Fills the Shares field from account balance × risk %
                 ÷ nearest-stop distance (see orderEngine's sizeByRisk). Only offered when a stop
                 is set and an account balance exists - the two things it can't guess. */}
-            {draft.slEnabled && accountBalance > 0 && (
+            {draft.slEnabled && balance > 0 && (
               <SizeByRiskRow
-                balance={accountBalance}
-                riskPct={numeric(draft.sizeRiskPct)}
+                balance={balance}
+                riskPct={numeric(draft.sizeRiskPct) ?? 0}
                 onRiskPctChange={(v) => onChange({ sizeRiskPct: v })}
                 onApply={() => {
                   const qty = sizeByRisk({
-                    balance: accountBalance,
-                    riskPct: numeric(draft.sizeRiskPct),
+                    balance,
+                    riskPct: numeric(draft.sizeRiskPct) ?? 0,
                     entryPrice: entry,
                     direction: draft.direction,
                     stopLosses: slLegs,
@@ -361,7 +413,7 @@ export default function OrderTicketDialog({
             <div className="flex items-center justify-between text-xs">
               <span className="text-muted-foreground">Risk</span>
               <span className="text-down tabular-nums">
-                {risk != null && !slError ? `${inr(risk)} (${riskPct.toFixed(2)}%)` : '—'}
+                {risk != null && riskPct != null && !slError ? `${inr(risk)} (${riskPct.toFixed(2)}%)` : '—'}
                 {/* Against the ACCOUNT, not the position - the percentage a position-sizing rule
                     is actually written in ("never risk more than 1%"). The one beside it is of
                     the position's own cost, which says nothing about exposure. */}
@@ -375,7 +427,9 @@ export default function OrderTicketDialog({
             <div className="flex items-center justify-between text-xs">
               <span className="text-muted-foreground">Reward</span>
               <span className="text-up tabular-nums">
-                {reward != null && !targetError ? `${inr(reward)} (${rewardPct.toFixed(2)}%)` : '—'}
+                {reward != null && rewardPct != null && !targetError
+                  ? `${inr(reward)} (${rewardPct.toFixed(2)}%)`
+                  : '—'}
               </span>
             </div>
           </div>

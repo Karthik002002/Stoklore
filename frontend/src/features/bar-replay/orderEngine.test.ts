@@ -12,7 +12,13 @@ import {
   sizeWarnings,
   trailStops,
   withStopsAtBreakeven,
-} from './orderEngine.js'
+} from './orderEngine.ts'
+import type { ReplayOrder } from './store.ts'
+
+// Each fixture below carries exactly the fields the path under test reads - a stop-loss test has
+// no reason to invent a quantity. `asOrder` is where that stops being a lie to the type system,
+// in the test rather than by loosening the engine's own types.
+const asOrder = (order: object) => order as ReplayOrder
 
 // Normal touch - the bar's range includes the stop-loss level itself. Single-leg SL/target
 // covering the whole position (the common case, and how a plain "one stop loss" order looks).
@@ -26,7 +32,7 @@ import {
     targets: [{ id: 't1', price: 110, qty: 10 }],
   }
   const bar = { open: 98, high: 99, low: 94, close: 96 }
-  const { triggeredCloses } = processBarForOrders([order], bar, 0)
+  const { triggeredCloses } = processBarForOrders([asOrder(order)], bar, 0)
   assert.equal(triggeredCloses.length, 1)
   assert.equal(triggeredCloses[0].reason, 'stop_loss')
   assert.equal(triggeredCloses[0].exitPrice, 95)
@@ -45,7 +51,7 @@ import {
     targets: [{ id: 't1', price: 1106.3, qty: 5 }],
   }
   const bar = { open: 940, high: 955, low: 920, close: 925.71 }
-  const { triggeredCloses } = processBarForOrders([order], bar, 0)
+  const { triggeredCloses } = processBarForOrders([asOrder(order)], bar, 0)
   assert.equal(triggeredCloses.length, 1)
   assert.equal(triggeredCloses[0].reason, 'stop_loss')
   assert.equal(triggeredCloses[0].exitPrice, 940)
@@ -62,7 +68,7 @@ import {
     targets: [{ id: 't1', price: 90, qty: 5 }],
   }
   const bar = { open: 85, high: 88, low: 80, close: 82 }
-  const { triggeredCloses } = processBarForOrders([order], bar, 0)
+  const { triggeredCloses } = processBarForOrders([asOrder(order)], bar, 0)
   assert.equal(triggeredCloses.length, 1)
   assert.equal(triggeredCloses[0].reason, 'target')
   assert.equal(triggeredCloses[0].exitPrice, 85)
@@ -79,7 +85,7 @@ import {
     targets: [{ id: 't1', price: 110, qty: 5 }],
   }
   const bar = { open: 99, high: 102, low: 98, close: 101 }
-  const { triggeredCloses } = processBarForOrders([order], bar, 0)
+  const { triggeredCloses } = processBarForOrders([asOrder(order)], bar, 0)
   assert.equal(triggeredCloses.length, 0)
 }
 
@@ -95,7 +101,7 @@ import {
     targets: [{ id: 't1', price: 105, qty: 5 }],
   }
   const bar = { open: 100, high: 106, low: 94, close: 96 } // red
-  const { triggeredCloses } = processBarForOrders([order], bar, 0)
+  const { triggeredCloses } = processBarForOrders([asOrder(order)], bar, 0)
   assert.equal(triggeredCloses.length, 1)
   assert.equal(triggeredCloses[0].reason, 'stop_loss')
 }
@@ -111,7 +117,7 @@ import {
     targets: [{ id: 't1', price: 105, qty: 5 }],
   }
   const bar = { open: 96, high: 106, low: 94, close: 105 } // green
-  const { triggeredCloses } = processBarForOrders([order], bar, 0)
+  const { triggeredCloses } = processBarForOrders([asOrder(order)], bar, 0)
   assert.equal(triggeredCloses.length, 1)
   assert.equal(triggeredCloses[0].reason, 'target')
 }
@@ -128,7 +134,7 @@ import {
     targets: [{ id: 't1', price: 95, qty: 5 }],
   }
   const bar = { open: 96, high: 106, low: 94, close: 105 } // green
-  const { triggeredCloses } = processBarForOrders([order], bar, 0)
+  const { triggeredCloses } = processBarForOrders([asOrder(order)], bar, 0)
   assert.equal(triggeredCloses.length, 1)
   assert.equal(triggeredCloses[0].reason, 'stop_loss')
 }
@@ -144,7 +150,7 @@ import {
     targets: [{ id: 't1', price: 105, qty: 5 }],
   }
   const bar = { open: 100, high: 106, low: 94, close: 100 }
-  const { triggeredCloses } = processBarForOrders([order], bar, 0)
+  const { triggeredCloses } = processBarForOrders([asOrder(order)], bar, 0)
   assert.equal(triggeredCloses.length, 1)
   assert.equal(triggeredCloses[0].reason, 'stop_loss')
 }
@@ -164,7 +170,7 @@ import {
     targets: [],
   }
   const bar = { open: 97, high: 98, low: 93, close: 94 } // touches 95, not 90
-  const { triggeredCloses } = processBarForOrders([order], bar, 0)
+  const { triggeredCloses } = processBarForOrders([asOrder(order)], bar, 0)
   assert.equal(triggeredCloses.length, 1)
   assert.equal(triggeredCloses[0].leg.id, 'near')
   assert.equal(triggeredCloses[0].exitPrice, 95)
@@ -185,7 +191,7 @@ import {
     targets: [],
   }
   const bar = { open: 85, high: 88, low: 80, close: 82 } // whole bar below both levels
-  const { triggeredCloses } = processBarForOrders([order], bar, 0)
+  const { triggeredCloses } = processBarForOrders([asOrder(order)], bar, 0)
   assert.equal(triggeredCloses.length, 2)
   assert.deepEqual(triggeredCloses.map((c) => c.leg.id).sort(), ['far', 'near'])
   triggeredCloses.forEach((c) => assert.equal(c.exitPrice, 85))
@@ -206,7 +212,7 @@ import {
     ],
   }
   const bar = { open: 103, high: 107, low: 102, close: 106 } // touches 105, not 115
-  const { triggeredCloses } = processBarForOrders([order], bar, 0)
+  const { triggeredCloses } = processBarForOrders([asOrder(order)], bar, 0)
   assert.equal(triggeredCloses.length, 1)
   assert.equal(triggeredCloses[0].reason, 'target')
   assert.equal(triggeredCloses[0].leg.id, 'near')
@@ -227,7 +233,7 @@ import {
     ],
   }
   const bar = { open: 120, high: 125, low: 118, close: 122 } // whole bar above both levels
-  const { triggeredCloses } = processBarForOrders([order], bar, 0)
+  const { triggeredCloses } = processBarForOrders([asOrder(order)], bar, 0)
   assert.equal(triggeredCloses.length, 2)
   assert.deepEqual(triggeredCloses.map((c) => c.leg.id).sort(), ['far', 'near'])
   triggeredCloses.forEach((c) => assert.equal(c.exitPrice, 120))
@@ -245,7 +251,7 @@ import {
     targets: [],
   }
   const bar = { open: 101, high: 102, low: 94, close: 100 }
-  const { nextOrders, triggeredCloses } = processBarForOrders([order], bar, 42)
+  const { nextOrders, triggeredCloses } = processBarForOrders([asOrder(order)], bar, 42)
   assert.equal(nextOrders[0].status, 'open')
   assert.equal(nextOrders[0].entryBarIndex, 42)
   assert.equal(triggeredCloses.length, 0)
@@ -263,7 +269,7 @@ import {
     targets: [],
   }
   const bar = { open: 96, high: 97, low: 93, close: 94 }
-  const { triggeredCloses } = processBarForOrders([order], bar, 43)
+  const { triggeredCloses } = processBarForOrders([asOrder(order)], bar, 43)
   assert.equal(triggeredCloses.length, 1)
   assert.equal(triggeredCloses[0].reason, 'stop_loss')
 }
@@ -460,7 +466,7 @@ import {
     ],
     targets: [{ id: 't', price: 110, qty: 10 }],
   }
-  const moved = withStopsAtBreakeven(order)
+  const moved = withStopsAtBreakeven(asOrder(order))
   assert.deepEqual(
     moved.stopLosses.map((l) => l.price),
     [100, 100],
@@ -472,7 +478,7 @@ import {
 // No stops = pass-through, not a crash.
 {
   const order = { id: 'be2', direction: 'long', entryPrice: 100, stopLosses: [], targets: [] }
-  const moved = withStopsAtBreakeven(order)
+  const moved = withStopsAtBreakeven(asOrder(order))
   assert.deepEqual(moved.stopLosses, [])
 }
 
@@ -504,7 +510,7 @@ import {
     targets: [],
     trailing: { atrPeriod: 14, atrMult: 2 },
   }
-  const first = trailStops([order], bars.slice(0, 20))
+  const first = trailStops([asOrder(order)], bars.slice(0, 20))
   const later = trailStops(first.orders, bars)
   assert.ok(first.changed, 'first ratchet should raise SL from 95')
   assert.ok(first.orders[0].stopLosses[0].price > 95, 'SL raised')
@@ -538,7 +544,7 @@ import {
     targets: [],
     trailing: { atrPeriod: 14, atrMult: 2 },
   }
-  const highBar = trailStops([order], bars.slice(0, 20))
+  const highBar = trailStops([asOrder(order)], bars.slice(0, 20))
   const dipBar = trailStops(highBar.orders, bars)
   assert.equal(dipBar.orders[0].stopLosses[0].price, highBar.orders[0].stopLosses[0].price)
 }
@@ -567,7 +573,7 @@ import {
     targets: [],
     trailing: { atrPeriod: 14, atrMult: 2 },
   }
-  const trailed = trailStops([order], bars)
+  const trailed = trailStops([asOrder(order)], bars)
   assert.ok(trailed.orders[0].stopLosses[0].price < 205, 'short SL trailed DOWN from 205')
 }
 
@@ -587,7 +593,7 @@ import {
     targets: [],
     // No trailing.
   }
-  const trailed = trailStops([order], bars)
+  const trailed = trailStops([asOrder(order)], bars)
   assert.equal(trailed.changed, false)
   assert.equal(trailed.orders[0].stopLosses[0].price, 95)
 }
@@ -609,22 +615,22 @@ import {
     ],
   }
   // 4 -> 6 keeps the target side at 10, exactly the position size.
-  const ok = setLegQty(order, 'target', 't1', 6)
+  const ok = setLegQty(asOrder(order), 'target', 't1', 6)
   assert.equal(ok.error, undefined)
-  assert.equal(ok.order.targets[0].qty, 6)
-  assert.equal(ok.order.targets[1].qty, 4, 'sibling leg untouched')
+  assert.equal(ok.order?.targets[0].qty, 6)
+  assert.equal(ok.order?.targets[1].qty, 4, 'sibling leg untouched')
   assert.equal(order.targets[0].qty, 4, 'input order not mutated')
   // 7 would put the target side at 11 against a position of 10.
-  assert.ok(setLegQty(order, 'target', 't1', 7).error, 'over-covering rejected')
-  assert.equal(setLegQty(order, 'target', 't1', 7).order, undefined)
+  assert.ok(setLegQty(asOrder(order), 'target', 't1', 7).error, 'over-covering rejected')
+  assert.equal(setLegQty(asOrder(order), 'target', 't1', 7).order, undefined)
   // The stop side has its own budget - the full 10 there is fine despite the targets.
-  assert.equal(setLegQty(order, 'stopLoss', 's1', 10).error, undefined)
+  assert.equal(setLegQty(asOrder(order), 'stopLoss', 's1', 10).error, undefined)
   // Junk input.
-  assert.ok(setLegQty(order, 'target', 't1', 0).error)
-  assert.ok(setLegQty(order, 'target', 't1', -3).error)
-  assert.ok(setLegQty(order, 'target', 't1', 2.5).error)
-  assert.ok(setLegQty(order, 'target', 't1', Number.NaN).error)
-  assert.ok(setLegQty(order, 'target', 'nope', 2).error)
+  assert.ok(setLegQty(asOrder(order), 'target', 't1', 0).error)
+  assert.ok(setLegQty(asOrder(order), 'target', 't1', -3).error)
+  assert.ok(setLegQty(asOrder(order), 'target', 't1', 2.5).error)
+  assert.ok(setLegQty(asOrder(order), 'target', 't1', Number.NaN).error)
+  assert.ok(setLegQty(asOrder(order), 'target', 'nope', 2).error)
 }
 
 // Order-sizing preference (Settings > Preferences).
@@ -666,7 +672,7 @@ console.log('orderEngine.test.js: all assertions passed')
     entryDate: null,
   }
   const bar = { date: '2017-05-12', time: '2017-05-12', open: 99, high: 101, low: 98, close: 100.5 }
-  const { nextOrders } = processBarForOrders([pending], bar, 7)
+  const { nextOrders } = processBarForOrders([asOrder(pending)], bar, 7)
   assert.equal(nextOrders[0].status, 'open')
   assert.equal(nextOrders[0].entryDate, '2017-05-12')
   assert.equal(nextOrders[0].entryBarIndex, 7)

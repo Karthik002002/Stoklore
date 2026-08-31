@@ -1,5 +1,85 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import type { Bar } from '@/lib/types'
+
+// The vocabulary for the whole feature. Every other file in bar-replay/ speaks in these shapes -
+// the order engine matches them against bars, the chart draws them, the dialogs edit them.
+
+/** A bar as this feature handles it: always dated, because the daily path stores a date and the
+ *  intraday path stamps one (see lib/replay.ts) - and everything here, from the date jumper to the
+ *  journal entry a close writes, needs it. */
+export type ReplayBar = Bar & { date: string }
+
+/** One rung of a laddered exit: a price, and how much of the position it covers. */
+export type ReplayLeg = { id: string; price: number; qty: number }
+
+/** A replay order. 'pending' is a resting limit; 'open' is a filled position. Both exit sides are
+ *  ladders - a plain single stop is a one-leg list covering the whole quantity. */
+export type ReplayOrder = {
+  id: string
+  /** How it was placed. A limit rests until the price crosses it; a market order is open at once. */
+  type?: 'market' | 'limit'
+  direction: 'long' | 'short'
+  status: 'pending' | 'open'
+  quantity: number
+  entryPrice: number
+  /** Only valid against the exact bars array it filled on; `entryDate` is what gets journaled. */
+  entryBarIndex?: number | null
+  entryDate?: string | null
+  stopLosses: ReplayLeg[]
+  targets: ReplayLeg[]
+  notes?: string | null
+  /** Chandelier-style trailing stop, when one was armed (see orderEngine's trailStops). */
+  trailing?: { atrPeriod?: number; atrMult: number } | null
+}
+
+/** A shape drawn over the chart, anchored to fractional bar index + price so it survives pan,
+ *  zoom and new bars (see ReplayChart's drawing layer). */
+export type Drawing = {
+  id: string
+  type: 'trendline' | 'hline' | 'rect'
+  /** One anchor for a horizontal line, two for a trend line or rectangle. */
+  points: { index: number; price: number }[]
+}
+
+/** An indicator on the chart: which kind, and its period where it has one. `period: null` is the
+ *  periodless kind (VWAP, previous-day levels) - stored explicitly rather than left absent. */
+export type IndicatorConfig = { key: string; type: string; period?: number | null }
+
+export type ChartSettings = typeof DEFAULT_CHART_SETTINGS
+
+/** How the chart is framed, as opposed to what it shows - see the note on DEFAULT_VIEW. */
+export type ReplayView = {
+  logicalRange: { from: number; to: number } | null
+  paneHeights: Record<string, number>
+  priceRanges: Record<string, { minValue: number; maxValue: number } | null>
+}
+
+type ReplayState = {
+  symbol: string | null
+  timeframe: string
+  barIndex: number | null
+  orders: ReplayOrder[]
+  drawings: Drawing[]
+  indicators: IndicatorConfig[]
+  speedMs: number
+  settings: ChartSettings
+  view: ReplayView
+  autoRandomJump: boolean
+  accountId: number | null
+  setSymbol: (symbol: string | null) => void
+  setTimeframe: (timeframe: string) => void
+  setBarIndex: (barIndex: number | null) => void
+  setOrders: (orders: ReplayOrder[]) => void
+  setDrawings: (drawings: Drawing[]) => void
+  setIndicators: (indicators: IndicatorConfig[]) => void
+  setSpeedMs: (speedMs: number) => void
+  setSettings: (settings: ChartSettings) => void
+  setAccountId: (accountId: number | null) => void
+  setAutoRandomJump: (autoRandomJump: boolean) => void
+  setView: (view: Partial<ReplayView>) => void
+  restart: () => void
+}
 
 export const DEFAULT_CHART_SETTINGS = {
   bodyUpColor: '#22c55e',
@@ -19,7 +99,7 @@ export const DEFAULT_CHART_SETTINGS = {
   rsiLevels: [30, 70],
 }
 
-const DEFAULT_INDICATORS = [{ key: 'default-ema20', type: 'ema', period: 20 }]
+const DEFAULT_INDICATORS: IndicatorConfig[] = [{ key: 'default-ema20', type: 'ema', period: 20 }]
 
 // How the chart is framed, as opposed to what it shows.
 //
@@ -45,7 +125,7 @@ const DEFAULT_INDICATORS = [{ key: 'default-ema20', type: 'ema', period: 20 }]
 // stored explicitly, because restoring a range onto a scale the user never pinned would freeze it
 // at yesterday's prices, and the two states have to be told apart. Cleared with logicalRange on a
 // symbol/timeframe change: a price window in rupees means nothing on another instrument.
-const DEFAULT_VIEW = { logicalRange: null, paneHeights: {}, priceRanges: {} }
+const DEFAULT_VIEW: ReplayView = { logicalRange: null, paneHeights: {}, priceRanges: {} }
 
 // Everything about a Bar Replay session lives in this one store - symbol/timeframe/bar position,
 // open/pending orders, indicators, playback speed, and chart/trading settings - persisted to
@@ -54,7 +134,7 @@ const DEFAULT_VIEW = { logicalRange: null, paneHeights: {}, priceRanges: {} }
 // Deliberately NOT in the URL like a lot of TanStack Router state elsewhere in this app - this
 // page's state is "your one running replay session", not something you'd bookmark or share a
 // link to at a specific bar.
-export const useBarReplayStore = create(
+export const useBarReplayStore = create<ReplayState>()(
   persist(
     (set) => ({
       symbol: null,
@@ -86,7 +166,7 @@ export const useBarReplayStore = create(
       // A fresh symbol/timeframe carries no orders or bar position over - a limit/SL/target (or
       // "bar 400") from a different instrument/timeframe makes no sense. Same for the saved zoom
       // window; the pane heights stay (see DEFAULT_VIEW).
-      setSymbol: (symbol) =>
+      setSymbol: (symbol: string | null) =>
         set((s) => ({
           symbol,
           barIndex: null,
@@ -94,7 +174,7 @@ export const useBarReplayStore = create(
           drawings: [],
           view: { ...s.view, logicalRange: null, priceRanges: {} },
         })),
-      setTimeframe: (timeframe) =>
+      setTimeframe: (timeframe: string) =>
         set((s) => ({
           timeframe,
           barIndex: null,
@@ -102,15 +182,15 @@ export const useBarReplayStore = create(
           drawings: [],
           view: { ...s.view, logicalRange: null, priceRanges: {} },
         })),
-      setBarIndex: (barIndex) => set({ barIndex }),
-      setOrders: (orders) => set({ orders }),
-      setDrawings: (drawings) => set({ drawings }),
-      setIndicators: (indicators) => set({ indicators }),
-      setSpeedMs: (speedMs) => set({ speedMs }),
-      setSettings: (settings) => set({ settings }),
-      setAccountId: (accountId) => set({ accountId }),
-      setAutoRandomJump: (autoRandomJump) => set({ autoRandomJump }),
-      setView: (view) => set((s) => ({ view: { ...s.view, ...view } })),
+      setBarIndex: (barIndex: number | null) => set({ barIndex }),
+      setOrders: (orders: ReplayOrder[]) => set({ orders }),
+      setDrawings: (drawings: Drawing[]) => set({ drawings }),
+      setIndicators: (indicators: IndicatorConfig[]) => set({ indicators }),
+      setSpeedMs: (speedMs: number) => set({ speedMs }),
+      setSettings: (settings: ChartSettings) => set({ settings }),
+      setAccountId: (accountId: number | null) => set({ accountId }),
+      setAutoRandomJump: (autoRandomJump: boolean) => set({ autoRandomJump }),
+      setView: (view: Partial<ReplayView>) => set((s) => ({ view: { ...s.view, ...view } })),
       restart: () =>
         set((s) => ({
           barIndex: null,
@@ -126,7 +206,10 @@ export const useBarReplayStore = create(
       // so one trade can carry a laddered exit on either side - a plain single-SL/single-target
       // order just becomes a one-leg list covering the full quantity, so nothing about existing
       // sessions' behavior changes.
-      migrate: (persisted, version) => {
+      // ts: `any` on the persisted blob, deliberately. Migrations exist precisely because old
+      // sessions do NOT match the current state type - typing this as ReplayState would assert
+      // the very thing each branch below is there to fix.
+      migrate: (persisted: any, version: number) => {
         // v7 -> v8: `settings.sizeMode`/`capitalPct` are new. persist's merge is shallow and
         // `settings` already exists, so an upgraded session would read them as undefined and size
         // every order off an undefined preference.
@@ -171,7 +254,7 @@ export const useBarReplayStore = create(
           persisted.accountId = null
         }
         if (version < 1 && persisted?.orders) {
-          persisted.orders = persisted.orders.map(({ stopLoss, target, ...order }) => ({
+          persisted.orders = persisted.orders.map(({ stopLoss, target, ...order }: any) => ({
             ...order,
             stopLosses:
               order.stopLosses ??

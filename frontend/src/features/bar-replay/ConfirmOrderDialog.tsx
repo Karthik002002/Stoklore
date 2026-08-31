@@ -2,6 +2,7 @@ import { AlertTriangleIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { inr } from '@/lib/format'
+import type { ReplayOrder } from './store'
 
 // The last thing between a badly-sized position and the log. Shown for BOTH ways in - the Shift+B/S
 // market shortcuts and the order ticket's own submit - because the shortcut is the one that used to
@@ -13,7 +14,16 @@ import { inr } from '@/lib/format'
 //
 // Confirming is still allowed. Bar Replay records what you actually did, and every cap in this app
 // is advisory - the point is that an oversized entry becomes a decision instead of an accident.
-export default function ConfirmOrderDialog({ pending, onConfirm, onCancel }) {
+export default function ConfirmOrderDialog({
+  pending,
+  onConfirm,
+  onCancel,
+}: {
+  /** The order waiting on a confirmation, and why it was stopped. Null = nothing to confirm. */
+  pending: { order: ReplayOrder; warnings: string[] } | null
+  onConfirm: () => void
+  onCancel: () => void
+}) {
   if (!pending) return null
   const { order, warnings } = pending
   const value = order.quantity * order.entryPrice

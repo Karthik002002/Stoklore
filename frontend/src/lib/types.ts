@@ -98,13 +98,21 @@ export interface TradeAccount {
   brokerage_flat: number
   brokerage_pct: number
   other_charges_pct: number
+  /** Volume-spike scan settings for the entry context (app/core/trade_context.py). */
+  vol_spike_multiple: number
+  vol_spike_lookback: number
+  /** Warn after this many losses in a row; null = no alert. */
+  loss_streak_alert: number | null
   created_at: string
 }
 
 /** One OHLCV candle, as the chart endpoints and the indicator library pass them around.
- *  `time` is a unix second, which is what lightweight-charts expects. */
+ *
+ *  `time` is either a unix second (intraday) or a "YYYY-MM-DD" business day (daily) - both are
+ *  valid lightweight-charts times, and the daily path stamps the date straight in. Anything that
+ *  does arithmetic on it has to branch (see lib/replay.ts's barMs, which already does). */
 export interface Bar {
-  time: number
+  time: number | string
   /** Present on daily bars that came from `price_history` - VWAP resets on it. */
   date?: string
   open: number

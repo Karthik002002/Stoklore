@@ -13,6 +13,7 @@ import { inr } from '@/lib/format'
 import { autoResult, EMOTIONS, NEUTRAL_PNL_BAND, tradePnl } from '@/lib/manualTrades'
 import { tradeCosts, tradeNetPnl } from '@/lib/tradeCosts'
 import { closeTradeSchema } from '@/lib/schemas'
+import type { ReplayLeg, ReplayOrder } from './store'
 import { createManualTrade, getTradeAccounts, uploadManualTradeImage } from '@/services/api'
 import { CLOSE_REASON_LABEL } from './orderEngine'
 import { useBarReplayStore } from './store'
@@ -23,6 +24,14 @@ const RESULT_OPTIONS = [
   { value: 'neutral', label: 'Neutral' },
 ]
 const EMOTION_OPTIONS = EMOTIONS.map((e) => ({ value: e, label: e }))
+
+/** What the close form collects on top of the numbers the trade already carries. */
+type CloseTradeForm = {
+  result: 'profit' | 'loss' | 'neutral' | null
+  emotion: string | null
+  tags: string[]
+  notes: string
+}
 
 export default function CloseTradeDialog({
   open,
@@ -38,6 +47,25 @@ export default function CloseTradeDialog({
   entryDate,
   exitDate,
   onClosed,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  symbol: string
+  order: ReplayOrder
+  exitPrice: number
+  /** Why it closed - an auto-trigger names the leg, a manual close doesn't. */
+  reason?: 'stop_loss' | 'target' | 'manual' | null
+  leg?: ReplayLeg | null
+  /** Set when only part of the position closed (one rung of a ladder). */
+  partialQty?: number | null
+  /** A PNG snapshot of the chart at the close (see ReplayChart's captureScreenshot), attached
+   *  to the journal entry. */
+  chartImage?: Blob | null
+  accountId?: number | null
+  entryDate?: string | null
+  exitDate?: string | null
+  /** Receives how many shares actually closed - a partial close reports its own slice. */
+  onClosed?: (closedQty: number) => void
 }) {
   const form = useForm({
     resolver: zodResolver(closeTradeSchema),
@@ -110,7 +138,7 @@ export default function CloseTradeDialog({
   }, [open, computedResult, form])
 
   const save = useMutation({
-    mutationFn: async (values) => {
+    mutationFn: async (values: CloseTradeForm) => {
       const { id } = await createManualTrade({
         symbol,
         direction: order.direction,
@@ -146,7 +174,11 @@ export default function CloseTradeDialog({
     },
     onSuccess: () => {
       toast.success('Trade logged')
-      onClosed()
+      // The quantity actually logged, which is what tells the caller whether the position is now
+      // flat or still open with a remainder. It used to be called with nothing at all, so a
+      // partial manual close reported `undefined` and BarReplay removed the whole position
+      // instead of keeping the rest of it open.
+      onClosed?.(quantity ?? 0)
     },
     onError: (e) => toast.error(e.message),
   })
@@ -166,7 +198,10 @@ export default function CloseTradeDialog({
             )}
           </DialogTitle>
         </DialogHeader>
-        <form onSubmit={form.handleSubmit((values) => save.mutate(values))} className="space-y-3">
+        <form
+          onSubmit={form.handleSubmit((values) => save.mutate(values as CloseTradeForm))}
+          className="space-y-3"
+        >
           {reason && reason !== 'manual' && (
             <p className="text-xs font-medium text-muted-foreground">{CLOSE_REASON_LABEL[reason]}</p>
           )}
@@ -177,14 +212,14 @@ export default function CloseTradeDialog({
             <span className="text-right">
               <span
                 className={`font-semibold tabular-nums ${
-                  computedResult === 'neutral' ? '' : pnl >= 0 ? 'text-up' : 'text-down'
+                  computedResult === 'neutral' ? '' : (pnl ?? 0) >= 0 ? 'text-up' : 'text-down'
                 }`}
               >
                 {inr(pnl)}
               </span>
-              {costs?.total > 0 && (
+              {(costs?.total ?? 0) > 0 && (
                 <span className="block text-[11px] text-muted-foreground tabular-nums">
-                  {inr(net)} net · {inr(costs.total)} costs
+                  {inr(net)} net · {inr(costs?.total)} costs
                 </span>
               )}
             </span>

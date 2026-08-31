@@ -1,3 +1,5 @@
+import type { ReplayBar, ReplayLeg, ReplayOrder, ReplayView } from './store'
+import type { OrderDraft } from './OrderTicketDialog'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
@@ -28,15 +30,41 @@ import SettingsDialog from './SettingsDialog'
 import StrategyDialog from './StrategyDialog'
 import { useBarReplayStore } from './store'
 
-const numeric = (v) => (v === '' || v == null ? null : Number(v))
-const round2 = (v) => Math.round(v * 100) / 100
+/** An order stopped at the confirmation gate, and why. `fromTicket` decides whether cancelling
+ *  returns to the open ticket or just dismisses. */
+type PendingConfirmation = { order: ReplayOrder; warnings: string[]; fromTicket: boolean }
 
-const FIELD_LABEL = { stopLoss: 'Stop loss', target: 'Target' }
+/** One queued close waiting on the close dialog. A laddered exit can queue two in the same bar,
+ *  which is why this is a list and keyed by order + leg. */
+type QueuedClose = {
+  order: ReplayOrder
+  exitPrice: number
+  reason: 'stop_loss' | 'target' | 'manual'
+  leg?: ReplayLeg | null
+  partialQty?: number | null
+  chartImage?: Blob | null
+}
+
+/** What ReplayChart exposes imperatively - just the screenshot the close dialog attaches. */
+type ReplayChartHandle = {
+  captureScreenshot: () => Promise<Blob | null>
+  /** Puts the price scale back on autoscale after a jump moved the bars out from under it. */
+  autoscalePrice: () => void
+}
+
+/** A wallet movement, as GET /api/manual-trades/balance-adjustments returns them. */
+type BalanceAdjustment = { type: 'add' | 'subtract'; amount: number; account_id: number | null }
+
+const numeric = (v: string | number | null | undefined) => (v === '' || v == null ? null : Number(v))
+const round2 = (v: number) => Math.round(v * 100) / 100
+
+const FIELD_LABEL: Record<'stopLoss' | 'target', string> = { stopLoss: 'Stop loss', target: 'Target' }
 
 // Identifies one queued (or already-queued) close - order id alone for a full/manual/target
 // close, order+leg id for one leg of a laddered stop-loss, so two different legs of the same
 // order can both be queued without the second looking like a duplicate of the first.
-const closeKey = (entry) => (entry.leg ? `${entry.order.id}:${entry.leg.id}` : entry.order.id)
+const closeKey = (entry: Pick<QueuedClose, 'order' | 'leg'>) =>
+  entry.leg ? `${entry.order.id}:${entry.leg.id}` : entry.order.id
 
 // How long the chart's framing is allowed to settle before it's written to the persisted store.
 // Long enough that a whole pan or zoom gesture costs one write, short enough that a reload right
@@ -79,7 +107,7 @@ export default function BarReplay() {
   const initialViewRef = useRef(useBarReplayStore.getState().view)
   // And the reports are coalesced: a drag emits dozens of them, each one otherwise a synchronous
   // localStorage write of the whole session (zustand's persist middleware).
-  const pendingViewRef = useRef(null)
+  const pendingViewRef = useRef<Partial<ReplayView> | null>(null)
   const viewTimerRef = useRef(0)
   const flushView = useCallback(() => {
     window.clearTimeout(viewTimerRef.current)
@@ -89,7 +117,7 @@ export default function BarReplay() {
     if (pending) setView(pending)
   }, [setView])
   const handleViewChange = useCallback(
-    (next) => {
+    (next: Partial<ReplayView>) => {
       pendingViewRef.current = { ...pendingViewRef.current, ...next }
       if (viewTimerRef.current) return
       viewTimerRef.current = window.setTimeout(flushView, VIEW_SAVE_MS)
@@ -116,7 +144,7 @@ export default function BarReplay() {
   const balance = accountBalance(
     account,
     tradesForAccount(allJournalTrades, accountId),
-    adjustments.filter((a) => a.account_id === accountId),
+    (adjustments as BalanceAdjustment[]).filter((a) => a.account_id === accountId),
   )
 
   // Losing-run check. Runs off the journal (not the replay session's own orders) so the run counts
@@ -146,7 +174,7 @@ export default function BarReplay() {
   const [startDate, setStartDate] = useState('')
   const [dateDraft, setDateDraft] = useState('')
   const [playing, setPlaying] = useState(false)
-  const [orderDraft, setOrderDraft] = useState(null)
+  const [orderDraft, setOrderDraft] = useState<OrderDraft | null>(null)
   // Draw long/short tool - disabled for now, kept for later (see the commented-out wiring below).
   // 'long' | 'short' | null - armed by the Draw long/short buttons, disarmed after one drag on
   // the chart (see ReplayChart's DrawZone) or Escape. Only one tool active at a time.
@@ -163,16 +191,16 @@ export default function BarReplay() {
   // Drawing tool armed from the bar's Draw popover, and which drawn shape is selected on the
   // chart. Both are transient UI, not session state - a tool left armed across a reload would be a
   // surprise, and a selection is only meaningful while you're looking at it.
-  const [drawTool, setDrawTool] = useState(null)
-  const [selectedDrawingId, setSelectedDrawingId] = useState(null)
-  const [closeQueue, setCloseQueue] = useState([])
+  const [drawTool, setDrawTool] = useState<string | null>(null)
+  const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null)
+  const [closeQueue, setCloseQueue] = useState<QueuedClose[]>([])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [strategyOpen, setStrategyOpen] = useState(false)
   // An order that tripped a warning and is waiting on a yes/no: { order, warnings, fromTicket }.
   // Both entry paths park here, so neither can place a position the other would have questioned.
-  const [pendingOrder, setPendingOrder] = useState(null)
+  const [pendingOrder, setPendingOrder] = useState<PendingConfirmation | null>(null)
   // The losing-run reminder: { streak, lost } once the account's threshold is hit, null otherwise.
-  const [lossStreak, setLossStreak] = useState(null)
+  const [lossStreak, setLossStreak] = useState<{ streak: number; lost: number } | null>(null)
   // Set when a close is journaled, cleared when the streak has been looked at. Without it the
   // check below would fire on arrival at the page - opening Bar Replay while already three losses
   // deep is not the moment to be told about it; finishing a fourth is.
@@ -181,11 +209,11 @@ export default function BarReplay() {
   // the run ends, which is what lets a longer run alert again at 4, 5, 6.
   const alertedStreakRef = useRef(0)
   // 'symbol' | 'timeframe' | null - which centred quick-switcher is open (see ReplayCommandDialog).
-  const [commandMode, setCommandMode] = useState(null)
+  const [commandMode, setCommandMode] = useState<'symbol' | 'timeframe' | null>(null)
   // Imperative handle onto ReplayChart (see its captureScreenshot) - grabbing a snapshot of the
   // chart at close time isn't state the chart needs to re-render for, so a ref fits better than
   // threading a callback prop down just to call it back up.
-  const replayChartRef = useRef(null)
+  const replayChartRef = useRef<ReplayChartHandle | null>(null)
 
   const {
     maxHistory,
@@ -195,7 +223,7 @@ export default function BarReplay() {
     source,
     setSource,
     collect,
-  } = useMaxHistoryCollector(symbol)
+  } = useMaxHistoryCollector(symbol ?? '')
 
   // 15m/1H/4H come from the minute dataset instead of the daily price_history_max this page
   // otherwise runs on (see lib/replay.js). Slow only on a symbol's first fetch - the backend
@@ -203,7 +231,7 @@ export default function BarReplay() {
   const intraday = isIntraday(timeframe)
   const { data: intradayData, isFetching: intradayLoading } = useQuery({
     queryKey: ['intradayBars', symbol, timeframe],
-    queryFn: () => getIntradayBars(symbol, timeframe),
+    queryFn: () => getIntradayBars(symbol ?? '', timeframe),
     enabled: !!symbol && intraday,
     staleTime: Infinity,
     retry: false,
@@ -212,8 +240,10 @@ export default function BarReplay() {
   // Both paths hand ReplayChart the same {date, time, ...} shape: `date` is the calendar day the
   // date-jump/start-date pickers match on, `time` is what lightweight-charts plots. Daily bars
   // are keyed by day either way, so their `time` is just the date string.
-  const allBars = useMemo(() => {
-    if (intraday) return intradayData?.bars ?? []
+  // ReplayBar, not Bar: both paths carry a date - the intraday endpoint stamps one per bar
+  // (app/core/minute_data.py), and the daily path maps price_history_max rows straight through.
+  const allBars = useMemo((): ReplayBar[] => {
+    if (intraday) return (intradayData?.bars ?? []) as ReplayBar[]
     if (!maxHistory) return []
     return aggregateBars(maxHistory, timeframe).map((b) => ({ ...b, time: b.date }))
   }, [intraday, intradayData, maxHistory, timeframe])
@@ -226,15 +256,15 @@ export default function BarReplay() {
   // Memoised: this array is the chart's `bars` prop, and a fresh one on an unrelated re-render
   // (a hover, a pill update) re-runs setData over the whole history plus every indicator.
   const visibleBars = useMemo(
-    () => (started ? allBars.slice(0, currentIndex + 1) : []),
+    () => (started && currentIndex != null ? allBars.slice(0, currentIndex + 1) : []),
     [started, allBars, currentIndex],
   )
   const lastBar = visibleBars.length ? visibleBars[visibleBars.length - 1] : null
-  const atEnd = started && currentIndex >= allBars.length - 1
+  const atEnd = started && currentIndex != null && currentIndex >= allBars.length - 1
 
   // Fresh symbol/timeframe - nothing carries over (a limit/SL/target from a different instrument
   // makes no sense), so the trigger-detection cursor and any queued closes reset too.
-  const prevIndexRef = useRef(null)
+  const prevIndexRef = useRef<number | null>(null)
   useEffect(() => {
     prevIndexRef.current = null
     setCloseQueue([])
@@ -290,7 +320,7 @@ export default function BarReplay() {
       setPlaying(false)
       return
     }
-    const t = setTimeout(() => setBarIndex(currentIndex + 1), speedMs)
+    const t = setTimeout(() => setBarIndex((currentIndex ?? 0) + 1), speedMs)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, currentIndex, atEnd, started, speedMs])
@@ -299,7 +329,7 @@ export default function BarReplay() {
     if (allBars.length === 0) return
     let idx = allBars.length > 1 ? Math.floor(allBars.length / 2) : 0
     if (startDate) {
-      const found = allBars.findIndex((b) => b.date >= startDate)
+      const found = allBars.findIndex((b) => (b.date ?? '') >= startDate)
       if (found >= 0) idx = found
     }
     setBarIndex(idx)
@@ -311,9 +341,9 @@ export default function BarReplay() {
   // Jump mid-session to any date within the collected range (Playback panel's date picker) -
   // same nearest-bar-on-or-after lookup as starting fresh, just usable once replay is running
   // too. Pauses autoplay so a jump doesn't immediately keep stepping from the new spot.
-  const jumpToDate = (dateStr) => {
+  const jumpToDate = (dateStr: string) => {
     if (!dateStr || allBars.length === 0) return
-    const found = allBars.findIndex((b) => b.date >= dateStr)
+    const found = allBars.findIndex((b) => (b.date ?? '') >= dateStr)
     if (found < 0) return
     setPlaying(false)
     setBarIndex(found)
@@ -329,6 +359,7 @@ export default function BarReplay() {
   const jumpToRandomBar = () => {
     if (allBars.length === 0) return
     const bar = allBars[Math.floor(Math.random() * allBars.length)]
+    if (!bar.date) return
     jumpToDate(bar.date)
     toast.success(`Jumped to ${bar.date}`, { description: 'Random bar — replay paused here.' })
   }
@@ -356,7 +387,7 @@ export default function BarReplay() {
   // once, so the ticket and the one-key market orders can never disagree about it.
   const startingQty = lastBar ? preferredQuantity(chartSettings, balance, lastBar.close) : 1
 
-  const openOrderTicket = (direction) => {
+  const openOrderTicket = (direction: 'long' | 'short') => {
     if (!lastBar) return
     setOrderDraft({
       direction,
@@ -375,11 +406,11 @@ export default function BarReplay() {
       sizeRiskPct: '',
     })
   }
-  const updateDraft = (patch) => setOrderDraft((d) => (d ? { ...d, ...patch } : d))
+  const updateDraft = (patch: Partial<OrderDraft>) => setOrderDraft((d) => (d ? { ...d, ...patch } : d))
 
   // What a position would be questioned for, from either entry path. Passed to the ticket too, so
   // the warning is on screen while the size is still being typed rather than only at submit.
-  const warningsFor = (quantity, price) =>
+  const warningsFor = (quantity: number, price: number) =>
     orderWarnings({
       quantity,
       price,
@@ -392,7 +423,7 @@ export default function BarReplay() {
   // Read through the store rather than the `orders` closure: a confirmation can sit on screen while
   // autoplay reveals bars behind it, and a stale array here would resurrect a position the engine
   // has since closed.
-  const commitOrder = (order) => {
+  const commitOrder = (order: ReplayOrder) => {
     useBarReplayStore.getState().setOrders([...useBarReplayStore.getState().orders, order])
     if (order.status === 'open') {
       toast.success(
@@ -412,11 +443,11 @@ export default function BarReplay() {
     // Only fully-filled-in rows become real legs - a row with an empty price/qty (mid-edit, or
     // just never finished) is silently dropped rather than blocking submission. Same rule for
     // both ladders (stop-loss and target).
-    const legsFrom = (rows) =>
+    const legsFrom = (rows: { id: string; price: string; qty: string }[]) =>
       rows
-        .filter((r) => numeric(r.price) != null && numeric(r.qty) > 0)
         .map((r) => ({ id: r.id, price: numeric(r.price), qty: numeric(r.qty) }))
-    const newOrder = {
+        .filter((r): r is ReplayLeg => r.price != null && (r.qty ?? 0) > 0)
+    const newOrder: ReplayOrder = {
       id: crypto.randomUUID(),
       type: isLimit ? 'limit' : 'market',
       status: isLimit ? 'pending' : 'open',
@@ -447,10 +478,10 @@ export default function BarReplay() {
   // Straight to market at the current bar's close, no ticket - the fast path for "I want in, now",
   // sized by the same preference the ticket uses. Naked by design: no SL/target legs, since there
   // is no dialog to type them into. They can still be added from the chart or the Positions strip.
-  const placeMarketOrder = (direction) => {
+  const placeMarketOrder = (direction: 'long' | 'short') => {
     if (!lastBar) return
     const quantity = preferredQuantity(chartSettings, balance, lastBar.close)
-    const order = {
+    const order: ReplayOrder = {
       id: crypto.randomUUID(),
       type: 'market',
       status: 'open',
@@ -478,7 +509,12 @@ export default function BarReplay() {
   // confirmation. `field: 'entry'` is a pending limit's own entry-price line being dragged; it
   // takes no legId and updates the order's entryPrice directly (no-op on filled positions -
   // entry only exists as a movable level while the order is still pending).
-  const adjustOrder = (orderId, field, price, legId) => {
+  const adjustOrder = (
+    orderId: string,
+    field: 'entry' | 'stopLoss' | 'target',
+    price: number,
+    legId: string,
+  ) => {
     const rounded = round2(price)
     if (field === 'entry') {
       setOrders(
@@ -500,7 +536,7 @@ export default function BarReplay() {
 
   // "Move stops to breakeven" - the standard risk-free adjustment once a trade is comfortably
   // in profit. Pure engine call (see withStopsAtBreakeven), same shape as adjustOrder.
-  const moveStopsToBreakeven = (orderId) => {
+  const moveStopsToBreakeven = (orderId: string) => {
     const order = orders.find((o) => o.id === orderId)
     if (!order?.stopLosses?.length) return
     setOrders(orders.map((o) => (o.id === orderId ? withStopsAtBreakeven(o) : o)))
@@ -510,7 +546,7 @@ export default function BarReplay() {
   // Cancelling a pending limit is NOT the same as closing a filled position - it never traded,
   // so nothing gets journaled and no P&L exists. Guarded to pending only; open positions have
   // to go through requestClose so a real trade is logged.
-  const cancelPending = (orderId) => {
+  const cancelPending = (orderId: string) => {
     const order = orders.find((o) => o.id === orderId)
     if (!order || order.status !== 'pending') return
     setOrders(orders.filter((o) => o.id !== orderId))
@@ -522,7 +558,7 @@ export default function BarReplay() {
   // The new leg covers whatever quantity is still unprotected on that side (a fresh ladder =
   // whole position); no-op once that side is fully covered, since resizing an existing leg
   // happens by dragging its line, not by stacking a second one on top of it.
-  const placeLevel = (orderId, kind, price) => {
+  const placeLevel = (orderId: string, kind: 'stopLoss' | 'target', price: number) => {
     const legField = kind === 'stopLoss' ? 'stopLosses' : 'targets'
     const order = orders.find((o) => o.id === orderId)
     if (!order) return
@@ -536,7 +572,7 @@ export default function BarReplay() {
   // Editing a leg's quantity in place on its chart pill. Validation lives in the engine
   // (setLegQty) so the "legs on one side can't sum past the position" rule holds wherever it's
   // called from; a rejected edit toasts why and leaves the order exactly as it was.
-  const adjustLegQty = (orderId, kind, legId, qty) => {
+  const adjustLegQty = (orderId: string, kind: 'stopLoss' | 'target', legId: string, qty: number) => {
     const order = orders.find((o) => o.id === orderId)
     if (!order) return
     const { order: next, error } = setLegQty(order, kind, legId, qty)
@@ -544,13 +580,14 @@ export default function BarReplay() {
       toast.error(error)
       return
     }
+    if (!next) return
     setOrders(orders.map((o) => (o.id === orderId ? next : o)))
   }
 
   // Removing a leg just drops its protection - the quantity it covered goes back to being
   // un-stopped/un-targeted (same as never having set one on that slice at all), it does NOT
   // close any part of the position. Only an actual bar touching a leg's price does that.
-  const removeLevel = (orderId, kind, legId) => {
+  const removeLevel = (orderId: string, kind: 'stopLoss' | 'target', legId: string) => {
     const legField = kind === 'stopLoss' ? 'stopLosses' : 'targets'
     setOrders(
       orders.map((o) =>
@@ -602,7 +639,7 @@ export default function BarReplay() {
         }
       : null
 
-  const requestClose = async (order) => {
+  const requestClose = async (order: ReplayOrder) => {
     if (!lastBar) return
     const chartImage = await replayChartRef.current?.captureScreenshot()
     setCloseQueue((q) =>
@@ -614,7 +651,7 @@ export default function BarReplay() {
   // Same dispatcher as requestClose but pre-fills a partial qty - the close dialog's qty field
   // will start at this value and can still be edited. Kept as a wrapper (not a second parameter
   // on requestClose) so the plain "close all at market" call site stays a one-liner.
-  const requestPartialClose = async (order, qty) => {
+  const requestPartialClose = async (order: ReplayOrder, qty: number) => {
     if (!lastBar) return
     const chartImage = await replayChartRef.current?.captureScreenshot()
     setCloseQueue((q) =>
@@ -661,7 +698,9 @@ export default function BarReplay() {
   useShortcut('replay.playPause', () => setPlaying((p) => !p), {
     enabled: hotkeysEnabled && (!atEnd || playing),
   })
-  useShortcut('replay.step', () => setBarIndex(currentIndex + 1), { enabled: hotkeysEnabled && !atEnd })
+  useShortcut('replay.step', () => setBarIndex((currentIndex ?? 0) + 1), {
+    enabled: hotkeysEnabled && !atEnd,
+  })
   // Shuffle to a random bar - the keyboard half of the bottom bar's dice button (and of the close
   // dialog's "jump after logging"). Not gated on `started`: picking a random spot is a perfectly
   // good way to *begin* a session.
@@ -759,9 +798,9 @@ export default function BarReplay() {
           atEnd,
           currentIndex,
           total: allBars.length,
-          onStepBack: () => setBarIndex(currentIndex - 1),
+          onStepBack: () => setBarIndex((currentIndex ?? 0) - 1),
           onPlayToggle: () => setPlaying((p) => !p),
-          onStepForward: () => setBarIndex(currentIndex + 1),
+          onStepForward: () => setBarIndex((currentIndex ?? 0) + 1),
           speedMs,
           onSpeedChange: setSpeedMs,
           bars: allBars,
@@ -813,6 +852,7 @@ export default function BarReplay() {
         pending={pendingOrder}
         onCancel={() => setPendingOrder(null)}
         onConfirm={() => {
+          if (!pendingOrder) return
           commitOrder(pendingOrder.order)
           if (pendingOrder.fromTicket) setOrderDraft(null)
           setPendingOrder(null)
@@ -843,7 +883,7 @@ export default function BarReplay() {
         onOpenChange={(next) => {
           if (!next) setCloseQueue((q) => q.slice(1))
         }}
-        symbol={symbol}
+        symbol={symbol ?? ''}
         order={activeClose?.order ?? null}
         exitPrice={activeClose?.exitPrice}
         reason={activeClose?.reason}
@@ -863,7 +903,7 @@ export default function BarReplay() {
             : null)
         }
         exitDate={lastBar?.date ?? null}
-        onClosed={(closedQty) => {
+        onClosed={(closedQty: number) => {
           // The reminder is checked once this refetch lands, so it appears after the close dialog
           // with the just-logged trade already counted.
           armStreakCheckRef.current = true

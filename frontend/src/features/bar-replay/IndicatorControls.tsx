@@ -1,3 +1,4 @@
+import type { IndicatorConfig } from './store'
 import { useState } from 'react'
 import { CheckIcon, ChevronsUpDownIcon, PlusIcon, XIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -9,7 +10,7 @@ import { INDICATOR_COLORS, INDICATOR_TYPES } from '@/lib/indicators'
 // Conventional defaults per type - what each indicator is normally read at, so adding one from
 // the dropdown gives the standard reading rather than whatever the previous pick left behind.
 // Anything missing falls back to 20; periodless types ignore this entirely.
-const DEFAULT_PERIOD = {
+const DEFAULT_PERIOD: Record<string, string> = {
   ema: '20',
   sma: '20',
   rsi: '14',
@@ -34,7 +35,13 @@ const DEFAULT_PERIOD = {
   marketStructure: '20',
 }
 
-export default function IndicatorControls({ indicators, onChange }) {
+export default function IndicatorControls({
+  indicators,
+  onChange,
+}: {
+  indicators: IndicatorConfig[]
+  onChange: (indicators: IndicatorConfig[]) => void
+}) {
   const [type, setType] = useState('ema')
   const [period, setPeriod] = useState(DEFAULT_PERIOD.ema)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -44,7 +51,7 @@ export default function IndicatorControls({ indicators, onChange }) {
   // they're stored with period: null rather than a number nothing reads.
   const periodless = !!INDICATOR_TYPES[type]?.periodless
 
-  const changeType = (next) => {
+  const changeType = (next: string) => {
     setType(next)
     setPeriod(DEFAULT_PERIOD[next] ?? '20')
   }
@@ -57,7 +64,7 @@ export default function IndicatorControls({ indicators, onChange }) {
     const n = Number.parseInt(period, 10)
     if (n > 0) onChange([...indicators, { key: crypto.randomUUID(), type, period: n }])
   }
-  const remove = (key) => onChange(indicators.filter((i) => i.key !== key))
+  const remove = (key: string) => onChange(indicators.filter((i) => i.key !== key))
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">

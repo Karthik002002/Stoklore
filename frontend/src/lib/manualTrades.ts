@@ -16,7 +16,11 @@ export function tradePnl(t: TradeLike): number | null {
   return Math.round((t.direction === 'short' ? -diff : diff) * t.quantity * 100) / 100
 }
 
-export function tradeReturnPct(t: TradeLike): number | null {
+// Narrower than TradeLike: a return percentage is entry, exit and direction - no quantity, which
+// is what lets the chart's level labels reuse it for a price that isn't a trade yet.
+export function tradeReturnPct(
+  t: Pick<Trade, 'direction' | 'entry_price'> & Partial<Pick<Trade, 'exit_price'>>,
+): number | null {
   if (t.exit_price == null || !t.entry_price) return null
   const pct = ((t.exit_price - t.entry_price) / t.entry_price) * 100
   return Math.round((t.direction === 'short' ? -pct : pct) * 100) / 100

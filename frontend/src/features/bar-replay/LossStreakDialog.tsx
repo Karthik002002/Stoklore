@@ -2,6 +2,7 @@ import { FlameIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { inr } from '@/lib/format'
+import type { TradeAccount } from '@/lib/types'
 
 // The interruption after a losing run, once the account's own threshold is hit (Settings > Trade
 // accounts, "Remind me after N losses in a row"). It comes up AFTER the close dialog, so the trade
@@ -14,7 +15,19 @@ import { inr } from '@/lib/format'
 //
 // No "don't show again": that is the setting, and it lives on the account where it can be reasoned
 // about between sessions instead of dismissed mid-tilt.
-export default function LossStreakDialog({ streak, account, lost, onClose }) {
+export default function LossStreakDialog({
+  streak,
+  account,
+  lost,
+  onClose,
+}: {
+  /** How many losses in a row - null when the run hasn't reached the account's threshold. */
+  streak: number | null
+  account?: TradeAccount | null
+  /** Total lost across the run, in rupees. */
+  lost?: number | null
+  onClose: () => void
+}) {
   if (!streak) return null
 
   return (

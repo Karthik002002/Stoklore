@@ -21,15 +21,15 @@ import { searchStocksMaster } from '@/services/api'
 
 // Main board / SME / both. A replay session is usually one or the other - SME names behave nothing
 // like main-board ones - so the filter is worth a click here rather than typing around it.
-const BOARDS = [
+const BOARDS: { value: string | undefined; label: string }[] = [
   { value: undefined, label: 'All' },
   { value: 'MAIN', label: 'Main board' },
   { value: 'SME', label: 'SME' },
 ]
 
-function SymbolBody({ onSelect }) {
+function SymbolBody({ onSelect }: { onSelect: (symbol: string) => void }) {
   const [query, setQuery] = useState('')
-  const [board, setBoard] = useState(undefined)
+  const [board, setBoard] = useState<string | undefined>(undefined)
   // Same source as SymbolCombobox: the full NSE listed-equity master (both boards), so any valid
   // ticker is reachable whether or not it has ever been scraped.
   const { data } = useQuery({
@@ -84,7 +84,7 @@ function SymbolBody({ onSelect }) {
   )
 }
 
-function TimeframeBody({ current, onSelect }) {
+function TimeframeBody({ current, onSelect }: { current: string; onSelect: (timeframe: string) => void }) {
   return (
     <>
       <CommandInput placeholder="Switch timeframe…" />
@@ -101,8 +101,21 @@ function TimeframeBody({ current, onSelect }) {
   )
 }
 
-export default function ReplayCommandDialog({ mode, onOpenChange, timeframe, onSymbol, onTimeframe }) {
-  const pick = (commit) => (value) => {
+export default function ReplayCommandDialog({
+  mode,
+  onOpenChange,
+  timeframe,
+  onSymbol,
+  onTimeframe,
+}: {
+  /** Which picker is open, or null for closed. */
+  mode: 'symbol' | 'timeframe' | null
+  onOpenChange: (open: boolean) => void
+  timeframe: string
+  onSymbol: (symbol: string) => void
+  onTimeframe: (timeframe: string) => void
+}) {
+  const pick = (commit: (value: string) => void) => (value: string) => {
     commit(value)
     onOpenChange(false)
   }

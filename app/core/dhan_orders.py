@@ -35,6 +35,7 @@ ORDER_LEGS = ("ENTRY_LEG", "TARGET_LEG", "STOP_LOSS_LEG")
 # must still be displayable, because the alternative is showing "unknown" next to real money.
 OPEN_STATUSES = ("TRANSIT", "PENDING", "PART_TRADED")
 DONE_STATUSES = ("TRADED", "REJECTED", "CANCELLED", "EXPIRED")
+FAILED_STATUSES = ("REJECTED", "CANCELLED", "EXPIRED")
 
 
 class DhanOrderError(Exception):
@@ -254,7 +255,10 @@ def normalize_order(row):
         "avg_price": row.get("averageTradedPrice"),
         "price": row.get("price"),
         "trigger_price": row.get("triggerPrice"),
-        "error": row.get("omsErrorDescription"),
+        # Dhan fills omsErrorDescription whether or not anything went wrong - a filled order
+        # carries "TRADE CONFIRMED" in it. Only keep it when the status says it failed, or every
+        # good order reads as an error on screen.
+        "error": row.get("omsErrorDescription") if row.get("orderStatus") in FAILED_STATUSES else None,
         "updated_at": row.get("updateTime") or row.get("createTime"),
     }
 
@@ -380,7 +384,12 @@ def order_book(credentials):
 
 def super_order_book(credentials):
     """Super orders come back nested: the entry order with its target and stop hanging off it.
-    Flattened here so the mirror stores one row per order id whatever shape it arrived in."""
+    Flattened here so the mirror stores one row per leg whatever shape it arrived in.
+
+    Dhan gives every leg the SAME orderId as its entry, so the id alone cannot key the mirror -
+    the legs would land on the entry's row and leave it half stop, half entry. Legs are keyed
+    `<order id>:<leg>` and carry the real id in parent_order_id, which is what a cancel sends.
+    """
     out = []
     for parent in send("GET", "/super/orders", credentials) or []:
         entry = normalize_order(parent)
@@ -389,6 +398,14 @@ def super_order_book(credentials):
         for leg in parent.get("legDetails") or []:
             child = normalize_order({**parent, **leg})
             child["parent_order_id"] = entry["order_id"]
+            child["order_id"] = f"{entry['order_id']}:{child['leg']}"
+            # legDetails carries no fill of its own, and inheriting the entry's would show a
+            # resting stop as already filled at the entry price.
+            remaining = leg.get("remainingQuantity")
+            child["filled_qty"] = (
+                (child["quantity"] or 0) - remaining if remaining is not None else None
+            )
+            child["avg_price"] = child["avg_price"] if child["status"] == "TRADED" else None
             out.append(child)
     return out
 

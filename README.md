@@ -695,6 +695,11 @@ the chart, and tells you what the broker did — plus price alerts, which share 
 - **Exits live at the broker** — a stop or target makes the entry a Dhan **Super Order**, so the
   protection survives this app being closed. Dragging the stop line on the chart sends a modify;
   there is no local copy to drift
+- **The wallet, and what a position is worth against it** — Dhan's available cash in the state bar
+  (cached 30s), and an order ticket that says what the position costs and what share of the wallet
+  that is while you type it. It warns past your rupee cap, past `max_position_pct`, or when the
+  order costs more than the account holds — advisory, because an oversized entry should be a
+  decision rather than an accident
 - **Guardrails before the network, all in one pass** — off/halted, per-order value cap, orders per
   day, a daily realised-loss stop that trips itself, and a stop-on-the-wrong-side check. A refused
   order comes back with every reason at once
@@ -723,6 +728,12 @@ the chart, and tells you what the broker did — plus price alerts, which share 
   shareholding collect span. Values stay `"YYYY-MM-DD"` strings end to end — the API, the forms and
   the URL all already spoke that, and converting at the edges beats spreading `Date` juggling
   across five call sites
+- **Command palette (Cmd/Ctrl+K)** — every page the app has, the tabs inside Backtesting, Paper
+  Trading and Trade Simulation, all twelve Settings sub-tabs, plus Profile, theme and a
+  cache-clearing reload. Type `@SYMBOL` to jump to a stock's detail page; an untracked ticker is
+  verified against NSE before it navigates, so the palette never lands on an empty page. The lists
+  in `frontend/src/CommandPalette.jsx` are hand-maintained rather than derived from the router —
+  a new route or tab has to be added there in the same change, or it simply can't be found
 - **Every keyboard shortcut is rebindable** — Settings › Shortcuts lists all of
   them (command palette, AI chat, and Bar Replay's ten trading/playback keys),
   each captured by pressing the combination rather than typing its name.

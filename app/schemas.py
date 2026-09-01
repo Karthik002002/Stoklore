@@ -269,6 +269,7 @@ class LiveSettingsRequest(BaseModel):
     max_order_value: float | None = None
     max_orders_per_day: int | None = None
     daily_loss_limit: float | None = None
+    max_position_pct: float | None = None
     product: Literal["INTRADAY", "CNC", "MARGIN", "MTF"] | None = None
     account_id: int | None = None
     api_base_url: str | None = None  # set to Dhan's sandbox while testing; blank = live

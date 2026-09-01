@@ -12,13 +12,20 @@ import threading
 import time
 from datetime import date, datetime
 
-from app.core import alerts, db, dhan_orders
+from app.core import alerts, broker, db, dhan_orders
 from app.core.config import IST
 from app.core.paper import market_is_open
 
 # Same cadence as the paper engine's poller. Dhan allows 10 order-API requests a second; this uses
 # two per tick, which leaves the whole budget for the user actually placing orders.
 POLL_SECONDS = 5
+
+# The wallet, cached. The status endpoint is polled every 10s by the open page and the balance
+# only moves when an order fills, so re-asking Dhan on every poll would spend the quote budget on a
+# number that barely changes. A failed fetch keeps the last good reading rather than blanking it -
+# a stale balance is still the right order of magnitude for the size warnings that read it.
+_funds = {"available": None, "at": None, "error": None}
+FUNDS_TTL_SECONDS = 30
 
 state = {
     "running": False,
@@ -52,6 +59,27 @@ def runtime_state():
         "orders_today": db.count_live_orders_today(),
         "realised_today": db.live_realised_today(),
     }
+
+
+def available_balance(force=False):
+    """Cash the account can actually deploy, as Dhan reports it. None when there are no
+    credentials or the call has never succeeded - the UI shows nothing rather than a zero, which
+    would read as an empty account."""
+    creds = credentials()
+    if not creds:
+        return None
+    fresh = _funds["at"] and (datetime.now(IST) - _funds["at"]).total_seconds() < FUNDS_TTL_SECONDS
+    if fresh and not force:
+        return _funds["available"]
+    try:
+        limits_ = broker.fetch_fund_limit(creds["client_id"], creds["access_token"])
+        # Dhan's own documented typo, kept verbatim in broker.py for the same reason.
+        _funds["available"] = limits_.get("availabelBalance", limits_.get("availableBalance"))
+        _funds["error"] = None
+    except broker.DhanError as e:
+        _funds["error"] = str(e)
+    _funds["at"] = datetime.now(IST)
+    return _funds["available"]
 
 
 def halt(reason):

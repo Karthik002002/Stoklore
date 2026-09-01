@@ -46,11 +46,32 @@ under the same instrument name, and the series filter is what stops an order bei
 poller). Each sweep reads the order book, the super-order book and the position book; anything whose
 status moved raises an alert, and any position that went **flat** becomes a journal entry.
 
+**A super order's legs are rows of their own**, keyed `<order id>:<leg>`, because Dhan gives every
+leg the *same* `orderId` as its entry — key the mirror on that alone and the resting stop lands on
+the entry's row, which then reads half entry and half stop and no stop exists anywhere. The real id
+is in `parent_order_id`, which is what a cancel sends; the daily order count ignores leg rows, since
+a super order is one order against the limit, not three. `omsErrorDescription` is only shown when
+the status says the order failed: Dhan puts `TRADE CONFIRMED` in that field on orders that worked.
+
 **Journalling reads positions, not orders.** A round trip is "net quantity reached zero", which is
 true however it got there — averaging in, three partial exits, a stop that filled in two prints. It
 lands in `manual_trades` tagged `live`, so real trades show up in Statistics and Simulation next to
 everything else. Set the account under Settings; without one the trade is announced but not filed,
 because guessing which account a real trade belongs to is worse than leaving it to you.
+
+**The wallet is on screen.** Dhan's fund limit (deployable cash) sits in the state bar, cached for
+30 seconds server-side — the status endpoint is polled every 10s by the open page and the balance
+only moves when an order fills. A failed fetch keeps the last good reading rather than blanking it:
+a slightly stale balance is still the right order of magnitude for the size warnings that read it,
+and a blank one would read as an empty account.
+
+**The order ticket sizes against it as you type.** It shows the position's rupee value and its
+share of the wallet, and warns — never blocks — when the position costs more than the account
+holds, is over the per-order rupee cap, or takes more than `max_position_pct` of the wallet. The
+percentage is the one that travels: ₹20,000 is nothing on one account and most of another. The
+rupee cap warning is worded exactly as the backend's refusal, so the guardrail is never the first
+time you hear about it (`frontend/src/lib/liveSizing.ts`, checked by
+`node frontend/src/lib/liveSizing.selfcheck.ts`).
 
 **Price alerts run whether or not live trading is on** — watching a level is not trading, and
 usually precedes deciding to.
@@ -62,7 +83,7 @@ everything that's wrong with it at once (`guardrail_errors`):
 
 - live trading switched off, or halted for the day
 - no credentials, quantity ≤ 0, a fractional quantity, no price to size against
-- order value over the per-order cap
+- order value over the per-order cap (`max_position_pct` is advisory and warns instead)
 - more orders today than the daily count
 - realised loss today at or past the daily loss limit
 - a stop or target on the wrong side of the entry — a typo that would fire on the next tick
@@ -106,8 +127,8 @@ is a different order, and a chart drag is not enough intent to send one.
    (developer.dhanhq.co). Put its base URL in Settings › Live trading (`api_base_url`) and the app
    sends everything there instead. The page shows a **Sandbox** badge while it's set. Order flow,
    statuses and rejections all work there; streaming quotes don't.
-2. **Set the caps first** — per-order value, orders per day, daily loss limit. They default to
-   ₹25,000 / 20 / ₹5,000.
+2. **Set the caps first** — per-order value, orders per day, daily loss limit, and the advisory
+   share-of-wallet limit. They default to ₹25,000 / 20 / ₹5,000 / 20%.
 3. **Then one small live order**, watched, with the broker's own app open next to it.
 
 Rate limits, for reference: order APIs 10 req/s, data 5 req/s, quotes 1 req/s, 7,000 orders/day.

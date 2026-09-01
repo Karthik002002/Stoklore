@@ -10,13 +10,14 @@ import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { inr } from '@/lib/format'
+import type { PaperPosition } from '@/services/api'
 import { closePaperPosition, modifyPaperPosition } from '@/services/api'
 
 // Flashes green/red for a moment whenever the price this cell shows actually changes, then fades.
 // Keyed on the value rather than on a refetch, so a poll that returned the same price doesn't
 // blink - the pulse means "this moved", not "we asked".
-function PriceCell({ price }) {
-  const [flash, setFlash] = useState(null)
+function PriceCell({ price }: { price: number | null }) {
+  const [flash, setFlash] = useState<'up' | 'down' | null>(null)
   const previous = useRef(price)
 
   useEffect(() => {
@@ -44,8 +45,8 @@ function PriceCell({ price }) {
 // The rows above are marked to the last price the backend stored, which it serves without waiting
 // on the feed - so the table needs to say how old that is, and whether a fresh quote is on its
 // way. `price_stale` is the backend's own answer to "I'm refetching this one right now".
-function PriceFooter({ positions, isFetching }) {
-  const stamps = positions.map((p) => p.price_as_of).filter(Boolean)
+function PriceFooter({ positions, isFetching }: { positions: PaperPosition[]; isFetching: boolean }) {
+  const stamps = positions.map((p) => p.price_as_of).filter((s): s is string => Boolean(s))
   const oldest = stamps.length ? stamps.reduce((a, b) => (a < b ? a : b)) : null
   const fetching = isFetching || positions.some((p) => p.price_stale)
 
@@ -58,10 +59,25 @@ function PriceFooter({ positions, isFetching }) {
   )
 }
 
+/** A leg while it is being edited: the inputs hand back strings, and they only become numbers
+ *  when the dialog saves. */
+type DraftLeg = { id: string; price: number | string; qty: number | string }
+
 // Editing a ladder in place. Each row is one leg: a price and the slice of the position it closes.
-function LegEditor({ label, legs, onChange, max }) {
+function LegEditor({
+  label,
+  legs,
+  onChange,
+  max,
+}: {
+  label: string
+  legs: DraftLeg[]
+  onChange: (legs: DraftLeg[]) => void
+  max: number
+}) {
   const covered = legs.reduce((s, l) => s + (Number(l.qty) || 0), 0)
-  const set = (i, key) => (e) => onChange(legs.map((l, j) => (j === i ? { ...l, [key]: e.target.value } : l)))
+  const set = (i: number, key: 'price' | 'qty') => (e: React.ChangeEvent<HTMLInputElement>) =>
+    onChange(legs.map((l, j) => (j === i ? { ...l, [key]: e.target.value } : l)))
 
   return (
     <div className="space-y-1.5">
@@ -110,10 +126,18 @@ function LegEditor({ label, legs, onChange, max }) {
   )
 }
 
-function ModifyDialog({ position, open, onOpenChange }) {
+function ModifyDialog({
+  position,
+  open,
+  onOpenChange,
+}: {
+  position: PaperPosition | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
   const queryClient = useQueryClient()
-  const [stopLosses, setStopLosses] = useState([])
-  const [targets, setTargets] = useState([])
+  const [stopLosses, setStopLosses] = useState<DraftLeg[]>([])
+  const [targets, setTargets] = useState<DraftLeg[]>([])
 
   useEffect(() => {
     if (open && position) {
@@ -124,11 +148,11 @@ function ModifyDialog({ position, open, onOpenChange }) {
 
   const save = useMutation({
     mutationFn: () => {
-      const clean = (legs) =>
+      const clean = (legs: DraftLeg[]) =>
         legs
           .filter((l) => Number(l.price) > 0 && Number(l.qty) > 0)
           .map((l) => ({ id: l.id, price: Number(l.price), qty: Number(l.qty) }))
-      return modifyPaperPosition(position.id, { stop_losses: clean(stopLosses), targets: clean(targets) })
+      return modifyPaperPosition(position!.id, { stop_losses: clean(stopLosses), targets: clean(targets) })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['paperPositions'] })
@@ -165,13 +189,23 @@ function ModifyDialog({ position, open, onOpenChange }) {
   )
 }
 
-export default function PaperHoldings({ positions, isFetching, isPending, accountId }) {
+export default function PaperHoldings({
+  positions,
+  isFetching,
+  isPending,
+  accountId,
+}: {
+  positions: PaperPosition[]
+  isFetching: boolean
+  isPending: boolean
+  accountId: number | null
+}) {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const [modifying, setModifying] = useState(null)
+  const [modifying, setModifying] = useState<PaperPosition | null>(null)
 
   const close = useMutation({
-    mutationFn: (id) => closePaperPosition(id),
+    mutationFn: (id: number) => closePaperPosition(id),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['paperPositions'] })
       queryClient.invalidateQueries({ queryKey: ['manualTrades'] })
@@ -226,7 +260,7 @@ export default function PaperHoldings({ positions, isFetching, isPending, accoun
                   navigate({
                     to: '/paper/$symbol',
                     params: { symbol: p.symbol },
-                    search: { account: accountId },
+                    search: { account: accountId ?? undefined },
                   })
                 }
               >

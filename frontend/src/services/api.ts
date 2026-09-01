@@ -57,6 +57,8 @@ export type PaperPosition = {
   stop_losses: { id: string; price: number; qty: number }[]
   targets: { id: string; price: number; qty: number }[]
   notes: string | null
+  /** Filled in by the positions endpoint from the quote cache, so it can be absent. */
+  sector?: string | null
   current_price: number | null
   price_as_of: string | null
   price_stale: boolean
@@ -106,11 +108,15 @@ export type LiveStatus = {
   configured: boolean
   sandbox: boolean
   base_url: string
+  /** Deployable cash from Dhan's fund limit; null when unconfigured or never fetched. */
+  balance: number | null
   settings: {
     enabled: boolean
     max_order_value: number
     max_orders_per_day: number
     daily_loss_limit: number
+    /** Share of the wallet one position may take before the ticket warns. Advisory. */
+    max_position_pct: number
     product: string
     account_id: number | null
   }
@@ -177,9 +183,17 @@ async function json<T = unknown>(res: Response): Promise<T> {
 
 // Quote + news + reports for one symbol. The order ticket only wants `quote.currentPrice`, but this
 // is the endpoint the app already caches per symbol, so asking for it here is a cache hit.
-export const getStockDetail = (symbol: string) => fetch(`/api/stocks/${symbol}`).then(json)
+/** Deliberately loose: the payload is large and shifts with the upstream source, so only the
+ *  fields TypeScript actually reads are named. Tighten as callers need more. */
+export type StockDetail = {
+  quote?: { currentPrice?: number | null; [key: string]: unknown } | null
+  [key: string]: unknown
+}
 
-export const getStockChart = (symbol: string, range: string) => fetch(`/api/stocks/${symbol}/chart?range=${range}`).then(json<ChartResponse>)
+export const getStockDetail = (symbol: string) => fetch(`/api/stocks/${symbol}`).then(json<StockDetail>)
+
+export const getStockChart = (symbol: string, range: string) =>
+  fetch(`/api/stocks/${symbol}/chart?range=${range}`).then(json<ChartResponse>)
 
 export const getIndices = () => fetch('/api/indices').then(json)
 
@@ -202,7 +216,8 @@ export const getEventsAttention = (listName?: string) =>
 
 export const getTopNews = () => fetch('/api/top-news').then(json)
 
-export const getIndexChart = (name: string, range: string) => fetch(`/api/indices/${name}/chart?range=${range}`).then(json<ChartResponse>)
+export const getIndexChart = (name: string, range: string) =>
+  fetch(`/api/indices/${name}/chart?range=${range}`).then(json<ChartResponse>)
 
 export const getStockFinancials = (symbol: string) => fetch(`/api/stocks/${symbol}/financials`).then(json)
 
@@ -231,10 +246,9 @@ export const getPriceSources = () => fetch('/api/prices/sources').then(json<Pric
 // price_sources.DEFAULT_SOURCE, and a `?source=undefined` (which is what a missing one used to
 // stringify to, before the sources list had loaded) is a 422 for an unknown source.
 export const collectMaxHistory = (symbol: string, source?: string | null) =>
-  fetch(
-    `/api/prices/${symbol}/max/collect${source ? `?source=${encodeURIComponent(source)}` : ''}`,
-    { method: 'POST' },
-  ).then(json)
+  fetch(`/api/prices/${symbol}/max/collect${source ? `?source=${encodeURIComponent(source)}` : ''}`, {
+    method: 'POST',
+  }).then(json)
 
 export const collectMaxHistoryBulk = (symbols: string[], source: string) =>
   fetch('/api/prices/max/collect-bulk', {
@@ -243,7 +257,8 @@ export const collectMaxHistoryBulk = (symbols: string[], source: string) =>
     body: JSON.stringify({ symbols, source }),
   }).then(json)
 
-export const getBulkCollectStatus = () => fetch('/api/prices/max/collect-bulk/status').then(json<CollectStatus>)
+export const getBulkCollectStatus = () =>
+  fetch('/api/prices/max/collect-bulk/status').then(json<CollectStatus>)
 
 export const getModels = () => fetch('/api/models').then(json)
 
@@ -283,7 +298,8 @@ export const createWatchRule = (rule: WatchRuleRequest) =>
     body: JSON.stringify(rule),
   }).then(json)
 
-export const deleteWatchRule = (id: number) => fetch(`/api/watch-rules/${id}`, { method: 'DELETE' }).then(json)
+export const deleteWatchRule = (id: number) =>
+  fetch(`/api/watch-rules/${id}`, { method: 'DELETE' }).then(json)
 
 export const checkWatchRule = (id: number, symbol?: string) =>
   fetch(`/api/watch-rules/${id}/check${symbol ? `?symbol=${symbol}` : ''}`).then(json)
@@ -321,7 +337,8 @@ export const getHoldings = (broker?: string, force = false) => {
   return fetch(`/api/holdings${qs ? `?${qs}` : ''}`).then(json)
 }
 
-export const getBacktests = (symbol?: string) => fetch(`/api/backtests${symbol ? `?symbol=${symbol}` : ''}`).then(json)
+export const getBacktests = (symbol?: string) =>
+  fetch(`/api/backtests${symbol ? `?symbol=${symbol}` : ''}`).then(json)
 
 export const runBacktest = (params: BacktestRunRequest) =>
   fetch('/api/backtest/run', {
@@ -346,7 +363,8 @@ export const updateBacktestLessons = (id: number, lessons: string) =>
 
 export const deleteBacktest = (id: number) => fetch(`/api/backtest/${id}`, { method: 'DELETE' }).then(json)
 
-export const getPriceHistory = (symbol: string, days = 365) => fetch(`/api/prices/${symbol}?days=${days}`).then(json<DailyBar[]>)
+export const getPriceHistory = (symbol: string, days = 365) =>
+  fetch(`/api/prices/${symbol}?days=${days}`).then(json<DailyBar[]>)
 
 export const getAutoBacktestScripts = () => fetch('/api/backtest/auto/scripts').then(json)
 
@@ -385,7 +403,8 @@ export const updateManualTrade = (id: number, trade: ManualTradeRequest) =>
     body: JSON.stringify(trade),
   }).then(json)
 
-export const deleteManualTrade = (id: number) => fetch(`/api/manual-trades/${id}`, { method: 'DELETE' }).then(json)
+export const deleteManualTrade = (id: number) =>
+  fetch(`/api/manual-trades/${id}`, { method: 'DELETE' }).then(json)
 
 export const uploadManualTradeImage = (id: number, file: File | Blob) => {
   const form = new FormData()
@@ -402,7 +421,8 @@ export const analyzeBulkTradeImage = (file: File, model?: string) => {
 
 // `kind` is 'journal' (hand-logged trades) or 'paper' (live simulation). Defaults to journal, so
 // every existing caller keeps behaving exactly as before.
-export const getTradeAccounts = (kind: 'journal' | 'paper' = 'journal') => fetch(`/api/trade-accounts?kind=${kind}`).then(json<TradeAccount[]>)
+export const getTradeAccounts = (kind: 'journal' | 'paper' = 'journal') =>
+  fetch(`/api/trade-accounts?kind=${kind}`).then(json<TradeAccount[]>)
 
 export const createTradeAccount = (account: TradeAccountRequest, kind: 'journal' | 'paper' = 'journal') =>
   fetch(`/api/trade-accounts?kind=${kind}`, {
@@ -418,7 +438,8 @@ export const updateTradeAccount = (id: number, account: TradeAccountRequest) =>
     body: JSON.stringify(account),
   }).then(json)
 
-export const deleteTradeAccount = (id: number) => fetch(`/api/trade-accounts/${id}`, { method: 'DELETE' }).then(json)
+export const deleteTradeAccount = (id: number) =>
+  fetch(`/api/trade-accounts/${id}`, { method: 'DELETE' }).then(json)
 
 export const getManualBacktestSettings = () => fetch('/api/settings/manual-backtest').then(json)
 
@@ -438,7 +459,20 @@ export const setTradingGoals = (goals: TradingGoalRequest[]) =>
     body: JSON.stringify(goals),
   }).then(json)
 
-export const getBalanceAdjustments = () => fetch('/api/manual-trades/balance-adjustments').then(json)
+/** Cash moved in or out of an account's wallet, outside of trading. */
+export type BalanceAdjustment = {
+  id: number
+  account_id: number | null
+  amount: number
+  /** 'add' is a deposit, 'subtract' a withdrawal (same pair lib/tradeAccounts works in). */
+  type: 'add' | 'subtract'
+  reason: string | null
+  notes: string | null
+  adjusted_at: string
+}
+
+export const getBalanceAdjustments = () =>
+  fetch('/api/manual-trades/balance-adjustments').then(json<BalanceAdjustment[]>)
 
 export const createBalanceAdjustment = (adjustment: BalanceAdjustmentRequest) =>
   fetch('/api/manual-trades/balance-adjustments', {
@@ -531,14 +565,19 @@ export const createPaperAccount = (payload: TradeAccountRequest) =>
   }).then(json)
 
 export const getPaperPositions = (accountId?: number | null) =>
-  fetch(`/api/paper/positions${accountId != null ? `?account_id=${accountId}` : ''}`).then(json<PaperPosition[]>)
+  fetch(`/api/paper/positions${accountId != null ? `?account_id=${accountId}` : ''}`).then(
+    json<PaperPosition[]>,
+  )
+
+/** A placed paper order: filled at `entry_price`, or resting there when status is 'pending'. */
+export type PaperPlaced = { id: number; entry_price: number; status: 'pending' | 'open' }
 
 export const createPaperOrder = (payload: PaperOrderRequest) =>
   fetch('/api/paper/orders', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
-  }).then(json)
+  }).then(json<PaperPlaced>)
 
 export const modifyPaperPosition = (id: number, payload: PaperModifyRequest) =>
   fetch(`/api/paper/positions/${id}`, {
@@ -547,19 +586,36 @@ export const modifyPaperPosition = (id: number, payload: PaperModifyRequest) =>
     body: JSON.stringify(payload),
   }).then(json)
 
+/** What a close answers with: the price it went out at, and the journal rows it wrote. */
+export type PaperClosed = { closed_at: number; trade_ids: number[] }
+
 export const closePaperPosition = (id: number, quantity?: number | null) =>
   fetch(`/api/paper/positions/${id}/close`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ quantity: quantity ?? null }),
-  }).then(json)
+  }).then(json<PaperClosed>)
 
 // Engine heartbeat - drives the live/stale pulse on the Holdings tab.
-export const getPaperStatus = () => fetch('/api/paper/status').then(json)
+/** The paper engine's heartbeat (app/core/paper.py's `state`), plus what the UI needs to judge a
+ *  stale timestamp: whether the market is open at all, and the interval to measure staleness in. */
+export type PaperStatus = {
+  running: boolean
+  last_poll: string | null
+  last_error: string | null
+  checked: number
+  market_open: boolean
+  poll_seconds: number
+}
+
+export const getPaperStatus = () => fetch('/api/paper/status').then(json<PaperStatus>)
 
 // Force one sweep. The backend loop only runs during market hours, so this is what refreshes
 // prices on demand outside them.
-export const pollPaperEngine = () => fetch('/api/paper/poll', { method: 'POST' }).then(json)
+/** One forced sweep: the exits it fired now, and the ones it back-filled from history first. */
+export type PaperPollResult = { triggered: unknown[]; caught_up: unknown[]; last_poll: string | null }
+
+export const pollPaperEngine = () => fetch('/api/paper/poll', { method: 'POST' }).then(json<PaperPollResult>)
 
 // --- Shareholding pattern -------------------------------------------------------------------
 // The screener returns one row per symbol with the change already classified server-side (see
@@ -576,7 +632,15 @@ export const getShareholdingStatus = () => fetch('/api/shareholding/status').the
 
 // Either a "last N years" shorthand or an explicit { from, to } span from the range picker - the
 // backend prefers the span when both arrive.
-export const syncShareholding = ({ years = 1, from, to }: { years?: number; from?: string; to?: string } = {}) => {
+export const syncShareholding = ({
+  years = 1,
+  from,
+  to,
+}: {
+  years?: number
+  from?: string
+  to?: string
+} = {}) => {
   const query = new URLSearchParams(from && to ? { from_date: from, to_date: to } : { years: String(years) })
   return fetch(`/api/shareholding/sync?${query}`, { method: 'POST' }).then(json)
 }
@@ -649,7 +713,11 @@ export const getAlerts = (params: { active?: boolean; limit?: number } = {}) => 
   return fetch(`/api/alerts${query ? `?${query}` : ''}`).then(json<Alert[]>)
 }
 
-export const createAlert = (payload: AlertRequest) => post('/api/alerts', payload)
+/** What POST /api/alerts answers with - the new id, plus whether the level is already true so
+ *  the UI can say the alert will fire on the next sweep rather than "some time". */
+export type AlertCreated = { id: number; current_price: number | null; already_true: boolean }
+
+export const createAlert = (payload: AlertRequest) => post('/api/alerts', payload) as Promise<AlertCreated>
 
 export const acknowledgeAlerts = (ids?: number[]) => post('/api/alerts/acknowledge', ids ?? null)
 

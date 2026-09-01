@@ -132,6 +132,30 @@ raw_order = {
 norm = do.normalize_order(raw_order)
 assert norm["order_id"] == "112111182198" and norm["status"] == "TRADED" and norm["avg_price"] == 100.5
 
+# Dhan puts a message in omsErrorDescription on the way through, not only when something broke.
+assert do.normalize_order({**raw_order, "omsErrorDescription": "TRADE CONFIRMED"})["error"] is None
+assert do.normalize_order(
+    {**raw_order, "orderStatus": "REJECTED", "omsErrorDescription": "insufficient funds"}
+)["error"] == "insufficient funds"
+
+# A super order's legs carry the SAME orderId as the entry, so flattening has to key them apart or
+# the stop lands on the entry's row: one row, half entry and half stop, and no stop anywhere.
+_send = do.send
+do.send = lambda *a, **k: [{
+    **raw_order, "orderId": "9", "legName": "ENTRY_LEG", "orderStatus": "TRADED",
+    "legDetails": [{"orderId": "9", "legName": "STOP_LOSS_LEG", "orderStatus": "PENDING",
+                    "transactionType": "SELL", "price": 95.0, "remainingQuantity": 10}],
+}]
+flat = do.super_order_book({})
+assert [o["order_id"] for o in flat] == ["9", "9:STOP_LOSS_LEG"], flat
+entry, stop = flat
+assert (entry["leg"], entry["side"], entry["status"]) == ("ENTRY_LEG", "BUY", "TRADED")
+assert (stop["leg"], stop["side"], stop["status"]) == ("STOP_LOSS_LEG", "SELL", "PENDING")
+assert stop["parent_order_id"] == "9", "cancelling a leg sends the broker's id, not the row key"
+# The entry filled at 100.5; the resting stop has filled nothing and is not the entry's fill.
+assert stop["filled_qty"] == 0 and stop["avg_price"] is None, stop
+do.send = _send
+
 before = {"1": {"order_id": "1", "status": "PENDING"}}
 now = [
     {"order_id": "1", "status": "TRADED"},      # moved

@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import type { FieldError, UseFormReturn } from 'react-hook-form'
 import { useFieldArray, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -20,6 +21,8 @@ import { accountFor, accountHasCosts, accountsById, tradeCosts, tradeNetPnl } fr
 import { paperOrderSchema } from '@/lib/schemas'
 import { accountBalance, tradesForAccount } from '@/lib/tradeAccounts'
 import { riskReward } from '@/features/bar-replay/orderEngine'
+import type { z } from 'zod'
+import type { Trade } from '@/lib/types'
 import {
   createPaperOrder,
   getBalanceAdjustments,
@@ -38,17 +41,35 @@ const ORDER_TYPE_OPTIONS = [
   { value: 'limit', label: 'Limit' },
 ]
 
+// The inputs hold whatever was typed (the schema's preprocess step turns '' into null and strings
+// into numbers), so the form is driven by the schema's INPUT type and submits its OUTPUT type.
+type OrderInput = z.input<typeof paperOrderSchema>
+type OrderValues = z.output<typeof paperOrderSchema>
+type OrderForm = UseFormReturn<OrderInput, unknown, OrderValues>
+/** Which of the two ladders a LegRows block edits. */
+type LegField = 'stopLosses' | 'targets'
+
 // One rung of a laddered exit. The point of the ladder is partial exits - "half at target 1, the
 // rest at target 2" - so every rung carries its own quantity rather than a percentage; percentages
 // of a position that itself shrinks as rungs fill get confusing fast.
-function LegRows({ form, name, label, hint }) {
+function LegRows({
+  form,
+  name,
+  label,
+  hint,
+}: {
+  form: OrderForm
+  name: LegField
+  label: string
+  hint?: string
+}) {
   const { fields, append, remove } = useFieldArray({ control: form.control, name })
   const error = form.formState.errors[name]
   const quantity = Number(form.watch('quantity')) || 0
-  const covered = (form.watch(name) ?? []).reduce((s, l) => s + (Number(l.qty) || 0), 0)
+  const covered = (form.watch(name) ?? []).reduce((s: number, l) => s + (Number(l.qty) || 0), 0)
 
   return (
-    <Field label={label} error={error?.root ?? error} hint={hint}>
+    <Field label={label} error={(error?.root ?? error) as FieldError | undefined} hint={hint}>
       <div className="space-y-1.5">
         {fields.map((field, i) => (
           <div key={field.id} className="flex items-center gap-2">
@@ -99,7 +120,7 @@ function LegRows({ form, name, label, hint }) {
 // Entry is the limit price on a limit order and the live price on a market one. Both may be
 // unknown (no symbol picked yet, or no quote for it), and every figure below degrades to a dash
 // rather than guessing - a made-up entry would make every percentage on this panel wrong.
-function OrderReadout({ form, accountId }) {
+function OrderReadout({ form, accountId }: { form: OrderForm; accountId: number | null }) {
   const [symbol, quantity, direction, orderType, limitPrice, stopLosses, targets] = form.watch([
     'symbol',
     'quantity',
@@ -147,23 +168,30 @@ function OrderReadout({ form, accountId }) {
   const available = balance == null ? null : Math.round((balance - committed) * 100) / 100
   const utilisation = available && value ? (value / available) * 100 : null
 
-  const level = (legs) => (legs ?? []).map((l) => Number(l.price)).filter((p) => p > 0)[0] ?? null
+  // riskReward works in numbers; the form holds whatever was typed until it validates.
+  const legAmounts = (legs: OrderInput['stopLosses'] | undefined) =>
+    (legs ?? [])
+      .map((l) => ({ id: l.id, price: Number(l.price), qty: Number(l.qty) || 0 }))
+      .filter((l) => l.price)
+
+  const level = (legs: OrderInput['stopLosses'] | undefined) =>
+    (legs ?? []).map((l) => Number(l.price)).filter((p) => p > 0)[0] ?? null
   const stop = level(stopLosses)
   const target = level(targets)
-  const away = (price) => (entry && price ? ((price - entry) / entry) * 100 : null)
+  const away = (price: number | null) => (entry && price ? ((price - entry) / entry) * 100 : null)
   // Signed against the direction, so a stop always reads negative and a target positive on both
   // sides of the market rather than flipping sign on a short.
-  const directional = (pct) => (pct == null ? null : direction === 'short' ? -pct : pct)
+  const directional = (pct: number | null) => (pct == null ? null : direction === 'short' ? -pct : pct)
   const rr = entry
     ? riskReward({
         direction,
         entryPrice: entry,
-        stopLosses: (stopLosses ?? []).map((l) => ({ ...l, price: Number(l.price) })).filter((l) => l.price),
-        targets: (targets ?? []).map((l) => ({ ...l, price: Number(l.price) })).filter((l) => l.price),
+        stopLosses: legAmounts(stopLosses),
+        targets: legAmounts(targets),
       }).rr
     : null
 
-  const pct = (v) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${fmt(v, 2)}%`)
+  const pct = (v: number | null) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${fmt(v, 2)}%`)
   const risk = stop && entry && qty ? Math.abs(entry - stop) * qty : null
   const reward = target && entry && qty ? Math.abs(target - entry) * qty : null
 
@@ -178,7 +206,7 @@ function OrderReadout({ form, accountId }) {
         label="Cash utilisation"
         value={utilisation == null ? '—' : `${fmt(utilisation, 1)}%`}
         sub={available == null ? 'no account wallet' : `${inr(available)} available`}
-        tone={utilisation > 100 ? 'down' : undefined}
+        tone={(utilisation ?? 0) > 100 ? 'down' : undefined}
       />
       <Readout label="Risk : reward" value={rr == null ? '—' : `${fmt(rr, 2)}R`} />
       <Readout
@@ -208,7 +236,17 @@ function OrderReadout({ form, accountId }) {
   )
 }
 
-function Readout({ label, value, sub, tone }) {
+function Readout({
+  label,
+  value,
+  sub,
+  tone,
+}: {
+  label: string
+  value: React.ReactNode
+  sub?: React.ReactNode
+  tone?: 'up' | 'down'
+}) {
   return (
     <div>
       <p className="text-[10px] tracking-wide text-muted-foreground uppercase">{label}</p>
@@ -222,12 +260,12 @@ function Readout({ label, value, sub, tone }) {
   )
 }
 
-function OrderPanel({ accountId }) {
+function OrderPanel({ accountId }: { accountId: number | null }) {
   const queryClient = useQueryClient()
-  const form = useForm({
+  const form = useForm<OrderInput, unknown, OrderValues>({
     resolver: zodResolver(paperOrderSchema),
     defaultValues: {
-      accountId,
+      accountId: accountId ?? undefined,
       symbol: '',
       direction: 'long',
       orderType: 'market',
@@ -241,9 +279,9 @@ function OrderPanel({ accountId }) {
   const orderType = form.watch('orderType')
 
   const place = useMutation({
-    mutationFn: (v) =>
+    mutationFn: (v: OrderValues) =>
       createPaperOrder({
-        account_id: accountId,
+        account_id: v.accountId,
         symbol: v.symbol,
         direction: v.direction,
         order_type: v.orderType,
@@ -331,9 +369,9 @@ function OrderPanel({ accountId }) {
 // Closed paper trades are ordinary journal rows tagged 'paper', so this reads the same
 // manual_trades list the Backtesting tab does rather than a paper-specific history endpoint.
 const EXIT_REASONS = ['Hit SL', 'Hit Target', 'Manual Close']
-const exitReason = (t) => (t.tags ?? []).find((tag) => EXIT_REASONS.includes(tag)) ?? '—'
+const exitReason = (t: Trade) => (t.tags ?? []).find((tag) => EXIT_REASONS.includes(tag)) ?? '—'
 
-function HistoryLog({ trades }) {
+function HistoryLog({ trades }: { trades: Trade[] }) {
   // Paper accounts carry the same cost settings as journal ones, so a paper P&L and a journal P&L
   // are finally comparable numbers rather than one gross and one net.
   const { data: accounts = [] } = useQuery({
@@ -403,7 +441,9 @@ function HistoryLog({ trades }) {
                   <TableCell>
                     <Badge variant="outline">{exitReason(t)}</Badge>
                   </TableCell>
-                  <TableCell className={`text-right tabular-nums ${pnl >= 0 ? 'text-up' : 'text-down'}`}>
+                  <TableCell
+                    className={`text-right tabular-nums ${(pnl ?? 0) >= 0 ? 'text-up' : 'text-down'}`}
+                  >
                     {inr(pnl)}
                   </TableCell>
                   {anyCosts && (
@@ -414,7 +454,9 @@ function HistoryLog({ trades }) {
                       {net == null ? '—' : inr(net)}
                     </TableCell>
                   )}
-                  <TableCell className={`text-right tabular-nums ${ret >= 0 ? 'text-up' : 'text-down'}`}>
+                  <TableCell
+                    className={`text-right tabular-nums ${(ret ?? 0) >= 0 ? 'text-up' : 'text-down'}`}
+                  >
                     {ret == null ? '—' : `${ret}%`}
                   </TableCell>
                 </TableRow>
@@ -427,7 +469,7 @@ function HistoryLog({ trades }) {
   )
 }
 
-export default function PaperTrades({ accountId, trades }) {
+export default function PaperTrades({ accountId, trades }: { accountId: number | null; trades: Trade[] }) {
   const closed = trades.filter((t) => t.exit_price != null)
   return (
     <div className="grid gap-4 lg:grid-cols-[24rem_1fr]">

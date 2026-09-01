@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { fmt, inr } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
+import type { ReplayBar, ReplayOrder } from '@/features/bar-replay/store'
+import type { PaperModifyRequest, PaperPosition } from '@/services/api'
 import ReplayChart from '@/features/bar-replay/ReplayChart'
 import { riskReward } from '@/features/bar-replay/orderEngine'
 import { useBarReplayStore } from '@/features/bar-replay/store'
@@ -21,8 +23,10 @@ const RANGES = ['1mo', '6mo', 'ytd', '1y']
 // A paper position is the same object the replay chart already knows how to draw - an entry, a
 // direction, a quantity and two ladders of legs - so it's mapped rather than re-rendered. The whole
 // point of this page is that the chart component is the Bar Replay one, unmodified.
-const asOrder = (p) => ({
-  id: p.id,
+const asOrder = (p: PaperPosition): ReplayOrder => ({
+  // The chart works in string ids; the API works in row ids. Converted here, and converted back
+  // by `find` below, so neither side has to know about the other's.
+  id: String(p.id),
   direction: p.direction,
   entryPrice: p.entry_price,
   quantity: p.quantity,
@@ -31,7 +35,17 @@ const asOrder = (p) => ({
   targets: p.targets ?? [],
 })
 
-function Metric({ label, value, sub, tone }) {
+function Metric({
+  label,
+  value,
+  sub,
+  tone,
+}: {
+  label: string
+  value: React.ReactNode
+  sub?: React.ReactNode
+  tone?: 'up' | 'down'
+}) {
   return (
     <div>
       <p className="text-[11px] tracking-wide text-muted-foreground uppercase">{label}</p>
@@ -72,19 +86,22 @@ export default function PaperPositionChart() {
     queryKey: ['stockChart', symbol, range],
     queryFn: () => getStockChart(symbol, range),
   })
-  const bars = chart?.bars ?? []
+  // ReplayBar, not Bar: the daily chart endpoint stamps a date on every row (same cast as
+  // BarReplay's own daily branch).
+  const bars = (chart?.bars ?? []) as ReplayBar[]
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['paperPositions'] })
 
   // Every on-chart edit goes straight to the server - nothing about this page is persisted
   // locally, so a reload shows exactly what the account actually holds.
   const modify = useMutation({
-    mutationFn: ({ id, stop_losses, targets }) => modifyPaperPosition(id, { stop_losses, targets }),
+    mutationFn: ({ id, stop_losses, targets }: { id: number } & PaperModifyRequest) =>
+      modifyPaperPosition(id, { stop_losses, targets }),
     onSuccess: refresh,
     onError: (e) => toast.error(e.message),
   })
   const close = useMutation({
-    mutationFn: (id) => closePaperPosition(id),
+    mutationFn: (id: number) => closePaperPosition(id),
     onSuccess: (data) => {
       refresh()
       queryClient.invalidateQueries({ queryKey: ['manualTrades'] })
@@ -94,45 +111,45 @@ export default function PaperPositionChart() {
     onError: (e) => toast.error(e.message),
   })
 
-  const legsOf = (p) => ({ stop_losses: p.stop_losses ?? [], targets: p.targets ?? [] })
-  const find = (id) => mine.find((p) => p.id === id)
+  const legsOf = (p: PaperPosition) => ({ stop_losses: p.stop_losses ?? [], targets: p.targets ?? [] })
+  const find = (id: string) => mine.find((p) => String(p.id) === id)
 
   // The handlers ReplayChart already calls, pointed at the paper API instead of the replay store.
-  const adjustOrder = (id, field, price, legId) => {
+  const adjustOrder = (id: string, field: 'entry' | 'stopLoss' | 'target', price: number, legId: string) => {
     const p = find(id)
     if (!p) return
     const key = field === 'stopLoss' ? 'stop_losses' : 'targets'
     const legs = legsOf(p)
     modify.mutate({
-      id,
+      id: p.id,
       ...legs,
       [key]: legs[key].map((l) => (l.id === legId ? { ...l, price: Math.round(price * 100) / 100 } : l)),
     })
   }
-  const removeLevel = (id, field, legId) => {
+  const removeLevel = (id: string, field: 'stopLoss' | 'target', legId: string) => {
     const p = find(id)
     if (!p) return
     const key = field === 'stopLoss' ? 'stop_losses' : 'targets'
     const legs = legsOf(p)
-    modify.mutate({ id, ...legs, [key]: legs[key].filter((l) => l.id !== legId) })
+    modify.mutate({ id: p.id, ...legs, [key]: legs[key].filter((l) => l.id !== legId) })
   }
-  const adjustLegQty = (id, field, legId, qty) => {
+  const adjustLegQty = (id: string, field: 'stopLoss' | 'target', legId: string, qty: number) => {
     const p = find(id)
     if (!p || !(qty > 0)) return
     const key = field === 'stopLoss' ? 'stop_losses' : 'targets'
     const legs = legsOf(p)
-    modify.mutate({ id, ...legs, [key]: legs[key].map((l) => (l.id === legId ? { ...l, qty } : l)) })
+    modify.mutate({ id: p.id, ...legs, [key]: legs[key].map((l) => (l.id === legId ? { ...l, qty } : l)) })
   }
-  const moveToBreakeven = (id) => {
+  const moveToBreakeven = (id: string) => {
     const p = find(id)
     if (!p?.stop_losses?.length) return
     modify.mutate({
-      id,
+      id: p.id,
       ...legsOf(p),
       stop_losses: p.stop_losses.map((l) => ({ ...l, price: p.entry_price })),
     })
   }
-  const placeLevel = (id, field, price) => {
+  const placeLevel = (id: string, field: 'stopLoss' | 'target', price: number) => {
     const p = find(id)
     if (!p) return
     const key = field === 'stopLoss' ? 'stop_losses' : 'targets'
@@ -144,7 +161,7 @@ export default function PaperPositionChart() {
       return
     }
     modify.mutate({
-      id,
+      id: p.id,
       ...legs,
       [key]: [
         ...legs[key],
@@ -155,9 +172,11 @@ export default function PaperPositionChart() {
 
   const position = mine[0] ?? null
   const rr = position ? riskReward(asOrder(position)).rr : null
-  const pctFrom = (price) =>
-    position?.entry_price ? ((price - position.entry_price) / position.entry_price) * 100 : null
-  const signed = (v) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${fmt(v, 2)}%`)
+  const pctFrom = (price: number | null | undefined) =>
+    position?.entry_price && price != null
+      ? ((price - position.entry_price) / position.entry_price) * 100
+      : null
+  const signed = (v: number | null) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${fmt(v, 2)}%`)
 
   return (
     <div className="flex h-[calc(100vh-5rem)] flex-col gap-3">
@@ -250,8 +269,8 @@ export default function PaperPositionChart() {
             onAdjustLegQty={adjustLegQty}
             onMoveToBreakeven={moveToBreakeven}
             onPlaceLevel={placeLevel}
-            onRequestClose={(order) => close.mutate(order.id)}
-            onCancelPending={(id) => close.mutate(id)}
+            onRequestClose={(order) => close.mutate(Number(order.id))}
+            onCancelPending={(id) => close.mutate(Number(id))}
           />
         )}
       </div>

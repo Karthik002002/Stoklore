@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { inr, timeAgo } from '@/lib/format'
+import type { Alert } from '@/services/api'
 import { acknowledgeAlerts, createAlert, deleteAlert, getAlerts } from '@/services/api'
 
 // One panel, two lists, because they are two different questions: "what am I waiting for" (armed
@@ -16,7 +17,7 @@ import { acknowledgeAlerts, createAlert, deleteAlert, getAlerts } from '@/servic
 export default function AlertsPanel() {
   const queryClient = useQueryClient()
   const [symbol, setSymbol] = useState('')
-  const [condition, setCondition] = useState('above')
+  const [condition, setCondition] = useState<'above' | 'below'>('above')
   const [price, setPrice] = useState('')
   const [note, setNote] = useState('')
 
@@ -30,7 +31,8 @@ export default function AlertsPanel() {
   })
 
   const armed = alerts.filter((a) => a.active && a.kind === 'price')
-  const feed = alerts.filter((a) => a.triggered_at)
+  // The guard is what lets the feed print a time: everything in it has fired.
+  const feed = alerts.filter((a): a is Alert & { triggered_at: string } => Boolean(a.triggered_at))
   const unread = feed.filter((a) => !a.acknowledged_at).length
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['alerts'] })
@@ -51,12 +53,21 @@ export default function AlertsPanel() {
     onError: (e) => toast.error(e.message),
   })
   const remove = useMutation({ mutationFn: deleteAlert, onSuccess: refresh })
-  const ack = useMutation({ mutationFn: () => acknowledgeAlerts(), onSuccess: refresh })
+  const ack = useMutation({
+    mutationFn: () => acknowledgeAlerts(),
+    onSuccess: refresh,
+  })
 
-  const submit = (e) => {
+  const submit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!symbol || !Number(price)) return
-    add.mutate({ symbol, condition, price: Number(price), note: note || null })
+    add.mutate({
+      symbol,
+      condition,
+      price: Number(price),
+      note: note || null,
+      recurring: false,
+    })
   }
 
   return (
@@ -76,7 +87,7 @@ export default function AlertsPanel() {
 
       <form onSubmit={submit} className="flex flex-wrap items-center gap-1.5">
         <SymbolCombobox value={symbol} onChange={setSymbol} className="w-40" />
-        <Select value={condition} onValueChange={setCondition}>
+        <Select value={condition} onValueChange={(v) => setCondition(v as 'above' | 'below')}>
           <SelectTrigger size="sm" className="w-28">
             <SelectValue />
           </SelectTrigger>

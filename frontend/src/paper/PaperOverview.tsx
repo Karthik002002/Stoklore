@@ -5,11 +5,23 @@ import { useEffect, useRef } from 'react'
 import AllocationDonut from '@/components/AllocationDonut'
 import { inr } from '@/lib/format'
 import { tradePnl, underwaterSeries } from '@/lib/manualTrades'
+import type { PaperPosition } from '@/services/api'
+import type { Trade, TradeAccount } from '@/lib/types'
 import { getBalanceAdjustments } from '@/services/api'
 
 const COLORS = { up: '#22c55e', down: '#ef4444', text: '#9ca3af', grid: 'rgba(148, 163, 184, 0.15)' }
 
-function Metric({ label, value, valueClassName, sub }) {
+function Metric({
+  label,
+  value,
+  valueClassName,
+  sub,
+}: {
+  label: string
+  value: React.ReactNode
+  valueClassName?: string
+  sub?: React.ReactNode
+}) {
   return (
     <div className="rounded-xl border bg-card p-4">
       <p className={`text-xl font-semibold tabular-nums ${valueClassName ?? ''}`}>{value}</p>
@@ -21,8 +33,8 @@ function Metric({ label, value, valueClassName, sub }) {
 
 // The equity curve. Same lightweight-charts area series the journal's Overview uses - this is a
 // real date-indexed series, so unlike the Statistics tab's hand-rolled SVGs it fits the library.
-function EquityCurve({ data }) {
-  const containerRef = useRef(null)
+function EquityCurve({ data }: { data: { time: string; value: number }[] }) {
+  const containerRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!data.length || !containerRef.current) return
     const chart = createChart(containerRef.current, {
@@ -31,9 +43,9 @@ function EquityCurve({ data }) {
       grid: { vertLines: { visible: false }, horzLines: { color: COLORS.grid } },
       timeScale: { borderVisible: false },
       rightPriceScale: { borderVisible: false },
-      localization: { priceFormatter: (p) => inr(p) },
+      localization: { priceFormatter: (p: number) => inr(p) },
     })
-    const rising = data.at(-1).value >= data[0].value
+    const rising = (data.at(-1)?.value ?? 0) >= data[0].value
     chart
       .addSeries(AreaSeries, {
         lineColor: rising ? COLORS.up : COLORS.down,
@@ -58,7 +70,15 @@ function EquityCurve({ data }) {
   )
 }
 
-export default function PaperOverview({ account, trades, positions }) {
+export default function PaperOverview({
+  account,
+  trades,
+  positions,
+}: {
+  account: TradeAccount | null
+  trades: Trade[]
+  positions: PaperPosition[]
+}) {
   const { data: allAdjustments = [] } = useQuery({
     queryKey: ['balanceAdjustments'],
     queryFn: getBalanceAdjustments,
@@ -68,7 +88,7 @@ export default function PaperOverview({ account, trades, positions }) {
   const openPositions = positions.filter((p) => p.status === 'open')
 
   const stats = useMemo(() => {
-    const pnls = closed.map(tradePnl)
+    const pnls = closed.map((t) => tradePnl(t) ?? 0)
     const realized = Math.round(pnls.reduce((s, p) => s + p, 0) * 100) / 100
     const wins = pnls.filter((p) => p > 0).length
     // Deliberately counted against every closed trade, including scratches - a "win rate" that
@@ -76,7 +96,7 @@ export default function PaperOverview({ account, trades, positions }) {
     const winRate = closed.length ? Math.round((wins / closed.length) * 1000) / 10 : 0
 
     // Day-by-day cumulative realized P&L, which is what both the curve and the drawdown read.
-    const byDay = new Map()
+    const byDay = new Map<string, number>()
     closed.forEach((t, i) => {
       const day = t.traded_at.slice(0, 10)
       byDay.set(day, (byDay.get(day) ?? 0) + pnls[i])
@@ -127,7 +147,7 @@ export default function PaperOverview({ account, trades, positions }) {
   // position look like a bigger bet simply because it went up. Cash is a slice of the capital
   // chart for the same reason - being 60% in cash is an allocation decision, not an absence of one.
   const allocation = useMemo(() => {
-    const bySector = new Map()
+    const bySector = new Map<string, number>()
     const byStock = openPositions.map((p) => {
       const cost = p.entry_price * p.quantity
       const sector = p.sector || 'Unclassified'

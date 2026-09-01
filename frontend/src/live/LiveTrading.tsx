@@ -12,7 +12,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { inr } from '@/lib/format'
+import type { LiveCaps } from '@/lib/liveSizing'
+import { positionSize } from '@/lib/liveSizing'
 import { usePageTitle } from '@/lib/usePageTitle'
+import type { LiveOrderRequest, LiveStatus } from '@/services/api'
 import {
   cancelLiveOrder,
   closeLivePosition,
@@ -39,7 +42,10 @@ import {
 
 const OPEN_STATUSES = ['TRANSIT', 'PENDING', 'PART_TRADED']
 
-const statusTone = (status) =>
+const legLabel = (leg: string | null) =>
+  leg === 'STOP_LOSS_LEG' ? 'stop loss' : leg === 'TARGET_LEG' ? 'target' : 'entry'
+
+const statusTone = (status: string) =>
   status === 'TRADED'
     ? 'success'
     : status === 'REJECTED'
@@ -49,10 +55,22 @@ const statusTone = (status) =>
         : 'outline'
 
 /** The one-line answer to "can I trade right now", and the button that takes it away. */
-function StateBar({ status, onPanic, onResume, onToggle, busy }) {
-  const settings = status?.settings ?? {}
-  const runtime = status?.runtime ?? {}
-  const blocked = !status?.configured || !settings.enabled || runtime.halted
+function StateBar({
+  status,
+  onPanic,
+  onResume,
+  onToggle,
+  busy,
+}: {
+  status?: LiveStatus
+  onPanic: () => void
+  onResume: () => void
+  onToggle: (enabled: boolean) => void
+  busy: boolean
+}) {
+  const settings = status?.settings
+  const runtime = status?.runtime
+  const blocked = !status?.configured || !settings?.enabled || runtime?.halted
 
   return (
     <div
@@ -61,29 +79,38 @@ function StateBar({ status, onPanic, onResume, onToggle, busy }) {
       }`}
     >
       <Badge variant={blocked ? 'outline' : 'success'}>{blocked ? 'Not trading' : 'Live'}</Badge>
+      {/* The wallet, straight from Dhan's fund limit (cached 30s server-side). Shown even when
+          trading is off - it is the number every size on this page is measured against. */}
+      {status?.balance != null && (
+        <span className="text-xs tabular-nums">
+          <span className="text-muted-foreground">Wallet </span>
+          <span className="font-semibold">{inr(status.balance)}</span>
+        </span>
+      )}
       {status?.sandbox && <Badge variant="secondary">Sandbox</Badge>}
       {!status?.configured && (
         <span className="text-xs text-muted-foreground">
           No Dhan credentials —{' '}
-          <Link to="/settings" className="underline">
+          <Link to="." search={(prev) => ({ ...prev, settings: 'broker' })} className="underline">
             add them in Settings
           </Link>
         </span>
       )}
-      {runtime.halted && (
+      {runtime?.halted && (
         <span className="flex items-center gap-1 text-xs text-destructive">
           <AlertTriangleIcon className="size-3.5" />
           Halted today: {runtime.halt_reason}
         </span>
       )}
       <span className="text-xs text-muted-foreground tabular-nums">
-        {runtime.orders_today ?? 0}/{settings.max_orders_per_day} orders · realised{' '}
-        {inr(runtime.realised_today ?? 0)} · cap {inr(settings.max_order_value)}/order · stop{' '}
-        {inr(settings.daily_loss_limit)}
+        {runtime?.orders_today ?? 0}/{settings?.max_orders_per_day} orders · realised{' '}
+        {inr(runtime?.realised_today ?? 0)} · cap {inr(settings?.max_order_value)}/order ·{' '}
+        {settings?.max_position_pct}
+        %/position · stop {inr(settings?.daily_loss_limit)}
       </span>
 
       <div className="ml-auto flex items-center gap-1.5">
-        {runtime.halted ? (
+        {runtime?.halted ? (
           <Button size="sm" variant="outline" onClick={onResume} disabled={busy}>
             Resume today
           </Button>
@@ -95,11 +122,11 @@ function StateBar({ status, onPanic, onResume, onToggle, busy }) {
         )}
         <Button
           size="sm"
-          variant={settings.enabled ? 'secondary' : 'default'}
-          onClick={() => onToggle(!settings.enabled)}
+          variant={settings?.enabled ? 'secondary' : 'default'}
+          onClick={() => onToggle(!settings?.enabled)}
           disabled={busy || !status?.configured}
         >
-          {settings.enabled ? 'Switch off' : 'Switch on'}
+          {settings?.enabled ? 'Switch off' : 'Switch on'}
         </Button>
       </div>
     </div>
@@ -108,9 +135,21 @@ function StateBar({ status, onPanic, onResume, onToggle, busy }) {
 
 /** Order entry. Everything it can check locally it checks here; the backend checks all of it again
  *  and is the one that decides - this only saves a round trip and shows the sizing as you type. */
-function Ticket({ onPlace, busy, disabled }) {
+function Ticket({
+  onPlace,
+  busy,
+  disabled,
+  balance,
+  caps,
+}: {
+  onPlace: (payload: LiveOrderRequest) => void
+  busy: boolean
+  disabled: boolean
+  balance: number | null
+  caps?: LiveCaps
+}) {
   const [symbol, setSymbol] = useState('')
-  const [direction, setDirection] = useState('long')
+  const [direction, setDirection] = useState<'long' | 'short'>('long')
   const [quantity, setQuantity] = useState('')
   const [limitPrice, setLimitPrice] = useState('')
   const [stop, setStop] = useState('')
@@ -118,9 +157,11 @@ function Ticket({ onPlace, busy, disabled }) {
 
   const qty = Number(quantity)
   const reference = Number(limitPrice) || null
-  const notional = qty && reference ? qty * reference : null
+  // The same reading the backend will apply, computed while the size is still being typed - a
+  // refusal on submit should never be the first time any of this is said (see lib/liveSizing).
+  const { value, pctOfWallet, warnings } = positionSize(qty, reference, balance, caps)
 
-  const submit = (e) => {
+  const submit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!symbol || !(qty > 0)) return
     onPlace({
@@ -139,7 +180,7 @@ function Ticket({ onPlace, busy, disabled }) {
       <h2 className="text-sm font-medium">New order</h2>
       <div className="flex flex-wrap items-center gap-1.5">
         <SymbolCombobox value={symbol} onChange={setSymbol} className="w-40" />
-        <Select value={direction} onValueChange={setDirection}>
+        <Select value={direction} onValueChange={(v) => setDirection(v as 'long' | 'short')}>
           <SelectTrigger size="sm" className="w-24">
             <SelectValue />
           </SelectTrigger>
@@ -187,11 +228,29 @@ function Ticket({ onPlace, busy, disabled }) {
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        {notional ? `${inr(notional)} of exposure. ` : ''}
+        {value != null && (
+          <span className="text-foreground tabular-nums">
+            {inr(value)}
+            {pctOfWallet != null && ` · ${pctOfWallet.toFixed(1)}% of wallet`}
+          </span>
+        )}
+        {value != null && ' — '}
         {stop || target
-          ? 'Stop and target go to the broker with the entry (Super Order), so they outlive this app being closed.'
-          : 'No stop set — the position will have no protection at the broker.'}
+          ? 'stop and target go to the broker with the entry (Super Order), so they outlive this app being closed.'
+          : 'no stop set — the position will have no protection at the broker.'}
       </p>
+      {/* Advisory, and never disabling: an oversized entry should be a decision, not an accident.
+          The backend refuses the rupee cap outright; this is the same sentence, earlier. */}
+      {warnings.length > 0 && (
+        <ul className="space-y-1">
+          {warnings.map((w) => (
+            <li key={w} className="flex gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+              <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
+              {w}
+            </li>
+          ))}
+        </ul>
+      )}
     </form>
   )
 }
@@ -225,7 +284,7 @@ export default function LiveTrading() {
   // Every action on this page does the same three things on success - refetch all three books,
   // say so, and surface a refusal as the toast rather than a silent no-op. A named hook rather
   // than a plain helper because it calls useMutation, and these must stay in a fixed order.
-  const useLiveAction = (fn, message) =>
+  const useLiveAction = <TVars,>(fn: (vars: TVars) => Promise<unknown>, message?: string) =>
     useMutation({
       mutationFn: fn,
       onSuccess: () => {
@@ -237,11 +296,11 @@ export default function LiveTrading() {
 
   const place = useLiveAction(placeLiveOrder, 'Order sent')
   const close = useLiveAction(closeLivePosition)
-  const cancel = useLiveAction(([orderId, leg]) => cancelLiveOrder(orderId, leg))
-  const sync = useLiveAction(syncLive)
-  const panic = useLiveAction(livePanic, 'Halted for today, working orders cancelled')
-  const resume = useLiveAction(resumeLive)
-  const toggle = useLiveAction((enabled) => updateLiveSettings({ enabled }))
+  const cancel = useLiveAction(([orderId, leg]: [string, string | null]) => cancelLiveOrder(orderId, leg))
+  const sync = useLiveAction<void>(syncLive)
+  const panic = useLiveAction<void>(livePanic, 'Halted for today, working orders cancelled')
+  const resume = useLiveAction<void>(resumeLive)
+  const toggle = useLiveAction((enabled: boolean) => updateLiveSettings({ enabled }))
   const recover = useLiveAction(recoverLiveOrder, 'Reconciled with the broker')
 
   const open = positions.filter((p) => p.net_qty)
@@ -274,12 +333,12 @@ export default function LiveTrading() {
         onToggle={(enabled) => toggle.mutate(enabled)}
       />
 
-      {status?.unconfirmed?.length > 0 && (
+      {(status?.unconfirmed?.length ?? 0) > 0 && status && (
         <div className="space-y-1.5 rounded-xl border border-destructive/50 bg-destructive/5 p-3">
           <p className="flex items-center gap-1.5 text-sm font-medium text-destructive">
             <AlertTriangleIcon className="size-4" />
-            {status.unconfirmed.length} order{status.unconfirmed.length === 1 ? '' : 's'} sent without an
-            answer
+            {status.unconfirmed.length} order
+            {status.unconfirmed.length === 1 ? '' : 's'} sent without an answer
           </p>
           <p className="text-xs text-muted-foreground">
             The request timed out, so these may or may not have reached the exchange. Nothing was re-sent. Ask
@@ -303,7 +362,13 @@ export default function LiveTrading() {
         </div>
       )}
 
-      <Ticket onPlace={(payload) => place.mutate(payload)} busy={place.isPending} disabled={blocked} />
+      <Ticket
+        onPlace={(payload) => place.mutate(payload)}
+        busy={place.isPending}
+        disabled={blocked}
+        balance={status?.balance ?? null}
+        caps={status?.settings}
+      />
 
       <div className="grid gap-4 lg:grid-cols-[1fr_22rem]">
         <div className="space-y-4">
@@ -333,7 +398,7 @@ export default function LiveTrading() {
                       <TableCell>
                         <Link
                           to="/live/$symbol"
-                          params={{ symbol: p.symbol }}
+                          params={{ symbol: p.symbol ?? '' }}
                           className="font-medium hover:underline"
                         >
                           {p.symbol}
@@ -375,6 +440,7 @@ export default function LiveTrading() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Order</TableHead>
+                  <TableHead>Type</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Qty</TableHead>
                   <TableHead>Price</TableHead>
@@ -384,7 +450,7 @@ export default function LiveTrading() {
               <TableBody>
                 {orders.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
+                    <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
                       Nothing sent today.
                     </TableCell>
                   </TableRow>
@@ -394,11 +460,16 @@ export default function LiveTrading() {
                       <TableCell>
                         <span className="font-medium">{o.symbol}</span>
                         <p className="text-xs text-muted-foreground">
-                          {o.side} · {o.order_type}
-                          {o.leg && o.leg !== 'ENTRY_LEG'
-                            ? ` · ${o.leg.replace('_LEG', '').toLowerCase()}`
-                            : ''}
+                          {o.side} · {o.product}
                         </p>
+                      </TableCell>
+                      <TableCell>
+                        {o.order_type}
+                        {/* A super order's stop and target are rows of their own; without this
+                            they read as three unexplained orders on the same symbol. */}
+                        {o.parent_order_id && (
+                          <p className="text-xs text-muted-foreground">{legLabel(o.leg)}</p>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge variant={statusTone(o.status)}>{o.status}</Badge>

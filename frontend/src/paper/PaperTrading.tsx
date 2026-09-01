@@ -9,6 +9,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { timeAgoShort } from '@/lib/format'
+import type { PaperStatus } from '@/services/api'
 import {
   getManualTrades,
   getPaperAccounts,
@@ -28,7 +29,7 @@ const REFRESH_MS = 10_000
 // Whether the engine's last sweep is recent enough to call the prices live. Compared against the
 // backend's own poll interval rather than a hardcoded number, so changing one doesn't silently
 // desync the other.
-function feedState(status) {
+function feedState(status: PaperStatus | undefined) {
   if (!status) return { label: 'Connecting…', tone: 'muted' }
   if (!status.market_open) return { label: 'Market closed', tone: 'muted' }
   if (!status.last_poll) return { label: 'Waiting for first poll', tone: 'muted' }

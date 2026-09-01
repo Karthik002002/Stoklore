@@ -17,7 +17,9 @@ import {
   SunIcon,
   TrendingUpIcon,
   UserRoundIcon,
+  UsersIcon,
   WalletIcon,
+  ZapIcon,
 } from 'lucide-react'
 import {
   Command,
@@ -33,13 +35,18 @@ import { useTheme } from '@/lib/theme'
 import { openProfile } from './Profile'
 import { addStock, searchStocks } from '@/services/api'
 
+// Every top-level route in router.jsx that can be reached without a parameter. The ones that
+// can't (/stock/:symbol, /paper/:symbol, /live/:symbol, /backtest/auto/:scriptId) are reached
+// from their own pages, or here by typing @SYMBOL.
 const PAGES = [
   { icon: LayoutDashboardIcon, label: 'Stocks', to: '/' },
   { icon: NewspaperIcon, label: 'Events', to: '/events' },
   { icon: TrendingUpIcon, label: 'Top news', to: '/top-news' },
   { icon: WalletIcon, label: 'Holdings', to: '/holdings' },
+  { icon: UsersIcon, label: 'Shareholding', to: '/shareholding' },
   { icon: FlaskConicalIcon, label: 'Backtesting', to: '/backtesting' },
   { icon: CandlestickChartIcon, label: 'Paper Trading', to: '/paper' },
+  { icon: ZapIcon, label: 'Live Trading', to: '/live' },
   { icon: ChartNoAxesCombinedIcon, label: 'Trade Simulation', to: '/simulation' },
 ]
 
@@ -73,11 +80,16 @@ const SETTINGS_TABS = [
   { label: 'Settings > Collect data', tab: 'data' },
   { label: 'Settings > Manage stocks', tab: 'stocks' },
   { label: 'Settings > Activity', tab: 'activity' },
+  { label: 'Settings > Shortcuts', tab: 'shortcuts' },
   { label: 'Settings > Backtesting', tab: 'backtesting' },
   { label: 'Settings > Trade accounts', tab: 'accounts' },
   { label: 'Settings > Paper accounts', tab: 'paper-accounts' },
 ]
 
+// KEEP THIS FILE IN SYNC. It is the app's own index of itself: a new route, page tab or
+// settings tab that isn't listed above simply cannot be found here, and the palette is where
+// people look first. Adding or renaming one of those is not done until this file lists it.
+//
 // Global Cmd/Ctrl+K palette: pages + Backtesting/Settings tabs by default, or "@SYMBOL" to
 // search stocks (same "@" convention ChatInput's tag menu already uses) and jump to its detail
 // page - searched via the existing /api/stocks/search, same as any other tracked-stock lookup.
@@ -163,6 +175,9 @@ export default function CommandPalette() {
       onOpenChange={setOpen}
       title="Command palette"
       description="Jump to a page, a tab, or type @ to search stocks"
+      // Half the viewport, centred, with floors so it stays usable on a small window. The list
+      // below fills whatever height is left rather than keeping its own cap.
+      className="top-1/2 flex h-[50vh] max-h-[50vh] w-[50vw] max-w-[50vw] min-h-[22rem] min-w-[24rem] -translate-y-1/2 flex-col"
     >
       <Command shouldFilter={!isStockSearch}>
         <CommandInput
@@ -170,7 +185,7 @@ export default function CommandPalette() {
           onValueChange={setQueryValue}
           placeholder="Search pages, tabs, or @SYMBOL…"
         />
-        <CommandList>
+        <CommandList className="max-h-none flex-1">
           {isStockSearch ? (
             <>
               <CommandEmpty>No matching stocks.</CommandEmpty>

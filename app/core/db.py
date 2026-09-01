@@ -2187,6 +2187,10 @@ LIVE_DEFAULTS = {
     "max_order_value": 25000.0,
     "max_orders_per_day": 20,
     "daily_loss_limit": 5000.0,
+    # Advisory, not a refusal: the order ticket warns when one position would be more than this
+    # share of the wallet. A rupee cap means different things on a 50k account and a 5L one; this
+    # is the number a position-sizing rule is actually written in.
+    "max_position_pct": 20.0,
     "product": "INTRADAY",
     "account_id": None,
 }
@@ -2197,7 +2201,7 @@ def get_live_trading_settings():
     text, and a limit that arrives as the string "25000" compares wrong against a number."""
     out = dict(LIVE_DEFAULTS)
     out["enabled"] = _get_setting("live_enabled") == "true"
-    for key in ("max_order_value", "daily_loss_limit"):
+    for key in ("max_order_value", "daily_loss_limit", "max_position_pct"):
         value = _get_setting(f"live_{key}")
         if value not in (None, ""):
             out[key] = float(value)
@@ -2293,6 +2297,7 @@ def upsert_live_order(order):
             "ON CONFLICT (order_id) DO UPDATE SET status = EXCLUDED.status, "
             "filled_qty = EXCLUDED.filled_qty, avg_price = EXCLUDED.avg_price, "
             "price = EXCLUDED.price, trigger_price = EXCLUDED.trigger_price, "
+            "quantity = EXCLUDED.quantity, order_type = EXCLUDED.order_type, "
             "error = EXCLUDED.error, raw = EXCLUDED.raw, updated_at = now()",
             (order["order_id"], order.get("parent_order_id"), order.get("correlation_id"),
              order.get("status"), order.get("symbol"), order.get("security_id"), order.get("side"),
@@ -2317,7 +2322,10 @@ def list_live_orders(open_only=False, limit=200):
 def count_live_orders_today():
     with connect() as conn:
         row = conn.execute(
-            "SELECT count(*) AS n FROM live_orders WHERE first_seen::date = current_date"
+            # Legs are rows too (see dhan_orders.super_order_book); a super order is one order
+            # against the daily count, not three.
+            "SELECT count(*) AS n FROM live_orders WHERE first_seen::date = current_date "
+            "AND parent_order_id IS NULL"
         ).fetchone()
     return row["n"]
 

@@ -9,6 +9,8 @@ import { fmt, inr } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
 import ReplayChart from '@/features/bar-replay/ReplayChart'
 import { useBarReplayStore } from '@/features/bar-replay/store'
+import type { ReplayBar, ReplayLeg, ReplayOrder } from '@/features/bar-replay/store'
+import type { LiveModifyRequest, LiveOrder, LivePosition } from '@/services/api'
 import {
   cancelLiveOrder,
   closeLivePosition,
@@ -29,21 +31,41 @@ const RANGES = ['1mo', '6mo', 'ytd', '1y']
 
 /** The live position plus its broker-side exits, in the shape the replay chart already draws.
  *  Ids are the broker's order ids, so a dragged line knows which leg to modify. */
-const asOrder = (position, legs) => ({
-  id: position.security_id,
-  direction: position.net_qty > 0 ? 'long' : 'short',
-  entryPrice: position.net_qty > 0 ? position.buy_avg : position.sell_avg,
-  quantity: Math.abs(position.net_qty),
-  status: 'open',
-  stopLosses: legs
-    .filter((l) => l.leg === 'STOP_LOSS_LEG')
-    .map((l) => ({ id: l.order_id, price: l.trigger_price ?? l.price, qty: l.quantity })),
-  targets: legs
-    .filter((l) => l.leg === 'TARGET_LEG')
-    .map((l) => ({ id: l.order_id, price: l.price, qty: l.quantity })),
-})
+const asOrder = (position: LivePosition, legs: LiveOrder[]): ReplayOrder => {
+  const long = position.net_qty > 0
+  // A leg the broker reports without a price of its own is left off rather than drawn at zero:
+  // an invented line is one the user would try to drag.
+  const levels = (name: LiveOrder['leg']): ReplayLeg[] =>
+    legs
+      .filter((l) => l.leg === name)
+      .map((l) => ({
+        id: l.order_id,
+        price: (name === 'STOP_LOSS_LEG' ? (l.trigger_price ?? l.price) : l.price) ?? 0,
+        qty: l.quantity ?? 0,
+      }))
+      .filter((l) => l.price > 0)
+  return {
+    id: position.security_id,
+    direction: long ? 'long' : 'short',
+    entryPrice: (long ? position.buy_avg : position.sell_avg) ?? 0,
+    quantity: Math.abs(position.net_qty),
+    status: 'open',
+    stopLosses: levels('STOP_LOSS_LEG'),
+    targets: levels('TARGET_LEG'),
+  }
+}
 
-function Metric({ label, value, sub, tone }) {
+function Metric({
+  label,
+  value,
+  sub,
+  tone,
+}: {
+  label: string
+  value: React.ReactNode
+  sub?: React.ReactNode
+  tone?: 'up' | 'down'
+}) {
   return (
     <div>
       <p className="text-[11px] tracking-wide text-muted-foreground uppercase">{label}</p>
@@ -81,7 +103,9 @@ export default function LivePositionChart() {
     queryKey: ['stockChart', symbol, range],
     queryFn: () => getStockChart(symbol, range),
   })
-  const bars = chart?.bars ?? []
+  // ReplayBar, not Bar: /api/stocks/{symbol}/chart is the daily path, and every row it returns
+  // carries a date (same cast as BarReplay's own daily branch).
+  const bars = (chart?.bars ?? []) as ReplayBar[]
 
   const position = useMemo(
     () => positions.find((p) => p.symbol === symbol && p.net_qty) ?? null,
@@ -109,7 +133,8 @@ export default function LivePositionChart() {
     queryClient.invalidateQueries({ queryKey: ['liveOrders'] })
   }
   const modify = useMutation({
-    mutationFn: ({ orderId, payload }) => modifyLiveOrder(orderId, payload),
+    mutationFn: ({ orderId, payload }: { orderId: string; payload: LiveModifyRequest }) =>
+      modifyLiveOrder(orderId, payload),
     onSuccess: () => {
       refresh()
       toast.success('Sent to the broker')
@@ -117,12 +142,12 @@ export default function LivePositionChart() {
     onError: (e) => toast.error(e.message),
   })
   const cancel = useMutation({
-    mutationFn: ({ orderId, leg }) => cancelLiveOrder(orderId, leg),
+    mutationFn: ({ orderId, leg }: { orderId: string; leg?: string | null }) => cancelLiveOrder(orderId, leg),
     onSuccess: refresh,
     onError: (e) => toast.error(e.message),
   })
   const close = useMutation({
-    mutationFn: () => closeLivePosition(position.security_id),
+    mutationFn: () => closeLivePosition(position!.security_id),
     onSuccess: () => {
       refresh()
       toast.success('Exit order sent')
@@ -130,12 +155,12 @@ export default function LivePositionChart() {
     onError: (e) => toast.error(e.message),
   })
 
-  const legFor = (legId) => legs.find((l) => l.order_id === legId)
-  const price2 = (p) => Math.round(p * 100) / 100
+  const legFor = (legId: string) => legs.find((l) => l.order_id === legId)
+  const price2 = (p: number) => Math.round(p * 100) / 100
 
   // ReplayChart's own handlers, pointed at the broker. `field` is the chart's vocabulary
   // (stopLoss/target); the leg name is Dhan's.
-  const adjustOrder = (_id, field, price, legId) => {
+  const adjustOrder = (_id: string, field: 'entry' | 'stopLoss' | 'target', price: number, legId: string) => {
     const leg = legFor(legId)
     if (!leg?.parent_order_id) return
     modify.mutate({
@@ -146,7 +171,7 @@ export default function LivePositionChart() {
           : { leg: 'TARGET_LEG', target_price: price2(price) },
     })
   }
-  const removeLevel = (_id, _field, legId) => {
+  const removeLevel = (_id: string, _field: 'stopLoss' | 'target', legId: string) => {
     const leg = legFor(legId)
     if (!leg?.parent_order_id) return
     // Dhan will not let a cancelled leg be added back, so this is one-way and worth saying so.
@@ -155,7 +180,7 @@ export default function LivePositionChart() {
   }
   const moveToBreakeven = () => {
     const stop = legs.find((l) => l.leg === 'STOP_LOSS_LEG')
-    const entry = position?.net_qty > 0 ? position.buy_avg : position?.sell_avg
+    const entry = position && position.net_qty > 0 ? position.buy_avg : position?.sell_avg
     if (!stop?.parent_order_id || !entry) return
     modify.mutate({
       orderId: stop.parent_order_id,
@@ -164,8 +189,9 @@ export default function LivePositionChart() {
   }
 
   const entry = position ? (position.net_qty > 0 ? position.buy_avg : position.sell_avg) : null
-  const pctFrom = (price) => (entry ? ((price - entry) / entry) * 100 : null)
-  const signed = (v) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${fmt(v, 2)}%`)
+  const pctFrom = (price: number | null | undefined) =>
+    entry && price != null ? ((price - entry) / entry) * 100 : null
+  const signed = (v: number | null) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${fmt(v, 2)}%`)
   const stopLeg = legs.find((l) => l.leg === 'STOP_LOSS_LEG')
   const targetLeg = legs.find((l) => l.leg === 'TARGET_LEG')
 

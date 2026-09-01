@@ -29,6 +29,9 @@ def live_status():
         "configured": db.get_dhan_credentials() is not None,
         "sandbox": bool(db.get_dhan_api_base_url()),
         "base_url": dhan_orders.base_url(),
+        # Deployable cash, so the order ticket can say what a position costs as a share of the
+        # wallet rather than only in rupees. Cached for 30s - see live.available_balance.
+        "balance": live.available_balance(),
         "settings": settings,
         "runtime": live.runtime_state(),
         "poller": live.state,

@@ -65,9 +65,7 @@ export function positionSize(
 
   const pctCap = caps.max_position_pct
   if (pctCap && pctOfWallet != null && pctOfWallet > pctCap) {
-    warnings.push(
-      `${pctOfWallet.toFixed(1)}% of the wallet in one position — your limit is ${pctCap}%.`,
-    )
+    warnings.push(`${pctOfWallet.toFixed(1)}% of the wallet in one position — your limit is ${pctCap}%.`)
   }
   return { value, pctOfWallet, warnings }
 }

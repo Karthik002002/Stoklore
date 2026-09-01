@@ -86,9 +86,10 @@ export default function PaperPositionChart() {
     queryKey: ['stockChart', symbol, range],
     queryFn: () => getStockChart(symbol, range),
   })
-  // ReplayBar, not Bar: the daily chart endpoint stamps a date on every row (same cast as
-  // BarReplay's own daily branch).
-  const bars = (chart?.bars ?? []) as ReplayBar[]
+  // The chart endpoint sends a unix `time` and no `date`. ReplayChart only reads `date` for bars
+  // whose time is a string (see its `stamp`), so these never reach that branch - hence the cast
+  // rather than inventing a date field the API does not send.
+  const bars = (chart?.bars ?? []) as unknown as ReplayBar[]
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['paperPositions'] })
 

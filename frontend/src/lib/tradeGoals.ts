@@ -12,13 +12,17 @@ import { METRICS } from './tradeStats.ts'
 import type { Metric } from './tradeStats.ts'
 import type { Trade } from './types.ts'
 
+/** Which window a goal is scored over. */
+export type GoalPeriod = 'daily' | 'weekly' | 'monthly'
+
 /** A goal as stored: a metric, a direction, a target, and how strictly it is scored. */
 export type Goal = {
-  id: number
+  /** A uuid minted in the browser: goals are stored as one JSON blob, not as rows with keys. */
+  id: string
   metric: string
   operator: 'gt' | 'lt'
   target: number
-  period: 'daily' | 'weekly' | 'monthly'
+  period: GoalPeriod
   mode: 'continuous' | 'binary'
   label?: string | null
 }
@@ -33,7 +37,11 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), h
 export const GOAL_METRICS: Record<string, Metric> = {
   ...METRICS,
   wins: { label: 'Winning trades', format: 'num', of: (g) => g.filter((t) => (tradePnl(t) ?? 0) > 0).length },
-  losses: { label: 'Losing trades', format: 'num', of: (g) => g.filter((t) => (tradePnl(t) ?? 0) < 0).length },
+  losses: {
+    label: 'Losing trades',
+    format: 'num',
+    of: (g) => g.filter((t) => (tradePnl(t) ?? 0) < 0).length,
+  },
   grossLoss: {
     label: 'Gross loss',
     format: 'inr',

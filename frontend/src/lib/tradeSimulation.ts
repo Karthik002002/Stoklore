@@ -685,4 +685,5 @@ export function toComparisonMd(
 // Account names are user-typed and routinely contain a comma ("Swing, v2").
 const quote = (s: unknown) => `"${String(s).replace(/"/g, '""')}"`
 
-const round = (v: number | null | undefined) => (Number.isFinite(v) ? Math.round((v as number) * 100) / 100 : '')
+const round = (v: number | null | undefined) =>
+  Number.isFinite(v) ? Math.round((v as number) * 100) / 100 : ''

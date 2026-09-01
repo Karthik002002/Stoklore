@@ -27,7 +27,8 @@ export const REPLAY_TIMEFRAMES = [
   { value: '1Mo', label: '1 Month', available: true },
 ]
 
-export const isIntraday = (timeframe: string) => REPLAY_TIMEFRAMES.some((t) => t.value === timeframe && t.intraday)
+export const isIntraday = (timeframe: string) =>
+  REPLAY_TIMEFRAMES.some((t) => t.value === timeframe && t.intraday)
 
 export const REPLAY_SPEEDS = [
   { value: 2000, label: '0.5x' },

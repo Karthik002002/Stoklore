@@ -27,8 +27,7 @@ const oneOf = <T extends string>(allowed: readonly T[], value: unknown): value i
   typeof value === 'string' && (allowed as readonly string[]).includes(value)
 
 /** A number from the URL, or undefined - the same guard every account param already used. */
-const numeric = (value: unknown) =>
-  Number.isFinite(Number(value)) && value ? Number(value) : undefined
+const numeric = (value: unknown) => (Number.isFinite(Number(value)) && value ? Number(value) : undefined)
 
 const SETTINGS_TABS = [
   'model',

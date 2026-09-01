@@ -180,11 +180,7 @@ function distToSegment(px: number, py: number, ax: number, ay: number, bx: numbe
 /** Re-places every drawn shape from its index/price anchors onto current pixels. React owns which
  *  elements exist (and their styling); this owns only where they sit, so the ~60x/s loop never
  *  touches React. Anchors ride in data-a/data-b as "index,price" strings. */
-function paintDrawings(
-  chart: IChartApi | null,
-  series: ISeriesApi<any> | null,
-  svg: SVGSVGElement | null,
-) {
+function paintDrawings(chart: IChartApi | null, series: ISeriesApi<any> | null, svg: SVGSVGElement | null) {
   if (!chart || !series || !svg) return
   const ts = chart.timeScale()
   const width = svg.clientWidth
@@ -341,7 +337,8 @@ function sameRange(a: PriceRange | null, b: PriceRange | null) {
 // Series-map key for one line of one indicator. A single-line indicator passes lineKey = null and
 // keys on its own id alone; a band keys on `id:upper`, `id:middle`, `id:lower`. Both the effect
 // that creates the series and the one that feeds them go through here, so they can't disagree.
-const seriesKey = (indicatorKey: string, lineKey?: string | null) => (lineKey ? `${indicatorKey}:${lineKey}` : indicatorKey)
+const seriesKey = (indicatorKey: string, lineKey?: string | null) =>
+  lineKey ? `${indicatorKey}:${lineKey}` : indicatorKey
 
 // Signed percentage of `exit_price` away from entry, in the position's own direction (so a target
 // reads + and a stop reads - for a short exactly as for a long). Shared by the price-line labels
@@ -816,8 +813,7 @@ const ReplayChart = forwardRef(function ReplayChart(
         // A click that never really moved is a mis-click, not a zero-size shape: drop it and leave
         // the tool armed so the next press still draws.
         const moved = Math.hypot(e.clientX - rect.left - x0, e.clientY - rect.top - y0) >= DRAW_MIN_PX
-        if (anchor && moved && type)
-          commitDrawing({ type: type as Drawing['type'], points: [start, anchor] })
+        if (anchor && moved && type) commitDrawing({ type: type as Drawing['type'], points: [start, anchor] })
         else setDraft(null)
         return
       }
@@ -888,9 +884,7 @@ const ReplayChart = forwardRef(function ReplayChart(
     // ref so the height sampler below can turn a pane index back into the type it's showing
     // without recomputing (or re-running on every indicator change).
     const oscillatorTypes = [
-      ...new Set(
-        indicators.filter((i) => INDICATOR_TYPES[i.type]?.pane === 'separate').map((i) => i.type),
-      ),
+      ...new Set(indicators.filter((i) => INDICATOR_TYPES[i.type]?.pane === 'separate').map((i) => i.type)),
     ]
     oscillatorTypesRef.current = oscillatorTypes
     // Drop panes left behind by a removed oscillator, highest first so the surviving indices below
@@ -1336,7 +1330,8 @@ const ReplayChart = forwardRef(function ReplayChart(
   // The hovered bar, falling back to the newest one so the legend reads out the current candle
   // when the pointer is away - same as every charting package. Index, not just the bar, because
   // the change is against the previous close.
-  const legendIndex = hoverTime == null ? bars.length - 1 : bars.findIndex((b: ReplayBar) => b.time === hoverTime)
+  const legendIndex =
+    hoverTime == null ? bars.length - 1 : bars.findIndex((b: ReplayBar) => b.time === hoverTime)
   const legendBar = legendIndex >= 0 ? bars[legendIndex] : null
 
   return (
@@ -1433,7 +1428,7 @@ function OhlcvLegend({ bar, prev }: { bar: ReplayBar; prev: ReplayBar | null }) 
   const up = bar.close >= bar.open
   const tone = up ? 'text-up' : 'text-down'
   const change = prev ? bar.close - prev.close : null
-  const changePct = prev && prev.close && change!==null ? (change / prev.close) * 100 : null
+  const changePct = prev && prev.close && change !== null ? (change / prev.close) * 100 : null
 
   return (
     <div className="flex flex-wrap items-center gap-x-2 rounded border bg-background/85 px-2 py-1 text-[11px] tabular-nums shadow-sm backdrop-blur-sm">

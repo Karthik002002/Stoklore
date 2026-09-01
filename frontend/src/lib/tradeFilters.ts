@@ -73,10 +73,11 @@ export const TRADE_SPEC: FilterSpec<Trade> = {
   },
 }
 
-const byKey = <Row,>(spec: FilterSpec<Row>) =>
+const byKey = <Row>(spec: FilterSpec<Row>) =>
   Object.fromEntries(spec.facets.map((f) => [f.key, f])) as Record<string, Facet<Row>>
 
-export const facetLabel = <Row,>(facet: Facet<Row>, value: string) => (value === NONE ? 'Not set' : (facet.label_?.[value] ?? value))
+export const facetLabel = <Row>(facet: Facet<Row>, value: string) =>
+  value === NONE ? 'Not set' : (facet.label_?.[value] ?? value)
 
 // Always an array, so multi-valued (tags) and single-valued facets match by the same rule.
 function valuesOf<Row>(facet: Facet<Row>, trade: Row, tolerancePct: number): string[] {
@@ -98,7 +99,8 @@ export function activeCount(filters: Filters) {
 }
 
 /** Filters for one facet, or an empty include selection when it has none yet. */
-export const facetFilter = (filters: Filters, key: string): FacetFilter => filters.facets?.[key] ?? { mode: 'include', values: [] }
+export const facetFilter = (filters: Filters, key: string): FacetFilter =>
+  filters.facets?.[key] ?? { mode: 'include', values: [] }
 
 export function setFacet(filters: Filters, key: string, next: FacetFilter): Filters {
   const facets = { ...filters.facets }
@@ -173,7 +175,10 @@ export function facetValues<Row>(facet: Facet<Row>, trades: Row[], tolerancePct 
 const MODE_CODE: Record<string, string> = { include: 'i', exclude: 'x' }
 const CODE_MODE: Record<string, FacetFilter['mode']> = { i: 'include', x: 'exclude' }
 
-export function serializeFilters<Row = Trade>(filters: Filters, spec: FilterSpec<Row> = TRADE_SPEC as FilterSpec<Row>) {
+export function serializeFilters<Row = Trade>(
+  filters: Filters,
+  spec: FilterSpec<Row> = TRADE_SPEC as FilterSpec<Row>,
+) {
   const known = byKey(spec)
   const parts = Object.entries(filters.facets ?? {})
     .filter(([key, f]) => known[key] && f.values?.length)
@@ -182,7 +187,10 @@ export function serializeFilters<Row = Trade>(filters: Filters, spec: FilterSpec
   return parts.join('|') || undefined
 }
 
-export function parseFilters<Row = Trade>(str: string | null | undefined, spec: FilterSpec<Row> = TRADE_SPEC as FilterSpec<Row>): Filters {
+export function parseFilters<Row = Trade>(
+  str: string | null | undefined,
+  spec: FilterSpec<Row> = TRADE_SPEC as FilterSpec<Row>,
+): Filters {
   if (!str) return EMPTY_FILTERS
   const known = byKey(spec)
   const out: Filters = { facets: {}, minR: '', maxR: '' }

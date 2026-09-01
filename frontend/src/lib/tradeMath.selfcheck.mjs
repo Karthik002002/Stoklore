@@ -39,10 +39,7 @@ assert.ok(grid[1].cells[1].value > 0)
 
 // --- PRNG determinism ------------------------------------------------------------------------
 // The whole point of seeding: same seed, same sequence, so charts don't reshuffle on re-render.
-assert.deepEqual(
-  [rng(3)(), rng(3)(), rng(3)()].slice(0, 1),
-  [rng(3)()].slice(0, 1),
-)
+assert.deepEqual([rng(3)(), rng(3)(), rng(3)()].slice(0, 1), [rng(3)()].slice(0, 1))
 const a = rng(42)
 const b = rng(42)
 assert.deepEqual([a(), a(), a()], [b(), b(), b()])

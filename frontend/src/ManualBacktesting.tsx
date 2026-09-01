@@ -1,0 +1,1029 @@
+import { useEffect, useMemo, useState } from 'react'
+import { Controller, useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
+import {
+  ClapperboardIcon,
+  CopyIcon,
+  DownloadIcon,
+  FileSpreadsheetIcon,
+  PlusIcon,
+  Trash2Icon,
+} from 'lucide-react'
+import { toast } from 'sonner'
+import { Field, SelectField, TagField, TextField } from '@/components/form'
+import ImageLightbox from '@/components/ImageLightbox'
+import SymbolCombobox from '@/components/SymbolCombobox'
+import TradeFilterDialog, { FilterButton, FilterChips } from '@/components/TradeFilterDialog'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Spinner } from '@/components/ui/spinner'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
+import { copyText, downloadXlsx } from '@/lib/exportFile'
+import { tradeJson, tradeSheet } from '@/lib/tradeExport'
+import { formatDate, inr } from '@/lib/format'
+import {
+  autoResult,
+  EMOTIONS,
+  NEUTRAL_PNL_BAND,
+  RESULT_META,
+  tradePnl,
+  tradeRRDisplay,
+  tradeReturnPct,
+} from '@/lib/manualTrades'
+import type { z } from 'zod'
+import type { Trade, TradeAccount } from '@/lib/types'
+import { tradeSchema } from '@/lib/schemas'
+import type { Filters } from '@/lib/tradeFilters'
+import { activeCount, filterTrades, parseFilters, serializeFilters } from '@/lib/tradeFilters'
+import { accountBalance, capWarnings, journalTrades, tradesForAccount } from '@/lib/tradeAccounts'
+import { accountFor, accountHasCosts, accountsById, tradeCosts, tradeNetPnl } from '@/lib/tradeCosts'
+import {
+  createManualTrade,
+  deleteManualTrade,
+  getBalanceAdjustments,
+  getManualBacktestSettings,
+  getManualTrades,
+  getTradeAccounts,
+  updateManualTrade,
+  uploadManualTradeImage,
+} from '@/services/api'
+import ManualGoals from './ManualGoals'
+import ManualOverview from './ManualOverview'
+import ManualStatistics from './ManualStatistics'
+import TradeDetailDialog from './TradeDetailDialog'
+
+function emptyForm(accountId: number | null = null): TradeInput {
+  return {
+    tradedAt: '',
+    exitedAt: '',
+    symbol: '',
+    direction: 'long',
+    setup: '',
+    quantity: '',
+    entryPrice: '',
+    exitPrice: '',
+    stopLoss: '',
+    target: '',
+    idealRiskAmount: '',
+    isOpen: false,
+    result: null,
+    resultManual: false,
+    emotion: '',
+    tags: [],
+    imageFile: null,
+    accountId,
+  }
+}
+
+// "no account" needs a real value in a Select - empty string renders as the placeholder instead of
+// a selectable option, so this stands in for null on the way in and out.
+const NO_ACCOUNT = 'none'
+
+/** The trade form: schema INPUT while typing (numeric fields hold strings), OUTPUT on submit. */
+type TradeInput = z.input<typeof tradeSchema>
+type TradeValues = z.output<typeof tradeSchema>
+
+// datetime-local wants "YYYY-MM-DDTHH:mm" in local time - Date's own ISO getter is UTC, so this
+// is built from the local getters instead.
+function toDatetimeLocal(iso: string) {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+function formFromTrade(t: Trade): TradeInput {
+  return {
+    tradedAt: toDatetimeLocal(t.traded_at),
+    exitedAt: t.exited_at ? toDatetimeLocal(t.exited_at) : '',
+    symbol: t.symbol,
+    direction: t.direction,
+    setup: t.setup ?? '',
+    quantity: String(t.quantity),
+    entryPrice: String(t.entry_price),
+    exitPrice: t.exit_price != null ? String(t.exit_price) : '',
+    stopLoss: t.stop_loss != null ? String(t.stop_loss) : '',
+    target: t.target != null ? String(t.target) : '',
+    idealRiskAmount: t.ideal_risk_amount != null ? String(t.ideal_risk_amount) : '',
+    isOpen: t.is_open,
+    result: t.result,
+    resultManual: true, // reopening a saved trade shouldn't silently recompute over its stored result
+    emotion: t.emotion ?? '',
+    tags: t.tags ?? [],
+    imageFile: null,
+    accountId: t.account_id ?? null,
+  }
+}
+
+const numeric = (v: unknown) => (v === '' || v == null ? null : Number(v))
+
+const DIRECTION_OPTIONS = [
+  { value: 'long', label: 'Buy (Long)' },
+  { value: 'short', label: 'Sell (Short)' },
+]
+const RESULT_OPTIONS = [
+  { value: 'profit', label: 'Profit' },
+  { value: 'loss', label: 'Loss' },
+  { value: 'neutral', label: 'Neutral' },
+]
+const EMOTION_OPTIONS = EMOTIONS.map((e) => ({ value: e, label: e }))
+
+function TradeFormDialog({
+  open,
+  onOpenChange,
+  trade,
+  onSaved,
+  defaultAccountId,
+  trades,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  trade?: Trade | null
+  onSaved: () => void
+  defaultAccountId?: number | null
+  trades: Trade[]
+}) {
+  const [lightboxOpen, setLightboxOpen] = useState(false)
+  const { data: backtestSettings } = useQuery({
+    queryKey: ['manualBacktestSettings'],
+    queryFn: getManualBacktestSettings,
+  })
+  const { data: accounts = [] } = useQuery({ queryKey: ['tradeAccounts'], queryFn: () => getTradeAccounts() })
+  const { data: adjustments = [] } = useQuery({
+    queryKey: ['balanceAdjustments'],
+    queryFn: getBalanceAdjustments,
+  })
+
+  const form = useForm<TradeInput, unknown, TradeValues>({
+    resolver: zodResolver(tradeSchema),
+    defaultValues: emptyForm(),
+  })
+
+  useEffect(() => {
+    if (open) form.reset(trade ? formFromTrade(trade) : emptyForm(defaultAccountId ?? null))
+  }, [open, trade, defaultAccountId, form])
+
+  // Live values the rest of the dialog reacts to (cap warnings, the auto-computed result, whether
+  // the exit field is disabled). watch() re-renders on change the same way the old useState did.
+  const [accountId, quantity, entryPrice, exitPrice, direction, isOpen, resultManual, result] = form.watch([
+    'accountId',
+    'quantity',
+    'entryPrice',
+    'exitPrice',
+    'direction',
+    'isOpen',
+    'resultManual',
+    'result',
+  ])
+
+  const account = accounts.find((a) => a.id === accountId) ?? null
+  // Advisory caps: what this position would cost against what the account allows, and how many
+  // positions are already open on it (excluding this one when editing).
+  const warnings = capWarnings(account, {
+    positionValue: (numeric(quantity) ?? 0) * (numeric(entryPrice) ?? 0),
+    openCount: tradesForAccount(trades, accountId).filter((t) => t.is_open && t.id !== trade?.id).length,
+    balance: accountBalance(
+      account,
+      tradesForAccount(trades, accountId),
+      adjustments.filter((a) => a.account_id === accountId),
+    ),
+  })
+
+  // Unlike the Bar Replay close dialog (where the exit price is fixed before the dialog opens),
+  // entry/exit/quantity are all live here - so an auto-computed result would keep overwriting a
+  // hand-picked one. `resultManual` latches once the user chooses, and stops the recompute.
+  const computedResult = autoResult({
+    direction,
+    quantity: numeric(quantity) ?? 0,
+    entry_price: numeric(entryPrice) ?? 0,
+    exit_price: isOpen ? null : numeric(exitPrice),
+  })
+  const effectiveResult = resultManual ? result : computedResult
+
+  const accountOptions = [
+    { value: NO_ACCOUNT, label: 'No account' },
+    ...accounts.map((a) => ({
+      value: String(a.id),
+      label: `${a.name}${a.strategy ? ` · ${a.strategy}` : ''}`,
+    })),
+  ]
+
+  const save = useMutation({
+    mutationFn: async (values: TradeValues) => {
+      const payload = {
+        symbol: values.symbol,
+        direction: values.direction,
+        setup: values.setup,
+        quantity: values.quantity,
+        entry_price: values.entryPrice,
+        exit_price: values.isOpen ? null : values.exitPrice,
+        stop_loss: values.stopLoss,
+        target: values.target,
+        ideal_risk_amount: values.idealRiskAmount,
+        is_open: values.isOpen,
+        result: values.isOpen ? null : values.resultManual ? values.result : computedResult,
+        emotion: values.emotion || null,
+        tags: values.tags,
+        notes: trade?.notes ?? null,
+        traded_at: values.tradedAt ? new Date(values.tradedAt).toISOString() : null,
+        // Only meaningful on a closed trade; sending it for an open one would let the backend
+        // measure an excursion over a position that hasn't finished.
+        exited_at: !values.isOpen && values.exitedAt ? new Date(values.exitedAt).toISOString() : null,
+        account_id: values.accountId,
+      }
+      let id
+      if (trade) {
+        await updateManualTrade(trade.id, payload)
+        id = trade.id
+      } else {
+        id = (await createManualTrade(payload)).id
+      }
+      if (values.imageFile) await uploadManualTradeImage(id, values.imageFile)
+    },
+    onSuccess: () => {
+      toast.success(trade ? 'Trade updated' : 'Trade added')
+      onSaved()
+      onOpenChange(false)
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
+  return (
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{trade ? 'Edit trade' : 'Add trade'}</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={form.handleSubmit((values) => save.mutate(values))} className="space-y-3">
+            <div className="grid grid-cols-2 gap-2">
+              <TextField form={form} name="tradedAt" label="Opened" type="datetime-local" />
+              <Field label="Symbol" error={form.formState.errors.symbol}>
+                <Controller
+                  control={form.control}
+                  name="symbol"
+                  render={({ field }) => (
+                    <SymbolCombobox value={field.value} onChange={field.onChange} className="w-full" />
+                  )}
+                />
+              </Field>
+            </div>
+
+            <SelectField
+              form={form}
+              name="accountId"
+              label="Account"
+              options={accountOptions}
+              nullValue={NO_ACCOUNT}
+              parse={Number}
+            />
+
+            {warnings.map((w) => (
+              <p key={w} className="rounded-md bg-amber-500/10 px-2 py-1.5 text-xs text-amber-600">
+                {w}
+              </p>
+            ))}
+
+            <div className="grid grid-cols-2 gap-2">
+              <SelectField form={form} name="direction" label="Direction" options={DIRECTION_OPTIONS} />
+              <TextField form={form} name="quantity" label="Quantity" type="number" min="0" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <TextField
+                  form={form}
+                  name="setup"
+                  label="Setup"
+                  list="setup-suggestions"
+                  placeholder="e.g. Breakout"
+                />
+                <datalist id="setup-suggestions">
+                  {(backtestSettings?.setups ?? []).map((s) => (
+                    <option key={s} value={s} />
+                  ))}
+                </datalist>
+              </div>
+              <TextField
+                form={form}
+                name="idealRiskAmount"
+                label="Ideal risk ₹"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Planned risk for this setup"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <TextField form={form} name="entryPrice" label="Entry ₹" type="number" step="0.01" />
+              <TextField
+                form={form}
+                name="exitPrice"
+                label={`Exit ₹${isOpen ? ' (open)' : ''}`}
+                type="number"
+                step="0.01"
+                disabled={isOpen}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <TextField form={form} name="stopLoss" label="Stop loss ₹" type="number" step="0.01" />
+              <TextField form={form} name="target" label="Target ₹" type="number" step="0.01" />
+            </div>
+
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" {...form.register('isOpen')} />
+              Trade still open (exit not required)
+            </label>
+
+            {!isOpen && (
+              <TextField
+                form={form}
+                name="exitedAt"
+                label="Closed"
+                type="datetime-local"
+                hint="Optional — unlocks MAE/MFE (how far the trade ran either way) in its detail view."
+              />
+            )}
+
+            {!isOpen && (
+              <SelectField
+                form={form}
+                name="result"
+                label="Result"
+                options={RESULT_OPTIONS}
+                placeholder="—"
+                // Shows the auto-computed result until the user picks one, then latches to theirs.
+                value={effectiveResult}
+                onSelect={() => form.setValue('resultManual', true)}
+                hint={
+                  resultManual
+                    ? 'Set by hand — no longer follows the P&L.'
+                    : `From P&L (±${inr(NEUTRAL_PNL_BAND)} of flat counts as neutral).`
+                }
+              />
+            )}
+
+            <SelectField
+              form={form}
+              name="emotion"
+              label="Emotion"
+              options={EMOTION_OPTIONS}
+              placeholder="How did it feel?"
+            />
+
+            <TagField form={form} name="tags" label="Tags (setup, mistakes, anything)" />
+
+            <Field label="Trade screenshot">
+              <Controller
+                control={form.control}
+                name="imageFile"
+                render={({ field }) => (
+                  <>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/gif"
+                      onChange={(e) => field.onChange(e.target.files?.[0] ?? null)}
+                      className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:text-foreground"
+                    />
+                    {trade?.image_url && !field.value && (
+                      <img
+                        src={trade.image_url}
+                        alt="Trade"
+                        className="mt-2 max-h-32 cursor-pointer rounded-lg border"
+                        onClick={() => setLightboxOpen(true)}
+                      />
+                    )}
+                  </>
+                )}
+              />
+            </Field>
+
+            <Button type="submit" className="w-full" disabled={save.isPending}>
+              {save.isPending && <Spinner className="size-4" />}
+              {trade ? 'Save changes' : 'Add trade'}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <ImageLightbox src={trade?.image_url} open={lightboxOpen} onOpenChange={setLightboxOpen} />
+    </>
+  )
+}
+
+// Row click opens the read-only detail view, not the edit form. Editing is one click further in
+// (a button inside that modal) because reviewing a trade is the common action and editing one is
+// the rare one - the old behaviour meant every glance at a trade opened a form full of live
+// inputs over the top of it.
+function TradesTable({
+  trades,
+  accounts,
+  onOpen,
+  onDelete,
+  selected,
+  onToggleSelect,
+  onToggleSelectAll,
+}: {
+  trades: Trade[]
+  accounts: TradeAccount[]
+  onOpen: (trade: Trade) => void
+  onDelete: (trade: Trade) => void
+  selected: Set<number>
+  onToggleSelect: (id: number) => void
+  onToggleSelectAll: (visible: Trade[]) => void
+}) {
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+  // Costs are per account, so the table needs the accounts to price a row. Indexed once rather
+  // than searched per row - this table renders every trade in the journal.
+  const byId = useMemo(() => accountsById(accounts), [accounts])
+  // The net column only appears once some account actually charges something; otherwise it would
+  // be a second column of numbers identical to the one beside it.
+  const anyCosts = useMemo(() => (accounts ?? []).some(accountHasCosts), [accounts])
+  if (trades.length === 0) {
+    return <p className="text-sm text-muted-foreground">No trades match - add one above or clear filters.</p>
+  }
+  const allSelected = trades.length > 0 && trades.every((t) => selected.has(t.id))
+  return (
+    <div className="overflow-x-auto rounded-xl border bg-card">
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead className="w-8">
+              <input
+                type="checkbox"
+                aria-label="Select all trades"
+                checked={allSelected}
+                onChange={() => onToggleSelectAll(trades)}
+              />
+            </TableHead>
+            {/* When the trade was logged, matching the order the list comes back in (newest
+                journaled first, see db.list_manual_trades). The market date sits underneath when
+                the two differ - a replayed trade is logged today and taken years ago. */}
+            <TableHead>Logged</TableHead>
+            <TableHead>Symbol</TableHead>
+            <TableHead>Setup</TableHead>
+            <TableHead>Direction</TableHead>
+            <TableHead className="text-right">Qty</TableHead>
+            <TableHead className="text-right">Entry ₹</TableHead>
+            <TableHead className="text-right">Exit ₹</TableHead>
+            <TableHead className="text-right">Stop Loss ₹</TableHead>
+            <TableHead className="text-right">Target ₹</TableHead>
+            <TableHead className="text-right">P&L ₹</TableHead>
+            {anyCosts && (
+              <TableHead
+                className="text-right"
+                title="Gross P&L minus this account's slippage, brokerage and charges on both sides."
+              >
+                Net ₹
+              </TableHead>
+            )}
+            <TableHead
+              className="text-right"
+              title="Planned target vs stop. A * marks a trade with no target, where the exit price stands in for one — that number is what the trade actually returned per unit of risk."
+            >
+              R:R
+            </TableHead>
+            <TableHead>Result</TableHead>
+            <TableHead>Emotion</TableHead>
+            <TableHead>Tags</TableHead>
+            <TableHead>Notes</TableHead>
+            <TableHead className="text-right">Return %</TableHead>
+            <TableHead>Image</TableHead>
+            <TableHead className="w-10" />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {trades.map((t) => {
+            const pnl = tradePnl(t)
+            const tradeAccount = accountFor(t, byId)
+            const costs = tradeCosts(t, tradeAccount)
+            const net = tradeNetPnl(t, tradeAccount)
+            const rr = tradeRRDisplay(t)
+            const returnPct = tradeReturnPct(t)
+            const resultMeta = t.result ? RESULT_META[t.result] : null
+            return (
+              <TableRow key={t.id} className="cursor-pointer" onClick={() => onOpen(t)}>
+                <TableCell onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${t.symbol} trade`}
+                    checked={selected.has(t.id)}
+                    onChange={() => onToggleSelect(t.id)}
+                  />
+                </TableCell>
+                <TableCell className="whitespace-nowrap">
+                  {formatDate(t.created_at ?? t.traded_at)}
+                  {/* Always rendered, blank when there is nothing to say: an optional second line
+                      would make replay rows taller than hand-logged ones. */}
+                  <span className="block text-[11px] text-muted-foreground">
+                    {marketDate(t) ? `traded ${marketDate(t)}` : '\u00A0'}
+                  </span>
+                </TableCell>
+                <TableCell className="font-medium">{t.symbol}</TableCell>
+                <TableCell className="text-muted-foreground">{t.setup || '—'}</TableCell>
+                <TableCell className="capitalize">{t.direction}</TableCell>
+                <TableCell className="text-right tabular-nums">{t.quantity}</TableCell>
+                <TableCell className="text-right tabular-nums">{inr(t.entry_price)}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {t.exit_price != null ? inr(t.exit_price) : '—'}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {t.stop_loss != null ? inr(t.stop_loss) : '—'}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {t.target != null ? inr(t.target) : '—'}
+                </TableCell>
+                <TableCell
+                  className={`text-right tabular-nums ${pnl == null ? '' : pnl >= 0 ? 'text-up' : 'text-down'}`}
+                >
+                  {pnl == null ? '—' : inr(pnl)}
+                </TableCell>
+                {anyCosts && (
+                  <TableCell
+                    className={`text-right tabular-nums ${net == null ? '' : net >= 0 ? 'text-up' : 'text-down'}`}
+                    title={
+                      costs
+                        ? `Costs ${inr(costs.total)} — ${inr(costs.slippage)} slippage, ${inr(costs.brokerage)} brokerage, ${inr(costs.charges)} charges${costs.roundTrip ? '' : ' (entry side only — still open)'}`
+                        : 'No account on this trade, so there is no rate card to price it with'
+                    }
+                  >
+                    {net == null ? '—' : inr(net)}
+                  </TableCell>
+                )}
+                <TableCell
+                  className={`text-right tabular-nums ${rr && !rr.planned ? 'text-muted-foreground' : ''}`}
+                  title={
+                    rr && !rr.planned
+                      ? 'Realised — no target was set, so the exit price stands in for one'
+                      : undefined
+                  }
+                >
+                  {rr ? `${rr.rr}${rr.planned ? '' : '*'}` : '—'}
+                </TableCell>
+                <TableCell>
+                  {t.is_open ? (
+                    <Badge variant="outline">Open</Badge>
+                  ) : resultMeta ? (
+                    <Badge variant={resultMeta.badgeVariant}>{resultMeta.label}</Badge>
+                  ) : (
+                    '—'
+                  )}
+                </TableCell>
+                <TableCell className="text-muted-foreground">{t.emotion || '—'}</TableCell>
+                <TableCell>
+                  <TagCell tags={t.tags} />
+                </TableCell>
+                <TableCell className="max-w-40 truncate text-muted-foreground">{t.notes || '—'}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {returnPct == null ? '—' : `${returnPct}%`}
+                </TableCell>
+                <TableCell onClick={(e) => t.image_url && e.stopPropagation()}>
+                  {t.image_url ? (
+                    <img
+                      src={t.image_url}
+                      alt=""
+                      className="size-8 cursor-pointer rounded object-cover"
+                      onClick={() => setLightboxSrc(t.image_url)}
+                    />
+                  ) : (
+                    '—'
+                  )}
+                </TableCell>
+                <TableCell>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={`Delete ${t.symbol} trade`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onDelete(t)
+                    }}
+                  >
+                    <Trash2Icon className="size-3.5" />
+                  </Button>
+                </TableCell>
+              </TableRow>
+            )
+          })}
+        </TableBody>
+      </Table>
+      <ImageLightbox
+        src={lightboxSrc}
+        open={!!lightboxSrc}
+        onOpenChange={(open) => !open && setLightboxSrc(null)}
+      />
+    </div>
+  )
+}
+
+// Every field this needs to send back is already on the trade object the list endpoint returns
+// (matches ManualTradeRequest one-to-one) - a PUT replaces the whole row, so unlike a real PATCH
+// every field has to be resent, not just the ones being bulk-changed.
+function toUpdatePayload(t: Trade) {
+  return {
+    symbol: t.symbol,
+    direction: t.direction,
+    setup: t.setup,
+    quantity: t.quantity,
+    entry_price: t.entry_price,
+    exit_price: t.exit_price,
+    stop_loss: t.stop_loss,
+    target: t.target,
+    ideal_risk_amount: t.ideal_risk_amount,
+    is_open: t.is_open,
+    result: t.result,
+    emotion: t.emotion,
+    tags: t.tags,
+    notes: t.notes,
+    traded_at: t.traded_at,
+    account_id: t.account_id,
+  }
+}
+
+function BulkEditDialog({
+  open,
+  onOpenChange,
+  trades,
+  onSaved,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  trades: Trade[]
+  onSaved: () => void
+}) {
+  const [setup, setSetup] = useState('')
+  const [addTag, setAddTag] = useState('')
+
+  useEffect(() => {
+    if (open) {
+      setSetup('')
+      setAddTag('')
+    }
+  }, [open])
+
+  const apply = useMutation({
+    mutationFn: () =>
+      Promise.all(
+        trades.map((t) =>
+          updateManualTrade(t.id, {
+            ...toUpdatePayload(t),
+            setup: setup.trim() ? setup.trim() : t.setup,
+            tags: addTag.trim() && !t.tags.includes(addTag.trim()) ? [...t.tags, addTag.trim()] : t.tags,
+          }),
+        ),
+      ),
+    onSuccess: () => {
+      toast.success(`Updated ${trades.length} trade${trades.length === 1 ? '' : 's'}`)
+      onSaved()
+      onOpenChange(false)
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Bulk edit {trades.length} trades</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Set setup (leave blank to skip)</label>
+            <Input value={setup} onChange={(e) => setSetup(e.target.value)} placeholder="e.g. Breakout" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground">Add tag (leave blank to skip)</label>
+            <Input value={addTag} onChange={(e) => setAddTag(e.target.value)} placeholder="e.g. reviewed" />
+          </div>
+          <Button
+            className="w-full"
+            disabled={(!setup.trim() && !addTag.trim()) || apply.isPending}
+            onClick={() => apply.mutate()}
+          >
+            {apply.isPending && <Spinner className="size-4" />}
+            Apply to {trades.length} trade{trades.length === 1 ? '' : 's'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// One tag visible, the rest behind a +N chip that lists them on hover. Tags are free-form and a
+// trade often carries three or four, which wrapped the cell onto extra lines and left every row a
+// different height.
+function TagCell({ tags }: { tags: string[] | null }) {
+  const list = tags ?? []
+  if (list.length === 0) return <span className="text-muted-foreground">—</span>
+  const rest = list.slice(1)
+  return (
+    <div className="flex items-center gap-1 whitespace-nowrap">
+      <Badge variant="secondary" className="max-w-28 truncate">
+        {list[0]}
+      </Badge>
+      {rest.length > 0 && (
+        <Tooltip>
+          <TooltipTrigger render={<span className="inline-flex" />}>
+            <Badge variant="outline" className="cursor-default">
+              +{rest.length}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent side="top">{rest.join(', ')}</TooltipContent>
+        </Tooltip>
+      )}
+    </div>
+  )
+}
+
+// The market date a trade was actually taken on, shown under the logged date only when it is a
+// different day - for a hand-logged trade the two are the same and the second line would be noise.
+const marketDate = (t: Trade) => {
+  const entry = t.entried_at ?? t.traded_at
+  if (!entry || !t.created_at) return null
+  return entry.slice(0, 10) === t.created_at.slice(0, 10) ? null : formatDate(entry)
+}
+
+// The selected account lives in the URL (?account=3), so a per-strategy view is shareable and
+// survives a reload - same pattern as Holdings' broker picker. No selection = every account at once.
+function AccountSelect({
+  accounts,
+  account,
+  onChange,
+}: {
+  accounts: TradeAccount[]
+  account: number | null
+  onChange: (id: number | null) => void
+}) {
+  return (
+    <Select
+      value={account == null ? ALL_ACCOUNTS : String(account)}
+      onValueChange={(v) => onChange(v === ALL_ACCOUNTS ? null : Number(v))}
+    >
+      <SelectTrigger size="sm" className="w-52">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={ALL_ACCOUNTS}>All accounts</SelectItem>
+        {accounts.map((a) => (
+          <SelectItem key={a.id} value={String(a.id)}>
+            {a.name}
+            {a.strategy ? ` · ${a.strategy}` : ''}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
+const ALL_ACCOUNTS = 'all'
+
+export default function ManualBacktesting() {
+  const { view, account, f } = useSearch({ from: '/backtesting' })
+  const navigate = useNavigate({ from: '/backtesting' })
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingTrade, setEditingTrade] = useState<Trade | null>(null)
+  // The trade whose detail view is open. Separate from `editingTrade` rather than one shared
+  // "selected trade" - opening the editor from inside the detail modal has to close one and open
+  // the other, and a single piece of state can't express that transition.
+  const [detailTrade, setDetailTrade] = useState<Trade | null>(null)
+  const [bulkEditOpen, setBulkEditOpen] = useState(false)
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [selected, setSelected] = useState<Set<number>>(() => new Set())
+  const queryClient = useQueryClient()
+
+  const { data: allTrades = [] } = useQuery({ queryKey: ['manualTrades'], queryFn: getManualTrades })
+  const { data: accounts = [] } = useQuery({ queryKey: ['tradeAccounts'], queryFn: () => getTradeAccounts() })
+  const { data: backtestSettings } = useQuery({
+    queryKey: ['manualBacktestSettings'],
+    queryFn: getManualBacktestSettings,
+  })
+
+  // Filtered in the client rather than by a per-account fetch: the list is small, the whole set is
+  // already cached for the trade form's cap checks, and "All accounts" then costs nothing.
+  // "All accounts" means all JOURNAL accounts - see journalTrades. Paper closes live in the same
+  // table under a paper account, and pooling them in here made the journal's headline P&L the sum
+  // of two different books.
+  const trades = useMemo(
+    () => (account == null ? journalTrades(allTrades, accounts) : tradesForAccount(allTrades, account)),
+    [allTrades, account, accounts],
+  )
+
+  // Filters live in the URL (?f=symbol:x:TCS|tag:x:revenge), so "my numbers without the revenge
+  // trades" is a link rather than a set of clicks to repeat - and a reload doesn't quietly hand
+  // back a different set of statistics than the one being read a moment ago.
+  const filters = useMemo(() => parseFilters(f), [f])
+  const setFilters = (next: Filters) =>
+    navigate({ search: (prev) => ({ ...prev, f: serializeFilters(next) }), replace: true })
+
+  const tolerancePct = backtestSettings?.risk_deviation_tolerance_pct ?? 10
+  // Every analysis tab reads this, not `trades` - skipping a stock has to change the equity curve
+  // and the statistics, otherwise "excluded" only means "hidden from the table".
+  const filteredTrades = useMemo(
+    () => filterTrades(trades, filters, tolerancePct),
+    [trades, filters, tolerancePct],
+  )
+  const selectedTrades = useMemo(() => trades.filter((t) => selected.has(t.id)), [trades, selected])
+
+  const remove = useMutation({
+    mutationFn: deleteManualTrade,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['manualTrades'] }),
+    onError: (e) => toast.error(e.message),
+  })
+
+  const openAdd = () => {
+    setEditingTrade(null)
+    setDialogOpen(true)
+  }
+  const openEdit = (trade: Trade) => {
+    setDetailTrade(null)
+    setEditingTrade(trade)
+    setDialogOpen(true)
+  }
+
+  const toggleSelect = (id: number) =>
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  const toggleSelectAll = (visibleTrades: Trade[]) =>
+    setSelected((prev) => {
+      const allSelected = visibleTrades.every((t) => prev.has(t.id))
+      const next = new Set(prev)
+      visibleTrades.forEach((t) => (allSelected ? next.delete(t.id) : next.add(t.id)))
+      return next
+    })
+
+  return (
+    <div className="space-y-4">
+      <Tabs value={view} onValueChange={(next) => navigate({ search: (prev) => ({ ...prev, view: next }) })}>
+        <div className="flex items-center justify-between">
+          <TabsList>
+            <TabsTab value="overview">Overview</TabsTab>
+            <TabsTab value="trades">Trades</TabsTab>
+            <TabsTab value="statistics">Statistics</TabsTab>
+            <TabsTab value="goals">Goals</TabsTab>
+            <TabsIndicator />
+          </TabsList>
+          <div className="flex items-center gap-2">
+            <AccountSelect
+              accounts={accounts}
+              account={account ?? null}
+              onChange={(next) =>
+                navigate({
+                  search: ((prev: Record<string, unknown>) => ({
+                    ...prev,
+                    account: next ?? undefined,
+                  })) as never,
+                })
+              }
+            />
+            <Button size="sm" variant="outline" render={<a href="/api/manual-trades/export?format=csv" />}>
+              <DownloadIcon className="size-4" />
+              CSV
+            </Button>
+            {/* The CSV above is the raw backend dump of every trade; this one is what's on screen -
+                the account picker and the active filters already applied, with the derived metrics
+                (P&L, costs, net, R:R) as columns rather than something to rebuild in Excel. */}
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={filteredTrades.length === 0}
+              onClick={() =>
+                downloadXlsx(
+                  tradeSheet(filteredTrades, accounts),
+                  `trades-${accounts.find((a) => a.id === account)?.name ?? 'all-accounts'}`,
+                )
+              }
+            >
+              <FileSpreadsheetIcon className="size-4" />
+              Excel
+            </Button>
+            <Button size="sm" variant="outline" render={<Link to="/backtest/replay" />}>
+              <ClapperboardIcon className="size-4" />
+              Bar Replay
+            </Button>
+            <FilterButton filters={filters} onOpen={() => setFilterOpen(true)} />
+            <Button size="sm" onClick={openAdd}>
+              <PlusIcon className="size-4" />
+              Add Trade
+            </Button>
+          </div>
+        </div>
+        {/* One filter bar above the tabs, not one per tab - the selection is shared, and a
+            per-tab copy would let two tabs disagree about which trades are being described.
+            Collapses to nothing when no filter is on. */}
+        {activeCount(filters) > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <FilterChips filters={filters} onChange={setFilters} />
+            <span className="text-sm text-muted-foreground">
+              {filteredTrades.length} of {trades.length} trades
+            </span>
+          </div>
+        )}
+
+        <TabsPanel value="overview">
+          <ManualOverview trades={filteredTrades} accountId={account ?? null} />
+        </TabsPanel>
+        <TabsPanel value="trades" className="space-y-3">
+          {selected.size > 0 && (
+            <div className="flex items-center justify-end gap-2">
+              <span className="text-sm text-muted-foreground">{selected.size} selected</span>
+              {/* The same fields as the xlsx export, as an array of objects - for pasting into a
+                  notebook, a spreadsheet formula, or a chat with the agent. Selection order is not
+                  preserved: they come out in the order they are on screen, which is the order the
+                  eye picked them in. */}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() =>
+                  copyText(JSON.stringify(tradeJson(selectedTrades, accounts), null, 2)).then(
+                    () =>
+                      toast.success(
+                        `${selectedTrades.length} trade${selectedTrades.length === 1 ? '' : 's'} copied as JSON`,
+                      ),
+                    () => toast.error('Could not copy - the browser refused clipboard access'),
+                  )
+                }
+              >
+                <CopyIcon className="size-3.5" /> Copy JSON
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setBulkEditOpen(true)}>
+                Bulk edit
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+                Clear
+              </Button>
+            </div>
+          )}
+          <TradesTable
+            trades={filteredTrades}
+            accounts={accounts}
+            onOpen={setDetailTrade}
+            onDelete={(trade) => remove.mutate(trade.id)}
+            selected={selected}
+            onToggleSelect={toggleSelect}
+            onToggleSelectAll={toggleSelectAll}
+          />
+        </TabsPanel>
+        <TabsPanel value="statistics">
+          <ManualStatistics trades={filteredTrades} />
+        </TabsPanel>
+        {/* Goals deliberately ignores the filters: a target is measured against what was actually
+            traded, and letting a filter hide the losses would turn progress into a flattering
+            fiction rather than a measurement. */}
+        <TabsPanel value="goals">
+          <ManualGoals trades={trades} />
+        </TabsPanel>
+      </Tabs>
+
+      <TradeFilterDialog
+        open={filterOpen}
+        onOpenChange={setFilterOpen}
+        trades={trades}
+        filters={filters}
+        onApply={setFilters}
+        tolerancePct={tolerancePct}
+      />
+
+      <TradeDetailDialog
+        open={!!detailTrade}
+        onOpenChange={(next) => !next && setDetailTrade(null)}
+        // Re-read from the live list so the modal reflects an edit made from inside it, rather
+        // than the snapshot captured when the row was clicked.
+        trade={detailTrade ? (allTrades.find((t) => t.id === detailTrade.id) ?? detailTrade) : null}
+        // The filtered list, so ↑/↓ steps through exactly the rows on screen rather than trades
+        // the active filters have hidden.
+        trades={filteredTrades}
+        onSelect={setDetailTrade}
+        onEdit={openEdit}
+      />
+
+      <TradeFormDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        trade={editingTrade}
+        defaultAccountId={account}
+        trades={allTrades}
+        onSaved={() => queryClient.invalidateQueries({ queryKey: ['manualTrades'] })}
+      />
+      <BulkEditDialog
+        open={bulkEditOpen}
+        onOpenChange={setBulkEditOpen}
+        trades={selectedTrades}
+        onSaved={() => {
+          queryClient.invalidateQueries({ queryKey: ['manualTrades'] })
+          setSelected(new Set())
+        }}
+      />
+    </div>
+  )
+}

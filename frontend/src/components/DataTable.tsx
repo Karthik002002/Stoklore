@@ -51,6 +51,10 @@ const FEATURES = tableFeatures({
   },
 })
 
+/** Column defs for this table's feature set. Callers use it instead of naming `FEATURES`, which
+ *  is internal: `const columns: DataTableColumns<Trade> = [...]`. */
+export type DataTableColumns<TData extends RowData> = ColumnDef<typeof FEATURES, TData>[]
+
 // Below this many rows, windowing costs more than it saves: the measuring pass and the spacer
 // rows buy nothing when the browser was going to lay out thirty <tr>s anyway.
 const VIRTUALIZE_FROM = 60

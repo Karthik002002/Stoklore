@@ -15,16 +15,17 @@ import type { Trade, TradeAccount } from './types.ts'
 
 /** The cost fields of an account. An account row that predates them (or a plain object in a
  *  self-check) is missing all five, which reads as free trading rather than NaN. */
-type CostRates = Partial<Pick<
-  TradeAccount,
-  'slippage_value' | 'slippage_type' | 'brokerage_flat' | 'brokerage_pct' | 'other_charges_pct'
->>
+type CostRates = Partial<
+  Pick<
+    TradeAccount,
+    'slippage_value' | 'slippage_type' | 'brokerage_flat' | 'brokerage_pct' | 'other_charges_pct'
+  >
+>
 
 type Side = { slippage: number; brokerage: number; charges: number; total: number }
 
 /** A trade, as far as pricing is concerned: what was paid, for how many, and what it closed at. */
-type CostedTrade = Pick<Trade, 'entry_price' | 'quantity' | 'direction'> &
-  Partial<Pick<Trade, 'exit_price'>>
+type CostedTrade = Pick<Trade, 'entry_price' | 'quantity' | 'direction'> & Partial<Pick<Trade, 'exit_price'>>
 
 export const SLIPPAGE_TYPES = {
   per_share: '₹ / share',

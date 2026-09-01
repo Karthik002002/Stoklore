@@ -13,8 +13,7 @@ type Adjustment = { type: 'add' | 'subtract'; amount: number }
 export const tradesForAccount = <T extends Pick<Trade, 'account_id'>>(
   trades: T[] | null | undefined,
   accountId: number | null | undefined,
-): T[] =>
-  accountId == null ? (trades ?? []) : (trades ?? []).filter((t) => t.account_id === accountId)
+): T[] => (accountId == null ? (trades ?? []) : (trades ?? []).filter((t) => t.account_id === accountId))
 
 /** Paper trading writes its closes into manual_trades - the same table the journal reads - tagged
  *  'paper' and filed under a paper account. Same table, different book. */

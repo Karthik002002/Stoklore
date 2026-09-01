@@ -69,6 +69,8 @@ export interface Trade {
   tags: string[]
   notes: string | null
   image_filename: string | null
+  /** Absolute URL for image_filename, added per request by the router - not stored. */
+  image_url: string | null
   setup: string | null
   ideal_risk_amount: number | null
   account_id: number | null
@@ -145,4 +147,8 @@ export interface StockMasterRow {
   /** SME scrips trade only in fixed lots; 1 on the main board. */
   market_lot: number | null
   face_value: number | null
+  /** Which exchange the row came from; 'NSE' rows with a bse_code are dual-listed. */
+  exchange: 'NSE' | 'BSE' | null
+  /** BSE's scrip code, filled in by the BSE import when it matches on ISIN. */
+  bse_code: string | null
 }

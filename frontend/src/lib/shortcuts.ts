@@ -91,7 +91,11 @@ const KEY_NAMES: Record<string, string> = {
  *  Ctrl and Cmd both become 'Mod', which is how the hotkey library spells "the platform's command
  *  modifier" - binding a literal Ctrl on a Mac would be a shortcut the user can't comfortably press
  *  and doesn't match the ⌘ printed everywhere else in the UI. */
-export function keyFromEvent(event: KeyboardEvent) {
+/** Takes only the five fields it reads, so a DOM KeyboardEvent and React's synthetic one both
+ *  fit - this is called from a window listener and from an onKeyDown. */
+export function keyFromEvent(
+  event: Pick<KeyboardEvent, 'key' | 'metaKey' | 'ctrlKey' | 'altKey' | 'shiftKey'>,
+) {
   if (MODIFIER_KEYS.has(event.key)) return null
   const parts = []
   if (event.metaKey || event.ctrlKey) parts.push('Mod')

@@ -155,7 +155,8 @@ export function download(blobOrText: Blob | string, filename: string, type = 'te
   URL.revokeObjectURL(url)
 }
 
-export const downloadXlsx = (sheetData: SheetData, name: string) => download(xlsxBlob(sheetData), `${name}-${stamp()}.xlsx`)
+export const downloadXlsx = (sheetData: SheetData, name: string) =>
+  download(xlsxBlob(sheetData), `${name}-${stamp()}.xlsx`)
 
 export const downloadMd = (text: string, name: string) =>
   download(text, `${name}-${stamp()}.md`, 'text/markdown;charset=utf-8')
@@ -164,7 +165,8 @@ export const copyText = (text: string) => navigator.clipboard.writeText(text)
 
 /** Markdown pipe table. Cell pipes are escaped - one unescaped `|` shifts every column after it. */
 export function mdTable(headers: CellValue[], rows: CellValue[][]) {
-  const cellText = (v: CellValue) => (v == null || v === '' ? '—' : String(v).replace(/\|/g, '\\|').replace(/\n/g, ' '))
+  const cellText = (v: CellValue) =>
+    v == null || v === '' ? '—' : String(v).replace(/\|/g, '\\|').replace(/\n/g, ' ')
   return [
     `| ${headers.map(cellText).join(' | ')} |`,
     `| ${headers.map(() => '---').join(' | ')} |`,

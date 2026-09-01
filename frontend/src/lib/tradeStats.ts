@@ -60,7 +60,7 @@ const chronological = <T extends Pick<Trade, 'traded_at'>>(trades: T[]) =>
 // relies on: a group's P&L is the sum of the closed trades in it.
 const sum = (values: (number | null)[]) => values.reduce((s: number, v) => s + (v ?? 0), 0)
 const round = (v: number | null, dp = 2) => (v == null ? null : Math.round(v * 10 ** dp) / 10 ** dp)
-const defined = <T,>(values: (T | null | undefined)[]): T[] => values.filter((v) => v != null) as T[]
+const defined = <T>(values: (T | null | undefined)[]): T[] => values.filter((v) => v != null) as T[]
 const mean = (values: (number | null)[]) => (values.length ? sum(values) / values.length : null)
 
 // Sample (n-1) standard deviation - these are always a sample of a trader's process, never the
@@ -154,7 +154,11 @@ export const DIMENSIONS: Record<string, Dimension> = {
     of: (t: Trade) => `${String(hourOf(t)).padStart(2, '0')}:00`,
     sortByLabel: true,
   },
-  month: { label: 'Month', of: (t: Trade) => MONTH_LABELS[new Date(t.traded_at).getMonth()], order: MONTH_LABELS },
+  month: {
+    label: 'Month',
+    of: (t: Trade) => MONTH_LABELS[new Date(t.traded_at).getMonth()],
+    order: MONTH_LABELS,
+  },
   year: { label: 'Year', of: (t: Trade) => String(new Date(t.traded_at).getFullYear()), sortByLabel: true },
   priceRange: {
     label: 'Price range',
@@ -226,20 +230,32 @@ export const METRICS: Record<string, Metric> = {
       g.length ? round((g.filter((t: Trade) => (tradePnl(t) ?? 0) > 0).length / g.length) * 100, 1) : null,
   },
   count: { label: 'Trade count', format: 'num', of: (g: Trade[]) => g.length },
-  volume: { label: 'Volume (qty)', format: 'num', of: (g: Trade[]) => round(sum(g.map((t: Trade) => t.quantity))) },
+  volume: {
+    label: 'Volume (qty)',
+    format: 'num',
+    of: (g: Trade[]) => round(sum(g.map((t: Trade) => t.quantity))),
+  },
   turnover: {
     label: 'Turnover',
     format: 'inr',
     of: (g: Trade[]) => round(sum(g.map((t: Trade) => t.entry_price * t.quantity))),
   },
-  avgR: { label: 'Avg R (expectancy)', format: 'r', of: (g: Trade[]) => round(mean(defined(g.map(expectedR)))) },
+  avgR: {
+    label: 'Avg R (expectancy)',
+    format: 'r',
+    of: (g: Trade[]) => round(mean(defined(g.map(expectedR)))),
+  },
   profitFactor: { label: 'Profit factor', format: 'x', of: profitFactor },
   avgReturnPct: {
     label: 'Avg return %',
     format: 'pct',
     of: (g: Trade[]) => round(mean(defined(g.map(tradeReturnPct))), 2),
   },
-  avgPlannedRR: { label: 'Planned R:R', format: 'x', of: (g: Trade[]) => round(mean(defined(g.map(tradeRR)))) },
+  avgPlannedRR: {
+    label: 'Planned R:R',
+    format: 'x',
+    of: (g: Trade[]) => round(mean(defined(g.map(tradeRR)))),
+  },
   avgAccountReturnPct: {
     label: 'Avg account return %',
     format: 'pct',
@@ -290,7 +306,10 @@ export function seriesFor(trades: Trade[], dimKey: string, metricKey: string) {
 
 // --- Distribution of gains and losses ---------------------------------------------------------
 
-export const DISTRIBUTION_BASES: Record<string, { label: string; format: string; of: (t: Trade) => number | null }> = {
+export const DISTRIBUTION_BASES: Record<
+  string,
+  { label: string; format: string; of: (t: Trade) => number | null }
+> = {
   pnl: { label: 'P&L', format: 'inr', of: tradePnl },
   returnPct: { label: 'Return %', format: 'pct', of: tradeReturnPct },
   r: { label: 'R-multiple', format: 'r', of: expectedR },
@@ -332,7 +351,10 @@ export function cumulativeByDay(trades: Trade[], metricKey: string) {
   })
 }
 
-export const TREND_BASES: Record<string, { label: string; format: string; of: (t: Trade) => number | null; cumulative?: boolean }> = {
+export const TREND_BASES: Record<
+  string,
+  { label: string; format: string; of: (t: Trade) => number | null; cumulative?: boolean }
+> = {
   pnl: { label: 'P&L', format: 'inr', of: tradePnl },
   returnPct: { label: 'Return %', format: 'pct', of: tradeReturnPct },
   r: { label: 'R-multiple', format: 'r', of: expectedR },
@@ -375,34 +397,36 @@ export function whenYouTrade(trades: Trade[]) {
   return {
     hours: hourList,
     days: DAY_ORDER,
-    cellFor: (day: string, hour: string) => {
+    cellFor: (day: string, hour: number) => {
       const group = cells.get(`${day}|${hour}`)
       if (!group) return null
-      return { count: group.length, netPnl: round(sum(group.map(tradePnl))) }
+      // The group is non-empty, so the total is always a number - the heat map divides by it.
+      return { count: group.length, netPnl: round(sum(group.map(tradePnl))) ?? 0 }
     },
   }
 }
 
 // --- Compare: any per-trade stat against any other ---------------------------------------------
 
-export const TRADE_AXES: Record<string, { label: string; format: string; of: (t: Trade) => number | null }> = {
-  pnl: { label: 'P&L', format: 'inr', of: tradePnl },
-  returnPct: { label: 'Return %', format: 'pct', of: tradeReturnPct },
-  r: { label: 'R-multiple', format: 'r', of: expectedR },
-  plannedRR: { label: 'Planned R:R', format: 'x', of: tradeRR },
-  entryPrice: { label: 'Entry price', format: 'inr', of: (t: Trade) => t.entry_price },
-  quantity: { label: 'Quantity', format: 'num', of: (t: Trade) => t.quantity },
-  turnover: { label: 'Turnover', format: 'inr', of: (t: Trade) => round(t.entry_price * t.quantity) },
-  hour: { label: 'Hour of day', format: 'num', of: hourOf },
-  targetCapture: { label: 'Target captured %', format: 'pct', of: targetCapturePct },
-  stopOverrun: { label: 'Stop overrun %', format: 'pct', of: stopOverrunPct },
-  accountReturn: { label: 'Account return %', format: 'pct', of: accountReturnPct },
-  accountBalance: {
-    label: 'Account balance at trade',
-    format: 'inr',
-    of: (t: Trade) => t.account_balance_at_trade ?? null,
-  },
-}
+export const TRADE_AXES: Record<string, { label: string; format: string; of: (t: Trade) => number | null }> =
+  {
+    pnl: { label: 'P&L', format: 'inr', of: tradePnl },
+    returnPct: { label: 'Return %', format: 'pct', of: tradeReturnPct },
+    r: { label: 'R-multiple', format: 'r', of: expectedR },
+    plannedRR: { label: 'Planned R:R', format: 'x', of: tradeRR },
+    entryPrice: { label: 'Entry price', format: 'inr', of: (t: Trade) => t.entry_price },
+    quantity: { label: 'Quantity', format: 'num', of: (t: Trade) => t.quantity },
+    turnover: { label: 'Turnover', format: 'inr', of: (t: Trade) => round(t.entry_price * t.quantity) },
+    hour: { label: 'Hour of day', format: 'num', of: hourOf },
+    targetCapture: { label: 'Target captured %', format: 'pct', of: targetCapturePct },
+    stopOverrun: { label: 'Stop overrun %', format: 'pct', of: stopOverrunPct },
+    accountReturn: { label: 'Account return %', format: 'pct', of: accountReturnPct },
+    accountBalance: {
+      label: 'Account balance at trade',
+      format: 'inr',
+      of: (t: Trade) => t.account_balance_at_trade ?? null,
+    },
+  }
 
 export function comparePoints(trades: Trade[], xKey: string, yKey: string) {
   return trades
@@ -412,7 +436,7 @@ export function comparePoints(trades: Trade[], xKey: string, yKey: string) {
       win: (tradePnl(t) ?? 0) > 0,
       symbol: t.symbol,
     }))
-    .filter((p) => p.x != null && p.y != null)
+    .filter((p): p is { x: number; y: number; win: boolean; symbol: string } => p.x != null && p.y != null)
 }
 
 // --- Calendar heatmap: any two METRICS, per day, in a week or month grid -----------------------
@@ -588,7 +612,11 @@ const GAP_BUCKETS = [
 
 /** Groups trades into buckets and returns BreakdownCard's row shape, preserving bucket order (so
  *  the axis reads short-to-long) and dropping buckets nothing landed in. */
-function bucketRows(pairs: [number, Trade][], buckets: { label: string; max: number }[]) {
+/** One bucket of a "P&L by <span>" breakdown. Empty buckets are dropped, so every row has trades
+ *  behind it and the two numbers are always real. */
+export type BucketRow = { label: string; count: number; metricValue: number; winRate: number }
+
+function bucketRows(pairs: [number, Trade][], buckets: { label: string; max: number }[]): BucketRow[] {
   return buckets
     .map(({ label, max }, i) => {
       const min = i === 0 ? -Infinity : buckets[i - 1].max
@@ -598,11 +626,11 @@ function bucketRows(pairs: [number, Trade][], buckets: { label: string; max: num
       return {
         label,
         count: group.length,
-        metricValue: round(sum(pnls) / group.length, 2),
-        winRate: round((pnls.filter((p) => (p ?? 0) > 0).length / group.length) * 100, 1),
+        metricValue: round(sum(pnls) / group.length, 2) ?? 0,
+        winRate: round((pnls.filter((p) => (p ?? 0) > 0).length / group.length) * 100, 1) ?? 0,
       }
     })
-    .filter(Boolean)
+    .filter((row): row is BucketRow => row != null)
 }
 
 /** Average P&L by how long the position was held. Answers "am I cutting winners short and letting
@@ -699,8 +727,7 @@ export function overallStats(allTrades: Trade[]) {
   // Calmar stays blank below a month.
   const spanDays =
     sortedDays.length > 1
-      ? (new Date(sortedDays[sortedDays.length - 1]).getTime() - new Date(sortedDays[0]).getTime()) /
-        86400000
+      ? (new Date(sortedDays[sortedDays.length - 1]).getTime() - new Date(sortedDays[0]).getTime()) / 86400000
       : 0
   const annualisedPnl = spanDays >= 30 ? netPnl * (365 / spanDays) : null
 
@@ -762,8 +789,16 @@ export function overallStats(allTrades: Trade[]) {
         { label: 'Avg P&L per trade', value: round(mean(pnls)), format: 'inr' },
         { label: 'Avg winner', value: round(avgWin), format: 'inr' },
         { label: 'Avg loser', value: avgLoss == null ? null : round(-avgLoss), format: 'inr' },
-        { label: 'Largest winner', value: wins.length ? round(Math.max(...defined(wins))) : null, format: 'inr' },
-        { label: 'Largest loser', value: losses.length ? round(Math.min(...defined(losses))) : null, format: 'inr' },
+        {
+          label: 'Largest winner',
+          value: wins.length ? round(Math.max(...defined(wins))) : null,
+          format: 'inr',
+        },
+        {
+          label: 'Largest loser',
+          value: losses.length ? round(Math.min(...defined(losses))) : null,
+          format: 'inr',
+        },
         { label: 'Median P&L', value: round(percentile(pnls, 0.5)), format: 'inr' },
         { label: 'P&L standard deviation', value: round(stdev(pnls)), format: 'inr' },
         { label: 'Profit factor', value: profitFactor(closed), format: 'x' },
@@ -919,11 +954,21 @@ export function overallStats(allTrades: Trade[]) {
         },
         {
           label: 'Largest position',
-          value: closed.length ? round(Math.max(...closed.map((t: Trade) => t.entry_price * t.quantity))) : null,
+          value: closed.length
+            ? round(Math.max(...closed.map((t: Trade) => t.entry_price * t.quantity)))
+            : null,
           format: 'inr',
         },
-        { label: 'Long trades', value: closed.filter((t: Trade) => t.direction !== 'short').length, format: 'num' },
-        { label: 'Short trades', value: closed.filter((t: Trade) => t.direction === 'short').length, format: 'num' },
+        {
+          label: 'Long trades',
+          value: closed.filter((t: Trade) => t.direction !== 'short').length,
+          format: 'num',
+        },
+        {
+          label: 'Short trades',
+          value: closed.filter((t: Trade) => t.direction === 'short').length,
+          format: 'num',
+        },
         { label: 'Avg return %', value: round(mean(defined(closed.map(tradeReturnPct))), 2), format: 'pct' },
         {
           label: 'Avg account return % (per trade)',

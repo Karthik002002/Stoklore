@@ -104,10 +104,15 @@ export function publishLive(seconds: number) {
  *  Deliberately does NOT replay the last published value: publishing stops while nobody is
  *  watching, so that value is from whenever the previous watcher left and replaying it would tick
  *  the counter BACKWARDS for the one second before the next publish. Subscribers seed themselves
- *  from the store instead (which is at most one save interval behind, and never wrong). */
-export function subscribeLive(fn: (seconds: number) => void) {
+ *  from the store instead (which is at most one save interval behind, and never wrong).
+ *
+ *  Typed `() => void` so it can be returned straight out of a useEffect: Set.delete's boolean is
+ *  not a valid effect destructor. */
+export function subscribeLive(fn: (seconds: number) => void): () => void {
   liveListeners.add(fn)
-  return () => liveListeners.delete(fn)
+  return () => {
+    liveListeners.delete(fn)
+  }
 }
 
 // --- localStorage edges -------------------------------------------------------------------------

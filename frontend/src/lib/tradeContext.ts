@@ -39,7 +39,11 @@ export const hasExcursion = (t: ContextualTrade | null | undefined) => t?.trade_
 // Coarse on purpose. Slicing 100 trades across many fine buckets is how you find patterns that
 // are pure noise - fewer, wider buckets keep the per-bucket sample big enough to mean something.
 
-export const TREND_LABEL: Record<'up' | 'down' | 'chop', string> = { up: 'Uptrend', down: 'Downtrend', chop: 'Sideways' }
+export const TREND_LABEL: Record<'up' | 'down' | 'chop', string> = {
+  up: 'Uptrend',
+  down: 'Downtrend',
+  chop: 'Sideways',
+}
 export const REGIME_LABEL: Record<'low' | 'normal' | 'high', string> = {
   low: 'Low volatility',
   normal: 'Normal volatility',

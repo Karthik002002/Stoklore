@@ -15,7 +15,8 @@
 // rather than an `undefined` at runtime. Adding return annotations to the routers in app/ would
 // let these be generated too; until then, this file is the record.
 import type { components } from './api.types.ts'
-import type { Bar, DailyBar, StockMasterRow, Trade, TradeAccount } from '@/lib/types'
+import type { Goal } from '@/lib/tradeGoals'
+import type { DailyBar, StockMasterRow, Trade, TradeAccount } from '@/lib/types'
 
 /** The request bodies FastAPI validates, from its own schema. */
 type Schemas = components['schemas']
@@ -42,7 +43,25 @@ export type BulkMaxCollectRequest = Schemas['BulkMaxCollectRequest']
 // Only the ones typed code depends on. Everything else stays `unknown` on purpose (see above).
 
 /** A candle series as the chart endpoints return it. */
-export type ChartResponse = { bars: Bar[]; source?: string }
+/** A bar from the chart endpoints. Unlike a stored daily bar it always carries a unix `time`
+ *  (pre-shifted to IST by scraper.py so the UTC-only axis reads as market-local) and no `date`. */
+export type ChartBar = {
+  time: number
+  open: number
+  high: number
+  low: number
+  close: number
+  volume: number
+}
+
+/** `bars` includes warmup bars before `visibleFrom` so indicators can be computed across the
+ *  whole visible range - the price series itself is the bars at or after it. */
+export type ChartResponse = {
+  bars: ChartBar[]
+  interval: string
+  visibleFrom: number | null
+  source?: string
+}
 
 /** One open paper position, marked to the last known price by the endpoint. */
 export type PaperPosition = {
@@ -143,7 +162,20 @@ export type CollectStatus = {
 export type Created = { id: number }
 
 /** The master search: matching rows, plus the per-board totals so a caller can show the split. */
-export type StockMasterSearch = { stocks: StockMasterRow[]; main: number; sme: number; total: number }
+/** How many rows the master holds, split two ways. The exchange split has three buckets on
+ *  purpose: a dual-listed company is ONE row, so nse_only + both + bse_only == total. */
+export type StockMasterCounts = {
+  total: number
+  main: number
+  sme: number
+  nse: number
+  nse_only: number
+  bse: number
+  bse_only: number
+  both: number
+}
+
+export type StockMasterSearch = StockMasterCounts & { stocks: StockMasterRow[] }
 
 /** Which price_sources plugin can fetch history, and which one is picked by default. */
 export type PriceSources = { sources: string[]; default: string }
@@ -183,49 +215,191 @@ async function json<T = unknown>(res: Response): Promise<T> {
 
 // Quote + news + reports for one symbol. The order ticket only wants `quote.currentPrice`, but this
 // is the endpoint the app already caches per symbol, so asking for it here is a cache hit.
-/** Deliberately loose: the payload is large and shifts with the upstream source, so only the
- *  fields TypeScript actually reads are named. Tighten as callers need more. */
-export type StockDetail = {
-  quote?: { currentPrice?: number | null; [key: string]: unknown } | null
+/** yfinance's quote bag. The named fields are the ones the app reads; the rest are passed
+ *  through as-is and looked up by key (StockDetail's fundamentals grid). */
+export type StockQuote = {
+  currentPrice?: number | null
+  shortName?: string | null
+  sector?: string | null
+  regularMarketChangePercent?: number | null
   [key: string]: unknown
 }
+
+/** One news item stored for a symbol (stock_news). */
+export type StockNews = {
+  title: string
+  summary: string | null
+  url: string
+  published_at: string | null
+  source: string | null
+  origin: string | null
+  sentiment_label: string | null
+}
+
+/** A scraped page kept for a symbol. */
+export type StockReport = { id: number; symbol: string; content_markdown: string; scraped_at: string }
+
+/** What /api/stocks/{symbol} answers with. `quote` is {} when the upstream fetch failed. */
+export type StockDetail = { quote: StockQuote; news: StockNews[]; reports: StockReport[] }
 
 export const getStockDetail = (symbol: string) => fetch(`/api/stocks/${symbol}`).then(json<StockDetail>)
 
 export const getStockChart = (symbol: string, range: string) =>
   fetch(`/api/stocks/${symbol}/chart?range=${range}`).then(json<ChartResponse>)
 
-export const getIndices = () => fetch('/api/indices').then(json)
+/** One benchmark index's live quote. Both fields are null when the upstream quote failed. */
+export type IndexQuote = { name: string; price: number | null; changePercent: number | null }
 
-export const getMacroIndices = () => fetch('/api/macro-indices').then(json)
+export const getIndices = () => fetch('/api/indices').then(json<IndexQuote[]>)
+
+/** One index row from NSE's Index Performances table. Every number can be missing - NSE omits
+ *  PE/PB/DY for several index families. */
+export type MacroIndex = {
+  name: string
+  symbol: string
+  last: number | null
+  change: number | null
+  percentChange: number | null
+  open: number | null
+  high: number | null
+  low: number | null
+  previousClose: number | null
+  yearHigh: number | null
+  yearLow: number | null
+  pe: number | string | null
+  pb: number | string | null
+  dy: number | string | null
+  advances: number | string | null
+  declines: number | string | null
+  unchanged: number | string | null
+  perChange30d: number | null
+  perChange365d: number | null
+}
+
+/** All NSE-published indices, grouped the way NSE groups them (Broad Market, Sectoral, …). */
+export type MacroIndices = {
+  timestamp: string | null
+  advances: number | string | null
+  declines: number | string | null
+  unchanged: number | string | null
+  groups: { key: string; indices: MacroIndex[] }[]
+}
+
+export const getMacroIndices = () => fetch('/api/macro-indices').then(json<MacroIndices>)
 
 // --- Dashboard (StocksList's terminal view) -------------------------------------------------
 // These wrap endpoints StocksList used to hit with bare fetch()es - moved here so the dashboard
 // can poll them through react-query (refetchInterval) like every other live view in the app.
-export const getStocks = () => fetch('/api/stocks').then(json)
+/** A tracked symbol on the terminal list: its report counts plus a cached quote. Price and
+ *  change are null when the upstream fetch failed for that symbol. */
+export type TrackedStock = {
+  symbol: string
+  report_count: number
+  last_scraped: string | null
+  price: number | null
+  changePercent: number | null
+}
 
-export const getWatchlist = () => fetch('/api/watchlist').then(json)
+export const getStocks = () => fetch('/api/stocks').then(json<TrackedStock[]>)
 
-export const getWatchlistNames = () => fetch('/api/watchlists').then(json)
+/** One membership row: a symbol can sit in more than one list. */
+export type WatchlistEntry = { symbol: string; list_name: string }
+
+export const getWatchlist = () => fetch('/api/watchlist').then(json<WatchlistEntry[]>)
+
+export const getWatchlistNames = () => fetch('/api/watchlists').then(json<string[]>)
+
+/** One row of the events feed (stock_events, joined to whichever watchlist the symbol is in). */
+export type FeedEvent = {
+  id: number
+  symbol: string
+  list_name: string | null
+  event_type: string
+  headline: string
+  detail: string | null
+  url: string | null
+  event_time: string | null
+  sentiment_label: 'positive' | 'negative' | 'neutral' | null
+  sentiment_score: number | null
+}
+
+/** How much a symbol is being covered right now versus its own baseline. */
+export type AttentionScore = {
+  symbol: string
+  list_name: string | null
+  recent_count: number
+  baseline_count: number
+  baseline_avg: number
+  /** recent vs baseline; null when there is no baseline to divide by. */
+  ratio: number | null
+  is_new_attention: boolean
+}
 
 export const getEvents = (listName?: string) =>
-  fetch(`/api/events${listName ? `?list_name=${encodeURIComponent(listName)}` : ''}`).then(json)
+  fetch(`/api/events${listName ? `?list_name=${encodeURIComponent(listName)}` : ''}`).then(json<FeedEvent[]>)
 
 export const getEventsAttention = (listName?: string) =>
-  fetch(`/api/events/attention${listName ? `?list_name=${encodeURIComponent(listName)}` : ''}`).then(json)
+  fetch(`/api/events/attention${listName ? `?list_name=${encodeURIComponent(listName)}` : ''}`).then(
+    json<AttentionScore[]>,
+  )
 
 export const getTopNews = () => fetch('/api/top-news').then(json)
 
 export const getIndexChart = (name: string, range: string) =>
   fetch(`/api/indices/${name}/chart?range=${range}`).then(json<ChartResponse>)
 
-export const getStockFinancials = (symbol: string) => fetch(`/api/stocks/${symbol}/financials`).then(json)
+/** Quarterly financials, pivoted: one column per period (the last is 'TTM'), one row per line
+ *  item with a value per period. A null is a quarter the source didn't report. */
+export type Financials = {
+  periods: string[]
+  rows: { label: string; values: (number | null)[] }[]
+}
+
+export const getStockFinancials = (symbol: string) =>
+  fetch(`/api/stocks/${symbol}/financials`).then(json<Financials>)
 
 // Screener.in company page - fundamentals, pros/cons, 12y statements, shareholding, filings.
-export const getScreenerData = (symbol: string) => fetch(`/api/stocks/${symbol}/screener`).then(json)
+/** One statement table off a screener.in page: pivoted, values kept as the display strings the
+ *  source printed (one table mixes ₹ Cr, % and per-share, so the formatting carries the unit). */
+export type ScreenerTable = {
+  title: string
+  periods: string[]
+  rows: { label: string; values: string[] }[]
+}
+
+/** A filing screener lists, with its own one-line summary where it has one. */
+export type ScreenerDocument = { title: string; detail: string | null; url: string }
+
+/** Everything parseable off a company's screener.in page (app/core/scraper.py). */
+export type ScreenerData = {
+  url: string
+  name: string
+  about: string | null
+  keyPoints: string | null
+  industry: string[]
+  ratios: { label: string; value: string }[]
+  pros: string[]
+  cons: string[]
+  /** Keyed by screener's own section id (profit-loss, balance-sheet, …). */
+  tables: Record<string, ScreenerTable>
+  /** Keyed by the group heading screener prints (Announcements, Annual reports, …). */
+  documents: Record<string, ScreenerDocument[]>
+}
+
+export const getScreenerData = (symbol: string) =>
+  fetch(`/api/stocks/${symbol}/screener`).then(json<ScreenerData>)
+
+/** Where the two EMAs stand, and when they last crossed. `crossover` is set only when the cross
+ *  happened on the latest bar - 'bullish' is a golden cross, 'bearish' a death cross. */
+export type EmaCrossover = {
+  crossover: 'bullish' | 'bearish' | null
+  shortEma: number
+  longEma: number
+  lastCrossoverDate: string | null
+}
 
 export const getEmaCrossover = (symbol: string, short: number, long: number) =>
-  fetch(`/api/prices/${symbol}/ema-crossover?short=${short}&long=${long}`).then(json)
+  fetch(`/api/prices/${symbol}/ema-crossover?short=${short}&long=${long}`).then(json<EmaCrossover>)
 
 export const getMaxHistory = (symbol: string) => fetch(`/api/prices/${symbol}/max`).then(json<DailyBar[]>)
 
@@ -257,12 +431,25 @@ export const collectMaxHistoryBulk = (symbols: string[], source: string) =>
     body: JSON.stringify({ symbols, source }),
   }).then(json)
 
+/** The bulk collector's progress: which symbol it is on, and how each finished one went. One
+ *  failure never stops the batch, so `results` mixes successes and errors. */
+export type BulkCollectStatus = {
+  running: boolean
+  done: number
+  total: number
+  current_symbol: string | null
+  results: { symbol: string; ok: boolean; error: string | null }[]
+}
+
 export const getBulkCollectStatus = () =>
-  fetch('/api/prices/max/collect-bulk/status').then(json<CollectStatus>)
+  fetch('/api/prices/max/collect-bulk/status').then(json<BulkCollectStatus>)
 
-export const getModels = () => fetch('/api/models').then(json)
+/** A model the chat can run on: the id the API takes, and what to show in the picker. */
+export type ModelOption = { id: string; label: string }
 
-export const getActiveModel = () => fetch('/api/settings/active-model').then(json)
+export const getModels = () => fetch('/api/models').then(json<ModelOption[]>)
+
+export const getActiveModel = () => fetch('/api/settings/active-model').then(json<{ model: string | null }>)
 
 export const setActiveModel = (model: string) =>
   fetch('/api/settings/active-model', {
@@ -271,7 +458,10 @@ export const setActiveModel = (model: string) =>
     body: JSON.stringify({ model }),
   }).then(json)
 
-export const getLiteLLMConfig = () => fetch('/api/settings/litellm').then(json)
+/** The proxy's address, and whether a key is stored - the key itself is never sent back. */
+export type LiteLLMConfig = { base_url: string | null; has_api_key: boolean }
+
+export const getLiteLLMConfig = () => fetch('/api/settings/litellm').then(json<LiteLLMConfig>)
 
 export const setLiteLLMConfig = (baseUrl: string, apiKey: string | null) =>
   fetch('/api/settings/litellm', {
@@ -280,7 +470,7 @@ export const setLiteLLMConfig = (baseUrl: string, apiKey: string | null) =>
     body: JSON.stringify({ base_url: baseUrl, api_key: apiKey || null }),
   }).then(json)
 
-export const getCogencisConfig = () => fetch('/api/settings/cogencis').then(json)
+export const getCogencisConfig = () => fetch('/api/settings/cogencis').then(json<{ has_token: boolean }>)
 
 export const setCogencisToken = (token: string) =>
   fetch('/api/settings/cogencis', {
@@ -289,22 +479,60 @@ export const setCogencisToken = (token: string) =>
     body: JSON.stringify({ token }),
   }).then(json)
 
-export const getWatchRules = () => fetch('/api/watch-rules').then(json)
+export const getWatchRules = () => fetch('/api/watch-rules').then(json<WatchRule[]>)
+
+/** What the LLM recognised in a rule written in plain English. Every field is optional - a rule
+ *  can name any one of them. */
+export type WatchCriteria = {
+  max_pe?: number | null
+  ema_short?: number | null
+  ema_long?: number | null
+  no_negative_events_days?: number | null
+}
+
+/** A saved rule, as the list endpoint returns it. */
+export type WatchRule = {
+  id: number
+  name: string
+  rule_text: string
+  max_pe: number | null
+  ema_short: number | null
+  ema_long: number | null
+  no_negative_events_days: number | null
+  created_at: string
+}
+
+/** One rule checked against one symbol: every condition, and whether all of them held. */
+export type RuleCheck = {
+  symbol?: string
+  passed: boolean
+  checks: { label: string; passed: boolean; detail: string }[]
+}
 
 export const createWatchRule = (rule: WatchRuleRequest) =>
   fetch('/api/watch-rules', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(rule),
-  }).then(json)
+  }).then(json<{ ok: boolean; criteria: WatchCriteria }>)
 
 export const deleteWatchRule = (id: number) =>
   fetch(`/api/watch-rules/${id}`, { method: 'DELETE' }).then(json)
 
 export const checkWatchRule = (id: number, symbol?: string) =>
-  fetch(`/api/watch-rules/${id}/check${symbol ? `?symbol=${symbol}` : ''}`).then(json)
+  fetch(`/api/watch-rules/${id}/check${symbol ? `?symbol=${symbol}` : ''}`).then(
+    json<RuleCheck | RuleCheck[]>,
+  )
 
-export const getBrokerConfig = () => fetch('/api/settings/broker').then(json)
+/** Which broker is active and what each one has configured. Kite's session dies daily, so
+ *  `logged_in_today` is the one that decides whether holdings can be fetched at all. */
+export type BrokerConfig = {
+  active_broker: string | null
+  dhan: { has_credentials: boolean }
+  kite: { has_credentials: boolean; logged_in_today: boolean }
+}
+
+export const getBrokerConfig = () => fetch('/api/settings/broker').then(json<BrokerConfig>)
 
 export const setActiveBroker = (broker: string) =>
   fetch('/api/settings/broker', {
@@ -327,18 +555,47 @@ export const setKiteConfig = (apiKey: string, apiSecret: string) =>
     body: JSON.stringify({ api_key: apiKey, api_secret: apiSecret }),
   }).then(json)
 
-export const getKiteLoginUrl = () => fetch('/api/kite/login-url').then(json)
+export const getKiteLoginUrl = () => fetch('/api/kite/login-url').then(json<{ url: string }>)
+
+/** One holding at the broker. `ltp` is filled in from this app's own quote cache when the broker
+ *  doesn't send a price (Dhan doesn't; Kite does) - see app/services/holdings.py. */
+export type Holding = {
+  symbol: string
+  isin: string | null
+  qty: number
+  avg_price: number | null
+  ltp: number | null
+}
+
+/** The portfolio snapshot: deployable cash and the holdings themselves. */
+export type Portfolio = { available_balance: number | null; holdings: Holding[] }
 
 export const getHoldings = (broker?: string, force = false) => {
   const params = new URLSearchParams()
   if (broker) params.set('broker_id', broker)
   if (force) params.set('force', 'true')
   const qs = params.toString()
-  return fetch(`/api/holdings${qs ? `?${qs}` : ''}`).then(json)
+  return fetch(`/api/holdings${qs ? `?${qs}` : ''}`).then(json<Portfolio>)
+}
+
+/** A saved EMA-crossover backtest run (the `backtests` table), newest first. */
+export type StoredBacktest = {
+  id: number
+  symbol: string
+  short_period: number
+  long_period: number
+  from_date: string | null
+  to_date: string | null
+  total_return_pct: number | null
+  win_rate: number | null
+  num_trades: number | null
+  trades: unknown
+  lessons: string | null
+  created_at: string
 }
 
 export const getBacktests = (symbol?: string) =>
-  fetch(`/api/backtests${symbol ? `?symbol=${symbol}` : ''}`).then(json)
+  fetch(`/api/backtests${symbol ? `?symbol=${symbol}` : ''}`).then(json<StoredBacktest[]>)
 
 export const runBacktest = (params: BacktestRunRequest) =>
   fetch('/api/backtest/run', {
@@ -366,9 +623,20 @@ export const deleteBacktest = (id: number) => fetch(`/api/backtest/${id}`, { met
 export const getPriceHistory = (symbol: string, days = 365) =>
   fetch(`/api/prices/${symbol}?days=${days}`).then(json<DailyBar[]>)
 
-export const getAutoBacktestScripts = () => fetch('/api/backtest/auto/scripts').then(json)
+/** A saved Pine script: what the Auto tab lists and the detail page edits. */
+export type AutoBacktestScript = {
+  id: number
+  name: string
+  script: string
+  created_at: string
+  updated_at: string
+}
 
-export const getAutoBacktestScript = (id: number) => fetch(`/api/backtest/auto/scripts/${id}`).then(json)
+export const getAutoBacktestScripts = () =>
+  fetch('/api/backtest/auto/scripts').then(json<AutoBacktestScript[]>)
+
+export const getAutoBacktestScript = (id: number) =>
+  fetch(`/api/backtest/auto/scripts/${id}`).then(json<AutoBacktestScript>)
 
 export const createAutoBacktestScript = (script: AutoBacktestScriptRequest) =>
   fetch('/api/backtest/auto/scripts', {
@@ -441,7 +709,8 @@ export const updateTradeAccount = (id: number, account: TradeAccountRequest) =>
 export const deleteTradeAccount = (id: number) =>
   fetch(`/api/trade-accounts/${id}`, { method: 'DELETE' }).then(json)
 
-export const getManualBacktestSettings = () => fetch('/api/settings/manual-backtest').then(json)
+export const getManualBacktestSettings = () =>
+  fetch('/api/settings/manual-backtest').then(json<ManualBacktestSettingsRequest>)
 
 export const setManualBacktestSettings = (settings: ManualBacktestSettingsRequest) =>
   fetch('/api/settings/manual-backtest', {
@@ -450,7 +719,7 @@ export const setManualBacktestSettings = (settings: ManualBacktestSettingsReques
     body: JSON.stringify(settings),
   }).then(json)
 
-export const getTradingGoals = () => fetch('/api/trading-goals').then(json)
+export const getTradingGoals = () => fetch('/api/trading-goals').then(json<Goal[]>)
 
 export const setTradingGoals = (goals: TradingGoalRequest[]) =>
   fetch('/api/trading-goals', {
@@ -500,9 +769,26 @@ export const postActivityTime = (days: ActivityDay[]) =>
     body: JSON.stringify({ days }),
   }).then(json)
 
-export const getActivitySummary = () => fetch('/api/activity/summary').then(json)
+/** One day in the consistency window: was the app used in a way that counts. */
+export type ActivityDaySummary = { date: string; seconds_active: number; qualifies: boolean }
 
-export const getActivitySettings = () => fetch('/api/settings/activity').then(json)
+/** The streak/consistency picture (app/routers/activity.py), read by the tracker and the banner. */
+export type ActivitySummary = {
+  days: ActivityDaySummary[]
+  today_qualifies: boolean
+  today_breakdown: { traded: boolean; analyzed: boolean; reviewed: boolean }
+  current_streak: number
+  best_streak: number
+  days_missed_in_a_row: number
+  avg_seconds_today: number
+  avg_seconds_7d: number
+  daily_goal_minutes: number
+  qualifiers: Record<string, boolean>
+}
+
+export const getActivitySummary = () => fetch('/api/activity/summary').then(json<ActivitySummary>)
+
+export const getActivitySettings = () => fetch('/api/settings/activity').then(json<ActivitySettingsRequest>)
 
 export const setActivitySettings = (settings: ActivitySettingsRequest) =>
   fetch('/api/settings/activity', {
@@ -511,22 +797,59 @@ export const setActivitySettings = (settings: ActivitySettingsRequest) =>
     body: JSON.stringify(settings),
   }).then(json)
 
+/** A previously-scraped symbol, as the @-tag search returns it - NOT the listed-equity master
+ *  (that is searchStocksMaster below, which answers with a different shape entirely). */
+export type SymbolMatch = { symbol: string; last_scraped: string | null }
+
 export const searchStocks = (q = '') =>
-  fetch(`/api/stocks/search?q=${encodeURIComponent(q)}`).then(json<StockMasterSearch>)
+  fetch(`/api/stocks/search?q=${encodeURIComponent(q)}`).then(json<SymbolMatch[]>)
+
+/** A freshly scraped symbol: the resolved symbol, and the page as markdown. */
+export type AddedStock = { symbol: string; content_markdown: string }
 
 export const addStock = (symbol: string) =>
   fetch('/api/stocks', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ symbol }),
-  }).then(json)
+  }).then(json<AddedStock>)
 
 // `board` is 'MAIN' | 'SME' | undefined (both boards). Rows carry name, series, board, market_lot,
 // face_value, listing_date and ISIN, so every caller can show what a symbol actually is.
 // NSE's top gainers/losers, one blob covering every index bucket. Fetched from NSE at most once a
 // day (it only moves after the close) - `refresh` forces it.
+/** One row of NSE's movers table. `change` is derived from ltp - prev_price, not from NSE's own
+ *  net_price, which sometimes carries a different basis (see scraper._mover_row). */
+export type MoverRow = {
+  symbol: string
+  series: string | null
+  ltp: number | null
+  prev_price: number | null
+  perChange: number | null
+  trade_quantity: number | null
+  /** ₹ lakh, as NSE sends it. */
+  turnover: number | null
+  change: number | null
+  /** A real corporate action, or null - NSE's own '-' placeholder is dropped. */
+  ca_purpose: string | null
+  ca_ex_date: string | null
+}
+
+/** NSE's post-close gainers/losers, one entry per index bucket. `trade_date` is the session the
+ *  snapshot belongs to, not when it was fetched. */
+export type MoverGroup = { key: string; label: string; gainers: MoverRow[]; losers: MoverRow[] }
+
+export type MarketMovers = {
+  timestamp: string | null
+  trade_date: string | null
+  groups: MoverGroup[]
+  /** When this app last fetched it, and whether that fetch failed and this is the stored copy. */
+  fetched_at: string | null
+  stale: boolean
+}
+
 export const getMarketMovers = (refresh = false) =>
-  fetch(`/api/market-movers${refresh ? '?refresh=1' : ''}`).then(json)
+  fetch(`/api/market-movers${refresh ? '?refresh=1' : ''}`).then(json<MarketMovers>)
 
 export const searchStocksMaster = (q = '', board?: string) =>
   fetch(`/api/stocks-master?q=${encodeURIComponent(q)}${board ? `&board=${board}` : ''}`).then(
@@ -537,7 +860,11 @@ export const searchStocksMaster = (q = '', board?: string) =>
 // (SM/ST = NSE EMERGE), which is what makes one importer handle both CSVs.
 // No file to upload: BSE serves its whole active-equity list as one JSON call, so this is a button
 // rather than a file picker. Merges onto existing NSE rows by ISIN - see db.upsert_bse_master.
-export const importBseMaster = () => fetch('/api/stocks-master/import-bse', { method: 'POST' }).then(json)
+/** A BSE merge: `merged` gained a scrip code on an existing NSE row, `added` are BSE-only rows. */
+export type BseImportResult = StockMasterCounts & { merged: number; added: number }
+
+export const importBseMaster = () =>
+  fetch('/api/stocks-master/import-bse', { method: 'POST' }).then(json<BseImportResult>)
 
 export const importStocksMaster = (file: File, board?: string) => {
   const form = new FormData()
@@ -545,7 +872,7 @@ export const importStocksMaster = (file: File, board?: string) => {
   return fetch(`/api/stocks-master/import${board ? `?board=${board}` : ''}`, {
     method: 'POST',
     body: form,
-  }).then(json)
+  }).then(json<StockMasterCounts & { imported: number; imported_sme: number; imported_main: number }>)
 }
 
 export const deleteStockMaster = (symbol: string) =>
@@ -619,16 +946,74 @@ export const pollPaperEngine = () => fetch('/api/paper/poll', { method: 'POST' }
 
 // --- Shareholding pattern -------------------------------------------------------------------
 // The screener returns one row per symbol with the change already classified server-side (see
+/** What changed between two filings. Deliberately not a diagnosis of the corporate action -
+ *  `verdict` says which filings are worth reading, not what happened in them. */
+export type ShareholdingChange = {
+  promoter_pp: number | null
+  promoter_shares_delta: number | null
+  public_shares_delta: number | null
+  total_shares_delta: number | null
+  public_holders_delta: number | null
+  /** True when the shares demonstrably came from the public; null when the detail is missing. */
+  organic: boolean | null
+  verdict: string
+}
+
+/** The cumulative move over the last `span` filings, and whether it arrived gradually. */
+export type ShareholdingWindow = {
+  total_pp: number | null
+  steps: number
+  largest_step: number | null
+  gradual: boolean | null
+}
+
+/** One company on the screener. */
+export type ShareholdingRow = {
+  symbol: string
+  company: string | null
+  period_date: string
+  off_cycle: boolean
+  promoter_pct: number | null
+  public_pct: number | null
+  filings: number
+  has_detail: boolean
+  last_change: ShareholdingChange | null
+  window: ShareholdingWindow
+  /** 'quiet' nothing moved, 'organic' the public was the counterparty, 'verify' read the filing. */
+  flag: 'quiet' | 'organic' | 'verify'
+  /** Just enough points to draw the shape of the holding. */
+  spark: { period_date: string; promoter_pct: number | null }[]
+}
+
+export type ShareholdingScreener = {
+  rows: ShareholdingRow[]
+  sort: { key: string; order: string }
+  coverage: { filings: number; symbols: number; latest_period: string | null; without_detail: number }
+  /** verdict key -> the sentence shown for it. */
+  verdicts: Record<string, string>
+}
+
 // app/core/shareholding.py) - nothing here recomputes it, so the page and the stock detail block
 // can never disagree about what a move was.
 export const getShareholding = (params: Record<string, string | number | undefined> = {}) => {
   const query = new URLSearchParams(queryEntries(params)).toString()
-  return fetch(`/api/shareholding${query ? `?${query}` : ''}`).then(json)
+  return fetch(`/api/shareholding${query ? `?${query}` : ''}`).then(json<ShareholdingScreener>)
 }
 
 export const getShareholdingSymbol = (symbol: string) => fetch(`/api/shareholding/${symbol}`).then(json)
 
-export const getShareholdingStatus = () => fetch('/api/shareholding/status').then(json)
+/** The collector's progress. `phase` names which pass is running (filings, then XBRL detail). */
+export type ShareholdingStatus = {
+  running: boolean
+  phase: string | null
+  done: number
+  total: number
+  new: number
+  details: number
+  error: string | null
+}
+
+export const getShareholdingStatus = () => fetch('/api/shareholding/status').then(json<ShareholdingStatus>)
 
 // Either a "last N years" shorthand or an explicit { from, to } span from the range picker - the
 // backend prefers the span when both arrive.

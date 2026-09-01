@@ -29,7 +29,25 @@ function toCandles(rows: DailyBar[]) {
 // {trades, summary} shape backtest.run_ema_crossover uses, so the existing TradesTable/
 // ReturnBadge components work unmodified. Indicator-only scripts (just plot()) come back as
 // {plots} instead - there's no strategy/trades to show.
-export async function runPineScriptOnRows(script: string, rows: DailyBar[]) {
+/** A strategy script's result, in the same shape the backend's own backtests return. */
+export type ScriptTrades = {
+  trades: {
+    entry_date: string
+    exit_date: string
+    entry_price: number
+    exit_price: number
+    return_pct: number
+    open: boolean
+  }[]
+  summary: { total_return_pct: number; win_rate: number; num_trades: number }
+}
+/** One point of a plotted series - PineTS emits a bare number, an object, or a gap. */
+export type ScriptPlotPoint = number | { value?: number } | null
+/** An indicator-only script's result: the plotted series, keyed by plot name. */
+export type ScriptPlots = { plots: Record<string, ScriptPlotPoint[]> }
+export type ScriptResult = ScriptTrades | ScriptPlots
+
+export async function runPineScriptOnRows(script: string, rows: DailyBar[]): Promise<ScriptResult> {
   if (rows.length === 0) {
     throw new Error('No price history available to run against.')
   }
@@ -42,7 +60,7 @@ export async function runPineScriptOnRows(script: string, rows: DailyBar[]) {
   if (!strategy) {
     return {
       plots: Object.fromEntries(
-        Object.entries(plots ?? {}).map(([name, p]) => [name, (p as { data: unknown }).data]),
+        Object.entries(plots ?? {}).map(([name, p]) => [name, (p as { data: ScriptPlotPoint[] }).data]),
       ),
     }
   }

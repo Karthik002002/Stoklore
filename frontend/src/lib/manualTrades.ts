@@ -78,7 +78,11 @@ export function autoResult(t: TradeLike, band = NEUTRAL_PNL_BAND): TradeResult |
   return 'neutral'
 }
 
-export const RESULT_META = {
+/** Named rather than inferred as `string`, so the Badge these feed reads them as its own
+ *  variants. Kept a plain union - this module stays free of component imports. */
+type BadgeVariant = 'success' | 'destructive' | 'outline'
+
+export const RESULT_META: Record<string, { label: string; badgeVariant: BadgeVariant }> = {
   profit: { label: 'Profit', badgeVariant: 'success' },
   loss: { label: 'Loss', badgeVariant: 'destructive' },
   neutral: { label: 'Neutral', badgeVariant: 'outline' },

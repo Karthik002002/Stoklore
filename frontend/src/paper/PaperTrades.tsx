@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import type { FieldError, UseFormReturn } from 'react-hook-form'
 import { useFieldArray, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -371,7 +372,8 @@ function OrderPanel({ accountId }: { accountId: number | null }) {
 const EXIT_REASONS = ['Hit SL', 'Hit Target', 'Manual Close']
 const exitReason = (t: Trade) => (t.tags ?? []).find((tag) => EXIT_REASONS.includes(tag)) ?? '—'
 
-function HistoryLog({ trades }: { trades: Trade[] }) {
+function HistoryLog({ trades, accountId }: { trades: Trade[]; accountId: number | null }) {
+  const navigate = useNavigate()
   // Paper accounts carry the same cost settings as journal ones, so a paper P&L and a journal P&L
   // are finally comparable numbers rather than one gross and one net.
   const { data: accounts = [] } = useQuery({
@@ -429,7 +431,19 @@ function HistoryLog({ trades }: { trades: Trade[] }) {
               const costs = tradeCosts(t, accountFor(t, byId))
               const net = tradeNetPnl(t, accountFor(t, byId))
               return (
-                <TableRow key={t.id}>
+                // Same drill-in as the holdings table above it: the row is the link, and the
+                // trade it opens is the one thing every cell on it describes.
+                <TableRow
+                  key={t.id}
+                  className="cursor-pointer"
+                  onClick={() =>
+                    navigate({
+                      to: '/paper/trade/$tradeId',
+                      params: { tradeId: String(t.id) },
+                      search: { account: accountId ?? undefined },
+                    })
+                  }
+                >
                   <TableCell className="whitespace-nowrap">
                     {formatDateTime(t.exited_at ?? t.traded_at)}
                   </TableCell>
@@ -476,7 +490,7 @@ export default function PaperTrades({ accountId, trades }: { accountId: number |
       <OrderPanel accountId={accountId} />
       <div className="space-y-2">
         <p className="text-sm font-medium">Trade history</p>
-        <HistoryLog trades={closed} />
+        <HistoryLog trades={closed} accountId={accountId} />
       </div>
     </div>
   )

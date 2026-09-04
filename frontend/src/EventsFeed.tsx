@@ -62,8 +62,8 @@ function AttentionPanel({ attention }: { attention: AttentionScore[] | null }) {
         {hot.map((a) => (
           <Link
             key={a.symbol}
-            to="/stock/$symbol"
-            params={{ symbol: a.symbol }}
+            to="/stock/$exchange/$symbol"
+            params={{ exchange: 'NSE', symbol: a.symbol }}
             className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm hover:bg-muted/50"
           >
             <span className="font-semibold">{a.symbol}</span>
@@ -275,8 +275,8 @@ export default function EventsFeed() {
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <Link
-                    to="/stock/$symbol"
-                    params={{ symbol: e.symbol }}
+                    to="/stock/$exchange/$symbol"
+                    params={{ exchange: 'NSE', symbol: e.symbol }}
                     className="font-semibold hover:underline"
                   >
                     {e.symbol}

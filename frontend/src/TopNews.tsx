@@ -49,7 +49,7 @@ function NewsRow({ n }: { n: NewsItem }) {
         {n.affected_symbols.length > 0 && (
           <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
             {n.affected_symbols.map((symbol) => (
-              <Link key={symbol} to="/stock/$symbol" params={{ symbol }}>
+              <Link key={symbol} to="/stock/$exchange/$symbol" params={{ exchange: 'NSE', symbol }}>
                 <Badge variant="secondary" className="hover:bg-primary/15 hover:text-primary">
                   {symbol}
                 </Badge>

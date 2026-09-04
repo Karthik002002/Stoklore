@@ -270,8 +270,8 @@ const STAT_FIELDS: [string, string, (v: never) => string][] = [
 ]
 
 export default function StockDetail() {
-  const { symbol } = useParams({ from: '/stock/$symbol' })
-  usePageTitle(symbol)
+  const { exchange, symbol } = useParams({ from: '/stock/$exchange/$symbol' })
+  usePageTitle(`${symbol} · ${exchange}`)
   const navigate = useNavigate()
   const onBack = () => navigate({ to: '/' })
   const [data, setData] = useState<StockDetailData | null>(null)
@@ -312,6 +312,9 @@ export default function StockDetail() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="text-3xl font-semibold tracking-tight">{symbol}</h1>
+            {/* Which listing this URL names. Every number below is sourced NSE-side whichever it
+                says - see the note under the price. */}
+            <Badge variant="outline">{exchange}</Badge>
             {quote.sector && <Badge variant="secondary">{quote.sector}</Badge>}
           </div>
           <p className="mt-1 text-muted-foreground">{quote.shortName ?? '—'}</p>
@@ -323,6 +326,9 @@ export default function StockDetail() {
               {up ? '+' : ''}
               {fmt(change)}% today
             </p>
+          )}
+          {exchange === 'BSE' && (
+            <p className="mt-0.5 text-xs text-muted-foreground">Quoted from the NSE listing</p>
           )}
         </div>
       </div>

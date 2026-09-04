@@ -540,6 +540,17 @@ CREATE TABLE IF NOT EXISTS alerts (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS alerts_active_idx ON alerts (active, kind);
+-- Added when alerts grew past "above/below a level" into the full condition set. All nullable and
+-- all additive: a row written before this still reads correctly, because `recurring` remains the
+-- fallback for trigger_mode (see alerts.trigger_of) and the conditions that need the extra columns
+-- simply did not exist yet.
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS price2 REAL;              -- the channel's other bound
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS trigger_mode TEXT;        -- once | once_per_day | every_time
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;   -- disarms itself after this
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS reference_price REAL;     -- what moving_* measures from
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS last_price REAL;          -- previous observation, for crossings
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS last_checked_at TIMESTAMPTZ;
+ALTER TABLE alerts ADD COLUMN IF NOT EXISTS fire_count INTEGER NOT NULL DEFAULT 0;
 
 -- The broker's order book, mirrored. Dhan's own book is intraday-only, so this is also the record
 -- of what was sent today after the day ends. Keyed on Dhan's order id: this table never invents a
@@ -2235,39 +2246,90 @@ def set_dhan_api_base_url(url):
     _set_setting("dhan_api_base_url", (url or "").strip())
 
 
-def list_alerts(active=None, limit=200):
+def list_alerts(active=None, kind=None, limit=200):
     sql = "SELECT * FROM alerts"
-    params = []
+    where, params = [], []
     if active is not None:
-        sql += " WHERE active = %s"
+        where.append("active = %s")
         params.append(active)
+    if kind is not None:
+        where.append("kind = %s")
+        params.append(kind)
+    if where:
+        sql += " WHERE " + " AND ".join(where)
     sql += " ORDER BY COALESCE(triggered_at, created_at) DESC LIMIT %s"
     params.append(limit)
     with connect() as conn:
         return conn.execute(sql, params).fetchall()
 
 
-def create_alert(kind="price", symbol=None, condition=None, price=None, note=None,
-                 recurring=False, active=True, triggered_at=None, message=None, meta=None):
+def create_alert(kind="price", symbol=None, condition=None, price=None, price2=None, note=None,
+                 trigger_mode="once", active=True, triggered_at=None, message=None, meta=None,
+                 expires_at=None, reference_price=None):
+    """`recurring` is written alongside trigger_mode rather than dropped: it is the only thing
+    rows written before trigger_mode existed have, and keeping the two in step means nothing has
+    to guess which one is authoritative."""
     with connect() as conn:
         row = conn.execute(
-            "INSERT INTO alerts (kind, symbol, condition, price, note, recurring, active, "
-            "triggered_at, message, meta) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
-            "RETURNING id",
-            (kind, symbol, condition, price, note, recurring, active, triggered_at, message,
-             Jsonb(meta or {})),
+            "INSERT INTO alerts (kind, symbol, condition, price, price2, note, recurring, "
+            "trigger_mode, active, triggered_at, message, meta, expires_at, reference_price) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (kind, symbol, condition, price, price2, note, trigger_mode == "every_time",
+             trigger_mode, active, triggered_at, message, Jsonb(meta or {}), expires_at,
+             reference_price),
         ).fetchone()
     return row["id"]
 
 
-def fire_alert(alert_id, price, message):
+def update_alert(alert_id, **fields):
+    """Edit an armed alert in place. Only the columns actually passed are written, so pausing one
+    (`active=False`) never quietly resets the level it was watching.
+
+    Changing what is being watched clears the observation history: a crossing alert re-pointed at
+    a new level must not "cross" it using a price remembered from the old one.
+    """
+    allowed = ("symbol", "condition", "price", "price2", "note", "trigger_mode", "active",
+               "expires_at", "reference_price")
+    sets = {k: v for k, v in fields.items() if k in allowed}
+    if not sets:
+        return
+    if {"condition", "price", "price2", "symbol"} & sets.keys():
+        sets["last_price"] = None
+    if "trigger_mode" in sets:
+        sets["recurring"] = sets["trigger_mode"] == "every_time"
+    columns = ", ".join(f"{k} = %s" for k in sets)
+    with connect() as conn:
+        conn.execute(f"UPDATE alerts SET {columns} WHERE id = %s", (*sets.values(), alert_id))
+
+
+def record_alert_price(alert_id, price):
+    """Remember what this alert saw, so the next sweep can tell a crossing from a level."""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE alerts SET last_price = %s, last_checked_at = now() WHERE id = %s",
+            (price, alert_id),
+        )
+
+
+def disarm_alert(alert_id):
+    with connect() as conn:
+        conn.execute("UPDATE alerts SET active = false WHERE id = %s", (alert_id,))
+
+
+def fire_alert(alert_id, price, message, rearm=False, reference_price=None):
     """Stamp an alert as triggered. A one-shot alert disarms itself in the same statement, which is
-    what stops the poller re-firing it every five seconds for the rest of the session."""
+    what stops the poller re-firing it every five seconds for the rest of the session.
+
+    `reference_price` is only passed by the moving_* conditions, which measure from where they last
+    fired - so "up 5%" repeating means another 5% from here, not 5% from where it was armed for the
+    rest of the day.
+    """
     with connect() as conn:
         conn.execute(
             "UPDATE alerts SET triggered_at = now(), triggered_price = %s, message = %s, "
-            "active = recurring WHERE id = %s",
-            (price, message, alert_id),
+            "active = %s, fire_count = fire_count + 1, "
+            "reference_price = COALESCE(%s, reference_price) WHERE id = %s",
+            (price, message, rearm, reference_price, alert_id),
         )
 
 

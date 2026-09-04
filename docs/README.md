@@ -20,6 +20,7 @@ why it exists, see the main [README](../README.md) — these docs are the
 - [Indicators](indicators.md) — every indicator and how it's calculated
 - [Paper Trading](paper-trading.md)
 - [Live Trading (Dhan)](live-trading.md)
+- [Alerts](alerts.md)
 - [Trade Log Simulation & Stress Testing](trade-simulation.md)
 - [Scraping & Anti-Block Transport](scraping.md)
 - [Database Backups](backups.md)

@@ -39,7 +39,7 @@ waiting out the poll interval.
 **Holdings tab — the open book**
 - One row per position: entry, current price (flashing green/red the moment it
   actually moves), quantity, value, unrealized P&L, and each side's levels.
-- **Chart** on a row opens `/paper/position/:id` — that symbol's candles with
+- **Clicking a row** opens `/paper/:symbol` — that symbol's candles with
   the entry, every stop-loss rung and every target drawn on as price lines, so
   "where is this actually sitting" doesn't mean opening the stock page and
   re-plotting the levels by hand.
@@ -54,6 +54,18 @@ Net portfolio value, unrealized/realized P&L, win rate, available cash
 drawdown, and an equity curve of realized P&L day by day.
 
 **Trade history**
+- **Clicking a row** opens `/paper/trade/:id` — the finished trade on the same
+  Bar Replay chart the open-position page uses, with your indicators and chart
+  settings, so a trade doesn't look like a different instrument once it closed.
+  The entry, stop and target are drawn as the order's own levels; the exit is a
+  price line, and a vertical line marks the entry and exit bars. Nothing is
+  draggable — a closed trade is a record. Beside the chart: realised and net
+  P&L, return, the R multiple against the R that was planned, how long it was
+  held, and — for a Bar Replay trade, which records it as it runs — the heat it
+  took and the best it ever reached. Notes, tags and the chart screenshot sit
+  underneath.
+  Bars come from the synced `price_history`, so a symbol that has never been
+  synced says so instead of drawing an empty chart.
 - The Trades tab's history log carries a **Net** column whenever the paper
   account has costs configured — the same per-account slippage/brokerage/
   charges the journal uses (see

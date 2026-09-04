@@ -248,8 +248,8 @@ function AttentionPanel({ attention }: { attention?: AttentionScore[] }) {
         hot.map((a) => (
           <Link
             key={a.symbol}
-            to="/stock/$symbol"
-            params={{ symbol: a.symbol }}
+            to="/stock/$exchange/$symbol"
+            params={{ exchange: 'NSE', symbol: a.symbol }}
             className="block hover:bg-muted/40"
           >
             <TerminalRow
@@ -289,8 +289,8 @@ function EventsPanel({ events }: { events?: FeedEvent[] }) {
           <div key={e.id} className="border-b border-border/40 px-2 py-1 font-mono text-xs last:border-0">
             <div className="flex items-center gap-2">
               <Link
-                to="/stock/$symbol"
-                params={{ symbol: e.symbol }}
+                to="/stock/$exchange/$symbol"
+                params={{ exchange: 'NSE', symbol: e.symbol }}
                 className="shrink-0 font-semibold hover:underline"
               >
                 {e.symbol}
@@ -422,8 +422,8 @@ function MoversPanel({
                   <tr key={r.symbol} className="border-b border-border/40 last:border-0 hover:bg-muted/40">
                     <td className="px-2 py-1">
                       <Link
-                        to="/stock/$symbol"
-                        params={{ symbol: r.symbol }}
+                        to="/stock/$exchange/$symbol"
+                        params={{ exchange: 'NSE', symbol: r.symbol }}
                         className="font-semibold hover:underline"
                       >
                         {r.symbol}
@@ -1124,7 +1124,12 @@ export default function StocksList() {
                   <tr
                     key={s.symbol}
                     className="cursor-pointer border-b border-border/40 last:border-0 hover:bg-muted/40"
-                    onClick={() => navigate({ to: '/stock/$symbol', params: { symbol: s.symbol } })}
+                    onClick={() =>
+                      navigate({
+                        to: '/stock/$exchange/$symbol',
+                        params: { exchange: 'NSE', symbol: s.symbol },
+                      })
+                    }
                   >
                     <td className="px-2 py-1 font-semibold">{s.symbol}</td>
                     <td className="px-2 py-1 text-right tabular-nums">{inr(s.price)}</td>

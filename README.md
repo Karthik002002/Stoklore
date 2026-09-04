@@ -684,7 +684,7 @@ Full details: [docs/paper-trading.md](docs/paper-trading.md).
 ### `13.5` Live Trading (Dhan)
 
 A `/live` page that places **real orders** through your own Dhan account, manages the position on
-the chart, and tells you what the broker did — plus price alerts, which share the same feed.
+the chart, and tells you what the broker did. Fills and rejections land in the [alerts](docs/alerts.md) feed.
 
 > Ships **switched off**. Read [docs/live-trading.md](docs/live-trading.md) before turning it on,
 > and test against Dhan's free sandbox first.
@@ -709,8 +709,6 @@ the chart, and tells you what the broker did — plus price alerts, which share 
   because a panic button that trades for you is worse than the problem
 - **Round trips journal themselves** into `manual_trades` tagged `live`, read off positions going
   flat rather than by stitching orders — so partial exits and averaging in still file as one trade
-- **Alerts** — price levels you arm, plus fills, rejections and closures written by the mirror, in
-  one feed
 - Full details, and what is *not* verified yet: [docs/live-trading.md](docs/live-trading.md)
 
 <div align="right">

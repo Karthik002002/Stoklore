@@ -275,9 +275,39 @@ class LiveSettingsRequest(BaseModel):
     api_base_url: str | None = None  # set to Dhan's sandbox while testing; blank = live
 
 
+#: Kept in step with alerts.CONDITIONS - the module is the authority on what each one means, this
+#: is only the door. 'above'/'below' are the two the app shipped with; they map onto
+#: greater/less on the way in so old clients and old rows keep working.
+AlertCondition = Literal[
+    "crossing", "crossing_up", "crossing_down", "greater", "less",
+    "entering_channel", "exiting_channel", "inside_channel", "outside_channel",
+    "moving_up", "moving_down", "moving_up_pct", "moving_down_pct",
+    "above", "below",
+]
+
+
 class AlertRequest(BaseModel):
     symbol: str
-    condition: Literal["above", "below"]
+    condition: AlertCondition
+    #: The level, or the first bound of a channel, or the size of the move for the moving_* ones.
     price: float
+    #: The channel's other bound. Required by the four channel conditions, ignored by the rest.
+    price2: float | None = None
     note: str | None = None
+    trigger_mode: Literal["once", "once_per_day", "every_time"] = "once"
+    #: ISO datetime. Omitted means it watches until it fires or is deleted.
+    expires_at: str | None = None
+    #: Legacy: the old spelling of trigger_mode == 'every_time'.
     recurring: bool = False
+
+
+class AlertUpdateRequest(BaseModel):
+    """Every field optional - this is also how an alert is paused (`active: false`) and resumed."""
+    symbol: str | None = None
+    condition: AlertCondition | None = None
+    price: float | None = None
+    price2: float | None = None
+    note: str | None = None
+    trigger_mode: Literal["once", "once_per_day", "every_time"] | None = None
+    expires_at: str | None = None
+    active: bool | None = None

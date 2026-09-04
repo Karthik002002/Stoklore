@@ -180,21 +180,69 @@ export type StockMasterSearch = StockMasterCounts & { stocks: StockMasterRow[] }
 /** Which price_sources plugin can fetch history, and which one is picked by default. */
 export type PriceSources = { sources: string[]; default: string }
 
-/** A price level the user armed, or something the broker did - one feed, two kinds. */
+/** Every condition an alert can watch for. The four channel ones read `price2` as their second
+ *  bound; the four moving_* ones read `price` as the SIZE of a move from `reference_price`, not as
+ *  a level. 'above'/'below' are the two the app shipped with, still armed on older rows. */
+export type AlertCondition =
+  | 'crossing'
+  | 'crossing_up'
+  | 'crossing_down'
+  | 'greater'
+  | 'less'
+  | 'entering_channel'
+  | 'exiting_channel'
+  | 'inside_channel'
+  | 'outside_channel'
+  | 'moving_up'
+  | 'moving_down'
+  | 'moving_up_pct'
+  | 'moving_down_pct'
+  | 'above'
+  | 'below'
+
+/** How often an armed alert may fire. 'once_per_day' is this app's honest reading of a charting
+ *  package's "once per bar", the bar here being a trading day. */
+export type AlertTrigger = 'once' | 'once_per_day' | 'every_time'
+
+/** A price condition the user armed, or something the broker did - one feed, two kinds. */
 export type Alert = {
   id: number
   kind: 'price' | 'order'
   symbol: string | null
-  condition: 'above' | 'below' | null
+  condition: AlertCondition | null
+  /** The level, the first channel bound, or the size of the move. */
   price: number | null
+  /** The channel's other bound; null for every non-channel condition. */
+  price2: number | null
   note: string | null
   recurring: boolean
+  trigger_mode: AlertTrigger | null
   active: boolean
+  expires_at: string | null
+  /** What moving_* measures from: the price when armed, re-captured on each firing. */
+  reference_price: number | null
+  /** The previous observation, which is what lets a crossing be told from a level. */
+  last_price: number | null
+  last_checked_at: string | null
+  fire_count: number
   triggered_at: string | null
   triggered_price: number | null
   message: string | null
   acknowledged_at: string | null
   created_at: string
+}
+
+/** The condition vocabulary, served by the backend so the picker can't drift from the engine. */
+export type AlertConditionMeta = {
+  value: AlertCondition
+  label: string
+  /** Needs a second bound. */
+  channel: boolean
+  /** Its value is a move, not a level. */
+  move: boolean
+  percent: boolean
+  /** Compares against the previous observation, so a fast round trip between polls is invisible. */
+  stateful: boolean
 }
 
 /** Query params, minus the ones that weren't set. URLSearchParams wants strings, and an
@@ -1093,7 +1141,17 @@ export const recoverLiveOrder = (correlationId: string) =>
 // --- Alerts -----------------------------------------------------------------------------------
 // One feed for two kinds: price levels you armed, and what the broker did (fills, rejections,
 // positions going flat) written by the live mirror.
-export const getAlerts = (params: { active?: boolean; limit?: number } = {}) => {
+export const getAlertConditions = () =>
+  fetch('/api/alerts/conditions').then(json<{ conditions: AlertConditionMeta[]; triggers: AlertTrigger[] }>)
+
+export const updateAlert = (id: number, patch: Partial<AlertRequest> & { active?: boolean }) =>
+  fetch(`/api/alerts/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  }).then(json<Alert>)
+
+export const getAlerts = (params: { active?: boolean; kind?: string; limit?: number } = {}) => {
   const query = new URLSearchParams(queryEntries(params)).toString()
   return fetch(`/api/alerts${query ? `?${query}` : ''}`).then(json<Alert[]>)
 }

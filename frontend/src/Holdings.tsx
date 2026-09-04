@@ -221,7 +221,12 @@ export default function Holdings() {
                       <TableRow
                         key={h.isin ?? h.symbol}
                         className="cursor-pointer"
-                        onClick={() => navigate({ to: '/stock/$symbol', params: { symbol: h.symbol } })}
+                        onClick={() =>
+                          navigate({
+                            to: '/stock/$exchange/$symbol',
+                            params: { exchange: 'NSE', symbol: h.symbol },
+                          })
+                        }
                       >
                         <TableCell className="font-semibold">{h.symbol}</TableCell>
                         <TableCell className="text-right tabular-nums">{h.qty}</TableCell>

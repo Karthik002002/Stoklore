@@ -5,6 +5,7 @@ import { useShortcut } from '@/lib/shortcuts'
 import { toast } from 'sonner'
 import {
   ArrowRightIcon,
+  BellIcon,
   CandlestickChartIcon,
   ChartNoAxesCombinedIcon,
   ClapperboardIcon,
@@ -37,7 +38,8 @@ import type { LinkProps } from '@tanstack/react-router'
 import { addStock, searchStocks } from '@/services/api'
 
 // Every top-level route in router.jsx that can be reached without a parameter. The ones that
-// can't (/stock/:symbol, /paper/:symbol, /live/:symbol, /backtest/auto/:scriptId) are reached
+// can't (/stock/:exchange/:symbol, /paper/:symbol, /paper/trade/:id, /live/:symbol,
+// /backtest/auto/:scriptId) are reached
 // from their own pages, or here by typing @SYMBOL.
 const PAGES: { icon: typeof LayoutDashboardIcon; label: string; to: LinkProps['to'] }[] = [
   { icon: LayoutDashboardIcon, label: 'Stocks', to: '/' },
@@ -49,6 +51,7 @@ const PAGES: { icon: typeof LayoutDashboardIcon; label: string; to: LinkProps['t
   { icon: CandlestickChartIcon, label: 'Paper Trading', to: '/paper' },
   { icon: ZapIcon, label: 'Live Trading', to: '/live' },
   { icon: ChartNoAxesCombinedIcon, label: 'Trade Simulation', to: '/simulation' },
+  { icon: BellIcon, label: 'Alerts', to: '/alerts' },
 ]
 
 // Matches ManualBacktesting's real `view` tabs (router.jsx's backtestingRoute) - the old 'tab'
@@ -132,7 +135,7 @@ export default function CommandPalette() {
   }
 
   const goToStock = (symbol: string) => {
-    navigate({ to: '/stock/$symbol', params: { symbol } })
+    navigate({ to: '/stock/$exchange/$symbol', params: { exchange: 'NSE', symbol } })
     close()
   }
 

@@ -1078,13 +1078,57 @@ export interface paths {
         };
         /**
          * List Alerts
-         * @description Both kinds in one feed, newest first - armed price levels and everything the broker did.
+         * @description Both kinds in one feed, newest first - armed price conditions and everything the broker did.
+         *     `kind=price` is the alerts page's table; the page's feed asks for everything.
          */
         get: operations["list_alerts_api_alerts_get"];
         put?: never;
         /** Create Alert */
         post: operations["create_alert_api_alerts_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/alerts/conditions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Alert Conditions
+         * @description What the UI builds its condition picker from, so the two can't drift apart: the labels, and
+         *     which conditions need a second bound, measure a move, or depend on a previous observation.
+         */
+        get: operations["alert_conditions_api_alerts_conditions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/alerts/{alert_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Alert
+         * @description Edit, pause or resume one alert. Also how the table's pause switch works - `active` is just
+         *     another field, so pausing and re-pointing are the same operation to the caller.
+         */
+        put: operations["update_alert_api_alerts__alert_id__put"];
+        post?: never;
+        /** Delete Alert */
+        delete: operations["delete_alert_api_alerts__alert_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1102,23 +1146,6 @@ export interface paths {
         /** Acknowledge Alerts */
         post: operations["acknowledge_alerts_api_alerts_acknowledge_post"];
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/alerts/{alert_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete Alert */
-        delete: operations["delete_alert_api_alerts__alert_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2115,16 +2142,48 @@ export interface components {
              * Condition
              * @enum {string}
              */
-            condition: "above" | "below";
+            condition: "crossing" | "crossing_up" | "crossing_down" | "greater" | "less" | "entering_channel" | "exiting_channel" | "inside_channel" | "outside_channel" | "moving_up" | "moving_down" | "moving_up_pct" | "moving_down_pct" | "above" | "below";
             /** Price */
             price: number;
+            /** Price2 */
+            price2?: number | null;
             /** Note */
             note?: string | null;
+            /**
+             * Trigger Mode
+             * @default once
+             * @enum {string}
+             */
+            trigger_mode: "once" | "once_per_day" | "every_time";
+            /** Expires At */
+            expires_at?: string | null;
             /**
              * Recurring
              * @default false
              */
             recurring: boolean;
+        };
+        /**
+         * AlertUpdateRequest
+         * @description Every field optional - this is also how an alert is paused (`active: false`) and resumed.
+         */
+        AlertUpdateRequest: {
+            /** Symbol */
+            symbol?: string | null;
+            /** Condition */
+            condition?: ("crossing" | "crossing_up" | "crossing_down" | "greater" | "less" | "entering_channel" | "exiting_channel" | "inside_channel" | "outside_channel" | "moving_up" | "moving_down" | "moving_up_pct" | "moving_down_pct" | "above" | "below") | null;
+            /** Price */
+            price?: number | null;
+            /** Price2 */
+            price2?: number | null;
+            /** Note */
+            note?: string | null;
+            /** Trigger Mode */
+            trigger_mode?: ("once" | "once_per_day" | "every_time") | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Active */
+            active?: boolean | null;
         };
         /** AutoBacktestScriptRequest */
         AutoBacktestScriptRequest: {
@@ -2315,6 +2374,8 @@ export interface components {
             max_orders_per_day?: number | null;
             /** Daily Loss Limit */
             daily_loss_limit?: number | null;
+            /** Max Position Pct */
+            max_position_pct?: number | null;
             /** Product */
             product?: ("INTRADAY" | "CNC" | "MARGIN" | "MTF") | null;
             /** Account Id */
@@ -4536,6 +4597,7 @@ export interface operations {
         parameters: {
             query?: {
                 active?: boolean | null;
+                kind?: string | null;
                 limit?: number;
             };
             header?: never;
@@ -4597,16 +4659,38 @@ export interface operations {
             };
         };
     };
-    acknowledge_alerts_api_alerts_acknowledge_post: {
+    alert_conditions_api_alerts_conditions_get: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    update_alert_api_alerts__alert_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                alert_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
             content: {
-                "application/json": number[] | null;
+                "application/json": components["schemas"]["AlertUpdateRequest"];
             };
         };
         responses: {
@@ -4640,6 +4724,39 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acknowledge_alerts_api_alerts_acknowledge_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": number[] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

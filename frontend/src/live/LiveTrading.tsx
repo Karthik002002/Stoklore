@@ -3,7 +3,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { AlertTriangleIcon, OctagonXIcon, RefreshCwIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import AlertsPanel from '@/live/AlertsPanel'
 import SymbolCombobox from '@/components/SymbolCombobox'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -370,142 +369,134 @@ export default function LiveTrading() {
         caps={status?.settings}
       />
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_22rem]">
-        <div className="space-y-4">
-          <div className="overflow-x-auto rounded-xl border">
-            <Table>
-              <TableHeader>
+      <div className="space-y-4">
+        <div className="overflow-x-auto rounded-xl border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Position</TableHead>
+                <TableHead>Qty</TableHead>
+                <TableHead>Avg</TableHead>
+                <TableHead>Last</TableHead>
+                <TableHead>Unrealised</TableHead>
+                <TableHead>Realised</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {open.length === 0 ? (
                 <TableRow>
-                  <TableHead>Position</TableHead>
-                  <TableHead>Qty</TableHead>
-                  <TableHead>Avg</TableHead>
-                  <TableHead>Last</TableHead>
-                  <TableHead>Unrealised</TableHead>
-                  <TableHead>Realised</TableHead>
-                  <TableHead />
+                  <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                    No open positions.
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {open.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
-                      No open positions.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  open.map((p) => (
-                    <TableRow key={p.security_id}>
-                      <TableCell>
-                        <Link
-                          to="/live/$symbol"
-                          params={{ symbol: p.symbol ?? '' }}
-                          className="font-medium hover:underline"
-                        >
-                          {p.symbol}
-                        </Link>
-                        <p className="text-xs text-muted-foreground">{p.product}</p>
-                      </TableCell>
-                      <TableCell className="tabular-nums">{p.net_qty}</TableCell>
-                      <TableCell className="tabular-nums">
-                        {inr(p.net_qty > 0 ? p.buy_avg : p.sell_avg)}
-                      </TableCell>
-                      <TableCell className="tabular-nums">
-                        {p.current_price == null ? '—' : inr(p.current_price)}
-                      </TableCell>
-                      <TableCell
-                        className={`tabular-nums ${(p.mark_pnl ?? 0) >= 0 ? 'text-up' : 'text-down'}`}
+              ) : (
+                open.map((p) => (
+                  <TableRow key={p.security_id}>
+                    <TableCell>
+                      <Link
+                        to="/live/$symbol"
+                        params={{ symbol: p.symbol ?? '' }}
+                        className="font-medium hover:underline"
                       >
-                        {p.mark_pnl == null ? '—' : inr(p.mark_pnl)}
-                      </TableCell>
-                      <TableCell className="tabular-nums">{inr(p.realised ?? 0)}</TableCell>
-                      <TableCell>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => close.mutate(p.security_id)}
-                          disabled={close.isPending}
-                        >
-                          Close
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-
-          <div className="overflow-x-auto rounded-xl border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Order</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Qty</TableHead>
-                  <TableHead>Price</TableHead>
-                  <TableHead />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {orders.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
-                      Nothing sent today.
+                        {p.symbol}
+                      </Link>
+                      <p className="text-xs text-muted-foreground">{p.product}</p>
+                    </TableCell>
+                    <TableCell className="tabular-nums">{p.net_qty}</TableCell>
+                    <TableCell className="tabular-nums">
+                      {inr(p.net_qty > 0 ? p.buy_avg : p.sell_avg)}
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      {p.current_price == null ? '—' : inr(p.current_price)}
+                    </TableCell>
+                    <TableCell className={`tabular-nums ${(p.mark_pnl ?? 0) >= 0 ? 'text-up' : 'text-down'}`}>
+                      {p.mark_pnl == null ? '—' : inr(p.mark_pnl)}
+                    </TableCell>
+                    <TableCell className="tabular-nums">{inr(p.realised ?? 0)}</TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => close.mutate(p.security_id)}
+                        disabled={close.isPending}
+                      >
+                        Close
+                      </Button>
                     </TableCell>
                   </TableRow>
-                ) : (
-                  orders.map((o) => (
-                    <TableRow key={o.order_id}>
-                      <TableCell>
-                        <span className="font-medium">{o.symbol}</span>
-                        <p className="text-xs text-muted-foreground">
-                          {o.side} · {o.product}
-                        </p>
-                      </TableCell>
-                      <TableCell>
-                        {o.order_type}
-                        {/* A super order's stop and target are rows of their own; without this
-                            they read as three unexplained orders on the same symbol. */}
-                        {o.parent_order_id && (
-                          <p className="text-xs text-muted-foreground">{legLabel(o.leg)}</p>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={statusTone(o.status)}>{o.status}</Badge>
-                        {o.error && <p className="mt-0.5 text-xs text-destructive">{o.error}</p>}
-                      </TableCell>
-                      <TableCell className="tabular-nums">
-                        {o.filled_qty ?? 0}/{o.quantity}
-                      </TableCell>
-                      <TableCell className="tabular-nums">
-                        {inr(o.avg_price || o.price || o.trigger_price)}
-                      </TableCell>
-                      <TableCell>
-                        {OPEN_STATUSES.includes(o.status) && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() =>
-                              cancel.mutate(
-                                o.parent_order_id ? [o.parent_order_id, o.leg] : [o.order_id, null],
-                              )
-                            }
-                            disabled={cancel.isPending}
-                          >
-                            Cancel
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                ))
+              )}
+            </TableBody>
+          </Table>
         </div>
 
-        <AlertsPanel />
+        <div className="overflow-x-auto rounded-xl border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Order</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Qty</TableHead>
+                <TableHead>Price</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {orders.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">
+                    Nothing sent today.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                orders.map((o) => (
+                  <TableRow key={o.order_id}>
+                    <TableCell>
+                      <span className="font-medium">{o.symbol}</span>
+                      <p className="text-xs text-muted-foreground">
+                        {o.side} · {o.product}
+                      </p>
+                    </TableCell>
+                    <TableCell>
+                      {o.order_type}
+                      {/* A super order's stop and target are rows of their own; without this
+                            they read as three unexplained orders on the same symbol. */}
+                      {o.parent_order_id && (
+                        <p className="text-xs text-muted-foreground">{legLabel(o.leg)}</p>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={statusTone(o.status)}>{o.status}</Badge>
+                      {o.error && <p className="mt-0.5 text-xs text-destructive">{o.error}</p>}
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      {o.filled_qty ?? 0}/{o.quantity}
+                    </TableCell>
+                    <TableCell className="tabular-nums">
+                      {inr(o.avg_price || o.price || o.trigger_price)}
+                    </TableCell>
+                    <TableCell>
+                      {OPEN_STATUSES.includes(o.status) && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            cancel.mutate(o.parent_order_id ? [o.parent_order_id, o.leg] : [o.order_id, null])
+                          }
+                          disabled={cancel.isPending}
+                        >
+                          Cancel
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
       </div>
     </div>
   )

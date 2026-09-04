@@ -1,5 +1,6 @@
-import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router'
+import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router'
 import type { SearchSchemaInput } from '@tanstack/react-router'
+import Alerts from './Alerts'
 import App from './App'
 import AutoBacktestDetail from './AutoBacktestDetail'
 import Backtesting from './Backtesting'
@@ -8,6 +9,7 @@ import EventsFeed from './EventsFeed'
 import Holdings from './Holdings'
 import PaperTrading from './paper/PaperTrading'
 import PaperPositionChart from './paper/PaperPositionChart'
+import PaperTradeDetail from './paper/PaperTradeDetail'
 import LiveTrading from './live/LiveTrading'
 import LivePositionChart from './live/LivePositionChart'
 import StockDetail from './StockDetail'
@@ -50,6 +52,8 @@ const SETTINGS_TABS = [
 // so Settings' Broker sub-tabs and Holdings' broker selection are always in sync.
 type SettingsTab = (typeof SETTINGS_TABS)[number]
 type Broker = 'dhan' | 'kite'
+/** Which listing of a symbol a stock page is showing. */
+export type Exchange = 'NSE' | 'BSE'
 
 const rootRoute = createRootRoute({
   component: App,
@@ -74,10 +78,38 @@ const indexRoute = createRoute({
   component: StocksList,
 })
 
+// A stock is identified by exchange + symbol, not by symbol alone: the same ticker can be listed
+// on both NSE and BSE, and stocks_master already carries the split (an NSE row with a bse_code is
+// one company on both). The exchange is the first segment so the URL says which listing is being
+// read before the symbol does.
 const stockRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/stock/$symbol',
+  path: '/stock/$exchange/$symbol',
+  // A hand-typed or stale exchange lands on NSE rather than 404ing - the segment picks a listing,
+  // it does not gate the page.
+  params: {
+    parse: ({ exchange, symbol }: { exchange: string; symbol: string }) => ({
+      exchange: exchange.toUpperCase() === 'BSE' ? ('BSE' as const) : ('NSE' as const),
+      symbol: symbol.toUpperCase(),
+    }),
+    stringify: ({ exchange, symbol }: { exchange: Exchange; symbol: string }) => ({ exchange, symbol }),
+  },
   component: StockDetail,
+})
+
+// Every /stock/SYMBOL link ever bookmarked, shared into chat, or pasted into a note. Redirected
+// rather than removed: the old shape was the only shape for the app's whole life until now.
+const legacyStockRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/stock/$symbol',
+  beforeLoad: ({ params, search }) => {
+    throw redirect({
+      to: '/stock/$exchange/$symbol',
+      params: { exchange: 'NSE', symbol: params.symbol },
+      search,
+      replace: true,
+    })
+  },
 })
 
 const eventsRoute = createRoute({
@@ -171,6 +203,24 @@ const paperPositionRoute = createRoute({
   component: PaperPositionChart,
 })
 
+// One finished trade, on the bars it happened on. Keyed by the journal row's id, not by symbol:
+// a stock traded five times has five of these, and only the id says which one is being read.
+const paperTradeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/paper/trade/$tradeId',
+  validateSearch: (search): { account?: number } => ({ account: numeric(search.account) }),
+  component: PaperTradeDetail,
+})
+
+// Price conditions being watched, and the feed of what fired. Its own page rather than a panel on
+// /live: alerts run whether or not live trading is switched on, and thirteen conditions with a
+// trigger mode and an expiry do not fit in a sidebar.
+const alertsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/alerts',
+  component: Alerts,
+})
+
 // Real orders, mirrored from Dhan. A sibling of /paper rather than a tab inside it: the two pages
 // look alike on purpose, and the one thing that must never happen is clicking the wrong tab.
 const liveRoute = createRoute({
@@ -224,6 +274,7 @@ const barReplayRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   stockRoute,
+  legacyStockRoute,
   eventsRoute,
   topNewsRoute,
   holdingsRoute,
@@ -231,6 +282,8 @@ const routeTree = rootRoute.addChildren([
   backtestingRoute,
   paperRoute,
   paperPositionRoute,
+  paperTradeRoute,
+  alertsRoute,
   liveRoute,
   livePositionRoute,
   simulationRoute,

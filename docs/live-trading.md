@@ -2,22 +2,21 @@
 
 [← Back to index](README.md)
 
-Real orders, from the app, against your own Dhan account — plus the alert feed that tells you what
-the broker did while you were looking at something else.
+Real orders, from the app, against your own Dhan account. What the broker did while you were
+looking at something else lands in the [alerts](alerts.md) feed, which this page writes to.
 
 > **This spends real money.** It ships switched **off**, with caps, a kill switch and a daily loss
 > stop. Read [Before the first real order](#before-the-first-real-order) before you turn it on.
 
 ## Using it
 
-- `/live` — the state bar says whether an order can be sent at all, then the ticket, your positions,
-  today's orders, and the alerts panel.
+- `/live` — the state bar says whether an order can be sent at all, then the ticket, your positions
+  and today's orders. Fills, rejections and closed positions are written to [Alerts](alerts.md),
+  which is its own page: alerts run whether or not live trading is on.
 - Click a position to open `/live/:symbol` — the Bar Replay chart with the position on it. Drag the
   stop or target line and the change goes to the broker.
 - **Kill switch** halts for the rest of the day and cancels every working order. It does **not**
   close open positions (see [why](#what-the-kill-switch-does-not-do)).
-- Alerts: type a symbol, a level, above/below. Fills, rejections and closed positions arrive in the
-  same feed without being asked for.
 
 ## How it works
 
@@ -30,7 +29,7 @@ this is a bug — which is why there is no local fill logic to disagree *with*.
 |---|---|
 | `app/core/dhan_orders.py` | Payloads, guardrails, parsing. Pure functions above the line, one `send()` below it |
 | `app/core/live.py` | The sequence: guardrails → send → mirror → alert → journal |
-| `app/core/alerts.py` | Price levels and the notification feed |
+| `app/core/alerts.py` | The [alert](alerts.md) conditions and the notification feed |
 | `app/routers/live_trading.py` | `/api/live/*` |
 | `app/routers/alerts.py` | `/api/alerts` |
 
@@ -73,8 +72,9 @@ rupee cap warning is worded exactly as the backend's refusal, so the guardrail i
 time you hear about it (`frontend/src/lib/liveSizing.ts`, checked by
 `node frontend/src/lib/liveSizing.selfcheck.ts`).
 
-**Price alerts run whether or not live trading is on** — watching a level is not trading, and
-usually precedes deciding to.
+**The alert sweep runs in this poller**, whether or not live trading is on — watching a level is
+not trading, and usually precedes deciding to. The conditions themselves, and what each one can
+and cannot see, are in [Alerts](alerts.md).
 
 ### The guardrails
 

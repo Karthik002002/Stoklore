@@ -165,7 +165,11 @@ function Row({ row, verdicts }: { row: ShareholdingRow; verdicts: Record<string,
   return (
     <TableRow>
       <TableCell>
-        <Link to="/stock/$symbol" params={{ symbol: row.symbol }} className="font-medium hover:underline">
+        <Link
+          to="/stock/$exchange/$symbol"
+          params={{ exchange: 'NSE', symbol: row.symbol }}
+          className="font-medium hover:underline"
+        >
           {row.symbol}
         </Link>
         <p className="max-w-56 truncate text-xs text-muted-foreground">{row.company}</p>

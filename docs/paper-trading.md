@@ -57,9 +57,13 @@ drawdown, and an equity curve of realized P&L day by day.
 - **Clicking a row** opens `/paper/trade/:id` — the finished trade on the same
   Bar Replay chart the open-position page uses, with your indicators and chart
   settings, so a trade doesn't look like a different instrument once it closed.
-  The entry, stop and target are drawn as the order's own levels; the exit is a
-  price line, and a vertical line marks the entry and exit bars. Nothing is
-  draggable — a closed trade is a record. Beside the chart: realised and net
+  The entry, stop and target are drawn as the order's own levels; the entry and
+  exit are **arrows on their own bars**, labelled with the side, the size and
+  the price — a level says where something happened but never when, which for a
+  finished trade is half the story. The chart is
+  read-only here — no dragging a level, no editing a leg's quantity, no
+  right-click menu, and the pills carry no buttons. A closed trade is a record,
+  and every control on it would be a lie. Beside the chart: realised and net
   P&L, return, the R multiple against the R that was planned, how long it was
   held, and — for a Bar Replay trade, which records it as it runs — the heat it
   took and the best it ever reached. Notes, tags and the chart screenshot sit

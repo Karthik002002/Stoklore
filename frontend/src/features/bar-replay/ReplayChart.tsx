@@ -7,6 +7,7 @@ import {
   HistogramSeries,
   LineSeries,
   createChart,
+  createSeriesMarkers,
 } from 'lightweight-charts'
 import type { IChartApi, ISeriesApi, IPriceLine, Time } from 'lightweight-charts'
 import type { Point } from '@/lib/indicators'
@@ -109,6 +110,14 @@ type ReplayChartProps = {
   onRequestClose?: (order: ReplayOrder) => void
   onMoveToBreakeven?: (orderId: string) => void
   onCancelPending?: (orderId: string) => void
+  /** Arrows on their own bars, the way a charting package marks a fill: an entry on the bar it
+   *  was taken, an exit on the bar it was closed. A price line says WHERE something happened but
+   *  never WHEN, which for a finished trade is half the story. */
+  markers?: ChartMarker[]
+  /** Draw the orders, but let nothing be changed through the chart: no dragging a level, no
+   *  editing a leg's quantity, no right-click menu, and pills with no action buttons. What a
+   *  FINISHED trade wants - it is a record, and every control on it would be a lie. */
+  readOnly?: boolean
   drawings?: Drawing[]
   onDrawingsChange?: (drawings: Drawing[]) => void
   drawTool?: string | null
@@ -138,6 +147,16 @@ type PreviewOrder = {
   entry: number
   stop_losses: number[]
   targets: number[]
+}
+
+/** A labelled arrow pinned to one bar. `time` matches a bar's own `time`, so it lands on that
+ *  bar whatever the timeframe. */
+export type ChartMarker = {
+  time: ReplayBar['time']
+  position: 'aboveBar' | 'belowBar'
+  shape: 'arrowUp' | 'arrowDown'
+  color: string
+  text: string
 }
 
 /** A pinned price window on a pane's scale, as lightweight-charts reports it. */
@@ -367,6 +386,8 @@ const ReplayChart = forwardRef(function ReplayChart(
     onRequestClose,
     onMoveToBreakeven,
     onCancelPending,
+    markers = [],
+    readOnly = false,
     drawings = [],
     onDrawingsChange,
     // Which drawing tool is armed, and which saved shape is selected. Both are owned by BarReplay
@@ -435,6 +456,9 @@ const ReplayChart = forwardRef(function ReplayChart(
   // the drawing branch reads has to come through a ref rather than a closed-over prop.
   const drawingsRef = useRef(drawings)
   drawingsRef.current = drawings
+  // Read through a ref so toggling it never tears down and rebuilds the chart's pointer wiring.
+  const readOnlyRef = useRef(readOnly)
+  readOnlyRef.current = readOnly
   const onDrawingsRef = useRef(onDrawingsChange)
   onDrawingsRef.current = onDrawingsChange
   const toolRef = useRef(tool)
@@ -619,6 +643,7 @@ const ReplayChart = forwardRef(function ReplayChart(
     // orders' entry price is draggable too (limit price still un-fired); a filled position's
     // entry line is history and stays fixed.
     const findHandle = (clientY: number): DragHandle | null => {
+      if (readOnlyRef.current) return null
       const rect = container.getBoundingClientRect()
       const y = clientY - rect.top
       for (const order of ordersRef.current) {
@@ -845,6 +870,9 @@ const ReplayChart = forwardRef(function ReplayChart(
     }
     const onContextMenu = (e: any) => {
       e.preventDefault()
+      // The menu only ever offers actions - adding a level, moving a stop, cancelling. With
+      // nothing to act on, opening it would be an empty box over a chart.
+      if (readOnlyRef.current) return
       const rect = container.getBoundingClientRect()
       const price = priceAt(e.clientY)
       if (price == null) return
@@ -1023,6 +1051,10 @@ const ReplayChart = forwardRef(function ReplayChart(
         series.setData((data ?? []) as never)
       })
     })
+    // Attached after setData, so every marker lands on a bar that exists. The plugin replaces its
+    // whole set on each call, which is what makes a range change an update rather than a leak.
+    if (markers.length) createSeriesMarkers(candles, markers as never)
+
     if (!hasFitRef.current) {
       // Deferred a frame: with autoSize the chart measures its container asynchronously, so on a
       // cold mount (data already in cache, nothing to wait for) this runs while the chart is still
@@ -1052,7 +1084,7 @@ const ReplayChart = forwardRef(function ReplayChart(
     // Deps must stay a superset of the series-creating effect's: anything that makes that effect
     // tear down and rebuild the series (rsiLevels, resetKey) has to re-run this one too, or the
     // freshly created series sit there with no data until the next bar step.
-  }, [bars, indicators, resetKey, settings.rsiLevels, settings.bodyUpColor, settings.bodyDownColor])
+  }, [bars, indicators, markers, resetKey, settings.rsiLevels, settings.bodyUpColor, settings.bodyDownColor])
 
   // Restores each pane's saved price scale. Per pane rather than once for the whole chart: an
   // oscillator pane added mid-session (adding RSI after the chart is already up) doesn't exist when
@@ -1393,6 +1425,7 @@ const ReplayChart = forwardRef(function ReplayChart(
             onRequestClose={onRequestClose}
             onCancelPending={onCancelPending}
             onMoveToBreakeven={onMoveToBreakeven}
+            readOnly={readOnly}
           />
         ))}
       </div>
@@ -1512,6 +1545,7 @@ function LegPill({
   tone,
   onRemoveLevel,
   onAdjustLegQty,
+  readOnly,
 }: {
   order: ReplayOrder
   leg: ReplayLeg
@@ -1522,6 +1556,7 @@ function LegPill({
   tone?: string
   onRemoveLevel?: (orderId: string, kind: 'stopLoss' | 'target', legId: string) => void
   onAdjustLegQty?: (orderId: string, kind: 'stopLoss' | 'target', legId: string, qty: number) => void
+  readOnly?: boolean
 }) {
   const [draft, setDraft] = useState<string | null>(null)
   const commit = () => {
@@ -1529,6 +1564,16 @@ function LegPill({
     if (draft != null && draft.trim() !== '' && qty !== leg.qty) onAdjustLegQty?.(order.id, kind, leg.id, qty)
     setDraft(null)
   }
+  if (readOnly) {
+    return (
+      <div data-price={leg.price} className={`${PILL} ${tone}`}>
+        <span className="px-1.5 py-0.5">
+          {label} {leg.qty} {pct(leg.price)}
+        </span>
+      </div>
+    )
+  }
+
   return (
     <div data-price={leg.price} className={`${PILL} ${tone}`}>
       <span className="py-0.5 pl-1.5">{label}</span>
@@ -1567,6 +1612,7 @@ function PositionPills({
   onRequestClose,
   onCancelPending,
   onMoveToBreakeven,
+  readOnly,
 }: {
   order: ReplayOrder
   /** The current bar's close, for the live P&L on the pill. */
@@ -1576,6 +1622,7 @@ function PositionPills({
   onRequestClose?: (order: ReplayOrder) => void
   onCancelPending?: (orderId: string) => void
   onMoveToBreakeven?: (orderId: string) => void
+  readOnly?: boolean
 }) {
   const pending = order.status === 'pending'
   const pct = (price: number) =>
@@ -1601,7 +1648,7 @@ function PositionPills({
         {/* Move-to-breakeven only makes sense once the position has an SL to move. Absent for
             pending orders (nothing to move to what isn't entered yet) and for open positions
             without any stop leg. */}
-        {!pending && order.stopLosses?.length > 0 && (
+        {!readOnly && !pending && order.stopLosses?.length > 0 && (
           <PillButton
             label="BE"
             title="Move stop-loss to breakeven"
@@ -1616,12 +1663,14 @@ function PositionPills({
             {rr.toFixed(2)}R
           </span>
         )}
-        <PillButton
-          label="✕"
-          title={pending ? 'Cancel pending order' : 'Close position'}
-          className="border-l"
-          onClick={() => (pending ? onCancelPending?.(order.id) : onRequestClose?.(order))}
-        />
+        {!readOnly && (
+          <PillButton
+            label="✕"
+            title={pending ? 'Cancel pending order' : 'Close position'}
+            className="border-l"
+            onClick={() => (pending ? onCancelPending?.(order.id) : onRequestClose?.(order))}
+          />
+        )}
       </div>
 
       {/* One pill per leg on each ladder. Removing a leg only drops its protection - it never
@@ -1634,6 +1683,7 @@ function PositionPills({
           kind="target"
           label={arr.length > 1 ? `T${i + 1}` : 'T'}
           pct={pct}
+          readOnly={readOnly}
           tone="border-up/60 text-up"
           onRemoveLevel={onRemoveLevel}
           onAdjustLegQty={onAdjustLegQty}
@@ -1647,6 +1697,7 @@ function PositionPills({
           kind="stopLoss"
           label={arr.length > 1 ? `SL${i + 1}` : 'SL'}
           pct={pct}
+          readOnly={readOnly}
           tone="border-down/60 text-down"
           onRemoveLevel={onRemoveLevel}
           onAdjustLegQty={onAdjustLegQty}

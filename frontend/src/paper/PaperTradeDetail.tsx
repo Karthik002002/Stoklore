@@ -22,7 +22,8 @@ import { accountFor, accountsById, tradeCosts, tradeNetPnl } from '@/lib/tradeCo
 import { excursionReading } from '@/lib/tradeContext'
 import ReplayChart from '@/features/bar-replay/ReplayChart'
 import { useBarReplayStore } from '@/features/bar-replay/store'
-import type { Drawing, ReplayBar, ReplayOrder } from '@/features/bar-replay/store'
+import type { ChartMarker } from '@/features/bar-replay/ReplayChart'
+import type { ReplayBar, ReplayOrder } from '@/features/bar-replay/store'
 import type { DailyBar, Trade } from '@/lib/types'
 import { getManualTrades, getPriceHistory, getTradeAccounts } from '@/services/api'
 
@@ -66,36 +67,48 @@ const asOrder = (trade: Trade): ReplayOrder => ({
   targets: trade.target == null ? [] : [{ id: 'target', price: trade.target, qty: trade.quantity }],
 })
 
-/** What an order cannot say: where it ended, and when either end happened. Drawn as the chart's own
- *  shapes - a price line at the exit, and a vertical line on the entry and exit bars. */
-const tradeMarks = (trade: Trade, bars: ReplayBar[]): Drawing[] => {
-  const marks: Drawing[] = []
-  if (trade.exit_price != null) {
-    marks.push({ id: 'exit-price', type: 'hline', points: [{ index: 0, price: trade.exit_price }] })
-  }
-  const barAt = (iso: string | null | undefined) => {
-    if (!iso) return -1
+const ENTRY_COLOR = '#3b82f6'
+const EXIT_COLOR = '#a855f7'
+
+/** What an order cannot say: WHEN each end happened. Arrows on the entry and exit bars, the way a
+ *  charting package marks a fill - the direction of the arrow is the side, and the label carries
+ *  the size and the price so the exit needs no line of its own.
+ *
+ *  The bar a trade landed on is the first one at or after its date: a trade dated on a holiday or
+ *  a weekend has no bar of its own. */
+const tradeMarkers = (trade: Trade, bars: ReplayBar[]): ChartMarker[] => {
+  const barOn = (iso: string | null | undefined) => {
+    if (!iso) return null
     const day = iso.slice(0, 10)
-    return bars.findIndex((b) => b.date.slice(0, 10) >= day)
+    return bars.find((b) => b.date.slice(0, 10) >= day) ?? null
   }
-  const lo = Math.min(...bars.map((b) => b.low), trade.entry_price)
-  const hi = Math.max(...bars.map((b) => b.high), trade.entry_price)
-  for (const [key, iso] of [
-    ['entry-bar', trade.entried_at ?? trade.traded_at],
-    ['exit-bar', trade.exited_at],
-  ] as const) {
-    const index = barAt(iso)
-    if (index < 0) continue
-    marks.push({
-      id: key,
-      type: 'trendline',
-      points: [
-        { index, price: lo },
-        { index, price: hi },
-      ],
+  const long = trade.direction === 'long'
+  const out: ChartMarker[] = []
+
+  const entryBar = barOn(trade.entried_at ?? trade.traded_at)
+  if (entryBar) {
+    out.push({
+      time: entryBar.time,
+      // Entry below the bar and exit above it, so a same-day round trip does not stack two
+      // labels on one candle.
+      position: 'belowBar',
+      shape: long ? 'arrowUp' : 'arrowDown',
+      color: ENTRY_COLOR,
+      text: `${long ? 'Buy' : 'Sell'} ${trade.quantity} @ ${inr(trade.entry_price)}`,
     })
   }
-  return marks
+
+  const exitBar = barOn(trade.exited_at)
+  if (exitBar && trade.exit_price != null) {
+    out.push({
+      time: exitBar.time,
+      position: 'aboveBar',
+      shape: long ? 'arrowDown' : 'arrowUp',
+      color: EXIT_COLOR,
+      text: `${long ? 'Sell' : 'Buy'} ${trade.quantity} @ ${inr(trade.exit_price)}`,
+    })
+  }
+  return out
 }
 
 function Metric({
@@ -304,8 +317,11 @@ export default function PaperTradeDetail() {
             bars={visible}
             indicators={indicators}
             orders={[asOrder(trade)]}
-            drawings={tradeMarks(trade, visible)}
+            markers={tradeMarkers(trade, visible)}
             settings={chartSettings}
+            // A finished trade is a record: the levels are drawn, and none of them can be moved,
+            // removed or resized from here.
+            readOnly
             // Changing the window tears the chart down rather than updating it, the same way the
             // position page's range buttons do.
             resetKey={`${trade.id}-${range}`}

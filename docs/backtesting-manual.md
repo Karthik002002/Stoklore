@@ -22,9 +22,17 @@
 - **Bulk Trades** to import several trades at once from screenshots — each
   image is analyzed and its fields pre-filled for you to confirm.
 - The **Trades** tab lists every trade with a filter bar (setup, NSE
-  session, risk discipline, expected-R range), row checkboxes for **Bulk
-  edit** (set a setup and/or add a tag across the selection in one go), and
-  two exports (see [Exports](#exports-csv-excel-markdown) below).
+  session, risk discipline, expected-R range, **logged-date window**), row
+  checkboxes for **Bulk edit** (set a setup and/or add a tag across the
+  selection in one go), and two exports (see
+  [Exports](#exports-csv-excel-markdown) below).
+- **The date window filters on `created_at`, not `traded_at`** — the same
+  reading as the Logged column and the Goals tab. A Bar Replay trade on 2013
+  bars was journaled this morning, and "last week's session" is a question
+  about when you did the work, not when the market did. Both ends are
+  inclusive, either can be left open, and a trade with no date drops out the
+  way one with no planned risk drops out of an R filter. It lives in the URL
+  with the rest of the filters (`d:from,to` inside `?f=`).
 - **The list is ordered newest-logged first**, and the first column is
   **Logged** — when the row was written, not the market date. A Bar Replay
   trade taken on 2013 bars but journaled this morning belongs at the top;

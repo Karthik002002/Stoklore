@@ -722,8 +722,8 @@ the chart, and tells you what the broker did. Fills and rejections land in the [
 - **One date control everywhere** — shadcn's Base UI `Calendar` (added through the CLI, so it
   matches the project's `base-nova` style) behind a shared `DatePicker`/`DateRangePicker`
   (`frontend/src/components/DatePicker.jsx`). It replaced every `<input type="date">` in the app:
-  the events-feed range filter, both balance-adjustment forms, Bar Replay's jump-to-date, and the
-  shareholding collect span. Values stay `"YYYY-MM-DD"` strings end to end — the API, the forms and
+  the events-feed range filter, both balance-adjustment forms, Bar Replay's jump-to-date, the
+  journal filter panel's logged-date window, and the shareholding collect span. Values stay `"YYYY-MM-DD"` strings end to end — the API, the forms and
   the URL all already spoke that, and converting at the edges beats spreading `Date` juggling
   across five call sites
 - **Command palette (Cmd/Ctrl+K)** — every page the app has, the tabs inside Backtesting, Paper

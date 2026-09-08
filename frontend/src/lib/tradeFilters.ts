@@ -30,6 +30,14 @@ export type FilterSpec<Row> = {
     hint: string
     of: (row: Row, tolerancePct: number) => number | null
   }
+  /** Optional date the rows can be windowed by. Omitted means the table has no date worth
+   *  filtering on (the shareholding screener), and the picker doesn't render. */
+  dates?: {
+    label: string
+    hint: string
+    /** Anything ISO-ish - only the "YYYY-MM-DD" head is compared. */
+    of: (row: Row) => string | null | undefined
+  }
 }
 
 export type FacetFilter = { mode: 'include' | 'exclude'; values: string[] }
@@ -38,6 +46,9 @@ export type Filters = {
   /** Kept as strings, not numbers: they come from <input type="number">, where "" means blank. */
   minR: string
   maxR: string
+  /** Inclusive "YYYY-MM-DD" window over `spec.dates`, "" for an open end. */
+  from: string
+  to: string
 }
 
 // Stands in for "this trade has no value for this facet" (no setup, no tags, no emotion). A real
@@ -71,6 +82,13 @@ export const TRADE_SPEC: FilterSpec<Trade> = {
     hint: 'Needs a planned risk — trades without one drop out.',
     of: expectedR,
   },
+  // created_at, not traded_at: a Bar Replay trade on 2013 bars was *logged* today, and "the trades
+  // from last week's session" is a question about when you took them, not when the market did.
+  dates: {
+    label: 'Logged',
+    hint: 'When the trade was journaled, not the market date.',
+    of: (t) => t.created_at,
+  },
 }
 
 const byKey = <Row>(spec: FilterSpec<Row>) =>
@@ -87,15 +105,22 @@ function valuesOf<Row>(facet: Facet<Row>, trade: Row, tolerancePct: number): str
   return clean.length ? clean : [NONE]
 }
 
-export const EMPTY_FILTERS: Filters = { facets: {}, minR: '', maxR: '' }
+export const EMPTY_FILTERS: Filters = { facets: {}, minR: '', maxR: '', from: '', to: '' }
 
 export function isEmpty(filters: Filters) {
-  return !filters.minR && !filters.maxR && !Object.values(filters.facets ?? {}).some((f) => f?.values?.length)
+  return (
+    !filters.minR &&
+    !filters.maxR &&
+    !filters.from &&
+    !filters.to &&
+    !Object.values(filters.facets ?? {}).some((f) => f?.values?.length)
+  )
 }
 
 export function activeCount(filters: Filters) {
   const facets = Object.values(filters.facets ?? {}).filter((f) => f?.values?.length).length
-  return facets + (filters.minR ? 1 : 0) + (filters.maxR ? 1 : 0)
+  // The date window counts once however many ends are set - it reads as one filter in the UI.
+  return facets + (filters.minR ? 1 : 0) + (filters.maxR ? 1 : 0) + (filters.from || filters.to ? 1 : 0)
 }
 
 /** Filters for one facet, or an empty include selection when it has none yet. */
@@ -142,6 +167,13 @@ export function filterTrades<Row = Trade>(
       const hit = valuesOf(facet, t, tolerancePct).some((v) => values.includes(v))
       if (mode === 'exclude' ? hit : !hit) return false
     }
+    if ((filters.from || filters.to) && spec.dates) {
+      const day = spec.dates.of(t)?.slice(0, 10)
+      // No date at all can't be inside a window - same rule as a trade with no R.
+      if (!day) return false
+      if (filters.from && day < filters.from) return false
+      if (filters.to && day > filters.to) return false
+    }
     if (min != null || max != null) {
       const r = spec.range?.of(t, tolerancePct)
       if (r == null) return false
@@ -184,6 +216,7 @@ export function serializeFilters<Row = Trade>(
     .filter(([key, f]) => known[key] && f.values?.length)
     .map(([key, f]) => `${key}:${MODE_CODE[f.mode] ?? 'i'}:${f.values.map(encodeURIComponent).join(',')}`)
   if (filters.minR || filters.maxR) parts.push(`r:${filters.minR ?? ''},${filters.maxR ?? ''}`)
+  if (spec.dates && (filters.from || filters.to)) parts.push(`d:${filters.from ?? ''},${filters.to ?? ''}`)
   return parts.join('|') || undefined
 }
 
@@ -193,13 +226,19 @@ export function parseFilters<Row = Trade>(
 ): Filters {
   if (!str) return EMPTY_FILTERS
   const known = byKey(spec)
-  const out: Filters = { facets: {}, minR: '', maxR: '' }
+  const out: Filters = { ...EMPTY_FILTERS, facets: {} }
   for (const part of String(str).split('|')) {
     const [key, a, b] = part.split(':')
     if (key === 'r') {
       const [minR = '', maxR = ''] = (a ?? '').split(',')
       out.minR = minR
       out.maxR = maxR
+      continue
+    }
+    if (key === 'd') {
+      const [from = '', to = ''] = (a ?? '').split(',')
+      out.from = from
+      out.to = to
       continue
     }
     if (!known[key] || !b) continue

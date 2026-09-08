@@ -3,6 +3,7 @@ import type * as React from 'react'
 import { ChevronRightIcon, SearchIcon, SlidersHorizontalIcon, XIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { DateRangePicker } from '@/components/DatePicker'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import {
@@ -163,6 +164,30 @@ export default function TradeFilterDialog<Row = Trade>({
               </div>
               <p className="text-[11px] text-muted-foreground">{spec.range.hint}</p>
             </div>
+
+            {spec.dates && (
+              <div className="mt-3 space-y-1.5 border-t px-3 pt-3">
+                <p className="text-xs text-muted-foreground">{spec.dates.label}</p>
+                <DateRangePicker
+                  from={draft.from}
+                  to={draft.to}
+                  onChange={({ from, to }) => setDraft((d) => ({ ...d, from, to }))}
+                  placeholder="Any date"
+                  className="w-full"
+                />
+                {(draft.from || draft.to) && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-full"
+                    onClick={() => setDraft((d) => ({ ...d, from: '', to: '' }))}
+                  >
+                    Clear dates
+                  </Button>
+                )}
+                <p className="text-[11px] text-muted-foreground">{spec.dates.hint}</p>
+              </div>
+            )}
           </nav>
 
           <section className="flex min-h-0 flex-col">
@@ -284,6 +309,16 @@ export function FilterChips<Row = Trade>({
           </Badge>
         )
       })}
+      {spec.dates && (filters.from || filters.to) && (
+        <Badge
+          variant="secondary"
+          className="cursor-pointer gap-1"
+          onClick={() => onChange({ ...filters, from: '', to: '' })}
+        >
+          {spec.dates.label.toLowerCase()}: {filters.from || 'any'} → {filters.to || 'any'}
+          <XIcon className="size-3" />
+        </Badge>
+      )}
       {(filters.minR || filters.maxR) && (
         <Badge
           variant="secondary"

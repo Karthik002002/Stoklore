@@ -37,12 +37,13 @@ const trade = (over) => ({
   stop_loss: 95,
   ideal_risk_amount: 50,
   traded_at: '2026-01-05T10:00:00',
+  created_at: '2026-01-05T10:00:00',
   ...over,
 })
 
 const TRADES = [
-  trade({ symbol: 'TCS', tags: ['breakout'] }),
-  trade({ symbol: 'INFY', tags: ['breakout', 'revenge'] }),
+  trade({ symbol: 'TCS', tags: ['breakout'], created_at: '2026-01-05T10:00:00' }),
+  trade({ symbol: 'INFY', tags: ['breakout', 'revenge'], created_at: '2026-02-10T09:30:00' }),
   trade({ symbol: 'WIPRO', tags: [], setup: null, result: 'loss', exit_price: 90 }),
   trade({ symbol: 'TCS', tags: ['revenge'], emotion: 'FOMO' }),
 ]
@@ -97,6 +98,31 @@ function test_r_range_drops_trades_with_no_r_at_all() {
   )
 }
 
+function test_date_window_is_inclusive_on_both_ends() {
+  // TCS/TCS logged 05 Jan, INFY 10 Feb, WIPRO 05 Jan.
+  assert.deepEqual(only({ ...EMPTY_FILTERS, from: '2026-02-01' }), ['INFY'])
+  assert.deepEqual(only({ ...EMPTY_FILTERS, to: '2026-01-31' }), ['TCS', 'WIPRO', 'TCS'])
+  // Both ends land exactly on a logged day, and both must keep it.
+  assert.deepEqual(only({ ...EMPTY_FILTERS, from: '2026-01-05', to: '2026-01-05' }), ['TCS', 'WIPRO', 'TCS'])
+  assert.equal(
+    activeCount({ ...EMPTY_FILTERS, from: '2026-01-05', to: '2026-02-05' }),
+    1,
+    'one window, one filter',
+  )
+  assert.deepEqual(
+    filterTrades([trade({ symbol: 'NODATE', created_at: null })], { ...EMPTY_FILTERS, from: '2026-01-01' }),
+    [],
+    'a row with no date cannot be inside a window',
+  )
+}
+
+function test_a_spec_without_dates_ignores_the_window() {
+  // The shareholding screener passes its own spec and has no date - the window must not silently
+  // drop every row there.
+  const spec = { noun: 'rows', facets: FACETS, range: { label: 'R', hint: '', of: () => null } }
+  assert.equal(filterTrades(TRADES, { ...EMPTY_FILTERS, from: '2030-01-01' }, 10, spec).length, TRADES.length)
+}
+
 function test_toggle_adds_then_removes_and_clears_the_facet() {
   let f = toggleValue(EMPTY_FILTERS, 'symbol', 'TCS')
   assert.deepEqual(f.facets.symbol.values, ['TCS'])
@@ -124,7 +150,7 @@ function test_url_round_trip_survives_awkward_tags() {
     values: ['a,b', 'c|d', 'e:f', 'plain tag'],
   })
   f = setFacet(f, 'symbol', { mode: 'include', values: ['TCS'] })
-  f = { ...f, minR: '0.5', maxR: '3' }
+  f = { ...f, minR: '0.5', maxR: '3', from: '2026-01-01', to: '2026-03-31' }
 
   const round = parseFilters(serializeFilters(f))
   assert.deepEqual(round, f, `round trip lost data: ${serializeFilters(f)}`)
@@ -155,6 +181,8 @@ for (const t of [
   test_untagged_trades_are_selectable_as_a_value,
   test_facets_combine_with_and,
   test_r_range_drops_trades_with_no_r_at_all,
+  test_date_window_is_inclusive_on_both_ends,
+  test_a_spec_without_dates_ignores_the_window,
   test_toggle_adds_then_removes_and_clears_the_facet,
   test_counts_are_per_value_and_sorted,
   test_url_round_trip_survives_awkward_tags,

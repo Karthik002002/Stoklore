@@ -315,10 +315,22 @@ Three interchangeable backends, picked via a `provider/model` id:
 |---|---|---|
 | `ollama/*` | Local Ollama | Default. Full tool-calling agent support. |
 | `litellm/*` | Your own [LiteLLM proxy][litellm-proxy] | Configure the proxy URL + API key in Settings → LiteLLM. Full tool-calling agent support once connected. |
-| *(anything else)* | OmniRoute (local multi-provider proxy) | Falls back to plain retrieval-augmented chat — tool-calling support varies too much across OmniRoute's many upstream providers to guarantee. |
+| `auto…` | [OmniRoute][omniroute] auto-routing | **The only ids that fall back.** One request fans out across every provider you've connected to the gateway, scored live, moving to the next healthy model when one is rate-limited or out of quota. |
+| *(anything else)* | OmniRoute (local multi-provider gateway) | Falls back to plain retrieval-augmented chat — tool-calling support varies too much across OmniRoute's many upstream providers to guarantee. |
 
-Settings is a tabbed dialog (**Model** / **LiteLLM** / **Cogencis** /
-**Broker** / **Watch rules**), with its open state and active tab in the
+**Free tiers, stacked.** `auto/chat:free` routes the chatbot across free-tier
+models only and keeps going when one runs out — the point of the gateway, which
+catalogs free tiers across hundreds of providers. `auto` (balanced),
+`auto/cheap`, `auto/fast`, `auto/offline`, `auto/smart`, `auto/coding` and the
+`:free` reasoning/vision variants are all in the Model tab; the grammar is
+`auto/<category>[:<tier>]` and OmniRoute resolves any valid pair on demand.
+**`:free` is a strong preference, not a billing guarantee** — its tier filter is
+fail-open, so a paid provider can serve a request no free model fits. The app
+never retries across models itself: that is the gateway's job, and a second
+router would fight the first. See [Model Settings](docs/model-settings.md).
+
+Settings is a tabbed dialog (**Model** / **OmniRoute** / **LiteLLM** /
+**Cogencis** / **Broker** / **Watch rules**), with its open state and active tab in the
 URL (`?settings=broker`) so any page can deep-link into a specific tab —
 the Model tab's dropdown lists whatever's actually reachable right now
 (Ollama is always listed; OmniRoute's and LiteLLM's catalogs are queried
@@ -966,4 +978,5 @@ I review, refactor, and test AI-generated code before it ships — not blindly c
 </div>
 
 [back-to-top]: https://img.shields.io/badge/-BACK_TO_TOP-151515?style=flat-square
+[omniroute]: https://github.com/diegosouzapw/OmniRoute
 [litellm-proxy]: https://docs.litellm.ai/docs/simple_proxy

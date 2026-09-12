@@ -59,6 +59,11 @@ class LiteLLMConfigRequest(BaseModel):
     api_key: str | None = None  # None (omitted) leaves the previously-saved key untouched
 
 
+class OmniRouteConfigRequest(BaseModel):
+    base_url: str = ""  # "" = the default local gateway at http://localhost:20128/v1
+    api_key: str | None = None  # None (omitted) leaves the previously-saved key untouched
+
+
 class CogencisConfigRequest(BaseModel):
     token: str
 

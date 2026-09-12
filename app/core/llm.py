@@ -7,21 +7,56 @@ import urllib.error
 import urllib.request
 
 OLLAMA_BASE = "http://localhost:11434"
-OMNIROUTE_BASE = "http://localhost:20128/v1"
+DEFAULT_OMNIROUTE_BASE = "http://localhost:20128/v1"
 EMBED_MODEL = "nomic-embed-text"
 DEFAULT_MODEL = "ollama/hf.co/empero-ai/Qwythos-9B-Claude-Mythos-5-1M-GGUF:Q4_K_M"
 
-# Set by api.py at startup (from db.get_litellm_base_url/get_litellm_api_key) and again whenever
-# the user saves new LiteLLM settings - kept as plain module globals rather than an import of db,
-# so this module stays a pure network client with no storage dependency.
+# Set by main.py at startup (from the matching db.get_* helpers) and again whenever the user
+# saves new settings - kept as plain module globals rather than an import of db, so this module
+# stays a pure network client with no storage dependency.
 LITELLM_BASE = None
 LITELLM_API_KEY = None
+#: OmniRoute defaults to the local gateway, so it works with nothing configured at all - that is
+#: the whole premise of `omniroute serve`. Only a remote gateway or an endpoint key needs settings.
+OMNIROUTE_BASE = DEFAULT_OMNIROUTE_BASE
+OMNIROUTE_API_KEY = None
 
 
 def configure_litellm(base_url, api_key=None):
     global LITELLM_BASE, LITELLM_API_KEY
     LITELLM_BASE = base_url.rstrip("/") if base_url else None
     LITELLM_API_KEY = api_key or None
+
+
+def configure_omniroute(base_url=None, api_key=None):
+    global OMNIROUTE_BASE, OMNIROUTE_API_KEY
+    OMNIROUTE_BASE = base_url.rstrip("/") if base_url else DEFAULT_OMNIROUTE_BASE
+    OMNIROUTE_API_KEY = api_key or None
+
+
+# --- OmniRoute auto-routing ----------------------------------------------------------------------
+# OmniRoute resolves `auto/<category>[:<tier>]` on demand (docs/routing/AUTO-COMBO.md): it builds a
+# virtual combo from every connected provider, scores them live, and falls back to the next healthy
+# one when a target is out of quota or failing. That fallback is the gateway's whole job - the app
+# deliberately does NOT loop over models itself, which would be a second, worse router fighting it.
+#
+# Only the `auto` aliases are listed here. The concrete per-model ids come from the gateway's own
+# /v1/models catalog (see get_models), so this list never has to track 1,300 model names.
+#
+# `:free` filters the candidate pool to free-tier models. Note OmniRoute's filter is FAIL-OPEN: if
+# no connected free model fits the request, it routes to the full pool rather than erroring, so
+# ":free" is a strong preference, not a billing guarantee.
+AUTO_MODELS = [
+    ("auto/chat:free", "Auto · free tier only (fallback across every free model)"),
+    ("auto", "Auto · balanced (sticks to the last good provider)"),
+    ("auto/cheap", "Auto · cheapest per token first"),
+    ("auto/fast", "Auto · lowest latency first"),
+    ("auto/offline", "Auto · most quota headroom first"),
+    ("auto/smart", "Auto · quality first, explores for better models"),
+    ("auto/coding", "Auto · quality weights for code"),
+    ("auto/reasoning:free", "Auto · free reasoning models"),
+    ("auto/vision:free", "Auto · free vision models"),
+]
 
 
 def _post(base, path, body, headers=None, timeout=120):
@@ -65,7 +100,9 @@ def _omniroute_chat(messages, model, tools=None):
     body = {"model": model, "messages": messages, "stream": False}
     if tools:
         body["tools"] = tools
-    resp = _openai_compat_post(OMNIROUTE_BASE, None, body, "OmniRoute", "is `omniroute serve` running?")
+    resp = _openai_compat_post(
+        OMNIROUTE_BASE, OMNIROUTE_API_KEY, body, "OmniRoute", "is `omniroute serve` running?"
+    )
     return resp["choices"][0]["message"]
 
 
@@ -238,10 +275,16 @@ def get_models():
     configured). Degrades quietly if either proxy isn't reachable, rather than erroring."""
     models = [{"id": DEFAULT_MODEL, "label": "Qwythos 9B (local)"}]
     try:
-        req = urllib.request.Request(f"{OMNIROUTE_BASE}/models")
+        headers = {"Authorization": f"Bearer {OMNIROUTE_API_KEY}"} if OMNIROUTE_API_KEY else {}
+        req = urllib.request.Request(f"{OMNIROUTE_BASE}/models", headers=headers)
         with urllib.request.urlopen(req, timeout=5) as r:
             data = json.load(r)
-        models += [{"id": m["id"], "label": m["id"]} for m in data.get("data", [])]
+        # The auto aliases go FIRST and are added by us, not read from the catalog: only a curated
+        # subset of them is advertised in /v1/models, yet any valid one resolves on demand. They
+        # are also the only entries that fall back, which is what most sessions should be using.
+        catalog = [m["id"] for m in data.get("data", [])]
+        models += [{"id": i, "label": label} for i, label in AUTO_MODELS if i not in catalog]
+        models += [{"id": m, "label": m} for m in catalog]
     except (urllib.error.URLError, ConnectionRefusedError):
         pass
     if LITELLM_BASE:

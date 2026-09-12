@@ -518,6 +518,25 @@ export const setLiteLLMConfig = (baseUrl: string, apiKey: string | null) =>
     body: JSON.stringify({ base_url: baseUrl, api_key: apiKey || null }),
   }).then(json)
 
+/** The gateway's address (blank = the default local one), whether a key is stored, and the auto
+ *  routing aliases it offers - served by the backend so the Settings tab and the Model tab can't
+ *  disagree about what auto-routing is available. */
+export type OmniRouteConfig = {
+  base_url: string
+  default_base_url: string
+  has_api_key: boolean
+  auto_models: { id: string; label: string }[]
+}
+
+export const getOmniRouteConfig = () => fetch('/api/settings/omniroute').then(json<OmniRouteConfig>)
+
+export const setOmniRouteConfig = (baseUrl: string, apiKey: string | null) =>
+  fetch('/api/settings/omniroute', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ base_url: baseUrl, api_key: apiKey || null }),
+  }).then(json)
+
 export const getCogencisConfig = () => fetch('/api/settings/cogencis').then(json<{ has_token: boolean }>)
 
 export const setCogencisToken = (token: string) =>

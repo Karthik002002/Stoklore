@@ -11,6 +11,7 @@ from app.schemas import (
     DhanConfigRequest,
     KiteConfigRequest,
     LiteLLMConfigRequest,
+    OmniRouteConfigRequest,
 )
 
 router = APIRouter(tags=["settings"])
@@ -41,6 +42,26 @@ def get_litellm_config():
 def set_litellm_config(req: LiteLLMConfigRequest):
     db.set_litellm_config(req.base_url.rstrip("/"), req.api_key or None)
     llm.configure_litellm(db.get_litellm_base_url(), db.get_litellm_api_key())
+    return {"ok": True}
+
+
+@router.get("/api/settings/omniroute")
+def get_omniroute_config():
+    # never echo the api key back - the UI shows "•••• saved" instead of the real value
+    return {
+        "base_url": db.get_omniroute_base_url() or "",
+        "default_base_url": llm.DEFAULT_OMNIROUTE_BASE,
+        "has_api_key": bool(db.get_omniroute_api_key()),
+        # What the Model tab will offer for auto-routing, so the tab can say what it enables
+        # without a second copy of the list.
+        "auto_models": [{"id": i, "label": label} for i, label in llm.AUTO_MODELS],
+    }
+
+
+@router.put("/api/settings/omniroute")
+def set_omniroute_config(req: OmniRouteConfigRequest):
+    db.set_omniroute_config(req.base_url.rstrip("/"), req.api_key or None)
+    llm.configure_omniroute(db.get_omniroute_base_url(), db.get_omniroute_api_key())
     return {"ok": True}
 
 

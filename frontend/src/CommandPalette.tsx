@@ -80,6 +80,7 @@ const SIMULATION_MODES = [
 const SETTINGS_TABS = [
   { label: 'Settings > Model', tab: 'model' },
   { label: 'Settings > LiteLLM', tab: 'litellm' },
+  { label: 'Settings > OmniRoute', tab: 'omniroute' },
   { label: 'Settings > Cogencis', tab: 'cogencis' },
   { label: 'Settings > Broker', tab: 'broker' },
   { label: 'Settings > Watch rules', tab: 'rules' },

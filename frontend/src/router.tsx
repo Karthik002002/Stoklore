@@ -34,6 +34,7 @@ const numeric = (value: unknown) => (Number.isFinite(Number(value)) && value ? N
 const SETTINGS_TABS = [
   'model',
   'litellm',
+  'omniroute',
   'cogencis',
   'broker',
   'rules',

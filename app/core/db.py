@@ -1305,6 +1305,22 @@ def set_litellm_config(base_url, api_key=None):
         _set_setting("litellm_api_key", api_key)
 
 
+def get_omniroute_base_url():
+    return _get_setting("omniroute_base_url")
+
+
+def get_omniroute_api_key():
+    return _get_setting("omniroute_api_key")
+
+
+def set_omniroute_config(base_url, api_key=None):
+    """Both optional: a local `omniroute serve` needs neither, so an empty base_url means "use the
+    default localhost gateway". api_key=None leaves a stored key untouched, same as LiteLLM's."""
+    _set_setting("omniroute_base_url", base_url or "")
+    if api_key is not None:
+        _set_setting("omniroute_api_key", api_key)
+
+
 def get_cogencis_token():
     return _get_setting("cogencis_token")
 

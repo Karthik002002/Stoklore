@@ -62,6 +62,7 @@ import {
   getBulkCollectStatus,
   getCogencisConfig,
   getLiteLLMConfig,
+  getOmniRouteConfig,
   getModels,
   getPriceSources,
   getStocks,
@@ -80,6 +81,7 @@ import {
   setDhanConfig,
   setKiteConfig,
   setLiteLLMConfig,
+  setOmniRouteConfig,
 } from '@/services/api'
 
 function ModelTab() {
@@ -194,6 +196,102 @@ function LiteLLMTab() {
         </a>{' '}
         (e.g. <code>litellm --config config.yaml</code>). Its models then show up in the Model tab as{' '}
         <code>litellm/&lt;model&gt;</code>, with full tool-calling chatbot support.
+      </p>
+    </div>
+  )
+}
+
+// OmniRoute is the only backend that needs no configuration to work: `omniroute serve` on
+// localhost is the default, and its keyless free providers answer with no account at all. This tab
+// exists for the two cases that do need something - a gateway on another machine, and an endpoint
+// key - and to explain what the auto routes in the Model tab actually do.
+function OmniRouteTab() {
+  const queryClient = useQueryClient()
+  const { data: config } = useQuery({ queryKey: ['omnirouteConfig'], queryFn: getOmniRouteConfig })
+  const [baseUrl, setBaseUrl] = useState('')
+  const [apiKey, setApiKey] = useState('')
+  const [touched, setTouched] = useState(false)
+
+  const displayBaseUrl = touched ? baseUrl : baseUrl || config?.base_url || ''
+
+  const save = useMutation({
+    mutationFn: () => setOmniRouteConfig(displayBaseUrl, apiKey),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['omnirouteConfig'] })
+      queryClient.invalidateQueries({ queryKey: ['models'] })
+      toast.success('OmniRoute connection saved')
+      setApiKey('')
+      setTouched(false)
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Gateway URL</p>
+        <Input
+          value={displayBaseUrl}
+          onChange={(e) => {
+            setBaseUrl(e.target.value)
+            setTouched(true)
+          }}
+          placeholder={config?.default_base_url ?? 'http://localhost:20128/v1'}
+        />
+        <p className="text-xs text-muted-foreground">
+          Leave blank for the local gateway (<code>{config?.default_base_url}</code>). Only set this for an
+          OmniRoute running on another machine.
+        </p>
+      </div>
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Endpoint key</p>
+        <Input
+          type="password"
+          value={apiKey}
+          onChange={(e) => setApiKey(e.target.value)}
+          placeholder={
+            config?.has_api_key ? '•••• saved - leave blank to keep it' : 'Optional for a local gateway'
+          }
+        />
+      </div>
+      <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
+        Save connection
+      </Button>
+
+      <div className="space-y-2 border-t pt-4">
+        <p className="text-sm font-medium">Auto-routing</p>
+        <p className="text-xs text-muted-foreground">
+          These appear at the top of the Model tab. Each one routes across every connected provider, scored
+          live, and <strong>falls back to the next healthy one</strong> when a model is rate-limited, out of
+          quota, or failing — so a chat doesn't die because one free tier ran out.
+        </p>
+        <ul className="space-y-1 text-xs">
+          {config?.auto_models.map((m) => (
+            <li key={m.id} className="flex gap-2">
+              <code className="shrink-0">{m.id}</code>
+              <span className="text-muted-foreground">{m.label.replace(/^Auto · /, '')}</span>
+            </li>
+          ))}
+        </ul>
+        <p className="text-xs text-muted-foreground">
+          <code>:free</code> restricts routing to free-tier models. OmniRoute's filter is{' '}
+          <strong>fail-open</strong>: if no connected free model can serve a request it uses the full pool
+          rather than failing, so treat it as a strong preference, not a billing guarantee.
+        </p>
+      </div>
+
+      <p className="text-xs text-muted-foreground">
+        Start the gateway with <code>npx omniroute serve</code> (or{' '}
+        <a
+          href="https://github.com/diegosouzapw/OmniRoute"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-0.5 underline hover:text-foreground"
+        >
+          install it <ExternalLinkIcon className="size-3" />
+        </a>
+        ), then connect providers in its own dashboard at <code>http://localhost:20128</code>. Its models show
+        up in the Model tab by their own ids, with full tool-calling chatbot support.
       </p>
     </div>
   )
@@ -1175,6 +1273,7 @@ export default function Settings() {
             <TabsIndicator />
             <TabsTab value="model">Model</TabsTab>
             <TabsTab value="litellm">LiteLLM</TabsTab>
+            <TabsTab value="omniroute">OmniRoute</TabsTab>
             <TabsTab value="cogencis">Cogencis</TabsTab>
             <TabsTab value="broker">Broker</TabsTab>
             <TabsTab value="rules">Watch rules</TabsTab>
@@ -1189,6 +1288,9 @@ export default function Settings() {
           <div className="min-w-0 flex-1 overflow-y-auto pr-1">
             <TabsPanel value="model">
               <ModelTab />
+            </TabsPanel>
+            <TabsPanel value="omniroute">
+              <OmniRouteTab />
             </TabsPanel>
             <TabsPanel value="litellm">
               <LiteLLMTab />

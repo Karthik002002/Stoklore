@@ -7,11 +7,45 @@
 - Home page (`/`) lists tracked stocks with live price + day change.
 - Bookmark a stock into a watchlist from its row menu; switch watchlists via
   the tabs above the table.
+- **⌘/Ctrl+B opens the watchlist canvas from anywhere in the app** — symbols
+  down the left, lists down the right, one edge per membership. **Drag from a
+  symbol to a list to file it; select an edge and press Delete to unfile it.**
+  Both writes hit the watchlist immediately — there is no Save.
+- A stock can sit in **any number of lists**, which is the whole reason this is
+  a graph and not a picker: two edges off one symbol is the state a
+  single-select dropdown can't show.
+- The panel top-left adds a **stock** (scraped live via `POST /api/stocks`, so a
+  bad ticker fails there instead of landing as an empty node) and a **new
+  watchlist** (an empty list is a real thing — it persists as a tab).
+- Nodes drag freely and keep their positions while the canvas is open; layout
+  isn't saved, so it re-columns on reopen.
+- Rebindable in Settings › Shortcuts; also in the ⌘K palette as **Watchlists**.
 - **Reload** (sidebar) clears the shared price cache and re-fetches.
 - Sidebar icons: Stocks, Events, Top news, Holdings, Backtesting, Settings,
   theme toggle.
 
 ## How it works
+
+**The watchlist canvas** (`frontend/src/WatchlistManager.tsx`) is React Flow
+(`@xyflow/react`). Mounted once in `App` and opened by a window event — the same
+trick `Profile` uses, and what lets the command palette open it without a
+callback threaded through App's tree. It reads the `['stocks']`, `['watchlist']`
+and `['watchlists']` queries the Stocks page already has, so it shares that
+cache and an edit here updates that page underneath.
+
+**A node per symbol comes from the union of two sets, not from `GET /api/stocks`
+alone.** `watchlist` rows are not foreign-keyed to `symbols`, so a list can (and
+does) hold symbols that were never scraped — driving the canvas off the tracked
+list would silently hide most of the mapping it exists to show. Those nodes
+render as **Not tracked** rather than being dropped.
+
+Node ids are prefixed (`s:SYMBOL`, `l:NAME`) because `onConnect` receives two
+bare ids and a symbol could otherwise collide with a list name. Nodes and edges
+are rebuilt from server data after every write, but each node keeps the position
+it already had — otherwise filing one stock would throw away every node the user
+had dragged. Nodes are `deletable: false`: deleting a *symbol* is
+`DELETE /api/stocks/{symbol}` and lives on the Stocks page, and losing one to a
+stray Backspace on a canvas is not a mistake worth making available.
 
 **Live price/day-change** comes from `GET /api/stocks` (`app/routers/`), which
 lists tracked symbols (`db.list_symbols()`) and, per symbol, calls

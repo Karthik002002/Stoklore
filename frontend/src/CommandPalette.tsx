@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import {
   ArrowRightIcon,
   BellIcon,
+  BookmarkIcon,
   CandlestickChartIcon,
   ChartNoAxesCombinedIcon,
   ClapperboardIcon,
@@ -34,6 +35,7 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { useTheme } from '@/lib/theme'
 import { openProfile } from './Profile'
+import { openWatchlists } from './WatchlistManager'
 import type { LinkProps } from '@tanstack/react-router'
 import { addStock, searchStocks } from '@/services/api'
 
@@ -159,6 +161,11 @@ export default function CommandPalette() {
     close()
   }
 
+  const openWatchlistsModal = () => {
+    openWatchlists()
+    close()
+  }
+
   const toggleThemeAndClose = () => {
     toggleTheme()
     close()
@@ -227,6 +234,10 @@ export default function CommandPalette() {
                     {p.label}
                   </CommandItem>
                 ))}
+                <CommandItem value="Watchlists" onSelect={openWatchlistsModal}>
+                  <BookmarkIcon className="size-4" />
+                  Watchlists
+                </CommandItem>
                 <CommandItem value="Profile" onSelect={openProfileModal}>
                   <UserRoundIcon className="size-4" />
                   Profile

@@ -727,13 +727,18 @@ the chart, and tells you what the broker did. Fills and rejections land in the [
   the URL all already spoke that, and converting at the edges beats spreading `Date` juggling
   across five call sites
 - **Command palette (Cmd/Ctrl+K)** — every page the app has, the tabs inside Backtesting, Paper
-  Trading and Trade Simulation, all twelve Settings sub-tabs, plus Profile, theme and a
+  Trading and Trade Simulation, all twelve Settings sub-tabs, plus Profile, Watchlists, theme and a
   cache-clearing reload. Type `@SYMBOL` to jump to a stock's detail page; an untracked ticker is
   verified against NSE before it navigates, so the palette never lands on an empty page. The lists
   in `frontend/src/CommandPalette.jsx` are hand-maintained rather than derived from the router —
   a new route or tab has to be added there in the same change, or it simply can't be found
+- **Watchlist canvas (Cmd/Ctrl+B)** — the stock-to-watchlist mapping as a React Flow graph, on one
+  shortcut from any page: symbols left, lists right, an edge per membership. Drag to file a stock,
+  select an edge and Delete to unfile it, add stocks and lists from the canvas itself. A stock can
+  sit in any number of lists — two edges off one symbol is the state a dropdown can't draw. See
+  [Dashboard & Watchlists](docs/dashboard.md)
 - **Every keyboard shortcut is rebindable** — Settings › Shortcuts lists all of
-  them (command palette, AI chat, and Bar Replay's ten trading/playback keys),
+  them (command palette, AI chat, watchlists, and Bar Replay's ten trading/playback keys),
   each captured by pressing the combination rather than typing its name.
   Backspace turns one off, and clashes are flagged rather than left to be
   discovered when one of the two silently stops firing. Components register by

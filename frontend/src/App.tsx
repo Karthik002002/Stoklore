@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import ActivityTracker from './ActivityTracker'
 import ChatWidget from './ChatWidget'
 import CommandPalette from './CommandPalette'
+import WatchlistManager from './WatchlistManager'
 import GuiltBanner from './GuiltBanner'
 import Profile from './Profile'
 import Settings from './Settings'
@@ -143,6 +144,7 @@ function App() {
       <ActivityTracker />
       {!isBarReplay && <ChatWidget />}
       <CommandPalette />
+      <WatchlistManager />
       <Toaster position="top-center" richColors closeButton />
     </TooltipProvider>
   )

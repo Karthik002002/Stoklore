@@ -42,7 +42,7 @@ const newId = () => crypto.randomUUID()
 
 /** A streamed tool part. The AI SDK types these per registered tool, but the server owns the tool
  *  schemas here, so they arrive as `dynamic-tool` and are read structurally. */
-type ToolPart = {
+export type ToolPart = {
   type: string
   toolCallId?: string
   toolName?: string
@@ -89,7 +89,7 @@ const formatToolValue = (value: unknown) => {
 
 // Click to expand and see exactly what the tool was called with and what it returned - the live
 // step-by-step trace of what the agent is doing, not just a name and a checkmark.
-function ToolCallChip({ part }: { part: ToolPart }) {
+export function ToolCallChip({ part }: { part: ToolPart }) {
   const [open, setOpen] = useState(false)
   const done = part.state === 'output-available' || part.state === 'output-error'
   return (
@@ -202,7 +202,7 @@ const monthAgoIso = () => {
   return d.toISOString().slice(0, 10)
 }
 
-function slashCommands(symbol?: string) {
+export function slashCommands(symbol?: string) {
   const sym = symbol || 'SYMBOL'
   return [
     {

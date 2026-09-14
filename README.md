@@ -329,6 +329,37 @@ fail-open, so a paid provider can serve a request no free model fits. The app
 never retries across models itself: that is the gateway's job, and a second
 router would fight the first. See [Model Settings](docs/model-settings.md).
 
+**The agent has its own page** at `/agent` — [docs](docs/agent.md). Chat on one
+tab with a sidebar of every conversation; **Workflow** on the other, drawing that
+chat's last run as a React Flow graph: the prompt, a node per tool call, the
+answer, with item counts on the wires. Tools the model asked for in one turn are
+drawn as parallel branches, because that's what they were.
+
+Runs on that page are **server-side**: `POST /api/agent/runs` starts a thread and
+returns a run id, so navigating away — or closing the tab — doesn't kill the run,
+and reopening the chat replays it from the beginning. A chat still working shows
+a live spinner in every browser, not just the one that started it.
+
+**Workflow** is the other half, and the difference is who pulls the trigger: chat
+waits for you, a workflow runs with nobody watching. Wire the agent's own tools
+into a graph (trigger → tools → an LLM step → file it to the alerts feed), point
+a node's `for each` at a list to fan out over a watchlist, and arm it on a daily
+schedule or after the event scan. Workflows bypass the agent's confirm gate —
+arming one *is* the confirmation — which is safe because the tool table has no
+order-placing tool in it. Executions are recorded as ordinary runs, so they get
+the same history and the same flow diagram as a chat turn.
+
+A `condition` node is what makes it worth arming: the workflow runs daily but
+only files an alert when something crosses a line you set — everything
+downstream of a gate that didn't hold is **skipped**, not failed, so silence
+means nothing needed you. A `collect` node appends rows to a named series each
+run, kept for the last N *runs* (not rows), and the **Data** view charts any
+numeric column of it next to run health — failures, durations, and which node
+breaks most. Tool and agent nodes retry transient upstream failures; a run whose
+node failed is recorded failed and says so in the feed, because a workflow that
+quietly produces nothing for a week is the real failure mode. Three starter
+templates clone disarmed, and the day's results roll into one digest at 18:00.
+
 Settings is a tabbed dialog (**Model** / **OmniRoute** / **LiteLLM** /
 **Cogencis** / **Broker** / **Watch rules**), with its open state and active tab in the
 URL (`?settings=broker`) so any page can deep-link into a specific tab —

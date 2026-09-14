@@ -7,6 +7,7 @@ import {
   ArrowRightIcon,
   BellIcon,
   BookmarkIcon,
+  BotIcon,
   CandlestickChartIcon,
   ChartNoAxesCombinedIcon,
   ClapperboardIcon,
@@ -54,6 +55,7 @@ const PAGES: { icon: typeof LayoutDashboardIcon; label: string; to: LinkProps['t
   { icon: ZapIcon, label: 'Live Trading', to: '/live' },
   { icon: ChartNoAxesCombinedIcon, label: 'Trade Simulation', to: '/simulation' },
   { icon: BellIcon, label: 'Alerts', to: '/alerts' },
+  { icon: BotIcon, label: 'Agent', to: '/agent' },
 ]
 
 // Matches ManualBacktesting's real `view` tabs (router.jsx's backtestingRoute) - the old 'tab'
@@ -63,6 +65,11 @@ const BACKTEST_TABS = [
   { label: 'Backtesting > Trades', view: 'trades' },
   { label: 'Backtesting > Statistics', view: 'statistics' },
   { label: 'Backtesting > Goals', view: 'goals' },
+]
+
+const AGENT_TABS = [
+  { label: 'Agent > Chat', view: 'chat' },
+  { label: 'Agent > Workflow', view: 'workflow' },
 ]
 
 const PAPER_TABS = [
@@ -259,6 +266,14 @@ export default function CommandPalette() {
                   <ClapperboardIcon className="size-4" />
                   Bar Replay
                 </CommandItem>
+              </CommandGroup>
+              <CommandGroup heading="Agent">
+                {AGENT_TABS.map((t) => (
+                  <CommandItem key={t.view} value={t.label} onSelect={() => goTo('/agent', { view: t.view })}>
+                    <BotIcon className="size-4" />
+                    {t.label}
+                  </CommandItem>
+                ))}
               </CommandGroup>
               <CommandGroup heading="Paper Trading">
                 {PAPER_TABS.map((t) => (

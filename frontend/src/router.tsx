@@ -1,5 +1,6 @@
 import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router'
 import type { SearchSchemaInput } from '@tanstack/react-router'
+import AgentPage from './agent/AgentPage'
 import Alerts from './Alerts'
 import App from './App'
 import AutoBacktestDetail from './AutoBacktestDetail'
@@ -222,6 +223,22 @@ const alertsRoute = createRoute({
   component: Alerts,
 })
 
+// The agent: the chat on one tab, the diagram of what that chat executed on the other. `session`
+// scopes BOTH tabs, so switching between them never swaps the run under you, and a pasted link
+// carries the conversation it was about. A run itself belongs to the server, so there is nothing
+// about it to keep in the URL.
+const agentRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/agent',
+  validateSearch: (
+    search: { view?: 'chat' | 'workflow'; session?: string } & SearchSchemaInput,
+  ): { view: 'chat' | 'workflow'; session?: string } => ({
+    view: search.view === 'workflow' ? 'workflow' : 'chat',
+    session: typeof search.session === 'string' ? search.session : undefined,
+  }),
+  component: AgentPage,
+})
+
 // Real orders, mirrored from Dhan. A sibling of /paper rather than a tab inside it: the two pages
 // look alike on purpose, and the one thing that must never happen is clicking the wrong tab.
 const liveRoute = createRoute({
@@ -284,6 +301,7 @@ const routeTree = rootRoute.addChildren([
   paperRoute,
   paperPositionRoute,
   paperTradeRoute,
+  agentRoute,
   alertsRoute,
   liveRoute,
   livePositionRoute,

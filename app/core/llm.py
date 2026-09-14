@@ -236,14 +236,19 @@ def run_agent_stream(messages, tools, tool_impls, model, max_rounds=5):
     messages. max_rounds caps runaway loops.
 
     Generator, so callers can surface tool activity live in the UI. Yields, in order:
-      ("tool", call_id, name, args)     - before a tool executes
-      ("tool_result", call_id, result)  - after it finishes
-      ("done", final_text)              - always the last event
+      ("tool", call_id, name, args, round)      - before a tool executes
+      ("tool_result", call_id, result, round)   - after it finishes
+      ("done", final_text)                      - always the last event
+
+    `round` is the loop iteration that asked for the call. Every tool in one round was requested
+    by a SINGLE model turn, so they are siblings that fan out from the same decision - which is
+    the one thing the flat event order cannot express, and exactly what the Workflow diagram
+    (app/services/workflow.py) draws as parallel branches.
     """
     driver = _driver_for(model)
     msgs = list(messages)
     content = ""
-    for _ in range(max_rounds):
+    for round_ in range(max_rounds):
         msg, calls = driver.call(msgs, tools)
         content = msg.get("content") or ""
         if not calls:
@@ -251,14 +256,15 @@ def run_agent_stream(messages, tools, tool_impls, model, max_rounds=5):
             return
         msgs.append(msg)
         for call in calls:
-            yield ("tool", call["id"], call["name"], call["arguments"])
+            yield ("tool", call["id"], call["name"], call["arguments"], round_)
             try:
                 result = tool_impls[call["name"]](**call["arguments"])
             except KeyError:
                 result = f"unknown tool '{call['name']}'"
             except Exception as e:
                 result = f"tool '{call['name']}' failed: {e}"
-            yield ("tool_result", call["id"], result)  # unwrapped - the UI shows the real result
+            # unwrapped - the UI shows the real result
+            yield ("tool_result", call["id"], result, round_)
             msgs.append(driver.tool_result_message(call["id"], _wrap_tool_result(call["name"], result)))
     yield ("done", content.strip() or "I couldn't finish that within the tool-call limit - try a more specific request.")
 

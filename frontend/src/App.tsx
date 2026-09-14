@@ -3,6 +3,7 @@ import {
   IconBolt,
   IconChartCandle,
   IconChartHistogram,
+  IconRobot,
   IconFlask,
   IconLayoutDashboard,
   IconNews,
@@ -19,6 +20,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import ActivityTracker from './ActivityTracker'
 import ChatWidget from './ChatWidget'
 import CommandPalette from './CommandPalette'
+import useRunNotifications from './agent/useRunNotifications'
 import WatchlistManager from './WatchlistManager'
 import GuiltBanner from './GuiltBanner'
 import Profile from './Profile'
@@ -39,6 +41,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/paper', icon: IconChartCandle, label: 'Paper Trading' },
   { to: '/live', icon: IconBolt, label: 'Live Trading' },
   { to: '/simulation', icon: IconChartHistogram, label: 'Trade Simulation' },
+  { to: '/agent', icon: IconRobot, label: 'Agent' },
 ]
 
 // Icon-rail nav item: TanStack Router's Link auto-applies an "active" class on route match
@@ -96,6 +99,8 @@ function ReloadButton() {
 }
 
 function App() {
+  // Background runs finish while you're on another page - see agent/useRunNotifications.ts.
+  useRunNotifications()
   const isBarReplay = window.location.pathname.includes('/backtest/replay')
   return (
     <TooltipProvider>

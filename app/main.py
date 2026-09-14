@@ -15,7 +15,11 @@ from app.core import paper
 
 from app.core.config import UPLOAD_DIR
 from app.routers import router
-from app.services.jobs import _auto_event_scan_loop, _auto_shareholding_loop
+from app.services.jobs import (
+    _auto_event_scan_loop,
+    _auto_shareholding_loop,
+    _workflow_schedule_loop,
+)
 from app.services.quotes import paper_price
 
 app = FastAPI(title="Stoklore API")
@@ -34,6 +38,9 @@ def _startup():
     # listed company), then the XBRL detail for the handful of filings that actually moved. See
     # app/services/jobs.py.
     threading.Thread(target=_auto_shareholding_loop, daemon=True).start()
+    # Saved workflows on a schedule. Hourly tick, same catch-up-after-downtime shape as the two
+    # loops above - see run_triggered_workflows in app/services/jobs.py.
+    threading.Thread(target=_workflow_schedule_loop, daemon=True).start()
     backup.start()
     # Watches open paper positions against live prices and fires simulated exits. Idempotent, and
     # idles outside market hours - see paper.py.

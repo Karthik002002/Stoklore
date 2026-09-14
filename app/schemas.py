@@ -64,6 +64,27 @@ class OmniRouteConfigRequest(BaseModel):
     api_key: str | None = None  # None (omitted) leaves the previously-saved key untouched
 
 
+class AgentRunRequest(BaseModel):
+    session_id: str
+    message: str
+    model: str | None = None
+    #: The already-windowed conversation the client has on screen. Passed in rather than read from
+    #: chat_messages because the client is the only side that knows what it is actually showing.
+    history: list[dict] | None = None
+
+
+class WorkflowRequest(BaseModel):
+    name: str
+    description: str | None = None
+    #: {"nodes": [...], "edges": [...]} - React Flow's own shape, stored and returned whole.
+    graph: dict = {"nodes": [], "edges": []}
+    trigger: dict = {"kind": "manual"}
+    enabled: bool = False
+    #: How many runs' worth of collected rows to keep. Per workflow, because a daily scan and an
+    #: hourly one mean very different things by "the last 30".
+    retain_runs: int = 30
+
+
 class CogencisConfigRequest(BaseModel):
     token: str
 

@@ -41,6 +41,88 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- One agent run: a single user turn, executed server-side so it survives the browser closing.
+-- Separate from chat_messages because a run has a lifecycle (running -> done/failed) that a
+-- stored message does not, and the Workflow tab groups tool calls by run, not by message.
+CREATE TABLE IF NOT EXISTS chat_runs (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'running',
+  prompt TEXT NOT NULL,
+  reply TEXT,
+  error TEXT,
+  model TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  finished_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS chat_runs_session_idx ON chat_runs (session_id, created_at DESC);
+-- A workflow execution is a run too: same rows, same tool-call children, same flow diagram. Only
+-- what pulled the trigger differs, so session_id becomes optional rather than a second table.
+ALTER TABLE chat_runs ALTER COLUMN session_id DROP NOT NULL;
+ALTER TABLE chat_runs ADD COLUMN IF NOT EXISTS workflow_id TEXT;
+CREATE INDEX IF NOT EXISTS chat_runs_workflow_idx ON chat_runs (workflow_id, created_at DESC);
+
+-- Every tool the agent called, which is what the Workflow tab draws. `round` is the agent loop's
+-- iteration: tools sharing a round were requested by one model turn, so they are the DAG's
+-- parallel branches (the fan-out in an n8n graph); `seq` only orders them within it.
+-- A saved workflow: the graph you wired, and what sets it off. The graph is stored whole rather
+-- than as node/edge tables - it is only ever read and written in one piece by the editor, and a
+-- relational split would buy joins nobody needs.
+CREATE TABLE IF NOT EXISTS workflows (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  graph JSONB NOT NULL DEFAULT '{"nodes": [], "edges": []}'::jsonb,
+  -- {"kind": "manual" | "schedule" | "event_scan", "time": "09:15"} - see workflow_engine.py
+  trigger JSONB NOT NULL DEFAULT '{"kind": "manual"}'::jsonb,
+  enabled BOOLEAN NOT NULL DEFAULT false,
+  last_run_date DATE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Added after `workflows` shipped, so these have to be ALTERs: CREATE TABLE IF NOT EXISTS is a
+-- no-op on an existing table, and a column added only inside that body never reaches a database
+-- that already has the table. Same additive pattern the alerts columns use.
+--
+-- retain_runs: how many runs' worth of collected rows to keep. Per workflow, because a daily scan
+-- and an hourly one mean very different things by "the last 30".
+ALTER TABLE workflows ADD COLUMN IF NOT EXISTS retain_runs INTEGER NOT NULL DEFAULT 30;
+-- fail_streak: consecutive failed runs, reset by any success - so a workflow that has been quietly
+-- broken all week is a number on the row rather than an absence of alerts.
+ALTER TABLE workflows ADD COLUMN IF NOT EXISTS fail_streak INTEGER NOT NULL DEFAULT 0;
+
+-- What a workflow has gathered over time. One row per collected record per run, which is what
+-- makes "TCS close across the last 30 morning runs" answerable at all - without it every run's
+-- output dies inside that run and there is nothing to chart.
+--
+-- Rows are JSONB rather than columns because a series' shape is whatever the wired tool returns;
+-- the table view reads the union of keys and the chart picks a numeric one.
+CREATE TABLE IF NOT EXISTS workflow_series (
+  id SERIAL PRIMARY KEY,
+  workflow_id TEXT NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
+  series TEXT NOT NULL,
+  run_id TEXT,
+  collected_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  row JSONB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS workflow_series_idx
+  ON workflow_series (workflow_id, series, collected_at DESC);
+
+CREATE TABLE IF NOT EXISTS chat_tool_calls (
+  id SERIAL PRIMARY KEY,
+  run_id TEXT NOT NULL REFERENCES chat_runs(id) ON DELETE CASCADE,
+  call_id TEXT NOT NULL,
+  round INTEGER NOT NULL DEFAULT 0,
+  seq INTEGER NOT NULL DEFAULT 0,
+  name TEXT NOT NULL,
+  args JSONB,
+  result JSONB,
+  error TEXT,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  finished_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS chat_tool_calls_run_idx ON chat_tool_calls (run_id, round, seq);
+
 CREATE TABLE IF NOT EXISTS stock_news (
   id SERIAL PRIMARY KEY,
   symbol TEXT NOT NULL,
@@ -1321,6 +1403,14 @@ def set_omniroute_config(base_url, api_key=None):
         _set_setting("omniroute_api_key", api_key)
 
 
+def get_last_digest_date():
+    return _get_setting("last_workflow_digest_date")
+
+
+def set_last_digest_date(iso_date):
+    _set_setting("last_workflow_digest_date", iso_date)
+
+
 def get_cogencis_token():
     return _get_setting("cogencis_token")
 
@@ -1433,6 +1523,199 @@ def add_message(session_id, role, content):
             "INSERT INTO chat_messages (session_id, role, content) VALUES (%s, %s, %s)",
             (session_id, role, content),
         )
+
+
+def create_run(run_id, session_id, prompt, model, workflow_id=None):
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO chat_runs (id, session_id, prompt, model, workflow_id) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (run_id, session_id, prompt, model, workflow_id),
+        )
+
+
+# --- workflows ------------------------------------------------------------------------------------
+
+
+def list_workflows():
+    with connect() as conn:
+        return conn.execute("SELECT * FROM workflows ORDER BY created_at DESC").fetchall()
+
+
+def get_workflow(workflow_id):
+    with connect() as conn:
+        return conn.execute("SELECT * FROM workflows WHERE id = %s", (workflow_id,)).fetchone()
+
+
+def save_workflow(workflow_id, name, description, graph, trigger, enabled, retain_runs=30):
+    """Upsert - the editor saves the whole workflow every time, so there is no partial-update path
+    to get wrong and no way for the graph and its trigger to be saved out of step."""
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO workflows (id, name, description, graph, trigger, enabled, retain_runs) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, "
+            "description = EXCLUDED.description, graph = EXCLUDED.graph, "
+            "trigger = EXCLUDED.trigger, enabled = EXCLUDED.enabled, "
+            "retain_runs = EXCLUDED.retain_runs, updated_at = now()",
+            (workflow_id, name, description, Jsonb(graph), Jsonb(trigger), enabled, retain_runs),
+        )
+
+
+def append_series(workflow_id, series, run_id, rows):
+    """Appends collected rows. One INSERT per row rather than a batch: a collect node handles
+    single-digit-to-low-hundreds of rows per run, and executemany here would buy nothing but a
+    second code path to get wrong."""
+    with connect() as conn:
+        for row in rows:
+            conn.execute(
+                "INSERT INTO workflow_series (workflow_id, series, run_id, row) "
+                "VALUES (%s, %s, %s, %s)",
+                (workflow_id, series, run_id, Jsonb(row)),
+            )
+
+
+def prune_series(workflow_id, retain_runs):
+    """Drops everything older than the last `retain_runs` runs that actually collected something.
+
+    Counts RUNS, not rows: a run that collected eight symbols and one that collected two are both
+    one run, and pruning by row count would keep a ragged window that means nothing on a chart.
+    """
+    with connect() as conn:
+        conn.execute(
+            "DELETE FROM workflow_series WHERE workflow_id = %s AND run_id IS NOT NULL "
+            "AND run_id NOT IN ("
+            "  SELECT run_id FROM ("
+            "    SELECT run_id, MAX(collected_at) AS last_at FROM workflow_series "
+            "    WHERE workflow_id = %s AND run_id IS NOT NULL GROUP BY run_id "
+            "    ORDER BY last_at DESC LIMIT %s"
+            "  ) AS keep"
+            ")",
+            (workflow_id, workflow_id, max(1, retain_runs)),
+        )
+
+
+def list_series_names(workflow_id):
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT series FROM workflow_series WHERE workflow_id = %s ORDER BY series",
+            (workflow_id,),
+        ).fetchall()
+    return [r["series"] for r in rows]
+
+
+def read_series(workflow_id, series, limit=1000):
+    with connect() as conn:
+        return conn.execute(
+            "SELECT run_id, collected_at, row FROM workflow_series "
+            "WHERE workflow_id = %s AND series = %s ORDER BY collected_at DESC LIMIT %s",
+            (workflow_id, series, limit),
+        ).fetchall()
+
+
+def workflow_health(workflow_id, limit=50):
+    """The last `limit` runs with their duration, and every node that failed in them. Aggregated in
+    SQL rather than in Python because the interesting question - which node fails most - is a GROUP
+    BY over rows this process would otherwise have to pull in full."""
+    with connect() as conn:
+        runs = conn.execute(
+            "SELECT id, status, created_at, finished_at, error, "
+            "EXTRACT(EPOCH FROM (finished_at - created_at)) AS seconds "
+            "FROM chat_runs WHERE workflow_id = %s ORDER BY created_at DESC LIMIT %s",
+            (workflow_id, limit),
+        ).fetchall()
+        failures = conn.execute(
+            "SELECT c.name, COUNT(*) AS failures FROM chat_tool_calls c "
+            "JOIN chat_runs r ON r.id = c.run_id "
+            "WHERE r.workflow_id = %s AND c.error IS NOT NULL "
+            "GROUP BY c.name ORDER BY failures DESC LIMIT 10",
+            (workflow_id,),
+        ).fetchall()
+    return {"runs": runs, "failing_nodes": failures}
+
+
+def set_fail_streak(workflow_id, streak):
+    with connect() as conn:
+        conn.execute("UPDATE workflows SET fail_streak = %s WHERE id = %s", (streak, workflow_id))
+
+
+def running_workflow_run(workflow_id):
+    """The workflow's in-flight run, if any. A scheduled workflow whose last run is still going
+    must not be started again - two copies of a scan would double every write it makes."""
+    with connect() as conn:
+        return conn.execute(
+            "SELECT id FROM chat_runs WHERE workflow_id = %s AND status = 'running' LIMIT 1",
+            (workflow_id,),
+        ).fetchone()
+
+
+def delete_workflow(workflow_id):
+    with connect() as conn:
+        conn.execute("DELETE FROM workflows WHERE id = %s", (workflow_id,))
+
+
+def mark_workflow_ran(workflow_id, on_date):
+    """Stamps the IST date a scheduled workflow last fired. The scheduler ticks hourly and asks
+    "has today's run happened", so a machine that was asleep at the target hour still runs when it
+    wakes - the same reasoning as the event scan and shareholding loops."""
+    with connect() as conn:
+        conn.execute("UPDATE workflows SET last_run_date = %s WHERE id = %s", (on_date, workflow_id))
+
+
+def finish_run(run_id, reply=None, error=None):
+    with connect() as conn:
+        conn.execute(
+            "UPDATE chat_runs SET status = %s, reply = %s, error = %s, finished_at = now() "
+            "WHERE id = %s",
+            ("failed" if error else "done", reply, error, run_id),
+        )
+
+
+def get_run(run_id):
+    with connect() as conn:
+        return conn.execute("SELECT * FROM chat_runs WHERE id = %s", (run_id,)).fetchone()
+
+
+def list_runs(session_id=None, status=None, limit=50):
+    """Newest first. `status='running'` is how the sidebar knows which chats are still working -
+    a run outlives the browser tab that started it, so the answer can't live in the client."""
+    clauses, params = [], []
+    if session_id:
+        clauses.append("session_id = %s")
+        params.append(session_id)
+    if status:
+        clauses.append("status = %s")
+        params.append(status)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    with connect() as conn:
+        return conn.execute(
+            f"SELECT * FROM chat_runs {where} ORDER BY created_at DESC LIMIT %s", (*params, limit)
+        ).fetchall()
+
+
+def start_tool_call(run_id, call_id, round_, seq, name, args):
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO chat_tool_calls (run_id, call_id, round, seq, name, args) "
+            "VALUES (%s, %s, %s, %s, %s, %s)",
+            (run_id, call_id, round_, seq, name, Jsonb(args or {})),
+        )
+
+
+def finish_tool_call(run_id, call_id, result=None, error=None):
+    with connect() as conn:
+        conn.execute(
+            "UPDATE chat_tool_calls SET result = %s, error = %s, finished_at = now() "
+            "WHERE run_id = %s AND call_id = %s",
+            (Jsonb(result), error, run_id, call_id),
+        )
+
+
+def list_tool_calls(run_id):
+    with connect() as conn:
+        return conn.execute(
+            "SELECT * FROM chat_tool_calls WHERE run_id = %s ORDER BY round, seq", (run_id,)
+        ).fetchall()
 
 
 def list_messages(session_id):

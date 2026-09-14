@@ -537,6 +537,214 @@ export const setOmniRouteConfig = (baseUrl: string, apiKey: string | null) =>
     body: JSON.stringify({ base_url: baseUrl, api_key: apiKey || null }),
   }).then(json)
 
+// --- the agent page: background runs, and the flow diagram of what one did --------------------
+
+/** One agent turn executed server-side. It outlives the tab that started it, so `status` is the
+ *  server's answer, never the client's. */
+export type AgentRun = {
+  id: string
+  session_id: string
+  status: 'running' | 'done' | 'failed'
+  prompt: string
+  reply: string | null
+  error: string | null
+  model: string | null
+  created_at: string
+  finished_at: string | null
+}
+
+export const getAgentRuns = (params: { session_id?: string; status?: string } = {}) => {
+  const q = new URLSearchParams(params as Record<string, string>).toString()
+  return fetch(`/api/agent/runs${q ? `?${q}` : ''}`).then(json<AgentRun[]>)
+}
+
+export const startAgentRun = (body: {
+  session_id: string
+  message: string
+  model?: string
+  history?: { role: string; content: string }[]
+}) =>
+  fetch('/api/agent/runs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(json<{ run_id: string; model: string }>)
+
+/** One event off a run's replay-then-follow feed. A reconnect replays from the start, so a client
+ *  that missed the first half of a run still receives it. */
+export type AgentRunEvent =
+  | { type: 'tool-input-available'; toolCallId: string; toolName: string; input: unknown; round: number }
+  | { type: 'tool-output-available'; toolCallId: string; output: unknown; isError: boolean }
+  | { type: 'done'; status: 'done' | 'failed'; reply: string | null; error: string | null }
+  | { type: 'error'; error: string }
+
+/** A React Flow graph of one run: what the agent actually did, node per tool call. */
+export type WorkflowNode = {
+  id: string
+  type: 'task'
+  position: { x: number; y: number }
+  data: {
+    label: string
+    kind: 'trigger' | 'tool' | 'reply'
+    status: 'done' | 'running' | 'error'
+    detail?: string
+    args?: Record<string, unknown>
+    result?: unknown
+    error?: string | null
+    items?: number
+  }
+}
+
+export type WorkflowEdge = {
+  id: string
+  source: string
+  target: string
+  label: string
+  animated: boolean
+  status: string
+}
+
+export type AgentWorkflow = { nodes: WorkflowNode[]; edges: WorkflowEdge[]; run?: AgentRun | null }
+
+export const getRunWorkflow = (runId: string) =>
+  fetch(`/api/agent/runs/${runId}/workflow`).then(json<AgentWorkflow>)
+
+export const getSessionWorkflow = (sessionId: string) =>
+  fetch(`/api/agent/sessions/${sessionId}/workflow`).then(json<AgentWorkflow>)
+
+// --- workflows: the same agent, wired by hand and run with nobody watching -----------------------
+
+/** How a workflow is set off. `time` is IST "HH:MM" and only means anything for `schedule`. */
+export type WorkflowTrigger = { kind: 'manual' | 'schedule' | 'event_scan'; time?: string }
+
+/** React Flow's own node shape, plus the fields the executor reads off `data`. */
+export type WorkflowGraphNode = {
+  id: string
+  kind: 'trigger' | 'tool' | 'agent' | 'output'
+  position: { x: number; y: number }
+  data: {
+    label?: string
+    /** tool nodes: which tool, and its arguments (values, or `{{ nodeId.field }}` templates) */
+    tool?: string
+    args?: Record<string, string>
+    /** runs this node once per item of the referenced list - the fan-out */
+    for_each?: string
+    /** agent nodes */
+    prompt?: string
+    /** condition nodes: everything downstream is skipped unless this holds */
+    left?: string
+    op?: string
+    right?: string
+    /** collect nodes */
+    series?: string
+    rows?: string
+    /** output nodes */
+    message?: string
+    symbol?: string
+  }
+}
+
+export type WorkflowGraph = {
+  nodes: WorkflowGraphNode[]
+  edges: { id: string; source: string; target: string }[]
+}
+
+export type Workflow = {
+  id: string
+  name: string
+  description: string | null
+  graph: WorkflowGraph
+  trigger: WorkflowTrigger
+  enabled: boolean
+  /** How many runs' worth of collected rows to keep. */
+  retain_runs: number
+  /** Consecutive failed runs; reset by any success. */
+  fail_streak: number
+  last_run_date: string | null
+  created_at: string
+  updated_at: string
+}
+
+/** What the editor's palette is built from - served off the agent's own tool schemas, so a tool
+ *  added there appears in the palette with no second list to keep in step. */
+export type WorkflowCatalogue = {
+  node_kinds: string[]
+  trigger_kinds: string[]
+  operators: string[]
+  tools: { name: string; description: string; parameters: string[]; required: string[] }[]
+}
+
+export const getWorkflowCatalogue = () => fetch('/api/workflows/catalogue').then(json<WorkflowCatalogue>)
+
+export const getWorkflows = () => fetch('/api/workflows').then(json<Workflow[]>)
+
+export const getWorkflow = (id: string) => fetch(`/api/workflows/${id}`).then(json<Workflow>)
+
+export type WorkflowInput = Pick<Workflow, 'name' | 'description' | 'graph' | 'trigger' | 'enabled'> & {
+  retain_runs?: number
+}
+
+export const saveWorkflow = (id: string, body: WorkflowInput) =>
+  fetch(`/api/workflows/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(json<Workflow>)
+
+export const deleteWorkflow = (id: string) => fetch(`/api/workflows/${id}`, { method: 'DELETE' }).then(json)
+
+export const runWorkflow = (id: string) =>
+  fetch(`/api/workflows/${id}/run`, { method: 'POST' }).then(json<{ run_id: string }>)
+
+export const getWorkflowRuns = (id: string) => fetch(`/api/workflows/${id}/runs`).then(json<AgentRun[]>)
+
+/** A collected series: the rows, plus which columns exist and which of them can be plotted.
+ *  Only the data can answer "what is numeric here", so the backend works it out. */
+export type WorkflowSeries = {
+  series: string[]
+  selected: string | null
+  rows: Record<string, unknown>[]
+  columns: string[]
+  numeric: string[]
+}
+
+export const getWorkflowSeries = (id: string, series?: string) =>
+  fetch(`/api/workflows/${id}/series${series ? `?series=${encodeURIComponent(series)}` : ''}`).then(
+    json<WorkflowSeries>,
+  )
+
+/** Is this workflow actually working? The thing a feed that has gone quiet cannot tell you. */
+export type WorkflowHealth = {
+  runs: {
+    id: string
+    status: 'running' | 'done' | 'failed'
+    created_at: string
+    finished_at: string | null
+    error: string | null
+    seconds: number | null
+  }[]
+  failing_nodes: { name: string; failures: number }[]
+  total: number
+  failed: number
+  avg_seconds: number | null
+}
+
+export const getWorkflowHealth = (id: string) =>
+  fetch(`/api/workflows/${id}/health`).then(json<WorkflowHealth>)
+
+export type WorkflowTemplate = {
+  id: string
+  name: string
+  description: string
+  trigger: WorkflowTrigger
+  nodes: number
+}
+
+export const getWorkflowTemplates = () => fetch('/api/workflows/templates').then(json<WorkflowTemplate[]>)
+
+export const createFromTemplate = (templateId: string) =>
+  fetch(`/api/workflows/templates/${templateId}`, { method: 'POST' }).then(json<Workflow>)
+
 export const getCogencisConfig = () => fetch('/api/settings/cogencis').then(json<{ has_token: boolean }>)
 
 export const setCogencisToken = (token: string) =>

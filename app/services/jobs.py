@@ -43,6 +43,109 @@ def _auto_event_scan_loop():
         if events.should_auto_scan(db.get_last_event_scan_date(), today) and not _event_scan_state["running"]:
             db.set_last_event_scan_date(today)
             _run_event_scan(None)
+            # Workflows wired to the event scan run on what it just found, not on yesterday's
+            # feed - which is the only reason to hang them off this rather than off a clock.
+            run_triggered_workflows("event_scan")
+        time.sleep(3600)
+
+
+#: IST hour the daily digest is filed - after the evening workflows, before the next morning.
+DIGEST_HOUR = 18
+
+
+# --- workflows ------------------------------------------------------------------------------------
+# Scheduled workflows follow the same shape as the two loops in this file, for the same reasons:
+# an hourly tick asking "has today's run happened yet" rather than a cron daemon. It needs no new
+# dependency, a machine asleep at 09:15 still runs when it wakes, and a restart can't double-fire
+# because the last-run date is a column, not memory.
+
+
+def run_triggered_workflows(kind, now=None):
+    """Every enabled workflow on `kind` whose turn it is. Returns how many were started.
+
+    Each one runs on its own thread: a workflow that fans out over a watchlist can take minutes,
+    and one slow workflow must not hold up the others or the loop that found them.
+    """
+    from zoneinfo import ZoneInfo
+
+    # Imported here, not at module scope: agent.py imports this module for the scan/sync tools,
+    # and the engine imports agent.py - a top-level import would close that circle.
+    from app.services.workflow_engine import workflow_engine_run
+
+    now = now or datetime.now(ZoneInfo("Asia/Kolkata"))
+    today = now.date()
+    started = 0
+    for workflow in db.list_workflows():
+        trigger = workflow.get("trigger") or {}
+        if not workflow.get("enabled") or trigger.get("kind") != kind:
+            continue
+        if workflow.get("last_run_date") == today:
+            continue  # already ran today
+        if kind == "schedule" and now.strftime("%H:%M") < (trigger.get("time") or "09:15"):
+            continue  # not yet due
+        if db.running_workflow_run(workflow["id"]):
+            # Its previous run is still going. Starting a second copy would double every write it
+            # makes, and a fan-out over a watchlist can genuinely outlast an hourly tick.
+            continue
+        db.mark_workflow_ran(workflow["id"], today)
+        threading.Thread(target=workflow_engine_run, args=(workflow,), daemon=True).start()
+        started += 1
+    return started
+
+
+def run_daily_digest(now=None):
+    """One summary of everything the workflows filed today, once a day.
+
+    The reason this exists: five armed workflows mean five separate alerts every morning, which is
+    the inbox the whole feature was supposed to replace. The originals are left alone - the digest
+    is an extra row, not a deletion - so nothing is lost if the roll-up misses something.
+    """
+    from zoneinfo import ZoneInfo
+
+    from app.core import alerts
+
+    now = now or datetime.now(ZoneInfo("Asia/Kolkata"))
+    today = now.date()
+    todays = [
+        a for a in db.list_alerts(kind="workflow", limit=200)
+        if a.get("triggered_at") and _as_date(a["triggered_at"]) == today
+        and not (a.get("meta") or {}).get("digest")
+    ]
+    if not todays:
+        return 0
+    lines = [f"· {a['message']}" for a in todays if a.get("message")]
+    alerts.record(
+        "workflow",
+        f"Today's workflows — {len(todays)} result{'' if len(todays) == 1 else 's'}\n"
+        + "\n".join(lines),
+        meta={"digest": True},
+    )
+    return len(todays)
+
+
+def _as_date(value):
+    return value.date() if hasattr(value, "date") else datetime.fromisoformat(str(value)).date()
+
+
+def _workflow_schedule_loop():
+    """Hourly tick: due workflows, then the day's digest once everything has had its chance.
+
+    DIGEST_HOUR is late enough that a 09:30 scan and a 16:00 log are both in it. Same
+    once-per-IST-day guard as everything else in this file, so a restart can't double-file it.
+    """
+    from zoneinfo import ZoneInfo
+
+    ist = ZoneInfo("Asia/Kolkata")
+    while True:
+        try:
+            run_triggered_workflows("schedule")
+            now = datetime.now(ist)
+            today = now.date().isoformat()
+            if now.hour >= DIGEST_HOUR and db.get_last_digest_date() != today:
+                db.set_last_digest_date(today)
+                run_daily_digest(now)
+        except Exception:  # noqa: BLE001 - a bad workflow must not end the scheduler
+            pass
         time.sleep(3600)
 
 

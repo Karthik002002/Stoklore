@@ -22,7 +22,7 @@ import { inr } from '@/lib/format'
 import { useShortcut, useShortcutLabel } from '@/lib/shortcuts'
 import { useTheme } from '@/lib/theme'
 import { addStock, getStocks, getWatchlist, getWatchlistNames } from '@/services/api'
-import type { TrackedStock } from '@/services/api'
+import type { TrackedStock, WatchlistEntry } from '@/services/api'
 
 // The stock -> watchlist mapping as a canvas: symbols down the left, lists down the right, one
 // edge per membership. Drag from a symbol to a list to file it; select an edge and press Delete to
@@ -43,6 +43,15 @@ export function openWatchlists() {
 const stockId = (symbol: string) => `s:${symbol}`
 const listId = (name: string) => `l:${name}`
 const edgeId = (symbol: string, name: string) => `${stockId(symbol)}->${listId(name)}`
+
+// Stable empty arrays for the query defaults below. `= []` in a destructuring default builds a NEW
+// array on every render whenever `data` is undefined - and these queries are `enabled: open`, so
+// that is every render while the dialog is shut. A fresh identity busts the useMemo that depends on
+// it, which re-runs the effect, which setStates, which renders again: "Maximum update depth
+// exceeded", with nothing on screen to hint at where it came from.
+const NO_STOCKS: TrackedStock[] = []
+const NO_MEMBERSHIPS: WatchlistEntry[] = []
+const NO_LISTS: string[] = []
 
 type StockNodeData = { symbol: string; stock?: TrackedStock }
 type ListNodeData = { name: string; count: number }
@@ -109,17 +118,17 @@ export default function WatchlistManager() {
 
   // The same three query keys the Stocks page reads, so opening this costs no request and editing
   // here updates that page underneath. Only fetched while the canvas is open.
-  const { data: stocks = [], isLoading } = useQuery({
+  const { data: stocks = NO_STOCKS, isLoading } = useQuery({
     queryKey: ['stocks'],
     queryFn: getStocks,
     enabled: open,
   })
-  const { data: watchlist = [] } = useQuery({
+  const { data: watchlist = NO_MEMBERSHIPS } = useQuery({
     queryKey: ['watchlist'],
     queryFn: getWatchlist,
     enabled: open,
   })
-  const { data: lists = [] } = useQuery({
+  const { data: lists = NO_LISTS } = useQuery({
     queryKey: ['watchlists'],
     queryFn: getWatchlistNames,
     enabled: open,

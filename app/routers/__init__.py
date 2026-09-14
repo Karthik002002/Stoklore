@@ -24,6 +24,7 @@ from fastapi import APIRouter
 
 from app.routers import (
     activity,
+    agent,
     alerts,
     backtest,
     backup,
@@ -46,6 +47,7 @@ from app.routers import (
     trade_accounts,
     watch_rules,
     watchlists,
+    workflows,
 )
 
 router = APIRouter()
@@ -76,5 +78,7 @@ for _module in (
     indices,
     reports,
     chat,
+    agent,
+    workflows,
 ):
     router.include_router(_module.router)

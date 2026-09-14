@@ -12,6 +12,7 @@ from app.core import scraper
 
 from app.deps import _sse
 from app.schemas import ChatRequest
+from app.services import agent_runs
 from app.services.agent import (
     AGENT_SYSTEM,
     AGENT_TOOL_IMPLS,
@@ -190,6 +191,20 @@ def _parse_confirm(user_text):
             k, v = part.split("=", 1)
             kwargs[k] = v
     return name, kwargs
+def _rag_reply(user_text, messages, model):
+    """Retrieval-augmented chat with no tools: scrape any ticker mentioned, pull the nearest
+    stored reports, answer from those. The original path for every model, and now the fallback
+    for a provider whose tool support turns out to be a promise rather than a feature."""
+    live_reports = list(filter(None, (
+        _live_scrape(symbol, model) for symbol in dict.fromkeys(TICKER_PATTERN.findall(user_text))
+    )))
+    query_embedding = llm.embed(user_text)
+    matches = db.similarity_search(query_embedding, limit=5)
+    stored = [m["content_markdown"] for m in matches if m["content_markdown"] not in live_reports]
+    context = "\n\n---\n\n".join(live_reports + stored) or None
+    return llm.chat(_windowed_history(messages), context, model=model)
+
+
 @router.post("/api/chat")
 def post_chat(req: ChatRequest):
     is_new = len(req.messages) == 1
@@ -214,25 +229,13 @@ def post_chat(req: ChatRequest):
             reply = _sentiment_reply(user_text, model)
         if reply is None and confirm_call is None:
             reply = _history_reply(user_text, model)
-        if reply is None and confirm_call is None and (model.startswith("ollama/") or model.startswith("litellm/")):
-            # local llama or a LiteLLM-routed model: tool-calling agent. Deferred into stream()
-            # below so each tool call can be pushed to the UI as it happens, instead of a long
-            # silent wait. OmniRoute keeps the original RAG path below (tool support varies
-            # across its many upstream providers).
+        if reply is None and confirm_call is None:
+            # Every backend gets the tool-calling agent now, OmniRoute included. Deferred into
+            # stream() below so each tool call reaches the UI as it happens instead of after a
+            # long silent wait - and so a provider that rejects the tools payload can fall back
+            # to _rag_reply mid-stream rather than failing the turn. Tool support genuinely does
+            # vary across OmniRoute's upstreams, which is what the fallback is for.
             use_agent = True
-        if reply is None and confirm_call is None and not use_agent:
-            # OmniRoute models: original RAG path (tool schema support varies per provider)
-            live_reports = list(filter(None, (
-                _live_scrape(symbol, model) for symbol in dict.fromkeys(TICKER_PATTERN.findall(user_text))
-            )))
-
-            query_embedding = llm.embed(user_text)
-            matches = db.similarity_search(query_embedding, limit=5)
-            stored = [m["content_markdown"] for m in matches if m["content_markdown"] not in live_reports]
-            context = "\n\n---\n\n".join(live_reports + stored) or None
-
-            history = _windowed_history(req.messages)
-            reply = llm.chat(history, context, model=model)
     except RuntimeError as e:
         # model-call failure (OmniRoute down / upstream exhausted) - show it in the chat, not a 500
         reply = f"⚠️ {e}"
@@ -261,20 +264,32 @@ def post_chat(req: ChatRequest):
         if use_agent:
             history = _windowed_history(req.messages)
             messages = [{"role": "system", "content": AGENT_SYSTEM}] + history
+            # A run row even for the widget's own turns, so every tool call this app makes lands
+            # in one place and the Workflow tab can draw a chat that started here.
+            run_id = str(uuid.uuid4())
+            db.create_run(run_id, req.sessionId, user_text, model)
+            error = None
             try:
-                for event in llm.run_agent_stream(messages, AGENT_TOOLS, AGENT_TOOL_IMPLS, model):
+                for event in agent_runs.stream_and_persist(run_id, messages, model):
                     if event[0] == "tool":
-                        _, call_id, name, args = event
+                        _, call_id, name, args, _round = event
                         yield _sse({"type": "tool-input-available", "toolCallId": call_id,
                                     "toolName": name, "input": args})
                     elif event[0] == "tool_result":
-                        _, call_id, result = event
+                        _, call_id, result, _round = event
                         yield _sse({"type": "tool-output-available", "toolCallId": call_id,
                                     "output": result})
                     else:
                         final_reply = event[1]
             except RuntimeError as e:
-                final_reply = f"⚠️ {e}"
+                # The provider couldn't do tools (or died mid-loop). Answer the question the old
+                # way rather than handing back an error the user can do nothing about.
+                try:
+                    final_reply = _rag_reply(user_text, req.messages, model)
+                except RuntimeError as fallback_error:
+                    error = str(e)
+                    final_reply = f"⚠️ {fallback_error}"
+            db.finish_run(run_id, reply=final_reply, error=error)
             db.add_message(req.sessionId, "assistant", final_reply)
 
         text_id = str(uuid.uuid4())

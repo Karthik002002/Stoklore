@@ -207,7 +207,7 @@ export type AlertTrigger = 'once' | 'once_per_day' | 'every_time'
 /** A price condition the user armed, or something the broker did - one feed, two kinds. */
 export type Alert = {
   id: number
-  kind: 'price' | 'order'
+  kind: 'price' | 'order' | 'workflow'
   symbol: string | null
   condition: AlertCondition | null
   /** The level, the first channel bound, or the size of the move. */
@@ -228,6 +228,7 @@ export type Alert = {
   triggered_at: string | null
   triggered_price: number | null
   message: string | null
+  meta: Record<string, unknown>
   acknowledged_at: string | null
   created_at: string
 }
@@ -551,6 +552,8 @@ export type AgentRun = {
   model: string | null
   created_at: string
   finished_at: string | null
+  /** Set when a workflow, not a chat, made the run. */
+  workflow_id?: string | null
 }
 
 export const getAgentRuns = (params: { session_id?: string; status?: string } = {}) => {
@@ -615,7 +618,61 @@ export const getSessionWorkflow = (sessionId: string) =>
 // --- workflows: the same agent, wired by hand and run with nobody watching -----------------------
 
 /** How a workflow is set off. `time` is IST "HH:MM" and only means anything for `schedule`. */
-export type WorkflowTrigger = { kind: 'manual' | 'schedule' | 'event_scan'; time?: string }
+export type WorkflowTriggerKind =
+  | 'manual'
+  | 'schedule'
+  | 'interval'
+  | 'weekly'
+  | 'monthly'
+  | 'cron'
+  | 'market'
+  | 'event_scan'
+  | 'price_alert'
+  | 'order_event'
+  | 'workflow_done'
+
+/** Stored whole on the workflow; which fields matter depends on `kind` - see
+ *  app/services/workflow_triggers.py. Times are IST "HH:MM". */
+export type WorkflowTrigger = {
+  kind: WorkflowTriggerKind
+  time?: string
+  /** interval */
+  every?: number
+  unit?: 'minutes' | 'hours'
+  window?: { start: string; end: string } | null
+  /** weekly: 0 = Monday */
+  days?: number[]
+  /** monthly: 1-31 (clamped to the month) or the last day */
+  day?: number | 'last'
+  /** cron */
+  expr?: string
+  /** market: minutes after (+) or before (-) the open or close */
+  anchor?: 'open' | 'close'
+  offset?: number
+  /** any time trigger: skip weekends and NSE trading holidays */
+  trading_days_only?: boolean
+  /** price_alert: empty = any */
+  alert_ids?: number[]
+  symbols?: string[]
+  /** order_event: empty = any */
+  events?: string[]
+  /** workflow_done */
+  workflow_id?: string
+  on?: 'success' | 'failure' | 'any'
+}
+
+/** Per-workflow delivery rules - app/services/workflow_notify.py. */
+export type WorkflowNotify = {
+  on_failure: boolean
+  on_success: boolean
+  on_output: boolean
+  muted: boolean
+  snooze_until: string | null
+  quiet_start: string | null
+  quiet_end: string | null
+  digest: boolean
+  telegram: boolean
+}
 
 /** React Flow's own node shape, plus the fields the executor reads off `data`. */
 export type WorkflowGraphNode = {
@@ -669,6 +726,14 @@ export type Workflow = {
   last_run_at?: string | null
   last_run_finished_at?: string | null
   last_run_error?: string | null
+  last_triggered_at?: string | null
+  notify: WorkflowNotify
+  /** The trigger in words, worked out by the server (it knows other workflows' names). */
+  trigger_label?: string
+  /** When an armed time-triggered workflow next runs, holidays included. */
+  next_run_at?: string | null
+  /** Unread, delivered notifications - list endpoint only. */
+  unread?: number
 }
 
 /** What the editor's palette is built from - served off the agent's own tool schemas, so a tool
@@ -677,6 +742,7 @@ export type WorkflowCatalogue = {
   node_kinds: string[]
   trigger_kinds: string[]
   operators: string[]
+  order_events: string[]
   tools: { name: string; description: string; parameters: string[]; required: string[] }[]
 }
 
@@ -714,10 +780,13 @@ export type WorkflowSeries = {
   numeric: string[]
 }
 
-export const getWorkflowSeries = (id: string, series?: string) =>
-  fetch(`/api/workflows/${id}/series${series ? `?series=${encodeURIComponent(series)}` : ''}`).then(
-    json<WorkflowSeries>,
-  )
+export const getWorkflowSeries = (id: string, series?: string, runId?: string) => {
+  const q = new URLSearchParams({
+    ...(series ? { series } : {}),
+    ...(runId ? { run_id: runId } : {}),
+  }).toString()
+  return fetch(`/api/workflows/${id}/series${q ? `?${q}` : ''}`).then(json<WorkflowSeries>)
+}
 
 /** Is this workflow actually working? The thing a feed that has gone quiet cannot tell you. */
 export type WorkflowHealth = {
@@ -775,6 +844,71 @@ export const createFromScreen = (body: { url: string; time?: string; max_pages?:
 
 export const createFromTemplate = (templateId: string) =>
   fetch(`/api/workflows/templates/${templateId}`, { method: 'POST' }).then(json<Workflow>)
+
+// --- workflow triggers & notifications -------------------------------------------------------------
+
+export type TriggerPreview = { error: string | null; label: string | null; next: string[] }
+
+export const previewTrigger = (trigger: WorkflowTrigger) =>
+  fetch('/api/workflows/trigger-preview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ trigger }),
+  }).then(json<TriggerPreview>)
+
+/** A workflow's notification: an alerts row, tagged with the workflow and the run that made it. */
+export type WorkflowNotification = Omit<Alert, 'meta'> & {
+  meta: {
+    workflow_id?: string
+    run_id?: string | null
+    event?: 'failure' | 'success' | 'output'
+    /** false = kept in this inbox only (muted, snoozed, rule off, or held for quiet hours) */
+    delivered?: boolean
+    held_until?: string | null
+    delivered_at?: string
+    fail_streak?: number
+    workflow_node?: string
+  }
+  workflow_name?: string
+}
+
+export const saveWorkflowNotify = (id: string, notify: WorkflowNotify) =>
+  fetch(`/api/workflows/${id}/notify`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notify }),
+  }).then(json<Workflow>)
+
+export const getWorkflowNotifications = (id: string) =>
+  fetch(`/api/workflows/${id}/notifications`).then(json<WorkflowNotification[]>)
+
+export const readWorkflowNotifications = (id: string, ids?: number[]) =>
+  fetch(`/api/workflows/${id}/notifications/read`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids: ids ?? null }),
+  }).then(json<{ updated: number }>)
+
+export const deleteWorkflowNotification = (id: string, alertId: number) =>
+  fetch(`/api/workflows/${id}/notifications/${alertId}`, { method: 'DELETE' }).then(json)
+
+export const getRecentWorkflowNotifications = (since: string) =>
+  fetch(`/api/workflows/notifications/recent?since=${encodeURIComponent(since)}`).then(
+    json<WorkflowNotification[]>,
+  )
+
+export type TelegramConfig = { has_token: boolean; chat_id: string; last_error: string | null }
+
+export const getTelegramConfig = () => fetch('/api/settings/telegram').then(json<TelegramConfig>)
+
+export const setTelegramConfig = (body: { bot_token: string; chat_id: string }) =>
+  fetch('/api/settings/telegram', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(json<TelegramConfig>)
+
+export const testTelegram = () => fetch('/api/settings/telegram/test', { method: 'POST' }).then(json)
 
 export const getCogencisConfig = () => fetch('/api/settings/cogencis').then(json<{ has_token: boolean }>)
 

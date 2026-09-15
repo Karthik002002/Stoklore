@@ -20,7 +20,6 @@ import { toast } from 'sonner'
 import {
   ArrowLeftIcon,
   BotIcon,
-  ChartNoAxesCombinedIcon,
   CheckIcon,
   DatabaseIcon,
   FilterIcon,
@@ -50,6 +49,7 @@ import { useAppliedTheme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 import { getWorkflow, getWorkflowCatalogue, getWorkflowRuns, runWorkflow, saveWorkflow } from '@/services/api'
 import type { Workflow, WorkflowGraphNode, WorkflowTrigger } from '@/services/api'
+import TriggerForm from './TriggerForm'
 import { MiniMapTask } from './RunDiagram'
 
 // The builder: palette on the left, canvas in the middle, the selected node's settings on the
@@ -64,7 +64,7 @@ import { MiniMapTask } from './RunDiagram'
 // `for_each` is the fan-out: point it at a list and the node runs once per item with `{{ item }}`
 // in scope. That is what puts "8 items" on a wire.
 //
-// Routes: /agent/workflows/new and /agent/workflows/$workflowId, with `?node=` the node open in the
+// Routes: /workflows/new and /workflows/$workflowId/editor, with `?node=` the node open in the
 // inspector. A new workflow moves to its own URL on first save.
 
 const KIND_ICON = {
@@ -215,6 +215,9 @@ export default function WorkflowEditor() {
   const selectedRef = useRef(selected)
   selectedRef.current = selected
 
+  // Keyed on the saved content rather than the object: a refetch that only moves next_run_at (it
+  // changes every minute for an interval) must not reset a canvas mid-edit.
+  const existingKey = existing ? JSON.stringify(draftOf(existing)) : ''
   useEffect(() => {
     if (!existing) return
     setName(existing.name)
@@ -231,7 +234,8 @@ export default function WorkflowEditor() {
       })) as Node[],
     )
     setEdges((existing.graph?.edges ?? []) as Edge[])
-  }, [existing, setNodes, setEdges])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existingKey])
 
   const baseline = useMemo(() => JSON.stringify(existing ? draftOf(existing) : EMPTY_DRAFT), [existing])
   const current = JSON.stringify({
@@ -302,7 +306,7 @@ export default function WorkflowEditor() {
       toast.success('Workflow saved', { id: 'workflow-save' })
       if (!routeId && !opts?.leaving) {
         navigate({
-          to: '/agent/workflows/$workflowId',
+          to: '/workflows/$workflowId/editor',
           params: { workflowId },
           search: { node: selected },
           replace: true,
@@ -325,14 +329,14 @@ export default function WorkflowEditor() {
       queryClient.invalidateQueries({ queryKey: ['workflows'] })
       if (!routeId) {
         await navigate({
-          to: '/agent/workflows/$workflowId',
+          to: '/workflows/$workflowId/editor',
           params: { workflowId },
           replace: true,
           ignoreBlocker: true,
         })
       }
       navigate({
-        to: '/agent/workflows/$workflowId/runs/$runId',
+        to: '/workflows/$workflowId/runs/$runId',
         params: { workflowId, runId: run_id },
         ignoreBlocker: true,
       })
@@ -364,7 +368,7 @@ export default function WorkflowEditor() {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
         <p>This workflow doesn't exist — it may have been deleted.</p>
-        <Link to="/agent/workflows" className={buttonVariants({ size: 'sm', variant: 'outline' })}>
+        <Link to="/workflows" className={buttonVariants({ size: 'sm', variant: 'outline' })}>
           <ArrowLeftIcon className="size-4" />
           All workflows
         </Link>
@@ -375,13 +379,15 @@ export default function WorkflowEditor() {
   return (
     <div className="grid h-full min-h-0 grid-cols-[13rem_1fr_16rem]">
       <aside className="min-h-0 space-y-3 overflow-y-auto border-r bg-muted/20 p-2">
-        <Link
-          to="/agent/workflows"
-          className={cn(buttonVariants({ size: 'sm', variant: 'ghost' }), 'w-full justify-start')}
-        >
-          <ArrowLeftIcon className="size-4" />
-          All workflows
-        </Link>
+        {!routeId && (
+          <Link
+            to="/workflows"
+            className={cn(buttonVariants({ size: 'sm', variant: 'ghost' }), 'w-full justify-start')}
+          >
+            <ArrowLeftIcon className="size-4" />
+            All workflows
+          </Link>
+        )}
 
         <Section title="Trigger">
           <Button size="sm" variant="outline" className="w-full" onClick={() => add('trigger')}>
@@ -487,16 +493,6 @@ export default function WorkflowEditor() {
               {run.isPending ? <Spinner className="size-3.5" /> : <PlayIcon className="size-3.5" />}
               {dirty ? 'Save & run' : 'Run now'}
             </Button>
-            {routeId && (
-              <Link
-                to="/agent/workflows/$workflowId/data"
-                params={{ workflowId: routeId }}
-                className={buttonVariants({ size: 'sm', variant: 'ghost' })}
-              >
-                <ChartNoAxesCombinedIcon className="size-3.5" />
-                Data
-              </Link>
-            )}
           </Panel>
         </ReactFlow>
       </div>
@@ -505,27 +501,12 @@ export default function WorkflowEditor() {
         {!node ? (
           <>
             <Section title="When it runs">
-              <Select
-                value={trigger.kind}
-                onValueChange={(v) => setTrigger({ ...trigger, kind: v as WorkflowTrigger['kind'] })}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="manual">Manual only</SelectItem>
-                  <SelectItem value="schedule">Daily at a time</SelectItem>
-                  <SelectItem value="event_scan">After the daily event scan</SelectItem>
-                </SelectContent>
-              </Select>
-              {trigger.kind === 'schedule' && (
-                <Input
-                  type="time"
-                  value={trigger.time ?? '09:15'}
-                  onChange={(e) => setTrigger({ ...trigger, time: e.target.value })}
-                  className="h-8"
-                />
-              )}
+              <TriggerForm
+                value={trigger}
+                onChange={setTrigger}
+                workflowId={routeId}
+                triggerNodeId={nodes.find((n) => (n.data as NodeData).kind === 'trigger')?.id}
+              />
               {trigger.kind !== 'manual' && (
                 <Button
                   size="sm"
@@ -537,8 +518,8 @@ export default function WorkflowEditor() {
                 </Button>
               )}
               <p className="text-[11px] text-muted-foreground">
-                Saving stores the arm state too. A workflow runs with nobody watching, so this is the standing
-                permission.
+                Saving stores the trigger and the arm state together. A workflow runs with nobody watching, so
+                arming is the standing permission.
               </p>
             </Section>
 
@@ -547,7 +528,7 @@ export default function WorkflowEditor() {
                 {runs.map((r) => (
                   <Link
                     key={r.id}
-                    to="/agent/workflows/$workflowId/runs/$runId"
+                    to="/workflows/$workflowId/runs/$runId"
                     params={{ workflowId, runId: r.id }}
                     title={r.error ?? new Date(r.created_at).toLocaleString('en-IN')}
                     className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-[11px] transition-colors hover:bg-muted"

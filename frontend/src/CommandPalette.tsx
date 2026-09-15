@@ -57,6 +57,7 @@ const PAGES: { icon: typeof LayoutDashboardIcon; label: string; to: LinkProps['t
   { icon: ChartNoAxesCombinedIcon, label: 'Trade Simulation', to: '/simulation' },
   { icon: BellIcon, label: 'Alerts', to: '/alerts' },
   { icon: BotIcon, label: 'Agent', to: '/agent' },
+  { icon: WorkflowIcon, label: 'Workflows', to: '/workflows' },
 ]
 
 // Matches ManualBacktesting's real `view` tabs (router.jsx's backtestingRoute) - the old 'tab'
@@ -68,10 +69,8 @@ const BACKTEST_TABS = [
   { label: 'Backtesting > Goals', view: 'goals' },
 ]
 
-const AGENT_PAGES: { label: string; to: LinkProps['to'] }[] = [
-  { label: 'Agent > Chat', to: '/agent' },
-  { label: 'Agent > Workflows', to: '/agent/workflows' },
-  { label: 'Agent > New workflow', to: '/agent/workflows/new' },
+const WORKFLOW_PAGES: { label: string; to: LinkProps['to'] }[] = [
+  { label: 'Workflows > New workflow', to: '/workflows/new' },
 ]
 
 const PAPER_TABS = [
@@ -272,31 +271,27 @@ export default function CommandPalette() {
                   Bar Replay
                 </CommandItem>
               </CommandGroup>
-              <CommandGroup heading="Agent">
-                {AGENT_PAGES.map((t) => (
+              <CommandGroup heading="Workflows">
+                {WORKFLOW_PAGES.map((t) => (
                   <CommandItem key={t.label} value={t.label} onSelect={() => goTo(t.to)}>
-                    <BotIcon className="size-4" />
+                    <WorkflowIcon className="size-4" />
                     {t.label}
                   </CommandItem>
                 ))}
+                {workflows.map((w) => (
+                  <CommandItem
+                    key={w.id}
+                    value={`Workflow > ${w.name} ${w.id}`}
+                    onSelect={() => {
+                      navigate({ to: '/workflows/$workflowId', params: { workflowId: w.id } })
+                      close()
+                    }}
+                  >
+                    <WorkflowIcon className="size-4" />
+                    Workflow &gt; {w.name}
+                  </CommandItem>
+                ))}
               </CommandGroup>
-              {workflows.length > 0 && (
-                <CommandGroup heading="Workflows">
-                  {workflows.map((w) => (
-                    <CommandItem
-                      key={w.id}
-                      value={`Workflow > ${w.name} ${w.id}`}
-                      onSelect={() => {
-                        navigate({ to: '/agent/workflows/$workflowId', params: { workflowId: w.id } })
-                        close()
-                      }}
-                    >
-                      <WorkflowIcon className="size-4" />
-                      Workflow &gt; {w.name}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              )}
               <CommandGroup heading="Paper Trading">
                 {PAPER_TABS.map((t) => (
                   <CommandItem key={t.view} value={t.label} onSelect={() => goTo('/paper', { view: t.view })}>

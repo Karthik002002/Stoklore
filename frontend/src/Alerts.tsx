@@ -11,6 +11,7 @@
 // knowing how to evaluate it.
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { BellIcon, BellRingIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, TrashIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import SymbolCombobox from '@/components/SymbolCombobox'
@@ -449,17 +450,35 @@ export default function Alerts() {
               Nothing yet. Fired alerts, fills and rejections land here.
             </p>
           ) : (
-            feed.map((a) => (
-              <div
-                key={a.id}
-                className={`rounded-lg px-2 py-1.5 text-xs ${
-                  a.acknowledged_at ? 'text-muted-foreground' : 'bg-muted/50'
-                }`}
-              >
-                <span className={a.kind === 'order' ? 'font-medium' : ''}>{a.message}</span>
-                <span className="ml-1.5 text-[11px] text-muted-foreground">{timeAgo(a.triggered_at)}</span>
-              </div>
-            ))
+            feed.map((a) => {
+              const className = `block rounded-lg px-2 py-1.5 text-xs ${
+                a.acknowledged_at ? 'text-muted-foreground' : 'bg-muted/50'
+              }`
+              const body = (
+                <>
+                  <span className={a.kind === 'order' ? 'font-medium' : ''}>{a.message}</span>
+                  <span className="ml-1.5 text-[11px] text-muted-foreground">{timeAgo(a.triggered_at)}</span>
+                </>
+              )
+              // A workflow's notification opens in that workflow's inbox, with its run and data.
+              const workflowId =
+                a.kind === 'workflow' ? (a.meta?.workflow_id as string | undefined) : undefined
+              return workflowId ? (
+                <Link
+                  key={a.id}
+                  to="/workflows/$workflowId/notifications"
+                  params={{ workflowId }}
+                  search={{ open: a.id }}
+                  className={`${className} transition-colors hover:bg-muted`}
+                >
+                  {body}
+                </Link>
+              ) : (
+                <div key={a.id} className={className}>
+                  {body}
+                </div>
+              )
+            })
           )}
         </div>
       </div>

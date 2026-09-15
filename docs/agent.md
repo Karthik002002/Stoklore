@@ -2,8 +2,9 @@
 
 [← Back to index](README.md)
 
-`/agent` — the chatbot on one tab, and a flow diagram of what that chat actually
-executed on the other.
+`/agent` — the chatbot. Workflows, the same tools run with nobody watching, have
+their own section: see **[Workflows](workflows.md)** for the pages, triggers and
+notifications.
 
 ## Using it
 
@@ -15,42 +16,18 @@ executed on the other.
   beginning. A chat still working shows a spinner in the sidebar, *in every
   browser*, because the answer comes from the server rather than from whichever
   tab started it.
-- **Workflow** — saved graphs that run **without you**. That is the whole
-  difference between the two tabs: Chat waits for you to type, a workflow runs on
-  a schedule with nobody watching.
-  - The list is the manager: arm/disarm, **Run now**, delete (confirmed), and
-    what each one's **newest run** did — running (with elapsed time),
-    succeeded, failed (with the error), or never run. Click that status to open
-    the run.
-  - Above the list, **status counts** — All, Running, Succeeded, Failed, Never
-    run, Armed. Each count is also a filter (`?status=failed`); click it again
-    to clear.
-  - The list **polls every 5 seconds**, because a scheduled run starts on the
-    server with nobody clicking anything. When a run you saw running finishes,
-    a toast says so with a **View run** button.
-  - Open one for the editor — palette left, canvas middle, node settings right.
-  - **Notify me** asks for desktop-notification permission (a click, because
-    browsers refuse an unprompted request).
-- ⌘K → **Agent > Chat** / **Agent > Workflows** / **Agent > New workflow**, any
-  saved workflow by name, or the robot in the sidebar.
+- **Workflows** — saved graphs that run **without you** — live at `/workflows`.
+  That is the whole difference between the two: chat waits for you to type, a
+  workflow runs on a trigger with nobody watching. Pages, triggers and
+  notifications: [Workflows](workflows.md).
+- ⌘K → **Agent**, **Workflows**, **Workflows > New workflow**, any saved workflow
+  by name, or the icons in the sidebar.
 
 ## Every screen is a URL
 
-A reload, a bookmark or a pasted link lands exactly where you were. Before this,
-the list / editor / data / run screens were in-memory state, and a refresh always
-threw you back to the list.
-
-| Screen | URL |
-|---|---|
-| Chat | `/agent?session=<id>` |
-| Workflow list | `/agent/workflows?status=running\|succeeded\|failed\|never\|armed` |
-| New workflow | `/agent/workflows/new` — moves to its own URL on first save |
-| Editor | `/agent/workflows/<id>?node=<nodeId>` — `node` is the node open in the inspector |
-| Data | `/agent/workflows/<id>/data?series=&column=&by=` |
-| One run | `/agent/workflows/<id>/runs/<runId>?node=<nodeId>` — `node` is the step open in the drawer |
-
-The old `/agent?view=workflow` link redirects to `/agent/workflows`. Switching
-Workflow → Chat returns to the conversation you had open.
+The chat is `/agent?session=<id>`. Every workflow screen's URL is listed in
+[Workflows → Pages](workflows.md#pages). Old `/agent/workflows/…` links and
+`/agent?view=workflow` redirect there.
 
 `?node=` changes are `replace`, not a new history entry. Otherwise every click on
 the canvas would be one more Back press.
@@ -238,7 +215,7 @@ row"** badge for the same reason.
   automation off — but the count is on the row and in the alert.
 - **One run at a time.** A scheduled workflow whose previous run is still going
   is skipped this tick; two copies of a scan would double every write it makes,
-  and a fan-out over a watchlist can genuinely outlast an hourly tick.
+  and a fan-out over a watchlist can genuinely outlast the gap between two ticks.
 - **A per-item failure inside a fan-out** is that item's result, not the end of
   the run. Seven of eight symbols answering is a useful run.
 
@@ -253,16 +230,14 @@ restart can't double-file it.
 
 ## Triggers
 
-- **Manual only** — Run now, nothing else.
-- **Daily at HH:MM** IST — an hourly tick asks "has today's run happened yet",
-  the same shape as the event-scan and shareholding loops. No cron dependency, a
-  machine asleep at 09:15 still runs when it wakes, and a restart can't
-  double-fire because the last-run date is a column, not memory.
-- **After the daily event scan** — runs on what the scan just found, which is the
-  only reason to hang it off that rather than off a clock.
+Daily, interval, weekly, monthly, around the market open or close, cron, after
+the event scan, on a price alert, on a live order event, or after another
+workflow finishes. Any clock trigger can skip NSE holidays. All of it is covered
+in [Workflows → Triggers](workflows.md#triggers).
 
-Enabled is the standing permission, and it's on the list row rather than buried
-in the editor because turning one **off** is what you want to do in a hurry.
+Enabled is the standing permission. It's on the list row and the workflow header
+rather than buried in the editor, because turning one **off** is what you want to
+do in a hurry.
 
 ## What a workflow is allowed to do
 
@@ -293,10 +268,11 @@ however it is wired.
   **Inspect →** opens it. `Esc` or clicking the canvas closes the drawer. The open
   step is in the URL, so a failure can be sent as a link straight to the broken
   step.
-- **A desktop notification** when a run finishes, *while the app is open in some
-  tab*. A workflow that runs at 09:15 with the browser closed files to the alerts
-  feed and waits for you there; a real push needs a service worker and a
-  subscription the server can reach, which is a different feature.
+- **The workflow's own inbox**, with delivery rules — mute, snooze, quiet hours,
+  digest, and Telegram for when the app is closed. See
+  [Workflows → Notifications](workflows.md#notifications).
+- **A desktop notification** when a workflow delivers one, *while the app is open
+  in some tab*. Clicking it opens that notification in its inbox.
 
 ## A workflow run is a run
 
@@ -416,17 +392,17 @@ and a database; they're exercised by using the page.
 | `app/services/workflow_engine.py` | Topological execution, templates, fan-out, gates, retries |
 | `app/services/workflow_templates.py` | The 16 starter graphs, and `screen_graph` |
 | `app/core/scraper.py` | `get_screen`, `parse_screen_html`, `screen_url` |
-| `frontend/src/agent/TemplateGallery.tsx` | The 3×3 template gallery and the screen generator |
-| `frontend/src/agent/WorkflowData.tsx` | Collected series, chart, health |
-| `app/services/jobs.py` | `run_triggered_workflows`, the hourly schedule tick |
+| `frontend/src/workflows/TemplateGallery.tsx` | The 3×3 template gallery and the screen generator |
+| `frontend/src/workflows/WorkflowData.tsx` | Collected series, chart, health |
+| `app/services/jobs.py` | `run_triggered_workflows`, the minute schedule tick |
 | `app/routers/workflows.py` | CRUD, the palette catalogue, Run now |
-| `frontend/src/agent/WorkflowEditor.tsx` | The builder |
+| `frontend/src/workflows/WorkflowEditor.tsx` | The builder |
 | `app/services/workflow.py` | Rows → `{nodes, edges}` |
 | `app/routers/agent.py` | `/api/agent/runs`, `/api/agent/*/workflow` |
 | `frontend/src/agent/AgentChat.tsx` | Sidebar, transcript, run subscription |
-| `frontend/src/agent/RunDiagram.tsx` | The read-only diagram of one run, and the step-details drawer |
-| `frontend/src/agent/WorkflowRun.tsx` | The run page: status, older/newer, run again |
-| `frontend/src/agent/WorkflowList.tsx` | Status counts/filters, per-row last run, 5s polling |
+| `frontend/src/workflows/RunDiagram.tsx` | The read-only diagram of one run, and the step-details drawer |
+| `frontend/src/workflows/WorkflowRun.tsx` | The run page: status, older/newer runs |
+| `frontend/src/workflows/WorkflowList.tsx` | Status counts/filters, per-row last run, 5s polling |
 | `frontend/src/router.tsx` | `/agent` layout and its workflow child routes |
 
 ## The canvas in dark mode

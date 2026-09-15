@@ -4,6 +4,7 @@ import {
   IconChartCandle,
   IconChartHistogram,
   IconRobot,
+  IconSitemap,
   IconFlask,
   IconLayoutDashboard,
   IconNews,
@@ -42,6 +43,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/live', icon: IconBolt, label: 'Live Trading' },
   { to: '/simulation', icon: IconChartHistogram, label: 'Trade Simulation' },
   { to: '/agent', icon: IconRobot, label: 'Agent' },
+  { to: '/workflows', icon: IconSitemap, label: 'Workflows' },
 ]
 
 // Icon-rail nav item: TanStack Router's Link auto-applies an "active" class on route match

@@ -1,24 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
+import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { LineSeries, createChart } from 'lightweight-charts'
 import type { ISeriesApi, UTCTimestamp } from 'lightweight-charts'
-import { ArrowLeftIcon, PencilIcon } from 'lucide-react'
 import DataTable from '@/components/DataTable'
-import { buttonVariants } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
-import { fmt, formatDuration } from '@/lib/format'
+import { fmt } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { getWorkflow, getWorkflowHealth, getWorkflowSeries } from '@/services/api'
+import { getWorkflowSeries } from '@/services/api'
 
-// What a workflow has gathered, and whether it's still working.
+// What a workflow has gathered: its collected series as a chart and a table. Whether it is still
+// working - runs, failures, durations - is on the Overview tab.
 //
-// Two questions, one screen, because they're the same question asked twice: "is this automation
-// earning its keep". The series answers what it found; health answers whether it has been finding
-// anything at all - which a feed that has simply gone quiet cannot tell you.
-//
-// Route: /agent/workflows/$workflowId/data - the series, plotted column and split are all in the
+// Route: /workflows/$workflowId/data - the series, plotted column and split are all in the
 // URL, so a reload shows the same chart.
 
 const fmtTime = (v: unknown) =>
@@ -187,26 +182,20 @@ function SeriesChart({ datasets }: { datasets: Dataset[] }) {
 
 export default function WorkflowData() {
   const navigate = useNavigate()
-  const { workflowId: id } = useParams({ from: '/agent/workflows/$workflowId/data' })
-  const { series, column, by } = useSearch({ from: '/agent/workflows/$workflowId/data' })
+  const { workflowId: id } = useParams({ from: '/workflows/$workflowId/data' })
+  const { series, column, by } = useSearch({ from: '/workflows/$workflowId/data' })
 
   const setSearch = (next: { series?: string; column?: string; by?: string }) =>
     navigate({
-      to: '/agent/workflows/$workflowId/data',
+      to: '/workflows/$workflowId/data',
       params: { workflowId: id },
       search: (prev) => ({ ...prev, ...next }),
       replace: true,
     })
 
-  const { data: workflow } = useQuery({ queryKey: ['workflow', id], queryFn: () => getWorkflow(id) })
   const { data, isLoading } = useQuery({
     queryKey: ['workflowSeries', id, series],
     queryFn: () => getWorkflowSeries(id, series),
-  })
-  const { data: health } = useQuery({
-    queryKey: ['workflowHealth', id],
-    queryFn: () => getWorkflowHealth(id),
-    refetchInterval: 5000,
   })
 
   // A stale ?column= from another series falls back to the first plottable one.
@@ -285,70 +274,8 @@ export default function WorkflowData() {
     ] as never
   }, [data?.columns])
 
-  const worst = health?.failing_nodes[0]
-
   return (
     <div className="h-full overflow-y-auto p-4">
-      <div className="mb-3 flex items-center gap-2">
-        <Link to="/agent/workflows" className={buttonVariants({ size: 'sm', variant: 'ghost' })}>
-          <ArrowLeftIcon className="size-4" />
-          All workflows
-        </Link>
-        <h2 className="min-w-0 flex-1 truncate font-medium">{workflow?.name ?? ''}</h2>
-        <Link
-          to="/agent/workflows/$workflowId"
-          params={{ workflowId: id }}
-          className={buttonVariants({ size: 'sm', variant: 'outline' })}
-        >
-          <PencilIcon className="size-3.5" />
-          Open editor
-        </Link>
-      </div>
-
-      {health && (
-        <>
-          <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Stat label="Runs kept" value={String(health.total)} />
-            <Stat label="Failed" value={String(health.failed)} tone={health.failed ? 'bad' : undefined} />
-            <Stat
-              label="Avg duration"
-              value={health.avg_seconds == null ? '—' : formatDuration(health.avg_seconds)}
-            />
-            <Stat
-              label="Worst node"
-              value={worst ? `${worst.name} ×${worst.failures}` : '—'}
-              tone={worst ? 'bad' : undefined}
-            />
-          </div>
-          {/* Oldest to newest, one bar per run: a red streak is visible before you read a number. */}
-          {health.runs.length > 0 && (
-            <div className="mb-4 flex items-center gap-2">
-              <span className="text-[11px] text-muted-foreground">Last {health.runs.length} runs</span>
-              <div className="flex h-5 items-end gap-0.5">
-                {[...health.runs].reverse().map((r) => (
-                  <Link
-                    key={r.id}
-                    to="/agent/workflows/$workflowId/runs/$runId"
-                    params={{ workflowId: id, runId: r.id }}
-                    title={`${new Date(r.created_at).toLocaleString('en-IN')} · ${r.status}${
-                      r.seconds != null ? ` · ${formatDuration(r.seconds)}` : ''
-                    }${r.error ? `\n${r.error}` : ''}`}
-                    className={cn(
-                      'h-4 w-1.5 origin-bottom rounded-sm transition-transform hover:scale-y-125',
-                      r.status === 'failed'
-                        ? 'bg-down'
-                        : r.status === 'running'
-                          ? 'animate-pulse bg-primary'
-                          : 'bg-up',
-                    )}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
       {isLoading ? (
         <div className="flex justify-center py-12">
           <Spinner className="size-5" />
@@ -432,15 +359,6 @@ export default function WorkflowData() {
           <DataTable columns={columns} data={data.rows as never} sortable emptyMessage="No rows yet." />
         </>
       )}
-    </div>
-  )
-}
-
-function Stat({ label, value, tone }: { label: string; value: string; tone?: 'bad' }) {
-  return (
-    <div className="rounded-xl border bg-card px-3 py-2">
-      <p className="text-[11px] text-muted-foreground">{label}</p>
-      <p className={`truncate text-sm font-medium ${tone === 'bad' ? 'text-down' : ''}`}>{value}</p>
     </div>
   )
 }

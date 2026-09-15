@@ -78,6 +78,9 @@ import {
   setManualBacktestSettings,
   setActivitySettings,
   setCogencisToken,
+  getTelegramConfig,
+  setTelegramConfig,
+  testTelegram,
   setDhanConfig,
   setKiteConfig,
   setLiteLLMConfig,
@@ -342,6 +345,87 @@ function CogencisTab() {
         about 24 hours, so you'll need to paste in a fresh one here when stock news stops picking up new
         Cogencis articles.
       </p>
+    </div>
+  )
+}
+
+/** Where workflow notifications go when the app isn't open. Each workflow opts in on its own
+ *  Notifications tab; this is only the destination. */
+function TelegramTab() {
+  const queryClient = useQueryClient()
+  const { data: config } = useQuery({ queryKey: ['telegramConfig'], queryFn: getTelegramConfig })
+  const [token, setToken] = useState('')
+  const [chatId, setChatId] = useState<string | null>(null)
+  const chat = chatId ?? config?.chat_id ?? ''
+
+  const save = useMutation({
+    mutationFn: () => setTelegramConfig({ bot_token: token, chat_id: chat }),
+    onSuccess: (next) => {
+      queryClient.setQueryData(['telegramConfig'], next)
+      toast.success('Telegram saved')
+      setToken('')
+      setChatId(null)
+    },
+    onError: (e) => toast.error(e.message),
+  })
+  const test = useMutation({
+    mutationFn: testTelegram,
+    onSuccess: () => toast.success('Test message sent — check the chat'),
+    onError: (e) => toast.error(e.message),
+    onSettled: () => queryClient.invalidateQueries({ queryKey: ['telegramConfig'] }),
+  })
+
+  const dirty = !!token || (chatId !== null && chatId !== (config?.chat_id ?? ''))
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Bot token</p>
+        <Input
+          type="password"
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          placeholder={config?.has_token ? '•••• saved - leave blank to keep it' : '123456789:AA…'}
+        />
+      </div>
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Chat id</p>
+        <Input value={chat} onChange={(e) => setChatId(e.target.value)} placeholder="e.g. 123456789" />
+      </div>
+      <div className="flex gap-2">
+        <Button size="sm" onClick={() => save.mutate()} disabled={!dirty || save.isPending}>
+          Save
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => test.mutate()}
+          disabled={!config?.has_token || !config?.chat_id || dirty || test.isPending}
+          title={dirty ? 'Save first' : undefined}
+        >
+          {test.isPending && <Spinner className="size-3.5" />}
+          Send test message
+        </Button>
+      </div>
+      {config?.last_error && (
+        <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          Last send failed: {config.last_error}
+        </p>
+      )}
+      <ol className="list-decimal space-y-1 pl-4 text-xs text-muted-foreground">
+        <li>
+          In Telegram, message <code>@BotFather</code>, send <code>/newbot</code>, and paste the token it
+          gives you above.
+        </li>
+        <li>Open a chat with your new bot and send it any message — a bot can't write to you first.</li>
+        <li>
+          For the chat id, open <code>https://api.telegram.org/bot&lt;token&gt;/getUpdates</code> and copy{' '}
+          <code>message.chat.id</code>.
+        </li>
+        <li>
+          Then turn on <strong>Send to Telegram</strong> on each workflow's Notifications tab. Quiet hours and
+          mute apply here too.
+        </li>
+      </ol>
     </div>
   )
 }
@@ -1275,6 +1359,7 @@ export default function Settings() {
             <TabsTab value="litellm">LiteLLM</TabsTab>
             <TabsTab value="omniroute">OmniRoute</TabsTab>
             <TabsTab value="cogencis">Cogencis</TabsTab>
+            <TabsTab value="telegram">Telegram</TabsTab>
             <TabsTab value="broker">Broker</TabsTab>
             <TabsTab value="rules">Watch rules</TabsTab>
             <TabsTab value="data">Collect data</TabsTab>
@@ -1297,6 +1382,9 @@ export default function Settings() {
             </TabsPanel>
             <TabsPanel value="cogencis">
               <CogencisTab />
+            </TabsPanel>
+            <TabsPanel value="telegram">
+              <TelegramTab />
             </TabsPanel>
             <TabsPanel value="broker">
               <BrokerTab />

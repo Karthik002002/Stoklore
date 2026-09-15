@@ -90,6 +90,12 @@ ALTER TABLE workflows ADD COLUMN IF NOT EXISTS retain_runs INTEGER NOT NULL DEFA
 -- fail_streak: consecutive failed runs, reset by any success - so a workflow that has been quietly
 -- broken all week is a number on the row rather than an absence of alerts.
 ALTER TABLE workflows ADD COLUMN IF NOT EXISTS fail_streak INTEGER NOT NULL DEFAULT 0;
+-- last_triggered_at: the exact moment the scheduler last started it. last_run_date could only say
+-- "once a day"; an interval or a cron needs the time. See app/services/workflow_triggers.py.
+ALTER TABLE workflows ADD COLUMN IF NOT EXISTS last_triggered_at TIMESTAMPTZ;
+-- notify: per-workflow delivery rules (failure/success/output, mute, snooze, quiet hours, digest,
+-- Telegram). '{}' means the defaults in app/services/workflow_notify.py.
+ALTER TABLE workflows ADD COLUMN IF NOT EXISTS notify JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 -- What a workflow has gathered over time. One row per collected record per run, which is what
 -- makes "TCS close across the last 30 morning runs" answerable at all - without it every run's
@@ -622,6 +628,8 @@ CREATE TABLE IF NOT EXISTS alerts (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS alerts_active_idx ON alerts (active, kind);
+-- A workflow's own inbox reads its notifications by the workflow id in meta.
+CREATE INDEX IF NOT EXISTS alerts_workflow_idx ON alerts ((meta->>'workflow_id')) WHERE kind = 'workflow';
 -- Added when alerts grew past "above/below a level" into the full condition set. All nullable and
 -- all additive: a row written before this still reads correctly, because `recurring` remains the
 -- fallback for trigger_mode (see alerts.trigger_of) and the conditions that need the extra columns
@@ -1615,13 +1623,15 @@ def list_series_names(workflow_id):
     return [r["series"] for r in rows]
 
 
-def read_series(workflow_id, series, limit=1000):
+def read_series(workflow_id, series, limit=1000, run_id=None):
+    """`run_id` narrows to what one run collected - what a notification click shows."""
+    sql = "SELECT run_id, collected_at, row FROM workflow_series WHERE workflow_id = %s AND series = %s"
+    params = [workflow_id, series]
+    if run_id:
+        sql += " AND run_id = %s"
+        params.append(run_id)
     with connect() as conn:
-        return conn.execute(
-            "SELECT run_id, collected_at, row FROM workflow_series "
-            "WHERE workflow_id = %s AND series = %s ORDER BY collected_at DESC LIMIT %s",
-            (workflow_id, series, limit),
-        ).fetchall()
+        return conn.execute(sql + " ORDER BY collected_at DESC LIMIT %s", (*params, limit)).fetchall()
 
 
 def workflow_health(workflow_id, limit=50):
@@ -1663,6 +1673,86 @@ def running_workflow_run(workflow_id):
 def delete_workflow(workflow_id):
     with connect() as conn:
         conn.execute("DELETE FROM workflows WHERE id = %s", (workflow_id,))
+
+
+def mark_workflow_triggered(workflow_id, at):
+    """Stamps the moment a trigger started a workflow - and the date, which older code still reads."""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE workflows SET last_triggered_at = %s, last_run_date = %s WHERE id = %s",
+            (at, at.date(), workflow_id),
+        )
+
+
+def set_workflow_notify(workflow_id, notify):
+    with connect() as conn:
+        conn.execute("UPDATE workflows SET notify = %s WHERE id = %s", (Jsonb(notify), workflow_id))
+
+
+# A workflow's notifications are alerts rows (kind 'workflow') tagged with its id. Every write below
+# is scoped by BOTH the row id and that tag, so one workflow's page can never touch another's rows.
+_WORKFLOW_ROWS = "kind = 'workflow' AND meta->>'workflow_id' = %s"
+_DELIVERED = "meta->>'delivered' IS DISTINCT FROM 'false'"
+
+
+def list_workflow_notifications(workflow_id, unread=False, limit=200):
+    sql = f"SELECT * FROM alerts WHERE {_WORKFLOW_ROWS}"
+    if unread:
+        sql += " AND acknowledged_at IS NULL"
+    with connect() as conn:
+        return conn.execute(sql + " ORDER BY triggered_at DESC LIMIT %s", (workflow_id, limit)).fetchall()
+
+
+def unread_workflow_notification_counts():
+    """{workflow_id: unread delivered notifications} - the badges on the list."""
+    with connect() as conn:
+        rows = conn.execute(
+            f"SELECT meta->>'workflow_id' AS workflow_id, COUNT(*) AS n FROM alerts "
+            f"WHERE kind = 'workflow' AND meta ? 'workflow_id' AND acknowledged_at IS NULL AND {_DELIVERED} "
+            "GROUP BY 1"
+        ).fetchall()
+    return {r["workflow_id"]: r["n"] for r in rows}
+
+
+def mark_workflow_notifications_read(workflow_id, ids=None):
+    sql = f"UPDATE alerts SET acknowledged_at = now() WHERE {_WORKFLOW_ROWS} AND acknowledged_at IS NULL"
+    params = [workflow_id]
+    if ids:
+        sql += " AND id = ANY(%s)"
+        params.append(list(ids))
+    with connect() as conn:
+        return conn.execute(sql, params).rowcount
+
+
+def delete_workflow_notification(workflow_id, alert_id):
+    with connect() as conn:
+        return conn.execute(
+            f"DELETE FROM alerts WHERE id = %s AND {_WORKFLOW_ROWS}", (alert_id, workflow_id)
+        ).rowcount
+
+
+def list_held_workflow_notifications(now):
+    with connect() as conn:
+        return conn.execute(
+            "SELECT * FROM alerts WHERE kind = 'workflow' AND meta->>'delivered' = 'false' "
+            "AND meta->>'held_until' IS NOT NULL AND (meta->>'held_until')::timestamptz <= %s",
+            (now,),
+        ).fetchall()
+
+
+def recent_workflow_notifications(since, limit=20):
+    """Delivered after `since` - what the browser turns into desktop notifications."""
+    with connect() as conn:
+        return conn.execute(
+            "SELECT * FROM alerts WHERE kind = 'workflow' AND meta->>'delivered' = 'true' "
+            "AND (meta->>'delivered_at')::timestamptz > %s ORDER BY triggered_at DESC LIMIT %s",
+            (since, limit),
+        ).fetchall()
+
+
+def merge_alert_meta(alert_id, patch):
+    with connect() as conn:
+        conn.execute("UPDATE alerts SET meta = meta || %s WHERE id = %s", (Jsonb(patch), alert_id))
 
 
 def mark_workflow_ran(workflow_id, on_date):
@@ -2556,9 +2646,13 @@ def set_dhan_api_base_url(url):
     _set_setting("dhan_api_base_url", (url or "").strip())
 
 
-def list_alerts(active=None, kind=None, limit=200):
+def list_alerts(active=None, kind=None, limit=200, delivered_only=True):
+    """`delivered_only` hides workflow notifications their rules kept quiet (muted, snoozed, held for
+    quiet hours) - they live in that workflow's own inbox, not the global feed."""
     sql = "SELECT * FROM alerts"
     where, params = [], []
+    if delivered_only:
+        where.append(_DELIVERED)
     if active is not None:
         where.append("active = %s")
         params.append(active)

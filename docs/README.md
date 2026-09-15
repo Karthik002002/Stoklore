@@ -21,6 +21,7 @@ why it exists, see the main [README](../README.md) — these docs are the
 - [Paper Trading](paper-trading.md)
 - [Live Trading (Dhan)](live-trading.md)
 - [Agent](agent.md)
+- [Workflows](workflows.md) — triggers, notifications, per-workflow pages
 - [Alerts](alerts.md)
 - [Trade Log Simulation & Stress Testing](trade-simulation.md)
 - [Scraping & Anti-Block Transport](scraping.md)

@@ -38,13 +38,15 @@ import uuid
 from datetime import datetime
 
 from app.core import alerts, db, llm
+from app.services import workflow_notify
 from app.core.config import IST
 from app.services.agent import REAL_TOOL_IMPLS
 
 #: `{{ nodeId }}` or `{{ nodeId.a.b }}`, and `{{ item }}` / `{{ item.x }}` inside a for_each.
 TEMPLATE = re.compile(r"\{\{\s*([A-Za-z0-9_\-.]+)\s*\}\}")
 
-TRIGGER_KINDS = ("manual", "schedule", "event_scan")
+# What sets a workflow off lives in workflow_triggers.py; re-exported for the callers that read it here.
+from app.services.workflow_triggers import TRIGGER_KINDS  # noqa: E402
 NODE_KINDS = ("trigger", "tool", "agent", "condition", "collect", "output")
 
 #: A node that failed for a transient reason - a rate limit, a 5xx, a dropped connection - is worth
@@ -167,14 +169,16 @@ def render(value, context):
     return resolve(value, context)
 
 
-def _run_node(node, context, model):
+def _run_node(node, context, model, run=None):
     """One node's output. Everything a node can be is here, and nothing here touches the database -
     the recording happens in execute() so this stays readable as "what does this node compute"."""
     data = node.get("data") or {}
     kind = node.get("kind") or data.get("kind") or "tool"
 
     if kind == "trigger":
-        return {"started_at": datetime.now(IST).isoformat()}
+        # What set it off rides along, so `{{ t.symbol }}` reads the alert that fired, the order that
+        # filled, or the run of the workflow this one is chained after.
+        return {"started_at": datetime.now(IST).isoformat(), **((run or {}).get("payload") or {})}
 
     if kind == "agent":
         prompt = resolve(data.get("prompt") or "", context)
@@ -197,8 +201,9 @@ def _run_node(node, context, model):
 
     if kind == "output":
         message = resolve(data.get("message") or "", context)
-        alerts.record("workflow", message, symbol=data.get("symbol") or None,
-                      meta={"workflow_node": node["id"]})
+        run = run or {}
+        workflow_notify.notify(run.get("workflow") or {}, "output", message, run_id=run.get("run_id"),
+                               symbol=data.get("symbol") or None, extra={"workflow_node": node["id"]})
         return {"filed": message}
 
     name = data.get("tool")
@@ -207,7 +212,7 @@ def _run_node(node, context, model):
     return TOOLS[name](**(render(data.get("args") or {}, context)))
 
 
-def execute(workflow, run_id=None, on_node=None):
+def execute(workflow, run_id=None, on_node=None, payload=None):
     """Runs a workflow start to finish. Returns (run_id, summary_text).
 
     `on_node(node_id, name, args, result, error, round_)` is called after each node - the executor
@@ -221,6 +226,7 @@ def execute(workflow, run_id=None, on_node=None):
 
     model = db.get_active_model()
     context, summary = {}, []
+    run = {"workflow": workflow, "run_id": run_id, "payload": payload or {}}
 
     collected = []
 
@@ -245,7 +251,7 @@ def execute(workflow, run_id=None, on_node=None):
 
         try:
             if each is None:
-                result = _attempt(node, scope, model, kind)
+                result = _attempt(node, scope, model, kind, run)
             elif isinstance(each, list):
                 # The fan-out. Each item runs with `item` in scope; one failure becomes that
                 # item's result rather than ending the whole workflow, because "seven of eight
@@ -253,7 +259,7 @@ def execute(workflow, run_id=None, on_node=None):
                 result = []
                 for item in each:
                     try:
-                        result.append(_attempt(node, {**scope, "item": item}, model, kind))
+                        result.append(_attempt(node, {**scope, "item": item}, model, kind, run))
                     except Exception as e:  # noqa: BLE001
                         result.append({"error": str(e)})
             else:
@@ -290,28 +296,30 @@ def _is_off(value):
     return value is SKIPPED or (isinstance(value, dict) and value.get("passed") is False)
 
 
-def _attempt(node, scope, model, kind):
+def _attempt(node, scope, model, kind, run=None):
     """_run_node, with retries for the kinds whose failures are usually somebody else's outage.
 
     A scheduled run has nobody to press the button again, so the retry is the difference between
     "the 9am scan works" and "the 9am scan works when the upstream is having a good day".
     """
     if kind not in RETRYABLE:
-        return _run_node(node, scope, model)
+        return _run_node(node, scope, model, run)
     for delay in RETRY_DELAYS:
         try:
-            return _run_node(node, scope, model)
+            return _run_node(node, scope, model, run)
         except Exception:  # noqa: BLE001 - the last attempt below is the one that raises
             time.sleep(delay)
-    return _run_node(node, scope, model)
+    return _run_node(node, scope, model, run)
 
 
-def workflow_engine_run(workflow, run_id=None):
+def workflow_engine_run(workflow, run_id=None, payload=None):
     """Executes a workflow and records it as a run, so it shows up in the history and the flow
     diagram alongside every chat run.
 
     `run_id` is passed in by "Run now" - the endpoint hands the id to the browser before the work
     starts, so the page can watch a run that does not exist yet without polling for its id.
+
+    `payload` is what triggered it (see workflow_triggers.py) - handed to the trigger node.
     """
     run_id = run_id or str(uuid.uuid4())
     db.create_run(run_id, None, f"Workflow: {workflow['name']}", db.get_active_model(),
@@ -327,7 +335,7 @@ def workflow_engine_run(workflow, run_id=None):
             failed.append(label)
 
     try:
-        _, summary, collected = execute(workflow, run_id, on_node=record)
+        _, summary, collected = execute(workflow, run_id, on_node=record, payload=payload)
         for series, rows in collected:
             if rows:
                 db.append_series(workflow["id"], series, run_id, rows)
@@ -342,26 +350,40 @@ def workflow_engine_run(workflow, run_id=None):
             # producing nothing for a week while the history shows green.
             error = f"{len(failed)} node{'' if len(failed) == 1 else 's'} failed: {', '.join(failed[:3])}"
             db.finish_run(run_id, reply=summary, error=error)
-            _report_failure(workflow, error)
+            _report_failure(workflow, error, run_id)
+            status = "failed"
         else:
             db.finish_run(run_id, reply=summary)
             db.set_fail_streak(workflow["id"], 0)
+            workflow_notify.notify(workflow, "success", f"✓ '{workflow['name']}' finished: {summary}"[:600],
+                                   run_id=run_id)
+            status = "done"
     except Exception as e:  # noqa: BLE001 - a cycle, or a graph that can't be ordered at all
         db.finish_run(run_id, error=str(e))
-        _report_failure(workflow, str(e))
-        summary = None
+        _report_failure(workflow, str(e), run_id)
+        summary, status = None, "failed"
+
+    # Anything chained after this one. The depth rides along so A -> B -> A stops instead of looping.
+    from app.services.workflow_triggers import fire_event_quietly
+
+    fire_event_quietly("workflow_done", {
+        "workflow_id": workflow["id"], "workflow_name": workflow["name"], "run_id": run_id,
+        "status": status, "summary": summary,
+        "chain_depth": int((payload or {}).get("chain_depth") or 0) + 1,
+    })
     return run_id, summary
 
 
-def _report_failure(workflow, error):
+def _report_failure(workflow, error, run_id=None):
     """A workflow that breaks has to say so. Nobody is watching a 9am run, and the failure mode
     this guards against is not a crash - it is a workflow that quietly produces nothing for a week
     while you assume no news is good news."""
     streak = (workflow.get("fail_streak") or 0) + 1
     db.set_fail_streak(workflow["id"], streak)
-    alerts.record(
-        "workflow",
-        f"⚠️ '{workflow['name']}' failed: {error}"
-        + (f" ({streak} runs in a row)" if streak > 1 else ""),
-        meta={"workflow_id": workflow["id"], "fail_streak": streak},
+    workflow_notify.notify(
+        workflow,
+        "failure",
+        f"⚠️ '{workflow['name']}' failed: {error}" + (f" ({streak} runs in a row)" if streak > 1 else ""),
+        run_id=run_id,
+        extra={"fail_streak": streak},
     )

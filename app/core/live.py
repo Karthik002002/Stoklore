@@ -89,7 +89,7 @@ def halt(reason):
     """
     db.set_setting_value("live_halted_on", date.today().isoformat())
     db.set_setting_value("live_halt_reason", reason)
-    alerts.record("order", f"Live trading halted: {reason}")
+    alerts.record("order", f"Live trading halted: {reason}", meta={"event": "halted"})
 
 
 def resume():
@@ -177,7 +177,7 @@ def place_intent(intent, super_order=True):
         f"{intent['direction'].upper()} {intent['quantity']} {intent['symbol']} sent "
         f"({answer.get('orderStatus') or 'accepted'})",
         symbol=intent["symbol"],
-        meta={"order_id": order_id, "correlation_id": intent["correlation_id"]},
+        meta={"order_id": order_id, "correlation_id": intent["correlation_id"], "event": "sent"},
     )
     sync_once(creds)
     return {"ok": True, "order_id": order_id, "correlation_id": intent["correlation_id"], "errors": []}
@@ -220,7 +220,7 @@ def sync_once(creds=None):
                 f"Filled: {order['side']} {order.get('filled_qty') or order.get('quantity')} "
                 f"{order.get('symbol')} at ₹{order.get('avg_price') or 0:,.2f}",
                 symbol=order.get("symbol"),
-                meta={"order_id": order["order_id"], "was": was},
+                meta={"order_id": order["order_id"], "was": was, "event": "filled"},
             )
         elif order["status"] in ("REJECTED", "CANCELLED", "EXPIRED"):
             detail = order.get("error") or order["status"].lower()
@@ -228,7 +228,7 @@ def sync_once(creds=None):
                 "order",
                 f"{order['status'].title()}: {order.get('symbol')} — {detail}",
                 symbol=order.get("symbol"),
-                meta={"order_id": order["order_id"], "was": was},
+                meta={"order_id": order["order_id"], "was": was, "event": order["status"].lower()},
             )
 
     previous_positions = {p["security_id"]: p for p in db.list_live_positions()}
@@ -259,7 +259,7 @@ def _journal(closed):
         f"Closed {trade['symbol']}: {trade['quantity']} @ ₹{trade['entry_price']:,.2f} → "
         f"₹{trade['exit_price']:,.2f}",
         symbol=trade["symbol"],
-        meta={"security_id": closed.get("security_id")},
+        meta={"security_id": closed.get("security_id"), "event": "closed"},
     )
     if not account_id:
         return

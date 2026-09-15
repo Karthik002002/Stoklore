@@ -440,7 +440,7 @@ function StatusPill({ status }: { status: string }) {
   return <span className={cn('mt-0.5 rounded-full px-2 py-0.5 text-[11px] font-medium', cls)}>{label}</span>
 }
 
-function Block({
+export function Block({
   title,
   copy,
   tone,

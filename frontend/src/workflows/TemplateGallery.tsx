@@ -167,7 +167,7 @@ export default function TemplateGallery({
           ) : (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               {visible.map((t) => {
-                const Icon = TRIGGER_ICON[t.trigger.kind] ?? HandIcon
+                const Icon = (TRIGGER_ICON as Record<string, typeof HandIcon>)[t.trigger.kind] ?? HandIcon
                 return (
                   <button
                     key={t.id}

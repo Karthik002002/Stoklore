@@ -63,34 +63,14 @@ DIGEST_HOUR = 18
 def run_triggered_workflows(kind, now=None):
     """Every enabled workflow on `kind` whose turn it is. Returns how many were started.
 
-    Each one runs on its own thread: a workflow that fans out over a watchlist can take minutes,
-    and one slow workflow must not hold up the others or the loop that found them.
+    `schedule` means every time-based trigger (see workflow_triggers.TIME_KINDS); anything else is an
+    event. Kept as the entry point the loops below already call.
     """
-    from zoneinfo import ZoneInfo
+    from app.services import workflow_triggers
 
-    # Imported here, not at module scope: agent.py imports this module for the scan/sync tools,
-    # and the engine imports agent.py - a top-level import would close that circle.
-    from app.services.workflow_engine import workflow_engine_run
-
-    now = now or datetime.now(ZoneInfo("Asia/Kolkata"))
-    today = now.date()
-    started = 0
-    for workflow in db.list_workflows():
-        trigger = workflow.get("trigger") or {}
-        if not workflow.get("enabled") or trigger.get("kind") != kind:
-            continue
-        if workflow.get("last_run_date") == today:
-            continue  # already ran today
-        if kind == "schedule" and now.strftime("%H:%M") < (trigger.get("time") or "09:15"):
-            continue  # not yet due
-        if db.running_workflow_run(workflow["id"]):
-            # Its previous run is still going. Starting a second copy would double every write it
-            # makes, and a fan-out over a watchlist can genuinely outlast an hourly tick.
-            continue
-        db.mark_workflow_ran(workflow["id"], today)
-        threading.Thread(target=workflow_engine_run, args=(workflow,), daemon=True).start()
-        started += 1
-    return started
+    if kind == "schedule":
+        return workflow_triggers.run_due(now)
+    return workflow_triggers.fire_event(kind)
 
 
 def run_daily_digest(now=None):
@@ -106,10 +86,14 @@ def run_daily_digest(now=None):
 
     now = now or datetime.now(ZoneInfo("Asia/Kolkata"))
     today = now.date()
+    # A workflow can opt out of the roll-up (its notify.digest); rows from before notify rules
+    # existed carry no workflow id and stay in.
+    notify = {w["id"]: (w.get("notify") or {}) for w in db.list_workflows()}
     todays = [
         a for a in db.list_alerts(kind="workflow", limit=200)
         if a.get("triggered_at") and _as_date(a["triggered_at"]) == today
         and not (a.get("meta") or {}).get("digest")
+        and notify.get((a.get("meta") or {}).get("workflow_id"), {}).get("digest", True)
     ]
     if not todays:
         return 0
@@ -128,7 +112,9 @@ def _as_date(value):
 
 
 def _workflow_schedule_loop():
-    """Hourly tick: due workflows, then the day's digest once everything has had its chance.
+    """Minute tick: due workflows, held notifications whose quiet hours ended, then the day's digest
+    once everything has had its chance. A minute because an interval can be as short as one; the
+    work per tick is one indexed query when nothing is due.
 
     DIGEST_HOUR is late enough that a 09:30 scan and a 16:00 log are both in it. Same
     once-per-IST-day guard as everything else in this file, so a restart can't double-file it.
@@ -139,6 +125,9 @@ def _workflow_schedule_loop():
     while True:
         try:
             run_triggered_workflows("schedule")
+            from app.services import workflow_notify
+
+            workflow_notify.release_held()
             now = datetime.now(ist)
             today = now.date().isoformat()
             if now.hour >= DIGEST_HOUR and db.get_last_digest_date() != today:
@@ -146,7 +135,7 @@ def _workflow_schedule_loop():
                 run_daily_digest(now)
         except Exception:  # noqa: BLE001 - a bad workflow must not end the scheduler
             pass
-        time.sleep(3600)
+        time.sleep(60)
 
 
 # Populated by the background price-history sync (POST /api/prices/sync) - same manual-trigger +

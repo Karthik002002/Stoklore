@@ -1,10 +1,14 @@
 import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router'
 import type { SearchSchemaInput } from '@tanstack/react-router'
-import AgentPage, { AgentChatView } from './agent/AgentPage'
-import WorkflowData from './agent/WorkflowData'
-import WorkflowEditor from './agent/WorkflowEditor'
-import WorkflowList from './agent/WorkflowList'
-import WorkflowRun from './agent/WorkflowRun'
+import AgentPage from './agent/AgentPage'
+import WorkflowData from './workflows/WorkflowData'
+import WorkflowEditor from './workflows/WorkflowEditor'
+import WorkflowLayout, { WorkflowsShell } from './workflows/WorkflowLayout'
+import WorkflowList from './workflows/WorkflowList'
+import WorkflowNotifications from './workflows/WorkflowNotifications'
+import WorkflowOverview from './workflows/WorkflowOverview'
+import WorkflowRun from './workflows/WorkflowRun'
+import WorkflowRuns from './workflows/WorkflowRuns'
 import Alerts from './Alerts'
 import App from './App'
 import AutoBacktestDetail from './AutoBacktestDetail'
@@ -41,6 +45,7 @@ const SETTINGS_TABS = [
   'litellm',
   'omniroute',
   'cogencis',
+  'telegram',
   'broker',
   'rules',
   'data',
@@ -227,37 +232,59 @@ const alertsRoute = createRoute({
   component: Alerts,
 })
 
-// The agent: a layout (the Chat / Workflow tabs) over one child route per screen. Every screen a
-// click can reach is a URL, so a reload or a pasted link lands exactly where it was - the old
-// in-memory "which screen" state lost you back to the list on every refresh.
+// The agent chat. `session` is the open conversation, so a pasted link carries it. `view=workflow`
+// was the old Workflow tab - workflows have their own section now, so it redirects there.
+const text = (value: unknown) => (typeof value === 'string' && value ? value : undefined)
+
 const agentRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/agent',
-  component: AgentPage,
-})
-
-const text = (value: unknown) => (typeof value === 'string' && value ? value : undefined)
-
-// `session` is the open conversation. `view=workflow` is the pre-routes shape of the Workflow tab,
-// redirected so old links and bookmarks still land there.
-const agentChatRoute = createRoute({
-  getParentRoute: () => agentRoute,
-  path: '/',
   validateSearch: (
     search: { session?: string; view?: string } & SearchSchemaInput,
   ): { session?: string; view?: string } => ({ session: text(search.session), view: text(search.view) }),
   beforeLoad: ({ search }) => {
-    if (search.view === 'workflow') throw redirect({ to: '/agent/workflows', replace: true })
+    if (search.view === 'workflow') throw redirect({ to: '/workflows', replace: true })
   },
-  component: AgentChatView,
+  component: AgentPage,
+})
+
+// Workflows lived under /agent/workflows before they got their own section. Every such link still
+// lands on the same screen; a bare workflow id opened the editor there, so it opens it here.
+const toWorkflowsAddress = ({ params, location }: { params: object; location: { searchStr: string } }) => {
+  const rest = (params as { _splat?: string })._splat ?? ''
+  const path = !rest
+    ? '/workflows'
+    : !rest.includes('/') && rest !== 'new'
+      ? `/workflows/${rest}/editor`
+      : `/workflows/${rest}`
+  throw redirect({ href: `${path}${location.searchStr}`, replace: true })
+}
+const legacyWorkflowsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/agent/workflows',
+  beforeLoad: toWorkflowsAddress,
+})
+const legacyWorkflowRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/agent/workflows/$',
+  beforeLoad: toWorkflowsAddress,
 })
 
 export const WORKFLOW_STATUS_FILTERS = ['running', 'succeeded', 'failed', 'never', 'armed'] as const
 export type WorkflowStatusFilter = (typeof WORKFLOW_STATUS_FILTERS)[number]
 
+// Workflows: automations that run without you. A shell (the card every screen sits in), the list,
+// and one layout per workflow whose tabs are each a URL - so a reload, a bookmark or a notification
+// click lands on the exact tab, run, node or notification it was about.
 const workflowsRoute = createRoute({
-  getParentRoute: () => agentRoute,
+  getParentRoute: () => rootRoute,
   path: '/workflows',
+  component: WorkflowsShell,
+})
+
+const workflowsIndexRoute = createRoute({
+  getParentRoute: () => workflowsRoute,
+  path: '/',
   validateSearch: (
     search: { status?: WorkflowStatusFilter } & SearchSchemaInput,
   ): { status?: WorkflowStatusFilter } => ({
@@ -266,29 +293,59 @@ const workflowsRoute = createRoute({
   component: WorkflowList,
 })
 
-// `node` is the node open in the inspector - on the editor as on a run, so a link can point at the
-// one step it is about.
+// `node` is the node open in the inspector (editor) or the drawer (a run).
 const nodeSearch = (search: { node?: string } & SearchSchemaInput): { node?: string } => ({
   node: text(search.node),
 })
 
 const workflowNewRoute = createRoute({
-  getParentRoute: () => agentRoute,
-  path: '/workflows/new',
+  getParentRoute: () => workflowsRoute,
+  path: '/new',
   validateSearch: nodeSearch,
   component: WorkflowEditor,
+})
+
+const workflowRoute = createRoute({
+  getParentRoute: () => workflowsRoute,
+  path: '/$workflowId',
+  component: WorkflowLayout,
+})
+
+const workflowOverviewRoute = createRoute({
+  getParentRoute: () => workflowRoute,
+  path: '/',
+  component: WorkflowOverview,
 })
 
 const workflowEditorRoute = createRoute({
-  getParentRoute: () => agentRoute,
-  path: '/workflows/$workflowId',
+  getParentRoute: () => workflowRoute,
+  path: '/editor',
   validateSearch: nodeSearch,
   component: WorkflowEditor,
 })
 
+const RUN_STATUSES = ['running', 'done', 'failed'] as const
+type RunStatus = (typeof RUN_STATUSES)[number]
+
+const workflowRunsRoute = createRoute({
+  getParentRoute: () => workflowRoute,
+  path: '/runs',
+  validateSearch: (search: { status?: RunStatus } & SearchSchemaInput): { status?: RunStatus } => ({
+    status: oneOf(RUN_STATUSES, search.status) ? search.status : undefined,
+  }),
+  component: WorkflowRuns,
+})
+
+const workflowRunRoute = createRoute({
+  getParentRoute: () => workflowRoute,
+  path: '/runs/$runId',
+  validateSearch: nodeSearch,
+  component: WorkflowRun,
+})
+
 const workflowDataRoute = createRoute({
-  getParentRoute: () => agentRoute,
-  path: '/workflows/$workflowId/data',
+  getParentRoute: () => workflowRoute,
+  path: '/data',
   validateSearch: (
     search: { series?: string; column?: string; by?: string } & SearchSchemaInput,
   ): { series?: string; column?: string; by?: string } => ({
@@ -299,11 +356,18 @@ const workflowDataRoute = createRoute({
   component: WorkflowData,
 })
 
-const workflowRunRoute = createRoute({
-  getParentRoute: () => agentRoute,
-  path: '/workflows/$workflowId/runs/$runId',
-  validateSearch: nodeSearch,
-  component: WorkflowRun,
+// `open` is the notification whose detail is showing - what a click in the alerts feed or on a
+// desktop notification links to.
+const workflowNotificationsRoute = createRoute({
+  getParentRoute: () => workflowRoute,
+  path: '/notifications',
+  validateSearch: (
+    search: { filter?: 'unread'; open?: number } & SearchSchemaInput,
+  ): { filter?: 'unread'; open?: number } => ({
+    filter: search.filter === 'unread' ? 'unread' : undefined,
+    open: numeric(search.open),
+  }),
+  component: WorkflowNotifications,
 })
 
 // Real orders, mirrored from Dhan. A sibling of /paper rather than a tab inside it: the two pages
@@ -368,13 +432,20 @@ const routeTree = rootRoute.addChildren([
   paperRoute,
   paperPositionRoute,
   paperTradeRoute,
-  agentRoute.addChildren([
-    agentChatRoute,
-    workflowsRoute,
+  agentRoute,
+  legacyWorkflowsRoute,
+  legacyWorkflowRoute,
+  workflowsRoute.addChildren([
+    workflowsIndexRoute,
     workflowNewRoute,
-    workflowEditorRoute,
-    workflowDataRoute,
-    workflowRunRoute,
+    workflowRoute.addChildren([
+      workflowOverviewRoute,
+      workflowEditorRoute,
+      workflowRunsRoute,
+      workflowRunRoute,
+      workflowDataRoute,
+      workflowNotificationsRoute,
+    ]),
   ]),
   alertsRoute,
   liveRoute,

@@ -329,11 +329,12 @@ fail-open, so a paid provider can serve a request no free model fits. The app
 never retries across models itself: that is the gateway's job, and a second
 router would fight the first. See [Model Settings](docs/model-settings.md).
 
-**The agent has its own page** at `/agent` — [docs](docs/agent.md). Chat on one
-tab with a sidebar of every conversation; **Workflow** on the other, drawing that
-chat's last run as a React Flow graph: the prompt, a node per tool call, the
-answer, with item counts on the wires. Tools the model asked for in one turn are
-drawn as parallel branches, because that's what they were.
+**The agent has its own page** at `/agent` — [docs](docs/agent.md): the chat, with
+a sidebar of every conversation. **Workflows** have their own section at
+`/workflows` — [docs](docs/workflows.md). A run is drawn as a React Flow graph:
+the trigger, a node per tool call, the answer, with item counts on the wires. Tools
+the model asked for in one turn are drawn as parallel branches, because that's
+what they were.
 
 Runs on that page are **server-side**: `POST /api/agent/runs` starts a thread and
 returns a run id, so navigating away — or closing the tab — doesn't kill the run,
@@ -349,12 +350,24 @@ arming one *is* the confirmation — which is safe because the tool table has no
 order-placing tool in it. Executions are recorded as ordinary runs, so they get
 the same history and the same flow diagram as a chat turn.
 
-Every workflow screen is its own URL (`/agent/workflows`, `/agent/workflows/<id>`,
-`…/data`, `…/runs/<runId>`), so a reload lands where you were. The list shows
-status counts that double as filters, plus each workflow's newest run, refreshed
-every 5s. Clicking a step on a run's diagram opens a drawer with the full error,
-the arguments and the result; `?node=` keeps that step in the link. The Data
-chart draws one coloured line per symbol, and its legend toggles lines.
+Every workflow screen is its own URL. Each workflow has **Overview / Editor /
+Runs / Data / Notifications** tabs at `/workflows/<id>/…`, so a reload lands where
+you were, and old `/agent/workflows` links redirect.
+
+**Triggers** go well past "daily at a time":
+- every N minutes or hours, optionally within a window
+- weekly on chosen days, or monthly on a date (the 20th, the last day)
+- minutes from the market open or close, or a cron expression
+- on a price alert, a live order event, or another workflow finishing
+
+Any clock trigger can skip weekends and **NSE trading holidays**, fetched from
+NSE's holiday master. A missed slot runs once on wake, never piles up.
+
+**Each workflow has its own inbox:**
+- a notification opens with the run that made it and the data that run
+  collected
+- per-workflow rules: which events, mute, snooze, quiet hours, digest,
+  Telegram
 
 A `condition` node is what makes it worth arming: the workflow runs daily but
 only files an alert when something crosses a line you set — everything

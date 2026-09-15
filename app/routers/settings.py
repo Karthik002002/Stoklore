@@ -5,6 +5,7 @@ from app.core import db
 from app.core import llm
 
 from app.schemas import (
+    TelegramConfigRequest,
     ActiveBrokerRequest,
     ActiveModelRequest,
     CogencisConfigRequest,
@@ -108,4 +109,36 @@ def set_dhan_config(req: DhanConfigRequest):
 @router.put("/api/settings/kite")
 def set_kite_config(req: KiteConfigRequest):
     db.set_kite_credentials(req.api_key.strip(), req.api_secret.strip())
+    return {"ok": True}
+
+
+# --- Telegram: where workflow notifications go when the app is closed ---------------------------------
+
+
+@router.get("/api/settings/telegram")
+def get_telegram_config():
+    """The token is never sent back - only whether one is saved."""
+    return {
+        "has_token": bool(db.get_setting_value("telegram_bot_token")),
+        "chat_id": db.get_setting_value("telegram_chat_id") or "",
+        "last_error": db.get_setting_value("telegram_last_error") or None,
+    }
+
+
+@router.put("/api/settings/telegram")
+def set_telegram_config(req: TelegramConfigRequest):
+    if req.bot_token.strip():
+        db.set_setting_value("telegram_bot_token", req.bot_token.strip())
+    db.set_setting_value("telegram_chat_id", req.chat_id.strip())
+    return get_telegram_config()
+
+
+@router.post("/api/settings/telegram/test")
+def test_telegram():
+    """Sends one message now, so a wrong chat id shows up here rather than as silence at 9am."""
+    from app.services import workflow_notify
+
+    error = workflow_notify.send_telegram("Stoklore: workflow notifications will arrive in this chat.")
+    if error:
+        raise HTTPException(status_code=400, detail=error)
     return {"ok": True}

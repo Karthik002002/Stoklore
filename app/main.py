@@ -38,8 +38,8 @@ def _startup():
     # listed company), then the XBRL detail for the handful of filings that actually moved. See
     # app/services/jobs.py.
     threading.Thread(target=_auto_shareholding_loop, daemon=True).start()
-    # Saved workflows on a schedule. Hourly tick, same catch-up-after-downtime shape as the two
-    # loops above - see run_triggered_workflows in app/services/jobs.py.
+    # Saved workflows on a schedule. Minute tick (intervals can be that short), same
+    # catch-up-after-downtime shape as the two loops above - see app/services/workflow_triggers.py.
     threading.Thread(target=_workflow_schedule_loop, daemon=True).start()
     backup.start()
     # Watches open paper positions against live prices and fires simulated exits. Idempotent, and

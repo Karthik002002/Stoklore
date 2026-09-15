@@ -6,11 +6,20 @@ enabled. Nothing in a run asks a question.
 """
 import threading
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 
 from app.core import db
-from app.schemas import ScreenWorkflowRequest, WorkflowRequest
+from app.core.config import IST
+from app.schemas import (
+    NotificationReadRequest,
+    ScreenWorkflowRequest,
+    TriggerPreviewRequest,
+    WorkflowNotifyRequest,
+    WorkflowRequest,
+)
+from app.services import workflow_notify, workflow_triggers
 from app.services.agent import AGENT_TOOLS
 from app.services.workflow_engine import (
     NODE_KINDS,
@@ -32,6 +41,7 @@ def catalogue():
     return {
         "node_kinds": list(NODE_KINDS),
         "trigger_kinds": list(TRIGGER_KINDS),
+        "order_events": list(workflow_triggers.ORDER_EVENTS),
         "operators": list(OPERATORS),
         "tools": [
             {
@@ -103,9 +113,60 @@ def create_from_screen(req: ScreenWorkflowRequest):
     }
 
 
+def _shaped(workflows, with_unread=False):
+    """Adds what only the server can work out: the trigger in words, when it next runs (holidays
+    included), the effective notify rules, and - for the list - unread notification counts."""
+    now = datetime.now(IST)
+    names = {w["id"]: w["name"] for w in db.list_workflows()} if len(workflows) == 1 else {
+        w["id"]: w["name"] for w in workflows
+    }
+    guarded = any((w.get("trigger") or {}).get("trading_days_only") or (w.get("trigger") or {}).get("kind") == "market"
+                  for w in workflows)
+    holidays = workflow_triggers.trading_holidays() if guarded else frozenset()
+    unread = db.unread_workflow_notification_counts() if with_unread else {}
+    return [
+        {
+            **w,
+            "notify": workflow_notify.rules(w),
+            "trigger_label": workflow_triggers.label(w.get("trigger") or {}, names),
+            "next_run_at": workflow_triggers.next_run_at(w, now, holidays),
+            "unread": unread.get(w["id"], 0),
+        }
+        for w in workflows
+    ]
+
+
 @router.get("/api/workflows")
 def list_workflows():
-    return db.list_workflows()
+    return _shaped(db.list_workflows(), with_unread=True)
+
+
+@router.post("/api/workflows/trigger-preview")
+def trigger_preview(req: TriggerPreviewRequest):
+    """The trigger in words and its next five runs, before anything is saved - so "the 31st" or a
+    cron typo shows its consequences while you're still looking at it."""
+    error = workflow_triggers.validate(req.trigger)
+    if error:
+        return {"error": error, "label": None, "next": []}
+    now = datetime.now(IST)
+    holidays = workflow_triggers.trading_holidays()
+    names = {w["id"]: w["name"] for w in db.list_workflows()}
+    return {
+        "error": None,
+        "label": workflow_triggers.label(req.trigger, names),
+        "next": [t.isoformat() for t in workflow_triggers.upcoming(req.trigger, now, 5, holidays)],
+    }
+
+
+@router.get("/api/workflows/notifications/recent")
+def recent_notifications(since: datetime):
+    """Delivered since `since`, for desktop notifications - rules already applied, so a muted
+    workflow never pops up."""
+    names = {w["id"]: w["name"] for w in db.list_workflows()}
+    return [
+        {**row, "workflow_name": names.get((row.get("meta") or {}).get("workflow_id"))}
+        for row in db.recent_workflow_notifications(since)
+    ]
 
 
 @router.get("/api/workflows/{workflow_id}")
@@ -113,7 +174,7 @@ def get_workflow(workflow_id: str):
     workflow = db.get_workflow(workflow_id)
     if workflow is None:
         raise HTTPException(status_code=404, detail="no such workflow")
-    return workflow
+    return _shaped([workflow])[0]
 
 
 @router.put("/api/workflows/{workflow_id}")
@@ -121,8 +182,11 @@ def save_workflow(workflow_id: str, req: WorkflowRequest):
     name = req.name.strip()
     if not name:
         raise HTTPException(status_code=422, detail="a workflow needs a name")
-    if req.trigger.get("kind") not in TRIGGER_KINDS:
-        raise HTTPException(status_code=422, detail=f"unknown trigger '{req.trigger.get('kind')}'")
+    trigger_error = workflow_triggers.validate(req.trigger)
+    if trigger_error:
+        raise HTTPException(status_code=422, detail=trigger_error)
+    if req.trigger.get("kind") == "workflow_done" and req.trigger.get("workflow_id") == workflow_id:
+        raise HTTPException(status_code=422, detail="a workflow can't be chained after itself")
     # Refuse a cycle at SAVE time, not at 9am on a schedule with nobody looking.
     try:
         topo_order(req.graph.get("nodes") or [], req.graph.get("edges") or [])
@@ -130,7 +194,36 @@ def save_workflow(workflow_id: str, req: WorkflowRequest):
         raise HTTPException(status_code=422, detail=str(e)) from e
     db.save_workflow(workflow_id, name, req.description, req.graph, req.trigger, req.enabled,
                      retain_runs=req.retain_runs)
-    return db.get_workflow(workflow_id)
+    return get_workflow(workflow_id)
+
+
+@router.put("/api/workflows/{workflow_id}/notify")
+def save_notify(workflow_id: str, req: WorkflowNotifyRequest):
+    """Delivery rules on their own endpoint, so saving the graph never resets them (and back)."""
+    if db.get_workflow(workflow_id) is None:
+        raise HTTPException(status_code=404, detail="no such workflow")
+    clean, error = workflow_notify.validate(req.notify)
+    if error:
+        raise HTTPException(status_code=422, detail=error)
+    db.set_workflow_notify(workflow_id, clean)
+    return get_workflow(workflow_id)
+
+
+@router.get("/api/workflows/{workflow_id}/notifications")
+def workflow_notifications(workflow_id: str, unread: bool = False, limit: int = 200):
+    return db.list_workflow_notifications(workflow_id, unread=unread, limit=limit)
+
+
+@router.post("/api/workflows/{workflow_id}/notifications/read")
+def read_notifications(workflow_id: str, req: NotificationReadRequest):
+    return {"updated": db.mark_workflow_notifications_read(workflow_id, req.ids)}
+
+
+@router.delete("/api/workflows/{workflow_id}/notifications/{alert_id}")
+def delete_notification(workflow_id: str, alert_id: int):
+    if not db.delete_workflow_notification(workflow_id, alert_id):
+        raise HTTPException(status_code=404, detail="no such notification on this workflow")
+    return {"ok": True}
 
 
 @router.post("/api/workflows")
@@ -157,13 +250,13 @@ def run_workflow(workflow_id: str):
 
 
 @router.get("/api/workflows/{workflow_id}/series")
-def workflow_series(workflow_id: str, series: str | None = None, limit: int = 1000):
+def workflow_series(workflow_id: str, series: str | None = None, limit: int = 1000, run_id: str | None = None):
     """A collected series as rows, newest first, plus which series this workflow has and which of
     their columns are numeric - the chart needs to know what it can plot, and only the data can
     answer that."""
     names = db.list_series_names(workflow_id)
     chosen = series or (names[0] if names else None)
-    rows = db.read_series(workflow_id, chosen, limit) if chosen else []
+    rows = db.read_series(workflow_id, chosen, limit, run_id=run_id) if chosen else []
     shaped = [
         {"run_id": r["run_id"], "collected_at": r["collected_at"], **(r["row"] or {})} for r in rows
     ]

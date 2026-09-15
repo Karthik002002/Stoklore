@@ -1,18 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { toast } from 'sonner'
 import {
   AlertTriangleIcon,
   BellIcon,
   ChartNoAxesCombinedIcon,
-  CircleCheckIcon,
-  CircleDashedIcon,
-  CircleXIcon,
-  ClockIcon,
-  HandIcon,
   LayoutGridIcon,
-  NewspaperIcon,
   PlayIcon,
   PlusIcon,
   PowerIcon,
@@ -34,94 +27,43 @@ import { Button, buttonVariants } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { formatDateTime, formatDuration, timeAgoShort } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { deleteWorkflow, getWorkflows, runWorkflow, saveWorkflow } from '@/services/api'
 import type { Workflow } from '@/services/api'
 import type { WorkflowStatusFilter } from '@/router'
+import { askToNotify, canNotify } from '@/agent/useRunNotifications'
 import TemplateGallery from './TemplateGallery'
-import { askToNotify, canNotify } from './useRunNotifications'
+import {
+  POLL_MS,
+  STATE_META,
+  TRIGGER_ICON,
+  formatRelative,
+  formatSlot,
+  isArmed,
+  runState,
+  secondsBetween,
+  useWorkflowActions,
+  useWorkflows,
+} from './status'
+import StateIcon from './StateIcon'
+import type { RunState } from './status'
 
 // Managing workflows: what exists, what's armed, and what each one is doing right now.
 //
 // The arm button is the whole safety model. A workflow runs with nobody watching, so "enabled" is the
 // standing permission - and it's on the row rather than buried in the editor, because turning one
 // OFF is the thing you want to do in a hurry.
-//
-// The list is polled every 5s: a scheduled run starts on the server with nobody clicking anything,
-// so the only way to see it go from running to failed is to keep asking.
-const POLL_MS = 5000
-
-const TRIGGER_ICON = { schedule: ClockIcon, manual: HandIcon, event_scan: NewspaperIcon }
-
-const triggerLabel = (w: Workflow) =>
-  w.trigger.kind === 'schedule'
-    ? `Daily at ${w.trigger.time ?? '09:15'} IST`
-    : w.trigger.kind === 'event_scan'
-      ? 'After the daily event scan'
-      : 'Manual only'
-
-type RunState = 'running' | 'succeeded' | 'failed' | 'never'
-
-const runState = (w: Workflow): RunState =>
-  w.last_run_status === 'running'
-    ? 'running'
-    : w.last_run_status === 'failed'
-      ? 'failed'
-      : w.last_run_status === 'done'
-        ? 'succeeded'
-        : 'never'
-
-const isArmed = (w: Workflow) => w.enabled && w.trigger.kind !== 'manual'
 
 const matches = (w: Workflow, filter?: WorkflowStatusFilter) =>
   !filter || (filter === 'armed' ? isArmed(w) : runState(w) === filter)
 
-const STATE_META: Record<RunState, { label: string; tone: string }> = {
-  running: { label: 'Running', tone: 'text-primary' },
-  succeeded: { label: 'Succeeded', tone: 'text-up' },
-  failed: { label: 'Failed', tone: 'text-down' },
-  never: { label: 'Never run', tone: 'text-muted-foreground' },
-}
-
-function StateIcon({ state, className }: { state: RunState; className?: string }) {
-  const cls = cn('size-3.5 shrink-0', STATE_META[state].tone, className)
-  if (state === 'running') return <Spinner className={cls} />
-  if (state === 'succeeded') return <CircleCheckIcon className={cls} />
-  if (state === 'failed') return <CircleXIcon className={cls} />
-  return <CircleDashedIcon className={cls} />
-}
-
-const seconds = (from: string, to?: string | null) =>
-  ((to ? new Date(to).getTime() : Date.now()) - new Date(from).getTime()) / 1000
-
-const ago = (at: string) => (seconds(at) < 60 ? 'just now' : `${timeAgoShort(at)} ago`)
-
-// Stable, for the same reason useRunNotifications keeps one: it is an effect dependency, and a
-// `= []` default would be a new array on every render.
-const NO_WORKFLOWS: Workflow[] = []
+const ago = (at: string) => (secondsBetween(at) < 60 ? 'just now' : `${timeAgoShort(at)} ago`)
 
 export default function WorkflowList() {
-  const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const { status: filter } = useSearch({ from: '/agent/workflows' })
+  const { status: filter } = useSearch({ from: '/workflows/' })
   const [galleryOpen, setGalleryOpen] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<Workflow | null>(null)
-
-  const {
-    data: workflows = NO_WORKFLOWS,
-    isLoading,
-    isError,
-    error,
-    refetch,
-    isFetching,
-  } = useQuery({
-    queryKey: ['workflows'],
-    queryFn: getWorkflows,
-    refetchInterval: POLL_MS,
-  })
-
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ['workflows'] })
-  const openRun = (workflowId: string, runId: string) =>
-    navigate({ to: '/agent/workflows/$workflowId/runs/$runId', params: { workflowId, runId } })
+  const { workflows, isLoading, isError, error, refetch, isFetching } = useWorkflows()
+  const { runNow, toggle, remove, openRun } = useWorkflowActions()
 
   // A run that finished between two polls says so, with a way straight to it. The first poll only
   // records what is already running - otherwise every run in flight on page load would "finish".
@@ -144,65 +86,6 @@ export default function WorkflowList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workflows, isLoading])
 
-  const toggle = useMutation({
-    mutationFn: (w: Workflow) =>
-      saveWorkflow(w.id, {
-        name: w.name,
-        description: w.description,
-        graph: w.graph,
-        trigger: w.trigger,
-        enabled: !w.enabled,
-        retain_runs: w.retain_runs,
-      }),
-    onSuccess: (saved) => {
-      toast.success(
-        saved.enabled
-          ? `${saved.name} armed — ${triggerLabel(saved).toLowerCase()}`
-          : `${saved.name} disarmed`,
-      )
-      refresh()
-    },
-    onError: (e: Error) => toast.error(e.message),
-  })
-
-  const runNow = useMutation({
-    mutationFn: (w: Workflow) => runWorkflow(w.id),
-    onSuccess: ({ run_id }, w) => {
-      // Shown as running straight away rather than on the next poll: the server row is written the
-      // moment the thread starts, so this is what the poll is about to say anyway.
-      queryClient.setQueryData<Workflow[]>(['workflows'], (list) =>
-        list?.map((x) =>
-          x.id === w.id
-            ? {
-                ...x,
-                last_run_id: run_id,
-                last_run_status: 'running',
-                last_run_at: new Date().toISOString(),
-                last_run_finished_at: null,
-                last_run_error: null,
-              }
-            : x,
-        ),
-      )
-      queryClient.invalidateQueries({ queryKey: ['agentRunsRunning'] })
-      toast.success(`${w.name} started`, {
-        description: 'It keeps running if you leave this page.',
-        action: { label: 'Watch', onClick: () => openRun(w.id, run_id) },
-      })
-    },
-    onError: (e: Error) => toast.error(e.message),
-  })
-
-  const remove = useMutation({
-    mutationFn: (w: Workflow) => deleteWorkflow(w.id),
-    onSuccess: (_r, w) => {
-      toast.success(`${w.name} deleted`)
-      setConfirmDelete(null)
-      refresh()
-    },
-    onError: (e: Error) => toast.error(e.message),
-  })
-
   const counts = {
     all: workflows.length,
     running: workflows.filter((w) => runState(w) === 'running').length,
@@ -214,11 +97,7 @@ export default function WorkflowList() {
   const visible = workflows.filter((w) => matches(w, filter))
 
   const setFilter = (next?: WorkflowStatusFilter) =>
-    navigate({
-      to: '/agent/workflows',
-      search: { status: next === filter ? undefined : next },
-      replace: true,
-    })
+    navigate({ to: '/workflows', search: { status: next === filter ? undefined : next }, replace: true })
 
   return (
     <div className="h-full overflow-y-auto p-4">
@@ -226,7 +105,7 @@ export default function WorkflowList() {
         <div>
           <h2 className="font-medium">Workflows</h2>
           <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            The same tools the chat uses, wired by hand and run without you.
+            The agent's tools, wired by hand and run without you.
             <span
               className="inline-flex items-center gap-1"
               title={`Statuses refresh every ${POLL_MS / 1000}s`}
@@ -246,8 +125,8 @@ export default function WorkflowList() {
               onClick={() =>
                 askToNotify().then((p) =>
                   p === 'granted'
-                    ? toast.success('You will be told when a run finishes')
-                    : toast.message('No notifications — results still land in the alerts feed'),
+                    ? toast.success('You will be told when a workflow has something for you')
+                    : toast.message('No desktop notifications — they still land in each inbox'),
                 )
               }
             >
@@ -259,7 +138,7 @@ export default function WorkflowList() {
             <LayoutGridIcon className="size-4" />
             Templates
           </Button>
-          <Link to="/agent/workflows/new" className={buttonVariants({ size: 'sm' })}>
+          <Link to="/workflows/new" className={buttonVariants({ size: 'sm' })}>
             <PlusIcon className="size-4" />
             New workflow
           </Link>
@@ -269,7 +148,7 @@ export default function WorkflowList() {
       <TemplateGallery
         open={galleryOpen}
         onOpenChange={setGalleryOpen}
-        onCreated={(id) => navigate({ to: '/agent/workflows/$workflowId', params: { workflowId: id } })}
+        onCreated={(id) => navigate({ to: '/workflows/$workflowId/editor', params: { workflowId: id } })}
       />
 
       {/* Counts double as filters: "3 failed" is the question, clicking it is the answer. */}
@@ -309,7 +188,7 @@ export default function WorkflowList() {
         </div>
       ) : isError ? (
         <div className="py-16 text-center text-sm text-muted-foreground">
-          <p>Couldn't load workflows: {error.message}</p>
+          <p>Couldn't load workflows: {error?.message}</p>
           <Button size="sm" variant="outline" className="mt-3" onClick={() => refetch()}>
             Try again
           </Button>
@@ -329,7 +208,7 @@ export default function WorkflowList() {
       ) : (
         <div className="space-y-2">
           {visible.map((w) => {
-            const Icon = TRIGGER_ICON[w.trigger.kind] ?? HandIcon
+            const Icon = TRIGGER_ICON[w.trigger.kind]
             const state = runState(w)
             const running = state === 'running'
             const starting = runNow.isPending && runNow.variables?.id === w.id
@@ -343,7 +222,7 @@ export default function WorkflowList() {
                 )}
               >
                 <Link
-                  to="/agent/workflows/$workflowId"
+                  to="/workflows/$workflowId"
                   params={{ workflowId: w.id }}
                   className="min-w-0 flex-1 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
@@ -361,8 +240,11 @@ export default function WorkflowList() {
                     )}
                   </p>
                   <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <Icon className="size-3" />
-                    {triggerLabel(w)}
+                    <Icon className="size-3 shrink-0" />
+                    {w.trigger_label}
+                    {isArmed(w) && w.next_run_at && (
+                      <span title={formatSlot(w.next_run_at)}>· next {formatRelative(w.next_run_at)}</span>
+                    )}
                   </p>
                   {state === 'failed' && w.last_run_error && (
                     <p className="mt-0.5 truncate text-xs text-down" title={w.last_run_error}>
@@ -374,7 +256,25 @@ export default function WorkflowList() {
                 <LastRun workflow={w} state={state} />
 
                 <Link
-                  to="/agent/workflows/$workflowId/data"
+                  to="/workflows/$workflowId/notifications"
+                  params={{ workflowId: w.id }}
+                  className={cn(
+                    buttonVariants({ size: 'icon-sm', variant: 'ghost' }),
+                    'relative',
+                    !w.unread && 'text-muted-foreground',
+                  )}
+                  aria-label={`${w.unread ?? 0} unread notifications for ${w.name}`}
+                  title="Notifications"
+                >
+                  <BellIcon className="size-3.5" />
+                  {!!w.unread && (
+                    <span className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-primary px-1 text-[10px] leading-4 font-medium text-primary-foreground tabular-nums">
+                      {w.unread}
+                    </span>
+                  )}
+                </Link>
+                <Link
+                  to="/workflows/$workflowId/data"
                   params={{ workflowId: w.id }}
                   className={buttonVariants({ size: 'sm', variant: 'ghost' })}
                 >
@@ -392,9 +292,7 @@ export default function WorkflowList() {
                   {running || starting ? <Spinner className="size-3.5" /> : <PlayIcon className="size-3.5" />}
                   {running ? 'Running' : 'Run now'}
                 </Button>
-                {/* Only meaningful for a triggered workflow - a manual one has nothing to arm.
-                    A button rather than a switch because this project has no switch component and
-                    one toggle does not justify adding one. */}
+                {/* Only meaningful for a triggered workflow - a manual one has nothing to arm. */}
                 <Button
                   size="sm"
                   variant={w.enabled ? 'default' : 'outline'}
@@ -427,15 +325,17 @@ export default function WorkflowList() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete {confirmDelete?.name}?</AlertDialogTitle>
             <AlertDialogDescription>
-              The graph and its schedule go. Runs it already made stay in the history and the alerts feed.
-              This can't be undone.
+              The graph, its trigger and its collected data go. Runs it already made stay in the history and
+              the alerts feed. This can't be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               disabled={remove.isPending}
-              onClick={() => confirmDelete && remove.mutate(confirmDelete)}
+              onClick={() =>
+                confirmDelete && remove.mutate(confirmDelete, { onSuccess: () => setConfirmDelete(null) })
+              }
             >
               {remove.isPending && <Spinner className="size-3.5" />}
               Delete
@@ -493,10 +393,10 @@ function LastRun({ workflow: w, state }: { workflow: Workflow; state: RunState }
       </span>
     )
   }
-  const took = seconds(w.last_run_at, w.last_run_finished_at)
+  const took = secondsBetween(w.last_run_at, w.last_run_finished_at)
   return (
     <Link
-      to="/agent/workflows/$workflowId/runs/$runId"
+      to="/workflows/$workflowId/runs/$runId"
       params={{ workflowId: w.id, runId: w.last_run_id }}
       title={`Started ${formatDateTime(w.last_run_at)}${w.last_run_error ? `\n${w.last_run_error}` : ''}`}
       className="flex w-40 shrink-0 flex-col rounded-lg px-2 py-1 text-xs transition-colors hover:bg-muted"

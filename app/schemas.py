@@ -85,6 +85,26 @@ class WorkflowRequest(BaseModel):
     retain_runs: int = 30
 
 
+class TriggerPreviewRequest(BaseModel):
+    trigger: dict
+
+
+class WorkflowNotifyRequest(BaseModel):
+    #: See app/services/workflow_notify.py DEFAULT_NOTIFY for the keys.
+    notify: dict
+
+
+class NotificationReadRequest(BaseModel):
+    #: None marks every unread notification of the workflow read.
+    ids: list[int] | None = None
+
+
+class TelegramConfigRequest(BaseModel):
+    #: Blank keeps the saved token - the field is write-only in the UI.
+    bot_token: str = ""
+    chat_id: str = ""
+
+
 class ScreenWorkflowRequest(BaseModel):
     url: str
     #: IST "HH:MM". Evening by default - screener's numbers move after the close, not during it.

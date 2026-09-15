@@ -293,13 +293,28 @@ def sweep(price_fn):
                     reference_price=reference,
                 )
                 fired += 1
+                _start_workflows("price_alert", {
+                    "alert_id": alert["id"], "symbol": symbol, "price": price,
+                    "condition": alert["condition"], "message": message_for(alert, price),
+                })
             db.record_alert_price(alert["id"], price)
     return fired
 
 
+def _start_workflows(kind, payload):
+    """Workflows armed on this event. Imported late: the workflow engine imports this module."""
+    from app.services.workflow_triggers import fire_event_quietly
+
+    fire_event_quietly(kind, payload)
+
+
 def record(kind, message, symbol=None, meta=None):
     """An alert that has already happened - a fill, a rejection, a halt. Written straight to the
-    feed in the triggered state, because there was never a condition to arm."""
+    feed in the triggered state, because there was never a condition to arm.
+
+    An order alert tagged with `meta.event` also starts the workflows armed on that order event."""
+    if kind == "order" and (meta or {}).get("event"):
+        _start_workflows("order_event", {"event": meta["event"], "symbol": symbol, "message": message, **meta})
     return db.create_alert(
         kind=kind,
         symbol=symbol,

@@ -1,16 +1,17 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon, RotateCcwIcon } from 'lucide-react'
-import { toast } from 'sonner'
+import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { formatDateTime, formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { getRunWorkflow, getWorkflow, getWorkflowRuns, runWorkflow } from '@/services/api'
+import { getRunWorkflow, getWorkflowRuns } from '@/services/api'
 import RunDiagram from './RunDiagram'
+import { POLL_MS, secondsBetween } from './status'
 
-// One workflow run: /agent/workflows/$workflowId/runs/$runId, with `?node=` the step open in the
-// details drawer. Its own page so a failure is a link - to the run, and to the step that broke.
+// One run: /workflows/$workflowId/runs/$runId, with `?node=` the step open in the details drawer.
+// Its own page so a failure is a link - to the run, and to the step that broke. Running it again is
+// the header's Run now, which follows the new run here.
 
 const STATUS = {
   running: ['Running', 'bg-primary/10 text-primary'],
@@ -19,15 +20,10 @@ const STATUS = {
 } as const
 
 export default function WorkflowRun() {
-  const queryClient = useQueryClient()
   const navigate = useNavigate()
-  const { workflowId, runId } = useParams({ from: '/agent/workflows/$workflowId/runs/$runId' })
-  const { node } = useSearch({ from: '/agent/workflows/$workflowId/runs/$runId' })
+  const { workflowId, runId } = useParams({ from: '/workflows/$workflowId/runs/$runId' })
+  const { node } = useSearch({ from: '/workflows/$workflowId/runs/$runId' })
 
-  const { data: workflow } = useQuery({
-    queryKey: ['workflow', workflowId],
-    queryFn: () => getWorkflow(workflowId),
-  })
   // Same key as RunDiagram's, so this shares its request and its live polling.
   const { data: graph } = useQuery({
     queryKey: ['agentWorkflow', runId],
@@ -36,7 +32,7 @@ export default function WorkflowRun() {
   const { data: runs = [] } = useQuery({
     queryKey: ['workflowRuns', workflowId],
     queryFn: () => getWorkflowRuns(workflowId),
-    refetchInterval: 5000,
+    refetchInterval: POLL_MS,
   })
 
   const run = graph?.run
@@ -44,39 +40,21 @@ export default function WorkflowRun() {
   const newer = index > 0 ? runs[index - 1] : undefined
   const older = index >= 0 ? runs[index + 1] : undefined
 
-  const goToRun = (id: string, replace = false) =>
-    navigate({
-      to: '/agent/workflows/$workflowId/runs/$runId',
-      params: { workflowId, runId: id },
-      replace,
-    })
-
-  const rerun = useMutation({
-    mutationFn: () => runWorkflow(workflowId),
-    onSuccess: ({ run_id }) => {
-      queryClient.invalidateQueries({ queryKey: ['workflowRuns', workflowId] })
-      queryClient.invalidateQueries({ queryKey: ['workflows'] })
-      goToRun(run_id)
-    },
-    onError: (e: Error) => toast.error(e.message),
-  })
+  const goToRun = (id: string) =>
+    navigate({ to: '/workflows/$workflowId/runs/$runId', params: { workflowId, runId: id }, replace: true })
 
   const [label, tone] = run ? STATUS[run.status] : ['', '']
-  const took =
-    run?.finished_at != null
-      ? formatDuration((new Date(run.finished_at).getTime() - new Date(run.created_at).getTime()) / 1000)
-      : null
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-1.5">
         <Link
-          to="/agent/workflows/$workflowId"
+          to="/workflows/$workflowId/runs"
           params={{ workflowId }}
           className={buttonVariants({ size: 'sm', variant: 'ghost' })}
         >
           <ArrowLeftIcon className="size-4" />
-          <span className="max-w-56 truncate">{workflow?.name ?? 'Editor'}</span>
+          All runs
         </Link>
         {run && (
           <>
@@ -85,8 +63,8 @@ export default function WorkflowRun() {
               {label}
             </span>
             <span className="text-xs text-muted-foreground">
-              {formatDateTime(run.created_at)}
-              {took && ` · took ${took}`}
+              {formatDateTime(run.created_at)} · {run.status === 'running' ? 'for ' : 'took '}
+              {formatDuration(secondsBetween(run.created_at, run.finished_at))}
             </span>
           </>
         )}
@@ -100,7 +78,7 @@ export default function WorkflowRun() {
             size="icon-sm"
             variant="ghost"
             disabled={!older}
-            onClick={() => older && goToRun(older.id, true)}
+            onClick={() => older && goToRun(older.id)}
             aria-label="Older run"
             title="Older run"
           >
@@ -110,20 +88,11 @@ export default function WorkflowRun() {
             size="icon-sm"
             variant="ghost"
             disabled={!newer}
-            onClick={() => newer && goToRun(newer.id, true)}
+            onClick={() => newer && goToRun(newer.id)}
             aria-label="Newer run"
             title="Newer run"
           >
             <ChevronRightIcon />
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={rerun.isPending || run?.status === 'running'}
-            onClick={() => rerun.mutate()}
-          >
-            {rerun.isPending ? <Spinner className="size-3.5" /> : <RotateCcwIcon className="size-3.5" />}
-            Run again
           </Button>
         </div>
       </div>
@@ -133,7 +102,7 @@ export default function WorkflowRun() {
           selectedId={node}
           onSelect={(id) =>
             navigate({
-              to: '/agent/workflows/$workflowId/runs/$runId',
+              to: '/workflows/$workflowId/runs/$runId',
               params: { workflowId, runId },
               search: { node: id ?? undefined },
               replace: true,

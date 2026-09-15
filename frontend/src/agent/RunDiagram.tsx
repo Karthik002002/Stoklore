@@ -9,9 +9,11 @@ import {
   Panel,
   Position,
   ReactFlow,
+  getBezierPath,
   useNodesState,
+  useStore,
 } from '@xyflow/react'
-import type { Edge, Node, NodeProps, ReactFlowInstance } from '@xyflow/react'
+import type { Edge, MiniMapNodeProps, Node, NodeProps, ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import {
   AlertTriangleIcon,
@@ -111,6 +113,77 @@ function TaskNode({ data, selected }: NodeProps<Node<NodeData>>) {
 }
 
 const NODE_TYPES = { task: TaskNode }
+
+const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((v, i) => v === b[i])
+
+/** React Flow's minimap draws node rectangles only, never the wires between them - so a run reads
+ *  as a row of unrelated dashes. This is its node, plus that node's outgoing edges drawn under it.
+ *  The minimap's SVG is in flow coordinates, so the same bezier the canvas draws fits as-is;
+ *  `non-scaling-stroke` keeps the line a pixel wide however far the minimap is zoomed out. */
+function MiniMapTask({
+  id,
+  x,
+  y,
+  width,
+  height,
+  borderRadius,
+  color,
+  className,
+  shapeRendering,
+  selected,
+}: MiniMapNodeProps) {
+  // Path and colour as plain strings, so the store's equality check is a cheap list compare.
+  const wires = useStore(
+    (s) =>
+      s.edges
+        .filter((e) => e.source === id)
+        .flatMap((e) => {
+          const source = s.nodeLookup.get(e.source)
+          const target = s.nodeLookup.get(e.target)
+          if (!source?.measured.height || !target?.measured.height) return []
+          const [d] = getBezierPath({
+            sourceX: source.internals.positionAbsolute.x + (source.measured.width ?? 0),
+            sourceY: source.internals.positionAbsolute.y + source.measured.height / 2,
+            sourcePosition: Position.Right,
+            targetX: target.internals.positionAbsolute.x,
+            targetY: target.internals.positionAbsolute.y + target.measured.height / 2,
+            targetPosition: Position.Left,
+          })
+          return [
+            `${d}|${(e as { status?: string }).status === 'error' ? MINIMAP_COLOR.error : MINIMAP_COLOR.skipped}`,
+          ]
+        }),
+    sameList,
+  )
+  return (
+    <g>
+      {wires.map((wire) => {
+        const [d, stroke] = wire.split('|')
+        return (
+          <path
+            key={d}
+            d={d}
+            fill="none"
+            stroke={stroke}
+            strokeWidth={1.5}
+            vectorEffect="non-scaling-stroke"
+          />
+        )
+      })}
+      <rect
+        className={cn('react-flow__minimap-node', selected && 'selected', className)}
+        x={x}
+        y={y}
+        rx={borderRadius}
+        ry={borderRadius}
+        width={width}
+        height={height}
+        style={{ fill: color }}
+        shapeRendering={shapeRendering}
+      />
+    </g>
+  )
+}
 
 /** The diagram of ONE run - a chat turn or a workflow execution, which are the same rows and so
  *  the same picture. Pass a runId for a specific one, or a sessionId for that chat's latest. */
@@ -219,6 +292,7 @@ export default function RunDiagram({
           zoomable
           nodeColor={(n) => MINIMAP_COLOR[statusOf(n.data as NodeData)] ?? MINIMAP_COLOR.skipped}
           nodeBorderRadius={6}
+          nodeComponent={MiniMapTask}
           // Out from under the drawer while one is open.
           style={open ? { right: 'min(30rem, 100%)' } : undefined}
         />

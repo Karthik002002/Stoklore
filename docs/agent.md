@@ -437,4 +437,4 @@ this app's dark theme that meant the zoom controls rendered with
 white panel. What you saw was one white rectangle with nothing in it. Both
 canvases now pass `colorMode` from the applied theme (`useAppliedTheme` in
 `lib/theme.ts`, which follows the root `dark` class) and let the card show
-through behind the canvas. The run minimap colours nodes by status.
+through behind the canvas. The run minimap colours nodes by status and draws the connectors between them (React Flow's own minimap draws nodes only), with failed wires in red.

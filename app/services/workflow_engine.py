@@ -250,6 +250,11 @@ def execute(workflow, run_id=None, on_node=None, payload=None):
         each = resolve(data.get("for_each"), scope) if data.get("for_each") else None
 
         try:
+            if data.get("for_each") and each is None:
+                # A loop over nothing is a wiring mistake, not "run once": running the tool with
+                # `item` missing only fails three steps later on the absent argument ('NoneType' has
+                # no attribute 'upper'), naming the symptom instead of the cause.
+                raise ValueError(_empty_fanout(data["for_each"], scope, label))
             if each is None:
                 result = _attempt(node, scope, model, kind, run)
             elif isinstance(each, list):
@@ -288,6 +293,25 @@ def execute(workflow, run_id=None, on_node=None, payload=None):
         gated = any(_is_off(v) for v in context.values())
         text = "Nothing crossed the line - no alert." if gated else "Workflow finished."
     return run_id, text, collected
+
+
+def _empty_fanout(template, scope, label):
+    """Why a for_each found nothing to loop over, said in terms of the fix."""
+    whole = TEMPLATE.fullmatch(str(template).strip())
+    if not whole:
+        return f"'{label}' runs once per item of {template}, which isn't a single {{{{ reference }}}}"
+    head, *path = whole.group(1).split(".")
+    if head not in scope:
+        return f"'{label}' loops over {template}, but '{head}' isn't wired into it - draw an edge from '{head}'"
+    value = scope[head]
+    if value is None:
+        return f"'{label}' loops over {template}, but '{head}' produced nothing - check that step first"
+    if isinstance(value, list) and path:
+        sample = next((v for v in value if isinstance(v, dict) and v), None)
+        field = f", and read a field of each with {{{{ item.{next(iter(sample))} }}}}" if sample else ""
+        return (f"'{label}' loops over {template}, but '{head}' is already a list of {len(value)} - "
+                f"loop over {{{{ {head} }}}} instead{field}")
+    return f"'{label}' loops over {template}, but '{head}' has nothing at '{'.'.join(path)}'"
 
 
 def _is_off(value):

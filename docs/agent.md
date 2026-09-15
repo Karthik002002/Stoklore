@@ -110,6 +110,14 @@ results. That's what puts *"8 items"* on a wire. One item failing becomes that
 item's result rather than ending the run — seven of eight symbols answering is a
 useful run.
 
+A `for each` that resolves to **nothing** is a wiring mistake, and the node fails
+before its tool runs, with a message naming the fix. For example: *"'Price each'
+loops over `{{ lists.symbols }}`, but 'lists' is already a list of 6 - loop over
+`{{ lists }}` instead, and read a field of each with `{{ item.symbol }}`"*. It used
+to run the tool once with `item` missing, which only failed later on the absent
+argument (`'NoneType' object has no attribute 'upper'`), three steps from the
+real cause.
+
 A lone `{{ x }}` keeps its **type** (a list stays a list, which is what `for each`
 needs); anything with text around it becomes a string.
 

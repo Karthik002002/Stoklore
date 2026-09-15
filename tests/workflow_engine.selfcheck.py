@@ -94,9 +94,9 @@ seen = run(
     [{"source": "t", "target": "symbols"}, {"source": "symbols", "target": "price"},
      {"source": "price", "target": "say"}, {"source": "say", "target": "out"}],
 )
-# for_each referenced `{{ list }}`, which isn't in scope - so no fan-out happened, and the node ran
-# once. A missing reference must not silently iterate over something else.
-assert seen["price"][4] is None, "a node with an unresolvable for_each still runs once"
+# for_each referenced `{{ list }}`, which isn't in scope. That is a wiring mistake, and it fails the
+# node saying so - it must neither iterate over something else nor run once with `item` missing.
+assert "isn't wired" in (seen["price"][4] or ""), seen["price"][4]
 
 calls.clear()
 seen = run(
@@ -107,7 +107,23 @@ seen = run(
     ],
     [{"source": "syms", "target": "price"}],
 )
-assert seen["price"][4] is None and len(calls) == 2, "one seed call, then one non-fanned call"
+assert "nothing at 'list'" in (seen["price"][4] or "") and len(calls) == 1, \
+    "a for_each path that misses fails the node before its tool is called"
+
+# The real bug this guards: a parent that returns a list, looped over by a field it doesn't have.
+# Before, the tool ran once with symbol=None and died on `.upper()`.
+calls.clear()
+we.TOOLS["watchlists"] = lambda **k: [{"symbol": "TCS", "list_name": "A"}, {"symbol": "INFY", "list_name": "A"}]
+seen = run(
+    [
+        node("lists", "tool", tool="watchlists"),
+        node("price", "tool", tool="get_price", for_each="{{ lists.symbols }}", args={"symbol": "{{ item }}"}),
+    ],
+    [{"source": "lists", "target": "price"}],
+)
+assert not calls, "get_price was never called with a missing symbol"
+assert "already a list of 2" in seen["price"][4] and "{{ lists }}" in seen["price"][4] \
+    and "{{ item.symbol }}" in seen["price"][4], seen["price"][4]
 
 # A real fan-out, with the list coming from a parent.
 we.TOOLS["listing"] = lambda **k: {"list": ["TCS", "INFY", "WIPRO"]}

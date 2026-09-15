@@ -1,8 +1,8 @@
-import { useNavigate, useSearch } from '@tanstack/react-router'
-import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
+import { useRef } from 'react'
+import { Outlet, useLocation, useNavigate, useSearch } from '@tanstack/react-router'
+import { Tabs, TabsIndicator, TabsList, TabsTab } from '@/components/ui/tabs'
 import { usePageTitle } from '@/lib/usePageTitle'
 import AgentChat from './AgentChat'
-import WorkflowTab from './WorkflowTab'
 
 // One page, two ways of putting the agent to work.
 //
@@ -11,35 +11,53 @@ import WorkflowTab from './WorkflowTab'
 // is who pulls the trigger, which is why they are tabs on one page rather than two pages: the
 // tools, the model and the run history are identical.
 //
-// Same Tabs component the Backtesting page uses, so the two read as the same app.
+// This is the layout; each screen under it is its own route (router.tsx), so the tabs read the
+// URL rather than owning it. Same Tabs component the Backtesting page uses.
 export default function AgentPage() {
   usePageTitle('Agent')
   const navigate = useNavigate()
-  const { view, session } = useSearch({ from: '/agent' })
+  const onWorkflows = useLocation({ select: (l) => l.pathname.startsWith('/agent/workflows') })
+  const { session } = useSearch({ strict: false }) as { session?: string }
 
-  const setSearch = (next: { view?: string; session?: string }) =>
-    navigate({ to: '/agent', search: (prev) => ({ ...prev, ...next }) as never })
+  // The chat you were in, so Workflow -> Chat returns to it instead of an empty transcript. The
+  // layout stays mounted across its child routes, so a ref outlives the tab switch.
+  const lastSession = useRef(session)
+  if (!onWorkflows) lastSession.current = session
 
   return (
-    <Tabs
-      value={view}
-      onValueChange={(next) => setSearch({ view: next as string })}
-      className="flex h-[calc(100vh-5rem)] flex-col gap-3"
-    >
-      <TabsList className="shrink-0 self-start">
-        <TabsTab value="chat">Chat</TabsTab>
-        <TabsTab value="workflow">Workflow</TabsTab>
-        <TabsIndicator />
-      </TabsList>
+    <div className="flex h-[calc(100vh-5rem)] flex-col gap-3">
+      <Tabs
+        value={onWorkflows ? 'workflow' : 'chat'}
+        onValueChange={(next) =>
+          next === 'workflow'
+            ? navigate({ to: '/agent/workflows' })
+            : navigate({ to: '/agent', search: { session: lastSession.current } })
+        }
+        className="shrink-0 self-start"
+      >
+        <TabsList>
+          <TabsTab value="chat">Chat</TabsTab>
+          <TabsTab value="workflow">Workflow</TabsTab>
+          <TabsIndicator />
+        </TabsList>
+      </Tabs>
 
-      {/* The panels own the remaining height rather than scrolling the page - both a transcript
+      {/* The screens own the remaining height rather than scrolling the page - both a transcript
           and a canvas need a definite height to size against. */}
-      <TabsPanel value="chat" className="min-h-0 flex-1 overflow-hidden rounded-xl border bg-card">
-        <AgentChat sessionId={session ?? null} onSessionChange={(id) => setSearch({ session: id })} />
-      </TabsPanel>
-      <TabsPanel value="workflow" className="min-h-0 flex-1 overflow-hidden rounded-xl border bg-card">
-        <WorkflowTab />
-      </TabsPanel>
-    </Tabs>
+      <div className="min-h-0 flex-1 overflow-hidden rounded-xl border bg-card">
+        <Outlet />
+      </div>
+    </div>
+  )
+}
+
+export function AgentChatView() {
+  const navigate = useNavigate()
+  const { session } = useSearch({ from: '/agent/' })
+  return (
+    <AgentChat
+      sessionId={session ?? null}
+      onSessionChange={(id) => navigate({ to: '/agent', search: { session: id } })}
+    />
   )
 }

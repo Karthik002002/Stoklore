@@ -349,6 +349,13 @@ arming one *is* the confirmation — which is safe because the tool table has no
 order-placing tool in it. Executions are recorded as ordinary runs, so they get
 the same history and the same flow diagram as a chat turn.
 
+Every workflow screen is its own URL (`/agent/workflows`, `/agent/workflows/<id>`,
+`…/data`, `…/runs/<runId>`), so a reload lands where you were. The list shows
+status counts that double as filters, plus each workflow's newest run, refreshed
+every 5s. Clicking a step on a run's diagram opens a drawer with the full error,
+the arguments and the result; `?node=` keeps that step in the link. The Data
+chart draws one coloured line per symbol, and its legend toggles lines.
+
 A `condition` node is what makes it worth arming: the workflow runs daily but
 only files an alert when something crosses a line you set — everything
 downstream of a gate that didn't hold is **skipped**, not failed, so silence

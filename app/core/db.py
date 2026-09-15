@@ -1538,8 +1538,19 @@ def create_run(run_id, session_id, prompt, model, workflow_id=None):
 
 
 def list_workflows():
+    """Every workflow with its newest run joined on, so the list can show what each one is doing
+    right now in one query - it is polled every few seconds, and a request per row would not be.
+    The LATERAL pick is one index probe on chat_runs_workflow_idx per workflow."""
     with connect() as conn:
-        return conn.execute("SELECT * FROM workflows ORDER BY created_at DESC").fetchall()
+        return conn.execute(
+            "SELECT w.*, r.id AS last_run_id, r.status AS last_run_status, "
+            "r.created_at AS last_run_at, r.finished_at AS last_run_finished_at, "
+            "r.error AS last_run_error "
+            "FROM workflows w "
+            "LEFT JOIN LATERAL (SELECT id, status, created_at, finished_at, error FROM chat_runs "
+            "  WHERE workflow_id = w.id ORDER BY created_at DESC LIMIT 1) r ON true "
+            "ORDER BY w.created_at DESC"
+        ).fetchall()
 
 
 def get_workflow(workflow_id):

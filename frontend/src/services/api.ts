@@ -663,6 +663,12 @@ export type Workflow = {
   last_run_date: string | null
   created_at: string
   updated_at: string
+  /** The newest run, joined on by the list endpoint only - a single GET doesn't carry these. */
+  last_run_id?: string | null
+  last_run_status?: AgentRun['status'] | null
+  last_run_at?: string | null
+  last_run_finished_at?: string | null
+  last_run_error?: string | null
 }
 
 /** What the editor's palette is built from - served off the agent's own tool schemas, so a tool

@@ -18,6 +18,7 @@ import {
   RefreshCwIcon,
   SettingsIcon,
   SunIcon,
+  WorkflowIcon,
   TrendingUpIcon,
   UserRoundIcon,
   UsersIcon,
@@ -38,7 +39,7 @@ import { useTheme } from '@/lib/theme'
 import { openProfile } from './Profile'
 import { openWatchlists } from './WatchlistManager'
 import type { LinkProps } from '@tanstack/react-router'
-import { addStock, searchStocks } from '@/services/api'
+import { addStock, getWorkflows, searchStocks } from '@/services/api'
 
 // Every top-level route in router.jsx that can be reached without a parameter. The ones that
 // can't (/stock/:exchange/:symbol, /paper/:symbol, /paper/trade/:id, /live/:symbol,
@@ -67,9 +68,10 @@ const BACKTEST_TABS = [
   { label: 'Backtesting > Goals', view: 'goals' },
 ]
 
-const AGENT_TABS = [
-  { label: 'Agent > Chat', view: 'chat' },
-  { label: 'Agent > Workflow', view: 'workflow' },
+const AGENT_PAGES: { label: string; to: LinkProps['to'] }[] = [
+  { label: 'Agent > Chat', to: '/agent' },
+  { label: 'Agent > Workflows', to: '/agent/workflows' },
+  { label: 'Agent > New workflow', to: '/agent/workflows/new' },
 ]
 
 const PAPER_TABS = [
@@ -136,6 +138,9 @@ export default function CommandPalette() {
     enabled: isStockSearch,
   })
   const exactStockMatch = stockMatches.some((s) => s.symbol === stockQuery)
+
+  // Saved workflows by name, so one is two keystrokes away. Only fetched while the palette is open.
+  const { data: workflows = [] } = useQuery({ queryKey: ['workflows'], queryFn: getWorkflows, enabled: open })
 
   // Destinations come from the PAGES/BACKTEST_TABS tables above rather than being written at each
   // call, so the router cannot check `search` against the specific route being navigated to.
@@ -268,13 +273,30 @@ export default function CommandPalette() {
                 </CommandItem>
               </CommandGroup>
               <CommandGroup heading="Agent">
-                {AGENT_TABS.map((t) => (
-                  <CommandItem key={t.view} value={t.label} onSelect={() => goTo('/agent', { view: t.view })}>
+                {AGENT_PAGES.map((t) => (
+                  <CommandItem key={t.label} value={t.label} onSelect={() => goTo(t.to)}>
                     <BotIcon className="size-4" />
                     {t.label}
                   </CommandItem>
                 ))}
               </CommandGroup>
+              {workflows.length > 0 && (
+                <CommandGroup heading="Workflows">
+                  {workflows.map((w) => (
+                    <CommandItem
+                      key={w.id}
+                      value={`Workflow > ${w.name} ${w.id}`}
+                      onSelect={() => {
+                        navigate({ to: '/agent/workflows/$workflowId', params: { workflowId: w.id } })
+                        close()
+                      }}
+                    >
+                      <WorkflowIcon className="size-4" />
+                      Workflow &gt; {w.name}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
               <CommandGroup heading="Paper Trading">
                 {PAPER_TABS.map((t) => (
                   <CommandItem key={t.view} value={t.label} onSelect={() => goTo('/paper', { view: t.view })}>

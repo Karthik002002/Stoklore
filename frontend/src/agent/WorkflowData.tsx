@@ -1,77 +1,204 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ArrowLeftIcon } from 'lucide-react'
+import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
+import { LineSeries, createChart } from 'lightweight-charts'
+import type { ISeriesApi, UTCTimestamp } from 'lightweight-charts'
+import { ArrowLeftIcon, PencilIcon } from 'lucide-react'
 import DataTable from '@/components/DataTable'
-import { Button } from '@/components/ui/button'
+import { buttonVariants } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
-import { getWorkflowHealth, getWorkflowSeries } from '@/services/api'
+import { fmt, formatDuration } from '@/lib/format'
+import { cn } from '@/lib/utils'
+import { getWorkflow, getWorkflowHealth, getWorkflowSeries } from '@/services/api'
 
 // What a workflow has gathered, and whether it's still working.
 //
 // Two questions, one screen, because they're the same question asked twice: "is this automation
 // earning its keep". The series answers what it found; health answers whether it has been finding
 // anything at all - which a feed that has simply gone quiet cannot tell you.
+//
+// Route: /agent/workflows/$workflowId/data - the series, plotted column and split are all in the
+// URL, so a reload shows the same chart.
 
 const fmtTime = (v: unknown) =>
   typeof v === 'string' || typeof v === 'number' ? new Date(v).toLocaleString('en-IN') : '—'
 
-/** A plain SVG line chart. No charting library: this plots one numeric column against time, the
- *  scale is two divisions, and a dependency for that would cost more than it saves. */
-function Sparkline({ points }: { points: { x: number; y: number }[] }) {
-  const { d, lo, hi } = useMemo(() => {
-    if (points.length < 2) return { d: '', lo: 0, hi: 0 }
-    const ys = points.map((p) => p.y)
-    const xs = points.map((p) => p.x)
-    const [lo, hi] = [Math.min(...ys), Math.max(...ys)]
-    const [x0, x1] = [Math.min(...xs), Math.max(...xs)]
-    // A flat series has no range to divide by - draw it down the middle rather than at NaN.
-    const spanY = hi - lo || 1
-    const spanX = x1 - x0 || 1
-    const d = points
-      .map((p, i) => {
-        const x = ((p.x - x0) / spanX) * 100
-        const y = 100 - ((p.y - lo) / spanY) * 100
-        return `${i ? 'L' : 'M'}${x.toFixed(2)},${y.toFixed(2)}`
-      })
-      .join(' ')
-    return { d, lo, hi }
-  }, [points])
+// Same axis/grid colours as the journal's charts (ManualOverview), so the app reads as one thing.
+const CHART = { text: '#9ca3af', grid: 'rgba(148, 163, 184, 0.15)' }
 
-  if (!d) {
-    return (
-      <p className="py-10 text-center text-xs text-muted-foreground">
-        Two runs are needed before there's a line to draw.
-      </p>
-    )
+// Ten hand-picked hues that stay apart on both themes, then golden-angle steps for anything past
+// them - a 25-symbol watchlist still gets 25 distinguishable lines.
+const PALETTE = [
+  '#3b82f6',
+  '#22c55e',
+  '#f59e0b',
+  '#ef4444',
+  '#a855f7',
+  '#06b6d4',
+  '#ec4899',
+  '#84cc16',
+  '#f97316',
+  '#14b8a6',
+]
+const hslHex = (h: number, s: number, l: number) => {
+  const a = s * Math.min(l, 1 - l)
+  const channel = (n: number) => {
+    const k = (n + h / 30) % 12
+    return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))))
+      .toString(16)
+      .padStart(2, '0')
   }
+  return `#${channel(0)}${channel(8)}${channel(4)}`
+}
+const seriesColor = (i: number) => PALETTE[i] ?? hslHex((i * 137.508) % 360, 0.65, 0.55)
+const faded = (hex: string) =>
+  `rgba(${Number.parseInt(hex.slice(1, 3), 16)}, ${Number.parseInt(hex.slice(3, 5), 16)}, ${Number.parseInt(hex.slice(5, 7), 16)}, 0.2)`
+
+/** A split column has to name groups, not be one: 2..MAX_GROUPS distinct plain values. */
+const MAX_GROUPS = 60
+const NONE = 'none'
+
+type Dataset = { key: string; color: string; points: { time: UTCTimestamp; value: number }[] }
+
+/** One line per dataset on the app's own chart library (lightweight-charts, as on the journal and
+ *  paper pages). The legend is the control: click to hide a line, double-click to show only it,
+ *  hover to pick it out of the rest; it shows values under the crosshair, or the latest ones. */
+function SeriesChart({ datasets }: { datasets: Dataset[] }) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const seriesRef = useRef(new Map<string, ISeriesApi<'Line'>>())
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set())
+  const [hovered, setHovered] = useState<string | null>(null)
+  const [crosshair, setCrosshair] = useState<Map<string, number> | null>(null)
+
+  useEffect(() => {
+    if (!containerRef.current || !datasets.length) return
+    const chart = createChart(containerRef.current, {
+      autoSize: true,
+      layout: { background: { color: 'transparent' }, textColor: CHART.text, attributionLogo: false },
+      grid: { vertLines: { visible: false }, horzLines: { color: CHART.grid } },
+      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
+      rightPriceScale: { borderVisible: false },
+      localization: { priceFormatter: (p: number) => fmt(p) },
+    })
+    const map = new Map<string, ISeriesApi<'Line'>>()
+    for (const d of datasets) {
+      const series = chart.addSeries(LineSeries, {
+        color: d.color,
+        lineWidth: 2,
+        // A line with one or two points is invisible without its dots.
+        pointMarkersVisible: d.points.length < 40,
+        priceLineVisible: false,
+        lastValueVisible: false,
+        crosshairMarkerRadius: 3,
+      })
+      series.setData(d.points)
+      map.set(d.key, series)
+    }
+    seriesRef.current = map
+    chart.subscribeCrosshairMove((param) => {
+      if (!param.time) return setCrosshair(null)
+      const values = new Map<string, number>()
+      for (const [key, series] of map) {
+        const point = param.seriesData.get(series)
+        if (point && 'value' in point) values.set(key, point.value)
+      }
+      setCrosshair(values)
+    })
+    chart.timeScale().fitContent()
+    return () => {
+      chart.remove()
+      seriesRef.current = new Map()
+    }
+  }, [datasets])
+
+  useEffect(() => {
+    datasets.forEach((d) => {
+      seriesRef.current.get(d.key)?.applyOptions({
+        visible: !hidden.has(d.key),
+        color: hovered && hovered !== d.key ? faded(d.color) : d.color,
+        lineWidth: hovered === d.key ? 3 : 2,
+      })
+    })
+  }, [datasets, hidden, hovered])
+
+  const toggle = (key: string) =>
+    setHidden((prev) => {
+      const next = new Set(prev)
+      if (!next.delete(key)) next.add(key)
+      return next
+    })
+  const solo = (key: string) => setHidden(new Set(datasets.map((d) => d.key).filter((k) => k !== key)))
+
   return (
-    <div className="relative h-40">
-      <svg
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-        className="h-full w-full"
-        role="img"
-        aria-label="Collected values over time"
-      >
-        <path
-          d={d}
-          fill="none"
-          stroke="var(--color-primary)"
-          strokeWidth="0.8"
-          vectorEffect="non-scaling-stroke"
-        />
-      </svg>
-      <span className="absolute top-0 left-0 text-[10px] text-muted-foreground">{hi.toFixed(2)}</span>
-      <span className="absolute bottom-0 left-0 text-[10px] text-muted-foreground">{lo.toFixed(2)}</span>
+    <div>
+      <div className="relative h-64">
+        <div ref={containerRef} className="absolute inset-0" />
+      </div>
+      {datasets.length > 1 && (
+        <div className="mt-3 flex items-start gap-2 border-t pt-3">
+          <div className="flex max-h-28 flex-1 flex-wrap gap-1 overflow-y-auto">
+            {datasets.map((d) => {
+              const off = hidden.has(d.key)
+              const value = crosshair ? crosshair.get(d.key) : d.points.at(-1)?.value
+              return (
+                <button
+                  key={d.key}
+                  type="button"
+                  onClick={() => toggle(d.key)}
+                  onDoubleClick={() => solo(d.key)}
+                  onMouseEnter={() => !off && setHovered(d.key)}
+                  onMouseLeave={() => setHovered(null)}
+                  aria-pressed={!off}
+                  title="Click to hide · double-click to show only this"
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] transition-all select-none hover:bg-muted',
+                    off && 'opacity-40',
+                  )}
+                >
+                  <span className="size-2 rounded-full" style={{ background: d.color }} />
+                  <span className="font-medium">{d.key}</span>
+                  {value != null && <span className="text-muted-foreground tabular-nums">{fmt(value)}</span>}
+                </button>
+              )
+            })}
+          </div>
+          <div className="flex shrink-0 gap-1 text-[11px]">
+            <button
+              type="button"
+              className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              onClick={() => setHidden(new Set())}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              onClick={() => setHidden(new Set(datasets.map((d) => d.key)))}
+            >
+              None
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-export default function WorkflowData({ id, name, onBack }: { id: string; name: string; onBack: () => void }) {
-  const [series, setSeries] = useState<string | undefined>()
-  const [column, setColumn] = useState<string | undefined>()
+export default function WorkflowData() {
+  const navigate = useNavigate()
+  const { workflowId: id } = useParams({ from: '/agent/workflows/$workflowId/data' })
+  const { series, column, by } = useSearch({ from: '/agent/workflows/$workflowId/data' })
 
+  const setSearch = (next: { series?: string; column?: string; by?: string }) =>
+    navigate({
+      to: '/agent/workflows/$workflowId/data',
+      params: { workflowId: id },
+      search: (prev) => ({ ...prev, ...next }),
+      replace: true,
+    })
+
+  const { data: workflow } = useQuery({ queryKey: ['workflow', id], queryFn: () => getWorkflow(id) })
   const { data, isLoading } = useQuery({
     queryKey: ['workflowSeries', id, series],
     queryFn: () => getWorkflowSeries(id, series),
@@ -79,16 +206,63 @@ export default function WorkflowData({ id, name, onBack }: { id: string; name: s
   const { data: health } = useQuery({
     queryKey: ['workflowHealth', id],
     queryFn: () => getWorkflowHealth(id),
+    refetchInterval: 5000,
   })
 
-  const plotted = column ?? data?.numeric[0]
-  const points = useMemo(() => {
+  // A stale ?column= from another series falls back to the first plottable one.
+  const plotted = column && data?.numeric.includes(column) ? column : data?.numeric[0]
+
+  // Columns that name groups - a symbol, a sector - and so can split the chart into datasets.
+  const splitColumns = useMemo(() => {
+    if (!data) return []
+    return data.columns.filter((key) => {
+      if (data.numeric.includes(key)) return false
+      const values = new Set<string>()
+      for (const row of data.rows) {
+        const v = row[key]
+        if (v !== null && typeof v === 'object') return false
+        values.add(String(v ?? '—'))
+        if (values.size > MAX_GROUPS) return false
+      }
+      return values.size >= 2
+    })
+  }, [data])
+
+  const split =
+    by === NONE
+      ? undefined
+      : by && splitColumns.includes(by)
+        ? by
+        : splitColumns.includes('symbol')
+          ? 'symbol'
+          : splitColumns[0]
+
+  const datasets = useMemo<Dataset[]>(() => {
     if (!plotted || !data) return []
-    return data.rows
-      .map((r) => ({ x: new Date(String(r.collected_at)).getTime(), y: Number(r[plotted]) }))
-      .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y))
-      .sort((a, b) => a.x - b.x)
-  }, [data, plotted])
+    const groups = new Map<string, Map<number, number>>()
+    for (const row of data.rows) {
+      const ms = new Date(String(row.collected_at)).getTime()
+      const raw = row[plotted]
+      const value = Number(raw)
+      if (!Number.isFinite(ms) || raw === null || raw === '' || !Number.isFinite(value)) continue
+      // lightweight-charts labels its axis in UTC; shifting by the local offset makes it read as
+      // wall-clock time here, as PriceChart does for IST bars.
+      const time = Math.floor(ms / 1000) - new Date(ms).getTimezoneOffset() * 60
+      const key = split ? String(row[split] ?? '—') : plotted
+      if (!groups.has(key)) groups.set(key, new Map())
+      groups.get(key)?.set(time, value)
+    }
+    // Alphabetical, so a symbol keeps its colour from one run to the next.
+    return [...groups.keys()].sort().map((key, i) => ({
+      key,
+      color: seriesColor(i),
+      points: [...(groups.get(key) ?? [])]
+        .sort((a, b) => a[0] - b[0])
+        .map(([time, value]) => ({ time: time as UTCTimestamp, value })),
+    }))
+  }, [data, plotted, split])
+
+  const runCount = useMemo(() => new Set(data?.rows.map((r) => r.run_id)).size, [data])
 
   // Columns are whatever the series actually holds - a collected row's shape is the wired tool's
   // shape, so they're derived from the data rather than declared.
@@ -111,31 +285,68 @@ export default function WorkflowData({ id, name, onBack }: { id: string; name: s
     ] as never
   }, [data?.columns])
 
+  const worst = health?.failing_nodes[0]
+
   return (
     <div className="h-full overflow-y-auto p-4">
       <div className="mb-3 flex items-center gap-2">
-        <Button size="sm" variant="ghost" onClick={onBack}>
+        <Link to="/agent/workflows" className={buttonVariants({ size: 'sm', variant: 'ghost' })}>
           <ArrowLeftIcon className="size-4" />
           All workflows
-        </Button>
-        <h2 className="font-medium">{name}</h2>
+        </Link>
+        <h2 className="min-w-0 flex-1 truncate font-medium">{workflow?.name ?? ''}</h2>
+        <Link
+          to="/agent/workflows/$workflowId"
+          params={{ workflowId: id }}
+          className={buttonVariants({ size: 'sm', variant: 'outline' })}
+        >
+          <PencilIcon className="size-3.5" />
+          Open editor
+        </Link>
       </div>
 
       {health && (
-        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Stat label="Runs kept" value={String(health.total)} />
-          <Stat label="Failed" value={String(health.failed)} tone={health.failed ? 'bad' : undefined} />
-          <Stat label="Avg duration" value={health.avg_seconds == null ? '—' : `${health.avg_seconds}s`} />
-          <Stat
-            label="Worst node"
-            value={
-              health.failing_nodes[0]
-                ? `${health.failing_nodes[0].name} ×${health.failing_nodes[0].failures}`
-                : '—'
-            }
-            tone={health.failing_nodes.length ? 'bad' : undefined}
-          />
-        </div>
+        <>
+          <div className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Stat label="Runs kept" value={String(health.total)} />
+            <Stat label="Failed" value={String(health.failed)} tone={health.failed ? 'bad' : undefined} />
+            <Stat
+              label="Avg duration"
+              value={health.avg_seconds == null ? '—' : formatDuration(health.avg_seconds)}
+            />
+            <Stat
+              label="Worst node"
+              value={worst ? `${worst.name} ×${worst.failures}` : '—'}
+              tone={worst ? 'bad' : undefined}
+            />
+          </div>
+          {/* Oldest to newest, one bar per run: a red streak is visible before you read a number. */}
+          {health.runs.length > 0 && (
+            <div className="mb-4 flex items-center gap-2">
+              <span className="text-[11px] text-muted-foreground">Last {health.runs.length} runs</span>
+              <div className="flex h-5 items-end gap-0.5">
+                {[...health.runs].reverse().map((r) => (
+                  <Link
+                    key={r.id}
+                    to="/agent/workflows/$workflowId/runs/$runId"
+                    params={{ workflowId: id, runId: r.id }}
+                    title={`${new Date(r.created_at).toLocaleString('en-IN')} · ${r.status}${
+                      r.seconds != null ? ` · ${formatDuration(r.seconds)}` : ''
+                    }${r.error ? `\n${r.error}` : ''}`}
+                    className={cn(
+                      'h-4 w-1.5 origin-bottom rounded-sm transition-transform hover:scale-y-125',
+                      r.status === 'failed'
+                        ? 'bg-down'
+                        : r.status === 'running'
+                          ? 'animate-pulse bg-primary'
+                          : 'bg-up',
+                    )}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {isLoading ? (
@@ -150,8 +361,11 @@ export default function WorkflowData({ id, name, onBack }: { id: string; name: s
       ) : (
         <>
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <Select value={data.selected ?? undefined} onValueChange={(v) => setSeries(v as string)}>
-              <SelectTrigger className="w-44">
+            <Select
+              value={data.selected ?? undefined}
+              onValueChange={(v) => setSearch({ series: v as string, column: undefined, by: undefined })}
+            >
+              <SelectTrigger className="w-44" aria-label="Series">
                 <SelectValue placeholder="Series" />
               </SelectTrigger>
               <SelectContent>
@@ -163,8 +377,8 @@ export default function WorkflowData({ id, name, onBack }: { id: string; name: s
               </SelectContent>
             </Select>
             {data.numeric.length > 0 && (
-              <Select value={plotted} onValueChange={(v) => setColumn(v as string)}>
-                <SelectTrigger className="w-44">
+              <Select value={plotted} onValueChange={(v) => setSearch({ column: v as string })}>
+                <SelectTrigger className="w-44" aria-label="Plotted column">
                   <SelectValue placeholder="Plot column" />
                 </SelectTrigger>
                 <SelectContent>
@@ -176,12 +390,42 @@ export default function WorkflowData({ id, name, onBack }: { id: string; name: s
                 </SelectContent>
               </Select>
             )}
-            <span className="text-xs text-muted-foreground">{data.rows.length} rows</span>
+            {splitColumns.length > 0 && (
+              <Select value={split ?? NONE} onValueChange={(v) => setSearch({ by: v as string })}>
+                <SelectTrigger className="w-44" aria-label="Split lines by">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>One line</SelectItem>
+                  {splitColumns.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      A line per {c}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <span className="text-xs text-muted-foreground">
+              {data.rows.length} rows · {runCount} run{runCount === 1 ? '' : 's'}
+            </span>
           </div>
 
           {data.numeric.length > 0 && (
             <div className="mb-4 rounded-xl border bg-card p-3">
-              <Sparkline points={points} />
+              {datasets.length ? (
+                <>
+                  <SeriesChart datasets={datasets} />
+                  {runCount === 1 && (
+                    <p className="mt-2 text-[11px] text-muted-foreground">
+                      One run so far, so each line is a single point — every run adds the next one.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="py-10 text-center text-xs text-muted-foreground">
+                  No numeric values in {plotted}.
+                </p>
+              )}
             </div>
           )}
 

@@ -18,11 +18,57 @@ executed on the other.
 - **Workflow** — saved graphs that run **without you**. That is the whole
   difference between the two tabs: Chat waits for you to type, a workflow runs on
   a schedule with nobody watching.
-  - The list is the manager: arm/disarm, **Run now**, when each last ran.
+  - The list is the manager: arm/disarm, **Run now**, delete (confirmed), and
+    what each one's **newest run** did — running (with elapsed time),
+    succeeded, failed (with the error), or never run. Click that status to open
+    the run.
+  - Above the list, **status counts** — All, Running, Succeeded, Failed, Never
+    run, Armed. Each count is also a filter (`?status=failed`); click it again
+    to clear.
+  - The list **polls every 5 seconds**, because a scheduled run starts on the
+    server with nobody clicking anything. When a run you saw running finishes,
+    a toast says so with a **View run** button.
   - Open one for the editor — palette left, canvas middle, node settings right.
   - **Notify me** asks for desktop-notification permission (a click, because
     browsers refuse an unprompted request).
-- ⌘K → **Agent > Chat** / **Agent > Workflow**, or the robot in the sidebar.
+- ⌘K → **Agent > Chat** / **Agent > Workflows** / **Agent > New workflow**, any
+  saved workflow by name, or the robot in the sidebar.
+
+## Every screen is a URL
+
+A reload, a bookmark or a pasted link lands exactly where you were. Before this,
+the list / editor / data / run screens were in-memory state, and a refresh always
+threw you back to the list.
+
+| Screen | URL |
+|---|---|
+| Chat | `/agent?session=<id>` |
+| Workflow list | `/agent/workflows?status=running\|succeeded\|failed\|never\|armed` |
+| New workflow | `/agent/workflows/new` — moves to its own URL on first save |
+| Editor | `/agent/workflows/<id>?node=<nodeId>` — `node` is the node open in the inspector |
+| Data | `/agent/workflows/<id>/data?series=&column=&by=` |
+| One run | `/agent/workflows/<id>/runs/<runId>?node=<nodeId>` — `node` is the step open in the drawer |
+
+The old `/agent?view=workflow` link redirects to `/agent/workflows`. Switching
+Workflow → Chat returns to the conversation you had open.
+
+`?node=` changes are `replace`, not a new history entry. Otherwise every click on
+the canvas would be one more Back press.
+
+### The editor guards unsaved work
+
+- An amber dot on the name means the canvas has something the server doesn't.
+  "Unsaved" is a comparison of name, trigger, arm state, retention, node
+  positions/data and edges against the saved copy. Selecting or measuring nodes
+  doesn't count.
+- **⌘S** saves (rebindable in Settings → Shortcuts, *Workflow editor*). With
+  nothing to save the button reads **Saved**.
+- Leaving for another page with unsaved edits asks: **Keep editing**,
+  **Discard**, or **Save & leave**. Closing the tab gets the browser's own
+  prompt.
+- **Run now** on a dirty canvas becomes **Save & run**. Running the last-saved
+  copy of a graph you're looking at would run something other than what's on
+  screen.
 
 ## Building a workflow
 
@@ -144,7 +190,23 @@ screener.in session; the app doesn't have one today.
 A `collect` node appends its input to a named series each run — a list becomes
 that many rows, anything else becomes one, so a series is always a table. **Data**
 on the workflow list shows it: sortable table, a line chart of any numeric
-column over time, and four health tiles.
+column over time, four health tiles, and a strip of the last runs — one bar each,
+red for failed. Click a bar to open that run.
+
+The chart uses **lightweight-charts**, the library the journal and paper pages
+already use, with the same axis and grid colours. It draws **one coloured line
+per dataset**:
+
+- **A line per `symbol`** (or any other column that names 2–60 groups) by default.
+  **One line** turns the split off. Colours are assigned alphabetically, so a
+  symbol keeps its colour from run to run. There are ten fixed hues, then
+  golden-angle steps, so a 25-symbol watchlist still gets 25 distinguishable
+  lines.
+- **The legend is the control:** click to hide a line, double-click to show only
+  it, hover to pick it out from the rest. It shows the values under the
+  crosshair, or the latest ones.
+- One run so far means one point per line. The dots are drawn so the point is
+  visible, and a note says each run adds the next.
 
 **Retention counts runs, not rows.** A run that collected eight symbols and one
 that collected two are both *one* run; pruning by row count would keep a ragged
@@ -219,8 +281,18 @@ however it is wired.
 - **The alerts feed** — an `output` node files there, alongside price alerts and
   broker events. It's already the app's "what happened while I wasn't looking"
   inbox.
-- **Run history** — every execution, with its flow diagram, in the editor's
-  right-hand panel.
+- **Run history** — every execution, with its flow diagram, listed in the editor's
+  right-hand panel. Each run is its own page, with older/newer arrows and **Run
+  again**.
+- **Step details** — click any node on a run's diagram and a drawer opens with
+  the **full error** (the node itself truncates it), what the step was **called
+  with** (a `null` argument is red, which is usually the bug), and what it
+  **returned**. Each section has a copy button. A fan-out says how many of its
+  items failed. A step a condition switched off shows as **Skipped**, not as a
+  green tick. When a run failed, a banner names the failing step and
+  **Inspect →** opens it. `Esc` or clicking the canvas closes the drawer. The open
+  step is in the URL, so a failure can be sent as a link straight to the broken
+  step.
 - **A desktop notification** when a run finishes, *while the app is open in some
   tab*. A workflow that runs at 09:15 with the browser closed files to the alerts
   feed and waits for you there; a real push needs a service worker and a
@@ -352,4 +424,17 @@ and a database; they're exercised by using the page.
 | `app/services/workflow.py` | Rows → `{nodes, edges}` |
 | `app/routers/agent.py` | `/api/agent/runs`, `/api/agent/*/workflow` |
 | `frontend/src/agent/AgentChat.tsx` | Sidebar, transcript, run subscription |
-| `frontend/src/agent/RunDiagram.tsx` | The read-only diagram of one run |
+| `frontend/src/agent/RunDiagram.tsx` | The read-only diagram of one run, and the step-details drawer |
+| `frontend/src/agent/WorkflowRun.tsx` | The run page: status, older/newer, run again |
+| `frontend/src/agent/WorkflowList.tsx` | Status counts/filters, per-row last run, 5s polling |
+| `frontend/src/router.tsx` | `/agent` layout and its workflow child routes |
+
+## The canvas in dark mode
+
+React Flow ships its own light and dark palettes, and it defaults to light. In
+this app's dark theme that meant the zoom controls rendered with
+`color: inherit` (white) on their own white buttons, and the minimap drew a
+white panel. What you saw was one white rectangle with nothing in it. Both
+canvases now pass `colorMode` from the applied theme (`useAppliedTheme` in
+`lib/theme.ts`, which follows the root `dark` class) and let the card show
+through behind the canvas. The run minimap colours nodes by status.

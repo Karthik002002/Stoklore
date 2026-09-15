@@ -34,6 +34,8 @@ export const SHORTCUTS = [
   { id: 'global.chat', scope: 'Global', label: 'Toggle AI chat', default: 'Mod+/' },
   { id: 'global.watchlists', scope: 'Global', label: 'Watchlists (map stocks to lists)', default: 'Mod+B' },
 
+  { id: 'workflow.save', scope: 'Workflow editor', label: 'Save the workflow', default: 'Mod+S' },
+
   { id: 'replay.buy', scope: 'Bar Replay', label: 'Buy — open order ticket', default: 'b' },
   { id: 'replay.sell', scope: 'Bar Replay', label: 'Sell — open order ticket', default: 's' },
   {

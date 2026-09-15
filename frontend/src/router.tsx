@@ -1,6 +1,10 @@
 import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router'
 import type { SearchSchemaInput } from '@tanstack/react-router'
-import AgentPage from './agent/AgentPage'
+import AgentPage, { AgentChatView } from './agent/AgentPage'
+import WorkflowData from './agent/WorkflowData'
+import WorkflowEditor from './agent/WorkflowEditor'
+import WorkflowList from './agent/WorkflowList'
+import WorkflowRun from './agent/WorkflowRun'
 import Alerts from './Alerts'
 import App from './App'
 import AutoBacktestDetail from './AutoBacktestDetail'
@@ -223,20 +227,83 @@ const alertsRoute = createRoute({
   component: Alerts,
 })
 
-// The agent: the chat on one tab, the diagram of what that chat executed on the other. `session`
-// scopes BOTH tabs, so switching between them never swaps the run under you, and a pasted link
-// carries the conversation it was about. A run itself belongs to the server, so there is nothing
-// about it to keep in the URL.
+// The agent: a layout (the Chat / Workflow tabs) over one child route per screen. Every screen a
+// click can reach is a URL, so a reload or a pasted link lands exactly where it was - the old
+// in-memory "which screen" state lost you back to the list on every refresh.
 const agentRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/agent',
-  validateSearch: (
-    search: { view?: 'chat' | 'workflow'; session?: string } & SearchSchemaInput,
-  ): { view: 'chat' | 'workflow'; session?: string } => ({
-    view: search.view === 'workflow' ? 'workflow' : 'chat',
-    session: typeof search.session === 'string' ? search.session : undefined,
-  }),
   component: AgentPage,
+})
+
+const text = (value: unknown) => (typeof value === 'string' && value ? value : undefined)
+
+// `session` is the open conversation. `view=workflow` is the pre-routes shape of the Workflow tab,
+// redirected so old links and bookmarks still land there.
+const agentChatRoute = createRoute({
+  getParentRoute: () => agentRoute,
+  path: '/',
+  validateSearch: (
+    search: { session?: string; view?: string } & SearchSchemaInput,
+  ): { session?: string; view?: string } => ({ session: text(search.session), view: text(search.view) }),
+  beforeLoad: ({ search }) => {
+    if (search.view === 'workflow') throw redirect({ to: '/agent/workflows', replace: true })
+  },
+  component: AgentChatView,
+})
+
+export const WORKFLOW_STATUS_FILTERS = ['running', 'succeeded', 'failed', 'never', 'armed'] as const
+export type WorkflowStatusFilter = (typeof WORKFLOW_STATUS_FILTERS)[number]
+
+const workflowsRoute = createRoute({
+  getParentRoute: () => agentRoute,
+  path: '/workflows',
+  validateSearch: (
+    search: { status?: WorkflowStatusFilter } & SearchSchemaInput,
+  ): { status?: WorkflowStatusFilter } => ({
+    status: oneOf(WORKFLOW_STATUS_FILTERS, search.status) ? search.status : undefined,
+  }),
+  component: WorkflowList,
+})
+
+// `node` is the node open in the inspector - on the editor as on a run, so a link can point at the
+// one step it is about.
+const nodeSearch = (search: { node?: string } & SearchSchemaInput): { node?: string } => ({
+  node: text(search.node),
+})
+
+const workflowNewRoute = createRoute({
+  getParentRoute: () => agentRoute,
+  path: '/workflows/new',
+  validateSearch: nodeSearch,
+  component: WorkflowEditor,
+})
+
+const workflowEditorRoute = createRoute({
+  getParentRoute: () => agentRoute,
+  path: '/workflows/$workflowId',
+  validateSearch: nodeSearch,
+  component: WorkflowEditor,
+})
+
+const workflowDataRoute = createRoute({
+  getParentRoute: () => agentRoute,
+  path: '/workflows/$workflowId/data',
+  validateSearch: (
+    search: { series?: string; column?: string; by?: string } & SearchSchemaInput,
+  ): { series?: string; column?: string; by?: string } => ({
+    series: text(search.series),
+    column: text(search.column),
+    by: text(search.by),
+  }),
+  component: WorkflowData,
+})
+
+const workflowRunRoute = createRoute({
+  getParentRoute: () => agentRoute,
+  path: '/workflows/$workflowId/runs/$runId',
+  validateSearch: nodeSearch,
+  component: WorkflowRun,
 })
 
 // Real orders, mirrored from Dhan. A sibling of /paper rather than a tab inside it: the two pages
@@ -301,7 +368,14 @@ const routeTree = rootRoute.addChildren([
   paperRoute,
   paperPositionRoute,
   paperTradeRoute,
-  agentRoute,
+  agentRoute.addChildren([
+    agentChatRoute,
+    workflowsRoute,
+    workflowNewRoute,
+    workflowEditorRoute,
+    workflowDataRoute,
+    workflowRunRoute,
+  ]),
   alertsRoute,
   liveRoute,
   livePositionRoute,

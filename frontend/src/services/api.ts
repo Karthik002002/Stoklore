@@ -735,12 +735,37 @@ export const getWorkflowHealth = (id: string) =>
 export type WorkflowTemplate = {
   id: string
   name: string
+  /** Market, Watchlist, Events, Portfolio, Screener - the gallery's filter pills. */
+  category: string
   description: string
   trigger: WorkflowTrigger
   nodes: number
 }
 
-export const getWorkflowTemplates = () => fetch('/api/workflows/templates').then(json<WorkflowTemplate[]>)
+/** Categories in the order the backend declares them, so the pills never drift from the data. */
+export type WorkflowTemplateCatalogue = { categories: string[]; templates: WorkflowTemplate[] }
+
+export const getWorkflowTemplates = () =>
+  fetch('/api/workflows/templates').then(json<WorkflowTemplateCatalogue>)
+
+/** A workflow generated from a pasted screener.in screen, plus a peek at what it currently matches.
+ *  The screen is fetched before anything is saved, so a bad URL fails while you're looking. */
+export type ScreenWorkflow = {
+  workflow: Workflow
+  preview: {
+    total: number
+    query: string | null
+    columns: { key: string; label: string }[]
+    rows: Record<string, unknown>[]
+  }
+}
+
+export const createFromScreen = (body: { url: string; time?: string; max_pages?: number }) =>
+  fetch('/api/workflows/from-screen', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(json<ScreenWorkflow>)
 
 export const createFromTemplate = (templateId: string) =>
   fetch(`/api/workflows/templates/${templateId}`, { method: 'POST' }).then(json<Workflow>)

@@ -26,10 +26,30 @@ executed on the other.
 
 ## Building a workflow
 
-Start from a **template** — three working graphs on the list page (morning
-movers, watchlist price log, event triage). They clone **disarmed**: a template
-is a starting point, and arming something you haven't read is exactly the
-surprise this feature must not spring.
+Start from a **template**: **Templates** on the workflow list opens a gallery of
+16 working graphs, nine to a page in a 3×3 grid, filterable by category —
+Market, Watchlist, Events, Portfolio, Screener. They clone **disarmed**: a
+template is a starting point, and arming something you haven't read is exactly
+the surprise this feature must not spring.
+
+Most alerting templates share one tail: an agent node that answers with the
+sentinel `NOTHING_TO_REPORT` when nothing qualifies, and a `not_contains` gate
+that drops the branch when it does. A sentinel rather than "none", because "none
+of the others moved" is ordinary prose and gating on it would silence a real
+finding.
+
+**Every template is run in a test, not just loaded.**
+`tests/workflow_templates.selfcheck.py` checks that each `{{ reference }}` names a
+node it's wired to, then executes every template against fake tools shaped
+exactly like the real ones — and requires fan-outs to fan out, gates to open on
+interesting data, and quiet days to file nothing. It exists because two of the
+first three templates were broken and nothing noticed: *Watchlist price log*
+fanned out over `{{ lists.symbols }}`, but `list_watchlists` returns a list, so it
+resolved to nothing; *Event triage* gated on `scan_events`, which starts a scan
+and returns "started" immediately, so its condition could never pass. Both ran
+"successfully" and did nothing. The same check then caught a third: the shared
+alert tail filed `{{ say }}` from a node wired only to the gate, so every alert
+would have been blank.
 
 Six node kinds:
 
@@ -69,6 +89,55 @@ useful run.
 
 A lone `{{ x }}` keeps its **type** (a list stays a list, which is what `for each`
 needs); anything with text around it becomes a string.
+
+## Workflows from screener.in screens
+
+Paste any public screen URL into **Generate from a screener.in screen** at the
+top of the gallery, and it becomes a workflow: run the screen daily, keep what
+it matched as a series, and — only when it matched anything — summarise the
+strongest five. Three screens also ship as templates (promoter share holding
+finder, swing trading, quarterly growers). The generator and the templates build
+the *same* graph (`screen_graph`), so a pasted screen and a shipped one can't
+drift apart.
+
+The screen is fetched **before** anything is saved, so a URL that isn't a screen
+fails while you're looking at it — not in tomorrow evening's run. The first page
+also supplies the workflow's name and puts the screen's query in its description.
+
+How a screen is read (`scraper.get_screen`):
+
+- **Pages via `?limit=50&page=N`**, capped at 2 per run by default (4 for the
+  agent tool). A 344-result screen is seven pages; an alert about 350 companies
+  isn't one, and every page is a throttled request to somebody else's server.
+  The result says `truncated` when it stopped early.
+- **Columns are not fixed** — screener adds one per condition in the query — so
+  rows are keyed by each column's own tooltip (`Current Price` → `current_price`),
+  never by position.
+- **Rows are picked by their company link.** Screener repeats the header row
+  part-way down a long table; "skip the first row" would read it as a company.
+- **A company with no NSE listing** is addressed by its numeric BSE code, which
+  goes in `bse_code`, not `symbol` — so no tool is ever handed `538786` as a
+  ticker.
+- **Numbers are numbers** (`1,300.50` → `1300.5`, blank → `None`), which is what
+  lets a condition node compare them.
+- **Only screener.in screen URLs are fetched.** This is a server-side fetch of a
+  pasted URL, so anything else — another host, a company page, `localhost`,
+  `file://` — is refused before a request is made.
+
+### The login wall
+
+**screener.in only lets an anonymous visitor open a few screens.** After that
+the same URL — the one that returned a full table minutes earlier — answers with
+its register page: a `200` with a sign-up form, not an error status. Verified
+from both plain curl and the app's own transport, with and without a referer;
+company pages keep working throughout, so it's specific to screens.
+
+That is recognised by content and reported as exactly that
+(`ScreenLoginRequired`), not as "private or deleted". A screen workflow that hits
+it fails its run, files the failure to the alerts feed and counts toward its
+fail streak — the honest outcome, rather than a run that looks green while
+fetching a sign-up page. Unattended daily screen runs need a logged-in
+screener.in session; the app doesn't have one today.
 
 ## Collected data, and the Data view
 
@@ -141,8 +210,8 @@ and arming a workflow *is* the confirmation — given in advance, deliberately, 
 that exact graph — and a 09:15 run has nobody to ask.
 
 That is safe here because of what the tool table actually contains: prices,
-movers, EMA state, watchlists, holdings, scraping, search, rule checks, and
-`add_stock_event`. **There is no order-placing tool**, so no workflow can trade,
+movers, EMA state, watchlists, holdings, scraping, search, rule checks, recent
+events, screener.in screens, and `add_stock_event`. **There is no order-placing tool**, so no workflow can trade,
 however it is wired.
 
 ## Where results go
@@ -247,6 +316,19 @@ with no database and no model:
 `RETRY_DELAYS` is set to `()` at the top of the file so the suite stays instant,
 and restored where the retry behaviour itself is checked.
 
+```bash
+.venv/bin/python tests/workflow_templates.selfcheck.py
+.venv/bin/python tests/test_screener.py
+```
+
+The first runs **every** template end to end against real-shaped fakes (see
+above). The second parses a screen fixture carrying both traps — a repeated
+header row and a BSE-only company — plus the register-wall page, and checks the
+URL guard refuses other hosts, company pages, `localhost` and `file://`.
+
+**Not covered:** fetching a live screen. That needs screener.in to serve it,
+which it stops doing for anonymous visitors (see *The login wall*).
+
 
 Rounds as columns, the fan-out and the merge, siblings never chained to each
 other, item counts from a list vs a scalar, a running run, a failed tool, and
@@ -260,7 +342,9 @@ and a database; they're exercised by using the page.
 |---|---|
 | `app/services/agent_runs.py` | Starting a chat run, persisting it, replay-then-follow |
 | `app/services/workflow_engine.py` | Topological execution, templates, fan-out, gates, retries |
-| `app/services/workflow_templates.py` | The three starter graphs |
+| `app/services/workflow_templates.py` | The 16 starter graphs, and `screen_graph` |
+| `app/core/scraper.py` | `get_screen`, `parse_screen_html`, `screen_url` |
+| `frontend/src/agent/TemplateGallery.tsx` | The 3×3 template gallery and the screen generator |
 | `frontend/src/agent/WorkflowData.tsx` | Collected series, chart, health |
 | `app/services/jobs.py` | `run_triggered_workflows`, the hourly schedule tick |
 | `app/routers/workflows.py` | CRUD, the palette catalogue, Run now |

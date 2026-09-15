@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import {
   BellIcon,
   ClockIcon,
   HandIcon,
+  LayoutGridIcon,
   NewspaperIcon,
   PlayIcon,
   PlusIcon,
@@ -14,15 +16,9 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  createFromTemplate,
-  deleteWorkflow,
-  getWorkflowTemplates,
-  getWorkflows,
-  runWorkflow,
-  saveWorkflow,
-} from '@/services/api'
+import { deleteWorkflow, getWorkflows, runWorkflow, saveWorkflow } from '@/services/api'
 import type { Workflow } from '@/services/api'
+import TemplateGallery from './TemplateGallery'
 import { askToNotify, canNotify } from './useRunNotifications'
 
 // Managing workflows: what exists, what's armed, and what each one last did.
@@ -51,22 +47,7 @@ export default function WorkflowList({
     queryKey: ['workflows'],
     queryFn: getWorkflows,
   })
-  const { data: templates = [] } = useQuery({
-    queryKey: ['workflowTemplates'],
-    queryFn: getWorkflowTemplates,
-  })
-
-  // Cloned disarmed on purpose - a template is a starting point, and arming something you haven't
-  // read yet is exactly the surprise this feature must not spring.
-  const clone = useMutation({
-    mutationFn: (templateId: string) => createFromTemplate(templateId),
-    onSuccess: (w) => {
-      queryClient.invalidateQueries({ queryKey: ['workflows'] })
-      toast.success(`${w.name} added — read it, then arm it`)
-      onOpen(w.id)
-    },
-    onError: (e: Error) => toast.error(e.message),
-  })
+  const [galleryOpen, setGalleryOpen] = useState(false)
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['workflows'] })
 
@@ -126,6 +107,10 @@ export default function WorkflowList({
               Notify me
             </Button>
           )}
+          <Button size="sm" variant="outline" onClick={() => setGalleryOpen(true)}>
+            <LayoutGridIcon className="size-4" />
+            Templates
+          </Button>
           <Button size="sm" onClick={() => onOpen(null)}>
             <PlusIcon className="size-4" />
             New workflow
@@ -133,35 +118,12 @@ export default function WorkflowList({
         </div>
       </div>
 
-      {/* The on-ramp. The distance from an empty canvas to something useful is where a node
-          editor usually dies, so the first workflow should be one you edit, not one you invent. */}
-      {!isLoading && templates.length > 0 && (
-        <div className="mb-4">
-          <p className="mb-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-            Start from one of these
-          </p>
-          <div className="grid gap-2 sm:grid-cols-3">
-            {templates.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                disabled={clone.isPending}
-                onClick={() => clone.mutate(t.id)}
-                className="rounded-xl border border-dashed bg-card p-3 text-left hover:border-primary hover:bg-muted/50"
-              >
-                <p className="text-sm font-medium">{t.name}</p>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">{t.description}</p>
-                <p className="mt-1 text-[11px] text-primary">{t.nodes} nodes · clone &amp; edit</p>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      <TemplateGallery open={galleryOpen} onOpenChange={setGalleryOpen} onCreated={(id) => onOpen(id)} />
 
       {isLoading ? null : workflows.length === 0 ? (
         <p className="py-16 text-center text-sm text-muted-foreground">
-          Nothing wired yet. Clone one above, or build a trigger, some tool nodes and somewhere to file what
-          it found.
+          Nothing wired yet. Browse the templates, generate one from a screener.in screen, or build a trigger,
+          some tool nodes and somewhere to file what it found.
         </p>
       ) : (
         <div className="space-y-2">

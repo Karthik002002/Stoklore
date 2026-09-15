@@ -10,7 +10,7 @@ import uuid
 from fastapi import APIRouter, HTTPException
 
 from app.core import db
-from app.schemas import WorkflowRequest
+from app.schemas import ScreenWorkflowRequest, WorkflowRequest
 from app.services.agent import AGENT_TOOLS
 from app.services.workflow_engine import (
     NODE_KINDS,
@@ -19,7 +19,8 @@ from app.services.workflow_engine import (
     topo_order,
     workflow_engine_run,
 )
-from app.services.workflow_templates import TEMPLATES, TEMPLATES_BY_ID
+from app.core import scraper
+from app.services.workflow_templates import CATEGORIES, TEMPLATES, TEMPLATES_BY_ID, screen_graph
 
 router = APIRouter(tags=["workflows"])
 
@@ -48,11 +49,15 @@ def catalogue():
 def templates():
     """Working graphs to clone. The distance from an empty canvas to something useful is where a
     node editor usually dies, so the first workflow should be one you edit, not one you invent."""
-    return [
-        {"id": t["id"], "name": t["name"], "description": t["description"],
-         "trigger": t["trigger"], "nodes": len(t["graph"]["nodes"])}
-        for t in TEMPLATES
-    ]
+    return {
+        "categories": CATEGORIES,
+        "templates": [
+            {"id": t["id"], "name": t["name"], "category": t["category"],
+             "description": t["description"], "trigger": t["trigger"],
+             "nodes": len(t["graph"]["nodes"])}
+            for t in TEMPLATES
+        ],
+    }
 
 
 @router.post("/api/workflows/templates/{template_id}")
@@ -66,6 +71,36 @@ def create_from_template(template_id: str):
     db.save_workflow(workflow_id, template["name"], template["description"],
                      template["graph"], template["trigger"], False)
     return db.get_workflow(workflow_id)
+
+
+@router.post("/api/workflows/from-screen")
+def create_from_screen(req: ScreenWorkflowRequest):
+    """A workflow from a pasted screener.in screen URL.
+
+    The screen is fetched once, here, before anything is saved: a URL that isn't a screen, or a
+    screen that has gone private, should fail while you are looking at it - not at 7pm tomorrow in
+    a run nobody is watching. The first page also supplies the name and the query, so the saved
+    workflow says what it screens for.
+    """
+    try:
+        screen = scraper.get_screen(req.url, max_pages=1)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    name = screen["name"] or "screener.in screen"
+    nodes, pairs = screen_graph(screen["url"], name, max_pages=req.max_pages)
+    graph = {"nodes": nodes, "edges": [{"id": f"e-{a}-{b}", "source": a, "target": b} for a, b in pairs]}
+    description = f"From screener.in: {screen['query']}" if screen.get("query") else f"From {screen['url']}"
+    workflow_id = str(uuid.uuid4())
+    # Disarmed, same as a template: it runs on someone else's query, and you should see what it
+    # matches before it starts filing anything.
+    db.save_workflow(workflow_id, name, description, graph,
+                     {"kind": "schedule", "time": req.time}, False)
+    return {
+        "workflow": db.get_workflow(workflow_id),
+        "preview": {"total": screen["total"], "columns": screen["columns"],
+                    "rows": screen["rows"][:5], "query": screen.get("query")},
+    }
 
 
 @router.get("/api/workflows")

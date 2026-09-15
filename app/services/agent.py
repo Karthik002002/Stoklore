@@ -47,7 +47,10 @@ def _format_rule_check_all(rule_name, results):
 # multi-minute scan.
 
 def _tool_get_price(symbol):
-    return _cached(symbol.upper(), "price", 15, lambda: scraper.get_price(symbol.upper()))
+    # The quote itself carries no symbol. Put it back, or a workflow that fans this out over a
+    # watchlist collects eight anonymous {price, changePercent} rows nobody can tell apart.
+    quote = _cached(symbol.upper(), "price", 15, lambda: scraper.get_price(symbol.upper()))
+    return {"symbol": symbol.upper(), **(quote or {})}
 
 
 def _tool_get_movers(count=25):
@@ -129,6 +132,33 @@ def _tool_check_watch_rule(name, symbol=None):
     return _format_rule_check_all(rule["name"], results)
 
 
+def _tool_run_screen(url, max_pages=4):
+    """A screener.in screen's matching companies, as rows keyed by column. Returns the error text
+    rather than raising for a bad URL, so the model can tell the user what to fix."""
+    try:
+        return scraper.get_screen(url, max_pages=int(max_pages))
+    except ValueError as e:
+        return str(e)
+
+
+def _tool_get_recent_events(days=1, list_name=None):
+    """Events already sitting in the feed from the last `days` days. The READ side of the event
+    scan: scan_events starts a scan and returns at once, so a workflow that wants to react to what
+    the scan found needs this, not that."""
+    from datetime import datetime, timedelta
+
+    from app.core.config import IST
+
+    since = (datetime.now(IST).date() - timedelta(days=max(0, int(days)))).isoformat()
+    rows = db.list_events(list_name=list_name, from_date=since, limit=200)
+    return [
+        {"symbol": r["symbol"], "event_type": r["event_type"], "headline": r["headline"],
+         "sentiment": r["sentiment_label"],
+         "event_time": r["event_time"].isoformat() if r["event_time"] else None}
+        for r in rows
+    ] or f"no events in the last {days} day(s)"
+
+
 def _tool_add_stock_event(symbol, headline, detail=None, url=None):
     """Lets the agent record an event it found via web_search/scrape_stock research, outside the
     fixed rule-based scan_events pipeline (news/price_move/volume_spike/corporate_action) - shows
@@ -162,6 +192,8 @@ REAL_TOOL_IMPLS = {
     "web_search": _tool_web_search,
     "add_stock_event": _tool_add_stock_event,
     "check_watch_rule": _tool_check_watch_rule,
+    "run_screen": _tool_run_screen,
+    "get_recent_events": _tool_get_recent_events,
 }
 
 
@@ -250,6 +282,17 @@ AGENT_TOOLS = [
         {"name": {"type": "string", "description": "the watch rule's name"},
          "symbol": {"type": "string", "description": "optional - omit to check the whole watchlist"}},
         ["name"]),
+    _fn("run_screen", "Runs a saved screener.in screen (a stock-screening query like 'promoter "
+        "holding > 40 AND ...') and returns every company it currently matches, with that screen's "
+        "own columns as numbers. Use when the user pastes or mentions a screener.in/screens/ URL.",
+        {"url": {"type": "string", "description": "the screener.in screen URL"},
+         "max_pages": {"type": "integer", "description": "pages of 50 to fetch, default 4"}},
+        ["url"]),
+    _fn("get_recent_events", "Events already in the feed (news, price moves, volume spikes, "
+        "corporate actions) from the last N days, with sentiment. Reads what a scan found - it "
+        "does not start one.",
+        {"days": {"type": "integer", "description": "how many days back, default 1"},
+         **_LIST_PROP}),
 ]
 
 AGENT_SYSTEM = (

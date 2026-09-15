@@ -357,8 +357,13 @@ run, kept for the last N *runs* (not rows), and the **Data** view charts any
 numeric column of it next to run health — failures, durations, and which node
 breaks most. Tool and agent nodes retry transient upstream failures; a run whose
 node failed is recorded failed and says so in the feed, because a workflow that
-quietly produces nothing for a week is the real failure mode. Three starter
-templates clone disarmed, and the day's results roll into one digest at 18:00.
+quietly produces nothing for a week is the real failure mode. Sixteen starter
+templates — in a 3×3 gallery, by category — clone disarmed, and every one of them is
+executed in a self-check against real-shaped tools, not just loaded. Paste a
+screener.in screen URL and it becomes a daily workflow (pages via
+`?limit=50&page=N`, columns keyed by screener's own names, alerts only when it
+matches); note screener.in only serves a few screens to an anonymous visitor
+before asking for a login. The day's results roll into one digest at 18:00.
 
 Settings is a tabbed dialog (**Model** / **OmniRoute** / **LiteLLM** /
 **Cogencis** / **Broker** / **Watch rules**), with its open state and active tab in the

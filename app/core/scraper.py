@@ -316,6 +316,146 @@ def get_screener_data(symbol):
     return parse_screener_html(html_text, url)
 
 
+# --- screener.in screens ---------------------------------------------------------------------------
+# A screen is a saved query ("Promoter holding > 40 AND ...") and the table of companies matching it.
+# Public pages, no login, one data-table per page, 50 rows per page at most via ?limit=50&page=N.
+#
+# The columns are NOT fixed: screener adds one per condition in the query, so a promoter-holding
+# screen has "Change in Prom Hold %" and a growth screen has "NP 2Qtr Bk". Rows come back keyed by
+# the column's own tooltip ("Current Price" -> current_price), which is what a workflow template
+# refers to - never by position.
+
+SCREEN_PAGE_SIZE = 50
+#: Pages fetched per run unless asked otherwise. A 344-result screen is 7 pages at 50 a page; four
+#: is 200 companies, which is more than any alert should be about, and every page is a throttled
+#: request to someone else's server.
+SCREEN_MAX_PAGES = 4
+_SCREEN_PATH = re.compile(r"^/screens/(\d+)/([\w-]*)/?$")
+
+
+class ScreenLoginRequired(ValueError):
+    """screener.in answered a screen with its register page instead of results.
+
+    It lets an anonymous visitor open a handful of screens and then redirects to /register/ - the
+    same URL that returned a full table minutes earlier. Named separately so the message can say
+    what actually happened, rather than guessing "private or deleted". A ValueError, so every
+    caller that already reports a bad screen URL reports this too without a new except clause."""
+
+
+def screen_url(url):
+    """The canonical https://www.screener.in/screens/<id>/<slug>/ for a pasted screen URL, or
+    ValueError. This is a server-side fetch of a user-supplied URL, so anything that is not a
+    screener.in screen is refused outright rather than fetched and then parsed as nothing."""
+    from urllib.parse import urlparse
+
+    parsed = urlparse((url or "").strip())
+    host = (parsed.hostname or "").lower()
+    match = _SCREEN_PATH.match(parsed.path or "")
+    if parsed.scheme not in ("http", "https") or host not in ("screener.in", "www.screener.in") or not match:
+        raise ValueError("that isn't a screener.in screen URL - it should look like "
+                         "https://www.screener.in/screens/86/quarterly-growers/")
+    return f"https://www.screener.in/screens/{match.group(1)}/{match.group(2)}/".replace("//", "/").replace(
+        "https:/", "https://"
+    )
+
+
+def _column_key(label):
+    key = label.lower().replace("%", " pct")
+    return re.sub(r"[^a-z0-9]+", "_", key).strip("_")
+
+
+def _screen_number(text):
+    """Screen cells are clean decimals ("1300.50", "-62.04"), unlike a company page's mixed-unit
+    tables - so these do become numbers, which is what lets a condition node compare them. Blank
+    stays None; anything that still isn't a number stays the string it was."""
+    cleaned = text.replace(",", "").strip()
+    if not cleaned:
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return text
+
+
+def parse_screen_html(html_text, url):
+    """One page of a screen as {name, url, query, total, page, pages, columns, rows}, or None if the
+    page has no results table. Split from get_screen so it runs against a fixture (test_screener.py).
+    """
+    soup = BeautifulSoup(html_text, "html.parser")
+    # The register wall is a 200 with a sign-up form, not an error status - so it has to be recognised
+    # by content, or it parses as a screen with no table and gets reported as the wrong problem.
+    if soup.find("form", action="/register/"):
+        raise ScreenLoginRequired(
+            "screener.in is asking for a login before it will show this screen - it limits how many "
+            "screens an anonymous visitor can open. The screen itself is fine."
+        )
+    table = soup.select_one("table.data-table")
+    if table is None:
+        return None
+
+    header = next((tr for tr in table.find_all("tr") if tr.find("th")), None)
+    columns = []
+    for th in (header.find_all("th") if header else [])[2:]:  # S.No., Company
+        label = th.get("data-tooltip") or _screener_text(th)
+        columns.append({"key": _column_key(label), "label": _screener_text(th) or label})
+
+    rows = []
+    # Rows are picked by their company link, not by position: screener repeats the header row
+    # part-way down a long table, and "skip the first row" would read it as a company.
+    for tr in table.find_all("tr"):
+        link = tr.find("a", href=re.compile(r"^/company/"))
+        if link is None:
+            continue
+        code = re.match(r"^/company/([^/]+)/", link["href"]).group(1)
+        # A company with no NSE listing is addressed by its numeric BSE code instead. Kept apart so
+        # a template never hands "538786" to a tool that expects an NSE ticker.
+        row = {
+            "symbol": None if code.isdigit() else code,
+            "bse_code": code if code.isdigit() else None,
+            "name": _screener_text(link),
+            "url": f"https://www.screener.in{link['href']}",
+        }
+        for column, cell in zip(columns, tr.find_all("td")[2:]):
+            row[column["key"]] = _screen_number(_screener_text(cell))
+        rows.append(row)
+
+    name = soup.find("h1")
+    query = soup.find("textarea", attrs={"name": "query"})
+    found = re.search(r"([\d,]+)\s+results?\s+found(?:.*?page\s+(\d+)\s+of\s+(\d+))?",
+                      soup.get_text(" ", strip=True), re.I)
+    total = int(found.group(1).replace(",", "")) if found else len(rows)
+    return {
+        "name": _screener_text(name) if name else None,
+        "url": url,
+        "query": query.get_text().strip() if query else None,
+        "total": total,
+        "page": int(found.group(2)) if found and found.group(2) else 1,
+        "pages": int(found.group(3)) if found and found.group(3) else max(1, -(-total // SCREEN_PAGE_SIZE)),
+        "columns": columns,
+        "rows": rows,
+    }
+
+
+def get_screen(url, max_pages=SCREEN_MAX_PAGES):
+    """Every company a screen matches, up to `max_pages` pages of 50. Raises ValueError for a URL
+    that isn't a screen, or a page that came back without a results table (removed, or private)."""
+    base = screen_url(url)
+    first = parse_screen_html(_fetch_html(f"{base}?limit={SCREEN_PAGE_SIZE}&page=1"), base)
+    if first is None:
+        raise ValueError("screener.in returned no results table for that screen - it may be "
+                         "private or deleted")
+    wanted = min(first["pages"], max(1, int(max_pages)))
+    for page in range(2, wanted + 1):
+        more = parse_screen_html(_fetch_html(f"{base}?limit={SCREEN_PAGE_SIZE}&page={page}"), base)
+        if more is None or not more["rows"]:
+            break
+        first["rows"].extend(more["rows"])
+    # Said out loud, so a template never mistakes "the first 200" for "all of them".
+    first["fetched_pages"] = wanted
+    first["truncated"] = wanted < first["pages"]
+    return first
+
+
 def web_search(query, limit=10):
     """General-purpose web search (DuckDuckGo via the ddgs library, no API key needed) - lets the
     LLM agent research something not covered by the NSE/Yahoo Finance scrapers above, e.g. an

@@ -85,6 +85,14 @@ class WorkflowRequest(BaseModel):
     retain_runs: int = 30
 
 
+class ScreenWorkflowRequest(BaseModel):
+    url: str
+    #: IST "HH:MM". Evening by default - screener's numbers move after the close, not during it.
+    time: str = "19:00"
+    #: Pages of 50 per run. A 344-result screen is 7 pages; an alert about 350 companies isn't one.
+    max_pages: int = 2
+
+
 class CogencisConfigRequest(BaseModel):
     token: str
 

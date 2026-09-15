@@ -64,6 +64,10 @@ OPERATORS = {
     "eq": lambda a, b: _stringify(a).strip() == _stringify(b).strip(),
     "ne": lambda a, b: _stringify(a).strip() != _stringify(b).strip(),
     "contains": lambda a, b: _stringify(b).lower() in _stringify(a).lower(),
+    # The gate an agent node pairs with: prompt it to answer with a sentinel when nothing qualifies,
+    # then pass only when the sentinel is absent. A sentinel, not "none" - "none of the others" is
+    # ordinary prose and would silence a real finding.
+    "not_contains": lambda a, b: _stringify(b).lower() not in _stringify(a).lower(),
     "not_empty": lambda a, _b: bool(a) and a != [] and a != {},
 }
 

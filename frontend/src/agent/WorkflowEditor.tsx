@@ -50,6 +50,7 @@ import { useAppliedTheme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 import { getWorkflow, getWorkflowCatalogue, getWorkflowRuns, runWorkflow, saveWorkflow } from '@/services/api'
 import type { Workflow, WorkflowGraphNode, WorkflowTrigger } from '@/services/api'
+import { MiniMapTask } from './RunDiagram'
 
 // The builder: palette on the left, canvas in the middle, the selected node's settings on the
 // right. Same three-pane shape as React Flow's own workflow-editor template.
@@ -73,6 +74,15 @@ const KIND_ICON = {
   condition: FilterIcon,
   collect: DatabaseIcon,
   output: SendIcon,
+}
+// The same hues as KIND_TINT, as hex - the minimap paints into SVG, where theme classes don't reach.
+const KIND_MINIMAP: Record<string, string> = {
+  trigger: '#d4d4d8',
+  tool: '#71717a',
+  agent: '#22c55e',
+  condition: '#f59e0b',
+  collect: '#0ea5e9',
+  output: '#ef4444',
 }
 const KIND_TINT: Record<string, string> = {
   trigger: 'border-primary/50 bg-primary/5',
@@ -430,7 +440,13 @@ export default function WorkflowEditor() {
         >
           <Background />
           <Controls showInteractive={false} />
-          <MiniMap pannable zoomable />
+          <MiniMap
+            pannable
+            zoomable
+            nodeColor={(n) => KIND_MINIMAP[(n.data as NodeData).kind] ?? KIND_MINIMAP.tool}
+            nodeBorderRadius={6}
+            nodeComponent={MiniMapTask}
+          />
           <Panel position="top-left" className="flex items-center gap-2">
             <div className="relative">
               <Input

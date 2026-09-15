@@ -120,7 +120,7 @@ const sameList = (a: string[], b: string[]) => a.length === b.length && a.every(
  *  as a row of unrelated dashes. This is its node, plus that node's outgoing edges drawn under it.
  *  The minimap's SVG is in flow coordinates, so the same bezier the canvas draws fits as-is;
  *  `non-scaling-stroke` keeps the line a pixel wide however far the minimap is zoomed out. */
-function MiniMapTask({
+export function MiniMapTask({
   id,
   x,
   y,
@@ -149,22 +149,22 @@ function MiniMapTask({
             targetY: target.internals.positionAbsolute.y + target.measured.height / 2,
             targetPosition: Position.Left,
           })
-          return [
-            `${d}|${(e as { status?: string }).status === 'error' ? MINIMAP_COLOR.error : MINIMAP_COLOR.skipped}`,
-          ]
+          return [`${d}|${(e as { status?: string }).status === 'error' ? 'error' : ''}`]
         }),
     sameList,
   )
   return (
     <g>
       {wires.map((wire) => {
-        const [d, stroke] = wire.split('|')
+        const [d, failed] = wire.split('|')
         return (
           <path
             key={d}
             d={d}
             fill="none"
-            stroke={stroke}
+            // A wire takes its source node's colour, so the minimap reads as the canvas does.
+            stroke={failed ? MINIMAP_COLOR.error : (color ?? MINIMAP_COLOR.skipped)}
+            strokeOpacity={0.8}
             strokeWidth={1.5}
             vectorEffect="non-scaling-stroke"
           />

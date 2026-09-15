@@ -801,9 +801,10 @@ the chart, and tells you what the broker did. Fills and rejections land in the [
   in `frontend/src/CommandPalette.jsx` are hand-maintained rather than derived from the router —
   a new route or tab has to be added there in the same change, or it simply can't be found
 - **Watchlist canvas (Cmd/Ctrl+B)** — the stock-to-watchlist mapping as a React Flow graph, on one
-  shortcut from any page: symbols left, lists right, an edge per membership. Drag to file a stock,
-  select an edge and Delete to unfile it, add stocks and lists from the canvas itself. A stock can
-  sit in any number of lists — two edges off one symbol is the state a dropdown can't draw. See
+  shortcut from any page: each watchlist on top with only its stocks listed under it, and stocks
+  in no list in a column at the side. Drag a stock onto a list to add it, select a stock under a list
+  and Delete to remove it, add stocks and lists from the canvas itself. A stock in several lists shows
+  under each of them. See
   [Dashboard & Watchlists](docs/dashboard.md)
 - **Every keyboard shortcut is rebindable** — Settings › Shortcuts lists all of
   them (command palette, AI chat, watchlists, and Bar Replay's ten trading/playback keys),

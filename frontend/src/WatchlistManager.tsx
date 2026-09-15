@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Background,
@@ -10,7 +10,7 @@ import {
   useEdgesState,
   useNodesState,
 } from '@xyflow/react'
-import type { Connection, Edge, Node, NodeProps } from '@xyflow/react'
+import type { Connection, Edge, Node, NodeProps, ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { BookmarkIcon, PlusIcon } from 'lucide-react'
 import { toast } from 'sonner'
@@ -42,7 +42,8 @@ export function openWatchlists() {
 // nothing but two ids, and a symbol could otherwise share a name with a list.
 const stockId = (symbol: string) => `s:${symbol}`
 const listId = (name: string) => `l:${name}`
-const edgeId = (symbol: string, name: string) => `${stockId(symbol)}->${listId(name)}`
+const memberId = (name: string, symbol: string) => `m:${name}/${symbol}`
+const edgeId = (symbol: string, name: string) => `${memberId(name, symbol)}->${listId(name)}`
 
 // Stable empty arrays for the query defaults below. `= []` in a destructuring default builds a NEW
 // array on every render whenever `data` is undefined - and these queries are `enabled: open`, so
@@ -53,16 +54,18 @@ const NO_STOCKS: TrackedStock[] = []
 const NO_MEMBERSHIPS: WatchlistEntry[] = []
 const NO_LISTS: string[] = []
 
-type StockNodeData = { symbol: string; stock?: TrackedStock }
+type StockNodeData = { symbol: string; stock?: TrackedStock; list?: string }
 type ListNodeData = { name: string; count: number }
 
 const pctClass = (v: number | null | undefined) =>
   v == null ? 'text-muted-foreground' : v > 0 ? 'text-green-500' : v < 0 ? 'text-red-500' : ''
 
-function StockNode({ data }: NodeProps<Node<StockNodeData>>) {
+function StockNode({ data, selected }: NodeProps<Node<StockNodeData>>) {
   const { symbol, stock } = data
   return (
-    <div className="w-44 rounded-xl border bg-card px-3 py-2 shadow-sm">
+    <div
+      className={`w-44 rounded-lg border bg-card px-3 py-1.5 shadow-sm ${selected ? 'ring-2 ring-primary' : ''}`}
+    >
       <p className="font-mono text-sm font-medium">{symbol}</p>
       {stock ? (
         <p className="text-xs text-muted-foreground">
@@ -77,14 +80,16 @@ function StockNode({ data }: NodeProps<Node<StockNodeData>>) {
         // mapping this canvas exists to show.
         <p className="text-xs text-muted-foreground">Not tracked</p>
       )}
-      <Handle type="source" position={Position.Right} className="!size-2 !bg-primary" />
+      <Handle type="source" position={Position.Left} className="!size-2 !bg-primary" />
     </div>
   )
 }
 
-function ListNode({ data }: NodeProps<Node<ListNodeData>>) {
+function ListNode({ data, selected }: NodeProps<Node<ListNodeData>>) {
   return (
-    <div className="w-44 rounded-xl border bg-primary/5 px-3 py-2 shadow-sm">
+    <div
+      className={`w-48 rounded-xl border bg-primary/5 px-3 py-2 shadow-sm ${selected ? 'ring-2 ring-primary' : ''}`}
+    >
       <p className="flex items-center gap-1.5 text-sm font-medium">
         <BookmarkIcon className="size-3.5 text-primary" />
         {data.name}
@@ -92,13 +97,26 @@ function ListNode({ data }: NodeProps<Node<ListNodeData>>) {
       <p className="text-xs text-muted-foreground">
         {data.count} stock{data.count === 1 ? '' : 's'}
       </p>
-      <Handle type="target" position={Position.Left} className="!size-2 !bg-primary" />
+      {/* Near the left edge, so the edges down to its stocks read as a tree. */}
+      <Handle type="target" position={Position.Bottom} style={{ left: 14 }} className="!size-2 !bg-primary" />
     </div>
   )
 }
 
-const NODE_TYPES = { stock: StockNode, list: ListNode }
-const ROW = 96
+function LabelNode({ data }: NodeProps<Node<{ text: string }>>) {
+  return (
+    <p className="w-44 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{data.text}</p>
+  )
+}
+
+const NODE_TYPES = { stock: StockNode, list: ListNode, label: LabelNode }
+
+// Each watchlist is a column: the list on top, the stocks in it underneath, indented like a tree.
+// Stocks in no list get a column of their own at the side.
+const COL = 240
+const INDENT = 28
+const FIRST = 84
+const ROW = 64
 
 export default function WatchlistManager() {
   const [open, setOpen] = useState(false)
@@ -152,61 +170,134 @@ export default function WatchlistManager() {
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
+  const flow = useRef<ReactFlowInstance<Node, Edge> | null>(null)
+  // A node to bring into view once it exists: set by adding a stock or a list, cleared on arrival.
+  const [focus, setFocus] = useState<string | null>(null)
 
-  // Rebuilt from server data on every change, but each node keeps whatever position it already
-  // has - otherwise filing one stock would throw away every node the user had dragged.
+  // Laid out from the data every time it changes - a list's stocks always sit under it, whatever
+  // was just filed or removed. Selection survives the rebuild.
   useEffect(() => {
     setNodes((prev) => {
-      const at = new Map(prev.map((n) => [n.id, n.position]))
-      const counts = new Map<string, number>()
-      for (const w of watchlist) counts.set(w.list_name, (counts.get(w.list_name) ?? 0) + 1)
-      return [
-        ...symbols.map(([symbol, stock], i) => ({
-          id: stockId(symbol),
-          type: 'stock',
-          position: at.get(stockId(symbol)) ?? { x: 0, y: i * ROW },
-          data: { symbol, stock },
-          deletable: false,
-        })),
-        ...lists.map((name, i) => ({
+      const selected = new Set(prev.filter((n) => n.selected).map((n) => n.id))
+      const bySymbol = new Map(symbols)
+      const members = new Map<string, string[]>(lists.map((name) => [name, []]))
+      for (const w of watchlist) {
+        if (!members.has(w.list_name)) members.set(w.list_name, [])
+        members.get(w.list_name)?.push(w.symbol)
+      }
+      const filed = new Set(watchlist.map((w) => w.symbol))
+      const loose = symbols.map(([symbol]) => symbol).filter((symbol) => !filed.has(symbol))
+
+      const out: Node[] = []
+      ;[...members].forEach(([name, held], i) => {
+        const x = i * COL
+        out.push({
           id: listId(name),
           type: 'list',
-          position: at.get(listId(name)) ?? { x: 420, y: i * ROW },
-          data: { name, count: counts.get(name) ?? 0 },
+          position: { x, y: 0 },
+          data: { name, count: held.length },
           deletable: false,
-        })),
-      ]
+          selected: selected.has(listId(name)),
+        })
+        held.sort().forEach((symbol, j) => {
+          const id = memberId(name, symbol)
+          out.push({
+            id,
+            type: 'stock',
+            position: { x: x + INDENT, y: FIRST + j * ROW },
+            data: { symbol, stock: bySymbol.get(symbol), list: name },
+            selected: selected.has(id),
+          })
+        })
+      })
+      if (loose.length) {
+        const x = members.size * COL + (members.size ? 40 : 0)
+        out.push({
+          id: 'label:loose',
+          type: 'label',
+          position: { x, y: 16 },
+          data: { text: 'Not in any list' },
+          deletable: false,
+          selectable: false,
+          draggable: false,
+        })
+        loose.forEach((symbol, j) => {
+          out.push({
+            id: stockId(symbol),
+            type: 'stock',
+            position: { x, y: FIRST + j * ROW },
+            data: { symbol, stock: bySymbol.get(symbol) },
+            // Nothing to remove it from - deleting a stock itself lives on the Stocks page.
+            deletable: false,
+            selected: selected.has(stockId(symbol)),
+          })
+        })
+      }
+      return out
     })
     setEdges(
       watchlist.map((w) => ({
         id: edgeId(w.symbol, w.list_name),
-        source: stockId(w.symbol),
+        source: memberId(w.list_name, w.symbol),
         target: listId(w.list_name),
-        animated: true,
+        type: 'smoothstep',
+        data: { symbol: w.symbol, list: w.list_name },
       })),
     )
   }, [symbols, lists, watchlist, setNodes, setEdges])
 
+  // Pan to what was just added and select it - it may have landed below the fold, and "added"
+  // should be something you can see, not only a toast.
+  useEffect(() => {
+    const node = focus ? nodes.find((n) => n.id === focus) : undefined
+    if (!node || !flow.current) return
+    flow.current.setCenter(node.position.x + 88, node.position.y + 28, {
+      zoom: Math.max(flow.current.getZoom(), 0.9),
+      duration: 400,
+    })
+    setNodes((all) => all.map((n) => ({ ...n, selected: n.id === focus })))
+    setFocus(null)
+  }, [focus, nodes, setNodes])
+
+  // fetch() resolves on a 4xx/5xx; a failed save must not toast as a success.
+  const ok = async (res: Response) => {
+    if (!res.ok) {
+      const body = await res.json().catch(() => null)
+      throw new Error(body?.detail ?? `Request failed (${res.status})`)
+    }
+    return res
+  }
+
+  // Memberships change in the cache first, so the edge and the list's count move the moment you
+  // let go; the refetch after only confirms it (or puts it back, if the save failed).
   const map = useMutation({
     mutationFn: ({ symbol, name }: { symbol: string; name: string }) =>
       fetch(`/api/watchlist/${symbol}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ list_name: name }),
-      }),
-    onSuccess: (_r, { symbol, name }) => {
-      toast.success(`${symbol} added to ${name}`)
-      refresh()
-    },
+      }).then(ok),
+    onMutate: ({ symbol, name }) =>
+      queryClient.setQueryData<WatchlistEntry[]>(['watchlist'], (prev = []) =>
+        prev.some((w) => w.symbol === symbol && w.list_name === name)
+          ? prev
+          : [...prev, { symbol, list_name: name }],
+      ),
+    onSuccess: (_r, { symbol, name }) => toast.success(`${symbol} added to ${name}`),
+    onError: (e: Error) => toast.error(e.message),
+    onSettled: refresh,
   })
 
   const unmap = useMutation({
     mutationFn: ({ symbol, name }: { symbol: string; name: string }) =>
-      fetch(`/api/watchlist/${symbol}?list_name=${encodeURIComponent(name)}`, { method: 'DELETE' }),
-    onSuccess: (_r, { symbol, name }) => {
-      toast.success(`${symbol} removed from ${name}`)
-      refresh()
-    },
+      fetch(`/api/watchlist/${symbol}?list_name=${encodeURIComponent(name)}`, { method: 'DELETE' }).then(ok),
+    onMutate: ({ symbol, name }) =>
+      queryClient.setQueryData<WatchlistEntry[]>(['watchlist'], (prev = []) =>
+        prev.filter((w) => !(w.symbol === symbol && w.list_name === name)),
+      ),
+    onSuccess: (_r, { symbol, name }) => toast.success(`${symbol} removed from ${name}`),
+    onError: (e: Error) => toast.error(e.message),
+    onSettled: refresh,
   })
 
   // POST /api/stocks scrapes the symbol live, so an unknown ticker fails here rather than landing
@@ -214,7 +305,31 @@ export default function WatchlistManager() {
   const add = useMutation({
     mutationFn: () => addStock(newStock.trim().toUpperCase()),
     onSuccess: ({ symbol }) => {
-      toast.success(`${symbol} added`)
+      const existed = stocks.some((s) => s.symbol === symbol)
+      // On the canvas now, not after /api/stocks has live-priced it - that refetch can take seconds
+      // for a symbol with a cold price cache. It fills the price in when it lands.
+      if (!existed) {
+        queryClient.setQueryData<TrackedStock[]>(['stocks'], (prev = []) =>
+          prev.some((s) => s.symbol === symbol)
+            ? prev
+            : [
+                ...prev,
+                {
+                  symbol,
+                  report_count: 1,
+                  last_scraped: new Date().toISOString(),
+                  price: null,
+                  changePercent: null,
+                },
+              ],
+        )
+      }
+      toast.success(existed ? `${symbol} is already tracked` : `${symbol} added`)
+      setFocus(
+        watchlist.find((w) => w.symbol === symbol)
+          ? memberId(watchlist.find((w) => w.symbol === symbol)?.list_name ?? '', symbol)
+          : stockId(symbol),
+      )
       setNewStock('')
       refresh()
     },
@@ -222,27 +337,44 @@ export default function WatchlistManager() {
   })
 
   const createList = useMutation({
-    mutationFn: () =>
+    mutationFn: (name: string) =>
       fetch('/api/watchlists', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newList.trim() }),
-      }),
-    onSuccess: () => {
+        body: JSON.stringify({ name }),
+      }).then(ok),
+    onSuccess: (_r, name) => {
+      queryClient.setQueryData<string[]>(['watchlists'], (prev = []) =>
+        prev.includes(name) ? prev : [...prev, name],
+      )
+      toast.success(`${name} created — drag a stock onto it`)
+      setFocus(listId(name))
       setNewList('')
       refresh()
     },
+    onError: (e: Error) => toast.error(e.message),
   })
 
-  // Handles already make the wrong direction impossible to draw; this is the guard for a
-  // programmatic or replayed connection.
+  // Dragging from any stock node - under a list or in the side column - onto a list files it there.
   const onConnect = (c: Connection) => {
-    if (!c.source?.startsWith('s:') || !c.target?.startsWith('l:')) return
-    map.mutate({ symbol: c.source.slice(2), name: c.target.slice(2) })
+    const from = nodes.find((n) => n.id === c.source)
+    if (from?.type !== 'stock' || !c.target?.startsWith('l:')) return
+    map.mutate({ symbol: (from.data as StockNodeData).symbol, name: c.target.slice(2) })
   }
 
-  const onEdgesDelete = (removed: Edge[]) => {
-    for (const e of removed) unmap.mutate({ symbol: e.source.slice(2), name: e.target.slice(2) })
+  // Deleting a stock under a list (or its edge) removes it from that list only. Both arrive together
+  // when a node goes - its edge is deleted with it - so memberships are de-duplicated.
+  const onDelete = ({ nodes: gone, edges: cut }: { nodes: Node[]; edges: Edge[] }) => {
+    const pairs = new Map<string, { symbol: string; name: string }>()
+    for (const n of gone) {
+      const d = n.data as StockNodeData
+      if (n.type === 'stock' && d.list) pairs.set(`${d.list}/${d.symbol}`, { symbol: d.symbol, name: d.list })
+    }
+    for (const e of cut) {
+      const d = e.data as { symbol: string; list: string } | undefined
+      if (d) pairs.set(`${d.list}/${d.symbol}`, { symbol: d.symbol, name: d.list })
+    }
+    for (const pair of pairs.values()) unmap.mutate(pair)
   }
 
   return (
@@ -253,7 +385,7 @@ export default function WatchlistManager() {
             <BookmarkIcon className="size-4" />
             Watchlists
             <span className="text-sm font-normal text-muted-foreground">
-              — drag a stock onto a list to map it, select an edge and press Delete to unmap
+              — drag a stock onto a list to add it; select a stock under a list and press Delete to remove it
             </span>
             <span className="ml-auto text-xs font-normal text-muted-foreground">{shortcut}</span>
           </DialogTitle>
@@ -272,7 +404,10 @@ export default function WatchlistManager() {
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
-              onEdgesDelete={onEdgesDelete}
+              onDelete={onDelete}
+              onInit={(instance) => {
+                flow.current = instance
+              }}
               deleteKeyCode={['Backspace', 'Delete']}
               colorMode={theme === 'dark' ? 'dark' : 'light'}
               fitView
@@ -302,7 +437,7 @@ export default function WatchlistManager() {
                   className="flex gap-1"
                   onSubmit={(e) => {
                     e.preventDefault()
-                    if (newList.trim()) createList.mutate()
+                    if (newList.trim()) createList.mutate(newList.trim())
                   }}
                 >
                   <Input
@@ -311,7 +446,13 @@ export default function WatchlistManager() {
                     placeholder="New watchlist…"
                     className="h-8 w-36 bg-background text-xs"
                   />
-                  <Button type="submit" size="icon-sm" variant="outline" className="size-8">
+                  <Button
+                    type="submit"
+                    size="icon-sm"
+                    variant="outline"
+                    className="size-8"
+                    disabled={createList.isPending}
+                  >
                     <PlusIcon className="size-3.5" />
                   </Button>
                 </form>

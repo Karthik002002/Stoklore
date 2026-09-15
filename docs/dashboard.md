@@ -7,9 +7,11 @@
 - Home page (`/`) lists tracked stocks with live price + day change.
 - Bookmark a stock into a watchlist from its row menu; switch watchlists via
   the tabs above the table.
-- **⌘/Ctrl+B opens the watchlist canvas from anywhere in the app** — symbols
-  down the left, lists down the right, one edge per membership. **Drag from a
-  symbol to a list to file it; select an edge and press Delete to unfile it.**
+- **⌘/Ctrl+B opens the watchlist canvas from anywhere in the app** — each
+  watchlist is a column, with the list on top and only the stocks in it listed
+  underneath, like a tree. Stocks in no list sit in a **Not in any list** column
+  at the side. **Drag any stock onto a list to add it; select a stock under a list
+  and press Delete to remove it from that list.**
   Both writes hit the watchlist immediately — there is no Save.
 - A stock can sit in **any number of lists**, which is the whole reason this is
   a graph and not a picker: two edges off one symbol is the state a
@@ -17,8 +19,13 @@
 - The panel top-left adds a **stock** (scraped live via `POST /api/stocks`, so a
   bad ticker fails there instead of landing as an empty node) and a **new
   watchlist** (an empty list is a real thing — it persists as a tab).
-- Nodes drag freely and keep their positions while the canvas is open; layout
-  isn't saved, so it re-columns on reopen.
+- **What you add shows up at once.** A new stock appears in the side column (or
+  under its list), a new list as a new column, and the canvas pans to it and
+  selects it. The live price
+  fills in a moment later. A new edge moves the list's count as soon as you let
+  go. A save that fails says so and the canvas goes back to how it was.
+- The layout is recomputed from the data after every change, so a list's stocks
+  always sit under it. Nodes can be dragged, but the next change puts them back.
 - Rebindable in Settings › Shortcuts; also in the ⌘K palette as **Watchlists**.
 - **Reload** (sidebar) clears the shared price cache and re-fetches.
 - Sidebar icons: Stocks, Events, Top news, Holdings, Backtesting, Settings,
@@ -40,10 +47,22 @@ list would silently hide most of the mapping it exists to show. Those nodes
 render as **Not tracked** rather than being dropped.
 
 Node ids are prefixed (`s:SYMBOL`, `l:NAME`) because `onConnect` receives two
-bare ids and a symbol could otherwise collide with a list name. Nodes and edges
-are rebuilt from server data after every write, but each node keeps the position
-it already had — otherwise filing one stock would throw away every node the user
-had dragged. Nodes are `deletable: false`: deleting a *symbol* is
+bare ids and a symbol could otherwise collide with a list name. A stock in two lists is **two nodes**, one under each list, with the list in its
+data. So its id carries the list (`m:LIST/SYMBOL`), and connect and delete read
+the symbol off the node rather than parsing the id. Stocks in no list are `s:SYMBOL`.
+The whole layout is recomputed from the data on every change: an earlier version
+kept dragged positions and placed new nodes by index, which put a freshly added
+stock on top of an existing one. Deleting a stock under a list removes that
+membership; its edge is deleted with it, so the two are de-duplicated before
+unmapping.
+
+Adds and edge changes write to the query cache first: a placeholder stock row,
+the new list name, or the membership. So the node or edge appears without waiting
+for `GET /api/stocks`, which live-prices a symbol with a cold cache and can take
+seconds. The refetch after each write then confirms the change, or undoes it if
+the save failed.
+
+Lists and side-column stocks are `deletable: false` (a stock under a list deletes only its membership): deleting a *symbol* is
 `DELETE /api/stocks/{symbol}` and lives on the Stocks page, and losing one to a
 stray Backspace on a canvas is not a mistake worth making available.
 

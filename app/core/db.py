@@ -1419,6 +1419,16 @@ def set_last_digest_date(iso_date):
     _set_setting("last_workflow_digest_date", iso_date)
 
 
+def get_screener_cookie():
+    """The user's own screener.in session cookie, or ''. Screens are public only for the first few
+    an anonymous visitor opens; after that screener answers with its register page."""
+    return _get_setting("screener_session", "")
+
+
+def set_screener_cookie(value):
+    _set_setting("screener_session", (value or "").strip())
+
+
 def get_cogencis_token():
     return _get_setting("cogencis_token")
 

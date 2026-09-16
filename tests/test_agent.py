@@ -6,7 +6,10 @@ from pathlib import Path
 # is not installed, it just sits at the repo root.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from datetime import date, timedelta
+
 from app.core import llm
+from app.services import agent
 
 TOOLS = [{"type": "function", "function": {"name": "get_price", "parameters": {}}}]
 
@@ -74,8 +77,54 @@ def test_agent_works_with_litellm_openai_shaped_tool_calls():
     llm.configure_litellm(None)  # reset module-level config for other tests
 
 
+# --- get_ema_crossover: usable by a run with nobody watching ----------------------------------------
+# It used to answer "run a price sync first", which a 06:15 workflow cannot act on - so a fan-out
+# over a watchlist came back as that sentence for every symbol that had never been synced.
+
+
+def _stub_prices(latest, signal):
+    """Stands in for the database and the sync, so these need neither. Returns the list the fake
+    sync appends to; `signal` is what the EMA reads once a sync has happened."""
+    synced = []
+    agent.db.latest_price_date = lambda symbol: latest
+    agent.prices.sync_symbol = lambda symbol: synced.append(symbol)
+    agent.prices.ema_crossover = lambda symbol, short, long: signal if synced else None
+    return synced
+
+
+def test_ema_crossover_syncs_a_symbol_with_no_history():
+    synced = _stub_prices(None, {"crossover": "bullish", "shortEma": 1.0, "longEma": 0.9})
+    result = agent._tool_ema_crossover("wabag")
+
+    assert synced == ["WABAG"], "a symbol with no stored history is synced, not refused"
+    assert result == {"symbol": "WABAG", "crossover": "bullish", "shortEma": 1.0, "longEma": 0.9}
+
+
+def test_ema_crossover_refreshes_only_stale_history():
+    stale = date.today() - timedelta(days=agent.EMA_STALE_DAYS + 1)
+    synced = _stub_prices(stale, {"crossover": None})
+    agent._tool_ema_crossover("COFORGE")
+    assert synced == ["COFORGE"], "history older than the staleness window is refetched"
+
+    synced = _stub_prices(date.today(), {"crossover": None})
+    agent._tool_ema_crossover("COFORGE")
+    assert synced == [], "today's history is not refetched on every run"
+
+
+def test_ema_crossover_always_answers_with_the_symbol():
+    _stub_prices(None, None)  # the sync runs, but there still aren't enough bars
+    result = agent._tool_ema_crossover("FSL", short=20, long=50)
+
+    assert result["symbol"] == "FSL" and result["crossover"] is None
+    assert "52 daily bars" in result["error"], "says what is missing, as data rather than prose"
+
+
 if __name__ == "__main__":
     test_agent_executes_tool_then_answers()
     test_agent_survives_tool_errors_and_caps_rounds()
     test_agent_works_with_litellm_openai_shaped_tool_calls()
+    test_ema_crossover_syncs_a_symbol_with_no_history()
+    test_ema_crossover_refreshes_only_stale_history()
+    test_ema_crossover_always_answers_with_the_symbol()
     print("all checks passed")
+

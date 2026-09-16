@@ -46,6 +46,7 @@ const SETTINGS_TABS = [
   'omniroute',
   'cogencis',
   'telegram',
+  'screener',
   'broker',
   'rules',
   'data',

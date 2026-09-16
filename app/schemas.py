@@ -99,6 +99,12 @@ class NotificationReadRequest(BaseModel):
     ids: list[int] | None = None
 
 
+class ScreenerConfigRequest(BaseModel):
+    #: The `sessionid` cookie from the user's own signed-in screener.in session. Blank keeps the
+    #: saved one - the field is write-only in the UI.
+    session_cookie: str = ""
+
+
 class TelegramConfigRequest(BaseModel):
     #: Blank keeps the saved token - the field is write-only in the UI.
     bot_token: str = ""

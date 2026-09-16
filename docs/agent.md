@@ -167,8 +167,18 @@ That is recognised by content and reported as exactly that
 (`ScreenLoginRequired`), not as "private or deleted". A screen workflow that hits
 it fails its run, files the failure to the alerts feed and counts toward its
 fail streak — the honest outcome, rather than a run that looks green while
-fetching a sign-up page. Unattended daily screen runs need a logged-in
-screener.in session; the app doesn't have one today.
+fetching a sign-up page.
+
+**Give it your own session and the wall goes away.** Settings → **Screener**
+takes the `sessionid` cookie from your own signed-in screener.in browser session;
+every screen fetch then sends it, on screener's own cookie pool. **Open a test
+screen** there proves it before tomorrow's run depends on it. The message says
+which problem you have: with no cookie saved it tells you to add one, with one
+saved it says yours has expired — a session cookie does expire, and pasting a
+fresh one is the fix.
+
+The app never asks for your screener.in password and never logs in for you; it
+sends a cookie you pasted, to screener.in only.
 
 ## Collected data, and the Data view
 
@@ -269,11 +279,13 @@ however it is wired.
   again**.
 - **Step details** — click any node on a run's diagram and a drawer opens with
   the **full error** (the node itself truncates it), what the step was **called
-  with** (a `null` argument is red, which is usually the bug), and what it
+  with** (a fan-out shows what it was wired with and what it looped over,
+  since its arguments differ per item), and what it
   **returned**. Each section has a copy button. A fan-out says how many of its
   items failed. A step a condition switched off shows as **Skipped**, not as a
-  green tick. When a run failed, a banner names the failing step and
-  **Inspect →** opens it. `Esc` or clicking the canvas closes the drawer. The open
+  green tick. A failure the app can walk you out of says so and offers the button
+  that fixes it — a screener login wall links straight to Settings → Screener.
+  When a run failed, a banner names the failing step and **Inspect →** opens it. `Esc` or clicking the canvas closes the drawer. The open
   step is in the URL, so a failure can be sent as a link straight to the broken
   step.
 - **The workflow's own inbox**, with delivery rules — mute, snooze, quiet hours,

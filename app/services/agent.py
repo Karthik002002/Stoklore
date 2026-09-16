@@ -59,9 +59,36 @@ def _tool_get_movers(count=25):
     return _cached("market", f"movers-{count}", 15, lambda: scraper.get_movers(int(count)))
 
 
+#: How stale stored history may be before a reading refetches it. Bars land daily, so three days
+#: covers a long weekend without a fetch on every run.
+EMA_STALE_DAYS = 3
+
+
 def _tool_ema_crossover(symbol, short=20, long=50):
-    signal = prices.ema_crossover(symbol.upper(), int(short), int(long))
-    return signal or "no synced price history for this symbol - run a price sync first"
+    """The EMA state, syncing this symbol's price history first when it is missing or stale.
+
+    It used to answer "run a price sync first" - an instruction to a human that a 06:15 workflow
+    with nobody watching cannot follow, so a fan-out over a watchlist came back as that sentence
+    for every symbol never synced, and the run had nothing to say.
+
+    Always a dict, and always carrying the symbol: a fan-out collects these into one list, and
+    rows that don't say which symbol they are can't be read by anything downstream.
+    """
+    symbol = symbol.upper()
+    latest = db.latest_price_date(symbol)
+    if latest is None or (date.today() - latest).days > EMA_STALE_DAYS:
+        try:
+            prices.sync_symbol(symbol)
+        except Exception as e:  # noqa: BLE001 - an upstream that won't answer is reported, not raised
+            if latest is None:
+                return {"symbol": symbol, "crossover": None,
+                        "error": f"no stored price history, and the sync failed: {e}"}
+    signal = prices.ema_crossover(symbol, int(short), int(long))
+    if not signal:
+        return {"symbol": symbol, "crossover": None,
+                "error": f"not enough price history for a {short}/{long} EMA - needs about "
+                         f"{int(long) + 2} daily bars"}
+    return {"symbol": symbol, **signal}
 
 
 def _tool_list_watchlists():
@@ -136,7 +163,7 @@ def _tool_run_screen(url, max_pages=4):
     """A screener.in screen's matching companies, as rows keyed by column. Returns the error text
     rather than raising for a bad URL, so the model can tell the user what to fix."""
     try:
-        return scraper.get_screen(url, max_pages=int(max_pages))
+        return scraper.get_screen(url, max_pages=int(max_pages), session_cookie=db.get_screener_cookie())
     except ValueError as e:
         return str(e)
 

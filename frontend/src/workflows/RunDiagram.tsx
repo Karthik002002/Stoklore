@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from '@tanstack/react-router'
 import {
   Background,
   Controls,
@@ -20,6 +21,7 @@ import {
   CheckIcon,
   CopyIcon,
   MessageSquareIcon,
+  SettingsIcon,
   SkipForwardIcon,
   WrenchIcon,
   XIcon,
@@ -318,11 +320,28 @@ export default function RunDiagram({
 
 const json = (v: unknown) => (typeof v === 'string' ? v : JSON.stringify(v, null, 2))
 
+/** A failure the app can walk you out of. The screener login wall is the one that matters today: it
+ *  is not a broken workflow, it is a missing session - and the place to paste one is two clicks away,
+ *  so the drawer offers the door rather than only the diagnosis. */
+const SETTINGS_FIX = (error?: string | null) =>
+  error && /screener\.in is asking for a login|Settings → Screener/i.test(error)
+    ? {
+        tab: 'screener',
+        title: 'screener.in wants a login, not a fix to this workflow',
+        body: /expired/i.test(error)
+          ? 'The saved session cookie no longer works. Paste a fresh sessionid from your signed-in screener.in browser session, then run this again.'
+          : 'Paste the sessionid cookie from your own signed-in screener.in session. Screen runs then open screens as you, instead of hitting the anonymous limit.',
+        action: 'Open Settings → Screener',
+      }
+    : null
+
 function NodeDrawer({ node, onClose }: { node: WorkflowNode; onClose: () => void }) {
+  const navigate = useNavigate()
   const d = node.data
   const status = statusOf(d)
   const Icon = KIND_ICON[d.kind] ?? WrenchIcon
   const args = Object.entries(d.args ?? {})
+  const fix = SETTINGS_FIX(d.error)
   const itemErrors = Array.isArray(d.result)
     ? d.result.filter((r) => typeof r === 'object' && r !== null && 'error' in r).length
     : 0
@@ -376,6 +395,25 @@ function NodeDrawer({ node, onClose }: { node: WorkflowNode; onClose: () => void
           <Block title="Error" copy={d.error} tone="bad">
             <pre className="font-mono text-xs break-words whitespace-pre-wrap">{d.error}</pre>
           </Block>
+        )}
+        {fix && (
+          <section className="rounded-lg border border-primary/40 bg-primary/5 p-3">
+            <p className="text-xs font-medium">{fix.title}</p>
+            <p className="mt-1 text-[11px] text-muted-foreground">{fix.body}</p>
+            <Button
+              size="sm"
+              className="mt-2"
+              onClick={() =>
+                navigate({
+                  to: '.',
+                  search: (prev: Record<string, unknown>) => ({ ...prev, settings: fix.tab }),
+                } as never)
+              }
+            >
+              <SettingsIcon className="size-3.5" />
+              {fix.action}
+            </Button>
+          </section>
         )}
         {status === 'skipped' && (
           <p className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">

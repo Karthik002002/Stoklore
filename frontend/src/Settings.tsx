@@ -81,6 +81,10 @@ import {
   getTelegramConfig,
   setTelegramConfig,
   testTelegram,
+  getScreenerConfig,
+  setScreenerConfig,
+  clearScreenerConfig,
+  testScreener,
   setDhanConfig,
   setKiteConfig,
   setLiteLLMConfig,
@@ -344,6 +348,98 @@ function CogencisTab() {
         <code>authorization: Bearer …</code> header value (without the "Bearer " prefix). It expires after
         about 24 hours, so you'll need to paste in a fresh one here when stock news stops picking up new
         Cogencis articles.
+      </p>
+    </div>
+  )
+}
+
+/** screener.in stops serving screens to an anonymous visitor after a handful of them, which is what
+ *  a screen workflow hits at 06:15 with nobody there to log in. Pasting the session cookie from your
+ *  own signed-in browser lets those runs open screens. Never a password - this app doesn't log in. */
+function ScreenerTab() {
+  const queryClient = useQueryClient()
+  const { data: config } = useQuery({ queryKey: ['screenerConfig'], queryFn: getScreenerConfig })
+  const [cookie, setCookie] = useState('')
+
+  const save = useMutation({
+    mutationFn: () => setScreenerConfig(cookie.trim()),
+    onSuccess: (next) => {
+      queryClient.setQueryData(['screenerConfig'], next)
+      toast.success('screener.in session saved')
+      setCookie('')
+    },
+    onError: (e) => toast.error(e.message),
+  })
+  const clear = useMutation({
+    mutationFn: clearScreenerConfig,
+    onSuccess: (next) => {
+      queryClient.setQueryData(['screenerConfig'], next)
+      toast.success('screener.in session removed')
+    },
+    onError: (e) => toast.error(e.message),
+  })
+  const test = useMutation({
+    mutationFn: testScreener,
+    onSuccess: (r) => toast.success(`Opened “${r.name}” — ${r.total} companies`),
+    onError: (e) => toast.error(e.message),
+  })
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Session cookie (`sessionid`)</p>
+        <Input
+          type="password"
+          value={cookie}
+          onChange={(e) => setCookie(e.target.value)}
+          placeholder={config?.has_session ? '•••• saved - leave blank to keep it' : 'e.g. 8x1k…'}
+        />
+      </div>
+      <div className="flex gap-2">
+        <Button size="sm" onClick={() => save.mutate()} disabled={!cookie.trim() || save.isPending}>
+          Save
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => test.mutate()}
+          disabled={!config?.has_session || !!cookie.trim() || test.isPending}
+          title={cookie.trim() ? 'Save first' : undefined}
+        >
+          {test.isPending && <Spinner className="size-3.5" />}
+          Open a test screen
+        </Button>
+        {config?.has_session && (
+          <Button size="sm" variant="ghost" onClick={() => clear.mutate()} disabled={clear.isPending}>
+            Remove
+          </Button>
+        )}
+      </div>
+      <ol className="list-decimal space-y-1 pl-4 text-xs text-muted-foreground">
+        <li>
+          Sign in at{' '}
+          <a
+            href="https://www.screener.in/login/"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-0.5 underline hover:text-foreground"
+          >
+            screener.in <ExternalLinkIcon className="size-3" />
+          </a>{' '}
+          in your own browser.
+        </li>
+        <li>
+          Open dev tools → Application (or Storage) → Cookies → <code>https://www.screener.in</code>, and copy
+          the value of <code>sessionid</code>.
+        </li>
+        <li>
+          Paste it above and save, then <strong>Open a test screen</strong> to check it.
+        </li>
+      </ol>
+      <p className="text-xs text-muted-foreground">
+        It's a session, so it expires — when screen runs start failing with a login message, paste a fresh
+        one. The cookie is stored in your own database and sent only to screener.in; it is never shown back
+        here, and this app never asks for your screener.in password.
       </p>
     </div>
   )
@@ -1360,6 +1456,7 @@ export default function Settings() {
             <TabsTab value="omniroute">OmniRoute</TabsTab>
             <TabsTab value="cogencis">Cogencis</TabsTab>
             <TabsTab value="telegram">Telegram</TabsTab>
+            <TabsTab value="screener">Screener</TabsTab>
             <TabsTab value="broker">Broker</TabsTab>
             <TabsTab value="rules">Watch rules</TabsTab>
             <TabsTab value="data">Collect data</TabsTab>
@@ -1385,6 +1482,9 @@ export default function Settings() {
             </TabsPanel>
             <TabsPanel value="telegram">
               <TelegramTab />
+            </TabsPanel>
+            <TabsPanel value="screener">
+              <ScreenerTab />
             </TabsPanel>
             <TabsPanel value="broker">
               <BrokerTab />

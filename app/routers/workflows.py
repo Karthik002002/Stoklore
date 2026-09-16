@@ -93,7 +93,7 @@ def create_from_screen(req: ScreenWorkflowRequest):
     workflow says what it screens for.
     """
     try:
-        screen = scraper.get_screen(req.url, max_pages=1)
+        screen = scraper.get_screen(req.url, max_pages=1, session_cookie=db.get_screener_cookie())
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 

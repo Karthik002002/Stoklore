@@ -205,6 +205,17 @@ The database side was verified against a throwaway database, never the live one:
 **Not covered:** the minute loop itself and Telegram delivery. They need a
 running server and a real bot.
 
+## screener.in screens
+
+A screen workflow needs a signed-in screener.in session: anonymous visitors get a
+few screens and then the register page. Paste your `sessionid` cookie into
+Settings → **Screener** (see [Agent → The login wall](agent.md#the-login-wall)).
+Without it, a run fails with a message saying to add one; with an expired one, a
+message saying to replace it. **The run's step drawer offers the door**: a failed
+screen step shows that the screen itself is fine and screener wants a login, with
+an **Open Settings → Screener** button — rather than leaving you to read an error
+and go looking for where to fix it.
+
 | Piece | Job |
 |---|---|
 | `app/services/workflow_triggers.py` | Trigger kinds, next run, due check, event matching, NSE holidays, starting runs |

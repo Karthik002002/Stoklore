@@ -436,10 +436,50 @@ def parse_screen_html(html_text, url):
     }
 
 
-def get_screen(url, max_pages=SCREEN_MAX_PAGES):
+#: Screener's own cookie jar, kept apart from every other site's - and the page an unauthenticated
+#: visit lands on first, the same human funnel netfetch primes NSE with.
+SCREENER_POOL = "screener"
+SCREENER_HOME = "https://www.screener.in/"
+
+
+def _fetch_screen_html(url, session_cookie=None):
+    """A screen page, signed in as the user when they have saved a session cookie (Settings →
+    Screener). Sent as a header rather than a cookie jar so it survives a session rotation."""
+    headers = {"cookie": f"sessionid={session_cookie.strip()}"} if session_cookie else None
+    return netfetch.get_html(url, pool=SCREENER_POOL, prime=SCREENER_HOME, headers=headers)
+
+
+def _login_wall_help(session_cookie):
+    """The wall means different things with and without a saved cookie: one is "set it up", the
+    other is "yours has expired". Both keep the base message, so callers still read as a login."""
+    return (
+        " The saved screener.in session cookie didn't work - it has probably expired. Paste a fresh "
+        "one in Settings → Screener."
+        if session_cookie
+        else " Paste your own screener.in session cookie in Settings → Screener, so unattended runs "
+        "can open screens."
+    )
+
+
+def get_screen(url, max_pages=SCREEN_MAX_PAGES, session_cookie=None):
     """Every company a screen matches, up to `max_pages` pages of 50. Raises ValueError for a URL
-    that isn't a screen, or a page that came back without a results table (removed, or private)."""
+    that isn't a screen, or a page that came back without a results table (removed, or private).
+
+    `session_cookie` is the user's own screener.in `sessionid` (db.get_screener_cookie()). Without
+    one, screener serves its register page after a handful of screens - which is what a 06:15 run
+    hits, with nobody there to log in.
+    """
     base = screen_url(url)
+    try:
+        return _get_screen(base, max_pages, session_cookie)
+    except ScreenLoginRequired as e:
+        raise ScreenLoginRequired(f"{e}{_login_wall_help(session_cookie)}") from e
+
+
+def _get_screen(base, max_pages, session_cookie):
+    def _fetch_html(u):
+        return _fetch_screen_html(u, session_cookie)
+
     first = parse_screen_html(_fetch_html(f"{base}?limit={SCREEN_PAGE_SIZE}&page=1"), base)
     if first is None:
         raise ValueError("screener.in returned no results table for that screen - it may be "

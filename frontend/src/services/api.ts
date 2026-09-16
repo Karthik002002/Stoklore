@@ -910,6 +910,26 @@ export const setTelegramConfig = (body: { bot_token: string; chat_id: string }) 
 
 export const testTelegram = () => fetch('/api/settings/telegram/test', { method: 'POST' }).then(json)
 
+/** screener.in only serves a few screens to an anonymous visitor; a saved session opens the rest. */
+export type ScreenerConfig = { has_session: boolean }
+
+export const getScreenerConfig = () => fetch('/api/settings/screener').then(json<ScreenerConfig>)
+
+export const setScreenerConfig = (session_cookie: string) =>
+  fetch('/api/settings/screener', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_cookie }),
+  }).then(json<ScreenerConfig>)
+
+export const clearScreenerConfig = () =>
+  fetch('/api/settings/screener', { method: 'DELETE' }).then(json<ScreenerConfig>)
+
+export const testScreener = () =>
+  fetch('/api/settings/screener/test', { method: 'POST' }).then(
+    json<{ ok: boolean; name: string; total: number }>,
+  )
+
 export const getCogencisConfig = () => fetch('/api/settings/cogencis').then(json<{ has_token: boolean }>)
 
 export const setCogencisToken = (token: string) =>

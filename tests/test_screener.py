@@ -157,6 +157,29 @@ def test_screen_login_wall_is_named():
     assert issubclass(scraper.ScreenLoginRequired, ValueError)
 
 
+def test_screen_sends_the_saved_session_and_explains_the_wall():
+    # The cookie rides as a header on screener's own pool; without one, the wall says how to fix it.
+    sent = []
+    original = scraper.netfetch.get_html
+    scraper.netfetch.get_html = lambda url, **kwargs: sent.append(kwargs) or REGISTER_WALL
+    try:
+        try:
+            scraper.get_screen("https://www.screener.in/screens/86/quarterly-growers/", session_cookie="abc123")
+        except scraper.ScreenLoginRequired as e:
+            assert "login" in str(e) and "expired" in str(e), str(e)
+        assert sent[0]["headers"] == {"cookie": "sessionid=abc123"}
+        assert sent[0]["pool"] == scraper.SCREENER_POOL
+
+        sent.clear()
+        try:
+            scraper.get_screen("https://www.screener.in/screens/86/quarterly-growers/")
+        except scraper.ScreenLoginRequired as e:
+            assert "Settings → Screener" in str(e), str(e)
+        assert sent[0]["headers"] is None, "no cookie saved, nothing sent"
+    finally:
+        scraper.netfetch.get_html = original
+
+
 def test_screen_page_without_table_is_none():
     assert scraper.parse_screen_html("<h1>Login</h1>", "https://www.screener.in/screens/1/x/") is None
 
@@ -188,6 +211,7 @@ if __name__ == "__main__":
     test_returns_none_without_company_heading()
     test_parses_screen_fixture()
     test_screen_login_wall_is_named()
+    test_screen_sends_the_saved_session_and_explains_the_wall()
     test_screen_page_without_table_is_none()
     test_screen_url_is_canonical_and_guarded()
     print("ok")

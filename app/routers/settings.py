@@ -5,6 +5,7 @@ from app.core import db
 from app.core import llm
 
 from app.schemas import (
+    ScreenerConfigRequest,
     TelegramConfigRequest,
     ActiveBrokerRequest,
     ActiveModelRequest,
@@ -142,3 +143,42 @@ def test_telegram():
     if error:
         raise HTTPException(status_code=400, detail=error)
     return {"ok": True}
+
+
+# --- screener.in: the user's own session, so unattended screen runs aren't stopped by the wall -------
+
+
+@router.get("/api/settings/screener")
+def get_screener_config():
+    """Whether a session cookie is saved - never the cookie itself."""
+    return {"has_session": bool(db.get_screener_cookie())}
+
+
+@router.put("/api/settings/screener")
+def set_screener_config(req: ScreenerConfigRequest):
+    if req.session_cookie.strip():
+        db.set_screener_cookie(req.session_cookie)
+    return get_screener_config()
+
+
+@router.delete("/api/settings/screener")
+def clear_screener_config():
+    db.set_screener_cookie("")
+    return get_screener_config()
+
+
+@router.post("/api/settings/screener/test")
+def test_screener():
+    """Opens one public screen with the saved cookie, so a bad or expired one says so here rather
+    than as a failed run tomorrow morning."""
+    from app.core import scraper
+
+    try:
+        screen = scraper.get_screen(
+            "https://www.screener.in/screens/86/quarterly-growers/",
+            max_pages=1,
+            session_cookie=db.get_screener_cookie(),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return {"ok": True, "name": screen.get("name"), "total": screen.get("total")}

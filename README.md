@@ -173,7 +173,9 @@ directly to Ollama's or an OpenAI-compatible server's native function-calling
 API (no LangChain, no framework):
 
 - **14 explicit tools** (`app/main.py` + `app/routers/`, `AGENT_TOOLS`/`REAL_TOOL_IMPLS`) covering
-  live price/EMA/movers lookups, watchlist listing, broker-synced holdings
+  live price/EMA/movers lookups (the EMA one syncs a symbol's price history
+  itself when it's missing or stale — "run a price sync first" is not something
+  an unattended workflow can act on), watchlist listing, broker-synced holdings
   (`get_holdings` — "how is my portfolio doing"), semantic report search,
   a live stock scrape+report, background event scans/price syncs, DuckDuckGo
   web search, recording a verified event, checking a user-defined watch
@@ -382,8 +384,10 @@ templates — in a 3×3 gallery, by category — clone disarmed, and every one o
 executed in a self-check against real-shaped tools, not just loaded. Paste a
 screener.in screen URL and it becomes a daily workflow (pages via
 `?limit=50&page=N`, columns keyed by screener's own names, alerts only when it
-matches); note screener.in only serves a few screens to an anonymous visitor
-before asking for a login. The day's results roll into one digest at 18:00.
+matches). screener.in only serves a few screens to an anonymous visitor before
+asking for a login, so Settings › **Screener** holds the `sessionid` cookie from
+your own signed-in session — pasted by you, never a password — and screen fetches
+send it. The day's results roll into one digest at 18:00.
 
 Settings is a tabbed dialog (**Model** / **OmniRoute** / **LiteLLM** /
 **Cogencis** / **Broker** / **Watch rules**), with its open state and active tab in the

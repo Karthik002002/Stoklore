@@ -43,6 +43,19 @@ text and stop → otherwise execute each requested tool
 (`tool_impls[name](**args)`), wrap the result, feed it back as a `role:
 "tool"` message, and loop again (capped at 5 rounds).
 
+### A tool fixes what it can itself
+
+`get_ema_crossover` **syncs the symbol's price history** when none is stored or
+it is more than `EMA_STALE_DAYS` (3) old, then reads the EMA. It always answers
+with a dict carrying the symbol — `{"symbol": "WABAG", "crossover": null,
+"error": "not enough price history…"}` when there still aren't enough bars.
+
+It used to return the sentence *"no synced price history for this symbol - run a
+price sync first"*. That is an instruction to a human: a workflow fanning it out
+over a watchlist at 06:15 collected that sentence for every symbol that had never
+been synced, and reported nothing. A tool a workflow can call must either do the
+thing or say what it found, in data. Checked in `tests/test_agent.py`.
+
 ### Streaming to the browser
 
 The response streams as Server-Sent Events implementing the Vercel AI SDK's

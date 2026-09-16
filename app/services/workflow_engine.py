@@ -280,7 +280,15 @@ def execute(workflow, run_id=None, on_node=None, payload=None):
             collected.append((data.get("series") or "data", [r for r in rows if isinstance(r, dict)]))
 
         if on_node:
-            on_node(node["id"], label, render(data.get("args") or {}, scope), result, error, round_)
+            # A fan-out has no single set of arguments. Rendering them against a scope with no
+            # `item` recorded `symbol: null`, which reads like the bug instead of the configuration -
+            # so a fanned-out node records what it was wired with, and what it looped over.
+            recorded = (
+                {**(data.get("args") or {}), "for_each": data["for_each"]}
+                if data.get("for_each")
+                else render(data.get("args") or {}, scope)
+            )
+            on_node(node["id"], label, recorded, result, error, round_)
         if error:
             summary.append(f"{label}: failed - {error}")
         elif kind == "agent":

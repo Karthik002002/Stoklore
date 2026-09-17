@@ -1,14 +1,17 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useMemo } from 'react'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { LineSeries, createChart } from 'lightweight-charts'
-import type { ISeriesApi, UTCTimestamp } from 'lightweight-charts'
+import type { UTCTimestamp } from 'lightweight-charts'
 import DataTable from '@/components/DataTable'
+import SeriesChart from '@/components/charts/SeriesChart'
+import { seriesColor } from '@/components/charts/colors'
+import type { Dataset } from '@/components/charts/colors'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
-import { fmt } from '@/lib/format'
-import { cn } from '@/lib/utils'
-import { getWorkflowSeries } from '@/services/api'
+import { LayoutGridIcon } from 'lucide-react'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import { createDashboardFromWorkflow, getWorkflowSeries } from '@/services/api'
 
 // What a workflow has gathered: its collected series as a chart and a table. Whether it is still
 // working - runs, failures, durations - is on the Overview tab.
@@ -19,166 +22,9 @@ import { getWorkflowSeries } from '@/services/api'
 const fmtTime = (v: unknown) =>
   typeof v === 'string' || typeof v === 'number' ? new Date(v).toLocaleString('en-IN') : '—'
 
-// Same axis/grid colours as the journal's charts (ManualOverview), so the app reads as one thing.
-const CHART = { text: '#9ca3af', grid: 'rgba(148, 163, 184, 0.15)' }
-
-// Ten hand-picked hues that stay apart on both themes, then golden-angle steps for anything past
-// them - a 25-symbol watchlist still gets 25 distinguishable lines.
-const PALETTE = [
-  '#3b82f6',
-  '#22c55e',
-  '#f59e0b',
-  '#ef4444',
-  '#a855f7',
-  '#06b6d4',
-  '#ec4899',
-  '#84cc16',
-  '#f97316',
-  '#14b8a6',
-]
-const hslHex = (h: number, s: number, l: number) => {
-  const a = s * Math.min(l, 1 - l)
-  const channel = (n: number) => {
-    const k = (n + h / 30) % 12
-    return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))))
-      .toString(16)
-      .padStart(2, '0')
-  }
-  return `#${channel(0)}${channel(8)}${channel(4)}`
-}
-const seriesColor = (i: number) => PALETTE[i] ?? hslHex((i * 137.508) % 360, 0.65, 0.55)
-const faded = (hex: string) =>
-  `rgba(${Number.parseInt(hex.slice(1, 3), 16)}, ${Number.parseInt(hex.slice(3, 5), 16)}, ${Number.parseInt(hex.slice(5, 7), 16)}, 0.2)`
-
 /** A split column has to name groups, not be one: 2..MAX_GROUPS distinct plain values. */
 const MAX_GROUPS = 60
 const NONE = 'none'
-
-type Dataset = { key: string; color: string; points: { time: UTCTimestamp; value: number }[] }
-
-/** One line per dataset on the app's own chart library (lightweight-charts, as on the journal and
- *  paper pages). The legend is the control: click to hide a line, double-click to show only it,
- *  hover to pick it out of the rest; it shows values under the crosshair, or the latest ones. */
-function SeriesChart({ datasets }: { datasets: Dataset[] }) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const seriesRef = useRef(new Map<string, ISeriesApi<'Line'>>())
-  const [hidden, setHidden] = useState<Set<string>>(() => new Set())
-  const [hovered, setHovered] = useState<string | null>(null)
-  const [crosshair, setCrosshair] = useState<Map<string, number> | null>(null)
-
-  useEffect(() => {
-    if (!containerRef.current || !datasets.length) return
-    const chart = createChart(containerRef.current, {
-      autoSize: true,
-      layout: { background: { color: 'transparent' }, textColor: CHART.text, attributionLogo: false },
-      grid: { vertLines: { visible: false }, horzLines: { color: CHART.grid } },
-      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
-      rightPriceScale: { borderVisible: false },
-      localization: { priceFormatter: (p: number) => fmt(p) },
-    })
-    const map = new Map<string, ISeriesApi<'Line'>>()
-    for (const d of datasets) {
-      const series = chart.addSeries(LineSeries, {
-        color: d.color,
-        lineWidth: 2,
-        // A line with one or two points is invisible without its dots.
-        pointMarkersVisible: d.points.length < 40,
-        priceLineVisible: false,
-        lastValueVisible: false,
-        crosshairMarkerRadius: 3,
-      })
-      series.setData(d.points)
-      map.set(d.key, series)
-    }
-    seriesRef.current = map
-    chart.subscribeCrosshairMove((param) => {
-      if (!param.time) return setCrosshair(null)
-      const values = new Map<string, number>()
-      for (const [key, series] of map) {
-        const point = param.seriesData.get(series)
-        if (point && 'value' in point) values.set(key, point.value)
-      }
-      setCrosshair(values)
-    })
-    chart.timeScale().fitContent()
-    return () => {
-      chart.remove()
-      seriesRef.current = new Map()
-    }
-  }, [datasets])
-
-  useEffect(() => {
-    datasets.forEach((d) => {
-      seriesRef.current.get(d.key)?.applyOptions({
-        visible: !hidden.has(d.key),
-        color: hovered && hovered !== d.key ? faded(d.color) : d.color,
-        lineWidth: hovered === d.key ? 3 : 2,
-      })
-    })
-  }, [datasets, hidden, hovered])
-
-  const toggle = (key: string) =>
-    setHidden((prev) => {
-      const next = new Set(prev)
-      if (!next.delete(key)) next.add(key)
-      return next
-    })
-  const solo = (key: string) => setHidden(new Set(datasets.map((d) => d.key).filter((k) => k !== key)))
-
-  return (
-    <div>
-      <div className="relative h-64">
-        <div ref={containerRef} className="absolute inset-0" />
-      </div>
-      {datasets.length > 1 && (
-        <div className="mt-3 flex items-start gap-2 border-t pt-3">
-          <div className="flex max-h-28 flex-1 flex-wrap gap-1 overflow-y-auto">
-            {datasets.map((d) => {
-              const off = hidden.has(d.key)
-              const value = crosshair ? crosshair.get(d.key) : d.points.at(-1)?.value
-              return (
-                <button
-                  key={d.key}
-                  type="button"
-                  onClick={() => toggle(d.key)}
-                  onDoubleClick={() => solo(d.key)}
-                  onMouseEnter={() => !off && setHovered(d.key)}
-                  onMouseLeave={() => setHovered(null)}
-                  aria-pressed={!off}
-                  title="Click to hide · double-click to show only this"
-                  className={cn(
-                    'flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] transition-all select-none hover:bg-muted',
-                    off && 'opacity-40',
-                  )}
-                >
-                  <span className="size-2 rounded-full" style={{ background: d.color }} />
-                  <span className="font-medium">{d.key}</span>
-                  {value != null && <span className="text-muted-foreground tabular-nums">{fmt(value)}</span>}
-                </button>
-              )
-            })}
-          </div>
-          <div className="flex shrink-0 gap-1 text-[11px]">
-            <button
-              type="button"
-              className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-              onClick={() => setHidden(new Set())}
-            >
-              All
-            </button>
-            <button
-              type="button"
-              className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-              onClick={() => setHidden(new Set(datasets.map((d) => d.key)))}
-            >
-              None
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
 
 export default function WorkflowData() {
   const navigate = useNavigate()
@@ -335,6 +181,7 @@ export default function WorkflowData() {
             <span className="text-xs text-muted-foreground">
               {data.rows.length} rows · {runCount} run{runCount === 1 ? '' : 's'}
             </span>
+            <BuildDashboard workflowId={id} />
           </div>
 
           {data.numeric.length > 0 && (
@@ -360,5 +207,31 @@ export default function WorkflowData() {
         </>
       )}
     </div>
+  )
+}
+
+/** One click from a workflow's data to a dashboard of it: a stat and a line per number, a top-10, a
+ *  table, a heatmap and its health, with a dropdown for the field that names things. */
+function BuildDashboard({ workflowId }: { workflowId: string }) {
+  const navigate = useNavigate()
+  const build = useMutation({
+    mutationFn: () => createDashboardFromWorkflow(workflowId),
+    onSuccess: (dashboard) => {
+      toast.success(`${dashboard.name} created`)
+      navigate({ to: '/dashboards/$dashboardId', params: { dashboardId: dashboard.id } })
+    },
+    onError: (e: Error) => toast.error(e.message),
+  })
+  return (
+    <Button
+      size="sm"
+      variant="outline"
+      className="ml-auto"
+      onClick={() => build.mutate()}
+      disabled={build.isPending}
+    >
+      <LayoutGridIcon className="size-3.5" />
+      Build a dashboard
+    </Button>
   )
 }

@@ -85,6 +85,38 @@ class WorkflowRequest(BaseModel):
     retain_runs: int = 30
 
 
+class DashboardRequest(BaseModel):
+    name: str
+    description: str | None = None
+    #: [{id, type, title, query, options, layout: {x, y, w, h}}] - see app/services/dashboards.py
+    panels: list = []
+    #: [{name, label, query, field, default}]
+    variables: list = []
+    #: {from, to, refresh}
+    settings: dict = {}
+
+
+class DashboardQueryRequest(BaseModel):
+    query: dict
+    variables: dict = {}
+    time_from: str | None = "now-7d"
+    time_to: str | None = "now"
+
+
+class DashboardDrillRequest(DashboardQueryRequest):
+    #: What was clicked: {group?, bucket?}
+    point: dict = {}
+
+
+class DashboardValuesRequest(DashboardQueryRequest):
+    field: str
+
+
+class DashboardParamsRequest(BaseModel):
+    source: str
+    params: dict = {}
+
+
 class TriggerPreviewRequest(BaseModel):
     trigger: dict
 

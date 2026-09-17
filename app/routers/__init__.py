@@ -29,6 +29,7 @@ from app.routers import (
     backtest,
     backup,
     chat,
+    dashboards,
     events,
     holdings,
     indices,
@@ -80,5 +81,6 @@ for _module in (
     chat,
     agent,
     workflows,
+    dashboards,
 ):
     router.include_router(_module.router)

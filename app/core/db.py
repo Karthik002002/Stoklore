@@ -114,6 +114,20 @@ CREATE TABLE IF NOT EXISTS workflow_series (
 CREATE INDEX IF NOT EXISTS workflow_series_idx
   ON workflow_series (workflow_id, series, collected_at DESC);
 
+-- A dashboard: panels on a 12-column grid, each a query against a source (app/services/dashboards.py)
+-- plus how to draw it. Stored whole, like a workflow's graph - the page reads and writes it in one
+-- piece, and panel/variable tables would buy joins nothing needs.
+CREATE TABLE IF NOT EXISTS dashboards (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  description TEXT,
+  panels JSONB NOT NULL DEFAULT '[]'::jsonb,
+  variables JSONB NOT NULL DEFAULT '[]'::jsonb,
+  settings JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS chat_tool_calls (
   id SERIAL PRIMARY KEY,
   run_id TEXT NOT NULL REFERENCES chat_runs(id) ON DELETE CASCADE,
@@ -1643,13 +1657,20 @@ def list_series_names(workflow_id):
     return [r["series"] for r in rows]
 
 
-def read_series(workflow_id, series, limit=1000, run_id=None):
-    """`run_id` narrows to what one run collected - what a notification click shows."""
+def read_series(workflow_id, series, limit=1000, run_id=None, since=None, until=None):
+    """`run_id` narrows to what one run collected - what a notification click shows. `since` /
+    `until` bound it in time - a dashboard's range."""
     sql = "SELECT run_id, collected_at, row FROM workflow_series WHERE workflow_id = %s AND series = %s"
     params = [workflow_id, series]
     if run_id:
         sql += " AND run_id = %s"
         params.append(run_id)
+    if since:
+        sql += " AND collected_at >= %s"
+        params.append(since)
+    if until:
+        sql += " AND collected_at <= %s"
+        params.append(until)
     with connect() as conn:
         return conn.execute(sql + " ORDER BY collected_at DESC LIMIT %s", (*params, limit)).fetchall()
 
@@ -1688,6 +1709,76 @@ def running_workflow_run(workflow_id):
             "SELECT id FROM chat_runs WHERE workflow_id = %s AND status = 'running' LIMIT 1",
             (workflow_id,),
         ).fetchone()
+
+
+def workflow_runs_between(workflow_id, since, until, limit=2000):
+    """Workflow runs in a window, newest first - one workflow's, or every workflow's."""
+    sql = ("SELECT id, workflow_id, status, created_at, finished_at, error, "
+           "EXTRACT(EPOCH FROM (finished_at - created_at)) AS seconds "
+           "FROM chat_runs WHERE workflow_id IS NOT NULL")
+    params = []
+    if workflow_id:
+        sql += " AND workflow_id = %s"
+        params.append(workflow_id)
+    if since:
+        sql += " AND created_at >= %s"
+        params.append(since)
+    if until:
+        sql += " AND created_at <= %s"
+        params.append(until)
+    with connect() as conn:
+        return conn.execute(sql + " ORDER BY created_at DESC LIMIT %s", (*params, limit)).fetchall()
+
+
+def workflow_notifications_between(workflow_id, since, until, limit=1000):
+    sql = "SELECT * FROM alerts WHERE kind = 'workflow' AND meta ? 'workflow_id'"
+    params = []
+    if workflow_id:
+        sql += " AND meta->>'workflow_id' = %s"
+        params.append(workflow_id)
+    if since:
+        sql += " AND triggered_at >= %s"
+        params.append(since)
+    if until:
+        sql += " AND triggered_at <= %s"
+        params.append(until)
+    with connect() as conn:
+        return conn.execute(sql + " ORDER BY triggered_at DESC LIMIT %s", (*params, limit)).fetchall()
+
+
+# --- dashboards -------------------------------------------------------------------------------------
+
+
+def list_dashboards():
+    with connect() as conn:
+        return conn.execute(
+            "SELECT id, name, description, jsonb_array_length(panels) AS panel_count, "
+            "created_at, updated_at FROM dashboards ORDER BY updated_at DESC"
+        ).fetchall()
+
+
+def get_dashboard(dashboard_id):
+    with connect() as conn:
+        return conn.execute("SELECT * FROM dashboards WHERE id = %s", (dashboard_id,)).fetchone()
+
+
+def save_dashboard(dashboard_id, name, description, panels, variables, settings):
+    """Upsert, whole - the page saves everything at once, so a layout and its panels can't be
+    saved out of step."""
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO dashboards (id, name, description, panels, variables, settings) "
+            "VALUES (%s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, "
+            "panels = EXCLUDED.panels, variables = EXCLUDED.variables, settings = EXCLUDED.settings, "
+            "updated_at = now()",
+            (dashboard_id, name, description, Jsonb(panels), Jsonb(variables), Jsonb(settings)),
+        )
+
+
+def delete_dashboard(dashboard_id):
+    with connect() as conn:
+        return conn.execute("DELETE FROM dashboards WHERE id = %s", (dashboard_id,)).rowcount
 
 
 def delete_workflow(workflow_id):

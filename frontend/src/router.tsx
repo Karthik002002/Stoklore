@@ -1,6 +1,8 @@
 import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router'
 import type { SearchSchemaInput } from '@tanstack/react-router'
 import AgentPage from './agent/AgentPage'
+import DashboardList from './dashboards/DashboardList'
+import DashboardPage from './dashboards/DashboardPage'
 import WorkflowData from './workflows/WorkflowData'
 import WorkflowEditor from './workflows/WorkflowEditor'
 import WorkflowLayout, { WorkflowsShell } from './workflows/WorkflowLayout'
@@ -421,6 +423,58 @@ const barReplayRoute = createRoute({
   component: BarReplay,
 })
 
+// Dashboards: panels over workflow data (and, later, other sources), arranged on a grid. Everything
+// about a view is in the URL - time range, refresh, variable values, edit mode, the panel being edited
+// or shown full screen, and what was drilled into - so a reload or a pasted link shows exactly it.
+const dashboardsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/dashboards',
+  component: DashboardList,
+})
+
+export type DashboardDrill = { panel: string; group?: string; bucket?: string }
+export type DashboardSearch = {
+  from?: string
+  to?: string
+  refresh?: number
+  vars?: Record<string, string>
+  edit?: boolean
+  panel?: string
+  view?: string
+  drill?: DashboardDrill
+}
+
+const stringRecord = (value: unknown) =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).filter(
+          (entry): entry is [string, string] => typeof entry[1] === 'string',
+        ),
+      )
+    : undefined
+
+const dashboardRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/dashboards/$dashboardId',
+  validateSearch: (search: DashboardSearch & SearchSchemaInput): DashboardSearch => {
+    const drill = search.drill as Partial<DashboardDrill> | undefined
+    return {
+      from: text(search.from),
+      to: text(search.to),
+      refresh: numeric(search.refresh),
+      vars: stringRecord(search.vars),
+      edit: search.edit === true || (search.edit as unknown) === 'true' ? true : undefined,
+      panel: text(search.panel),
+      view: text(search.view),
+      drill:
+        drill && typeof drill.panel === 'string'
+          ? { panel: drill.panel, group: text(drill.group), bucket: text(drill.bucket) }
+          : undefined,
+    }
+  },
+  component: DashboardPage,
+})
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   stockRoute,
@@ -454,6 +508,8 @@ const routeTree = rootRoute.addChildren([
   simulationRoute,
   autoBacktestDetailRoute,
   barReplayRoute,
+  dashboardsRoute,
+  dashboardRoute,
 ])
 
 export const router = createRouter({ routeTree })

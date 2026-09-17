@@ -49,7 +49,8 @@ anything.
   may hold unsaved edits.
 - **Runs** — every kept run, filterable. A row opens its diagram. Pressing
   **Run now** while on this tab jumps straight to the new run.
-- **Data** — the collected series, as a chart and a table.
+- **Data** — the collected series, as a chart and a table. **Build a dashboard**
+  turns them into a [dashboard](dashboards.md) in one click.
 - **Notifications** — the inbox and the delivery rules (below).
 
 ## Triggers

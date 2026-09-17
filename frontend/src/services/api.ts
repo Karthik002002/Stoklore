@@ -1588,3 +1588,162 @@ export const createAlert = (payload: AlertRequest) => post('/api/alerts', payloa
 export const acknowledgeAlerts = (ids?: number[]) => post('/api/alerts/acknowledge', ids ?? null)
 
 export const deleteAlert = (id: number) => fetch(`/api/alerts/${id}`, { method: 'DELETE' }).then(liveJson)
+
+// --- dashboards: panels over the app's data, arranged by the user ---------------------------------
+
+export type PanelType =
+  | 'timeseries'
+  | 'stat'
+  | 'table'
+  | 'bar'
+  | 'pie'
+  | 'heatmap'
+  | 'health'
+  | 'notifications'
+export type PanelShape = 'rows' | 'timeseries' | 'aggregate' | 'stat' | 'heatmap'
+export type PanelOp = 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'contains' | 'in'
+export type PanelFilter = { field: string; op: PanelOp; value: string }
+
+/** What a panel asks its source for - see app/services/dashboard_query.py. */
+export type PanelQuery = {
+  source: string
+  params: Record<string, string>
+  shape?: PanelShape
+  filters?: PanelFilter[]
+  /** The numeric field to plot or aggregate; empty counts rows. */
+  value?: string | null
+  group_by?: string | null
+  agg?: 'last' | 'first' | 'avg' | 'sum' | 'min' | 'max' | 'count'
+  bucket?: 'run' | 'hour' | 'day'
+  sort?: 'desc' | 'asc'
+  limit?: number
+}
+
+export type PanelOptions = { unit?: string; decimals?: number; tone?: 'bad' | 'good' }
+
+export type DashboardPanel = {
+  id: string
+  type: PanelType
+  title: string
+  query: PanelQuery
+  options: PanelOptions
+  /** On a 12-column grid. */
+  layout: { x: number; y: number; w: number; h: number }
+}
+
+/** A dashboard-wide dropdown, e.g. $symbol, filled from one field of a source. */
+export type DashboardVariable = {
+  name: string
+  label: string
+  query: { source: string; params: Record<string, string> }
+  field: string
+  default?: string
+}
+
+export type DashboardSettings = { from: string; to: string; refresh: number }
+
+export type Dashboard = {
+  id: string
+  name: string
+  description: string | null
+  panels: DashboardPanel[]
+  variables: DashboardVariable[]
+  settings: DashboardSettings
+  created_at: string
+  updated_at: string
+}
+
+export type DashboardSummary = {
+  id: string
+  name: string
+  description: string | null
+  panel_count: number
+  created_at: string
+  updated_at: string
+}
+
+export type DashboardSource = {
+  id: string
+  label: string
+  description: string
+  time_field: string
+  params: { name: string; label: string; required: boolean }[]
+}
+
+export type FieldInfo = { name: string; type: 'number' | 'text' | 'time' }
+export type ShapedRows = { rows: Record<string, unknown>[]; columns: FieldInfo[]; total: number }
+export type ShapedSeries = { series: { key: string; points: { time: string; value: number }[] }[] }
+export type ShapedAggregate = { items: { key: string; value: number; count: number }[]; total: number }
+export type ShapedStat = {
+  value: number | null
+  previous: number | null
+  change: number | null
+  at: string | null
+  spark: { time: string; value: number }[]
+}
+export type ShapedHeatmap = { x: string[]; y: string[]; cells: { x: string; y: string; value: number }[] }
+
+/** The "All" choice of a variable - a filter on it drops out rather than matching nothing. */
+export const DASHBOARD_ALL = '__all__'
+
+export type PanelRequest = {
+  query: PanelQuery
+  variables: Record<string, string>
+  time_from: string | null
+  time_to: string | null
+}
+
+const dashboardPost = <T>(url: string, body: unknown) =>
+  fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(json<T>)
+
+export const getDashboards = () => fetch('/api/dashboards').then(json<DashboardSummary[]>)
+
+export const getDashboard = (id: string) => fetch(`/api/dashboards/${id}`).then(json<Dashboard>)
+
+export type DashboardInput = Pick<Dashboard, 'name' | 'description' | 'panels' | 'variables' | 'settings'>
+
+export const saveDashboard = (id: string, body: DashboardInput) =>
+  fetch(`/api/dashboards/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(json<Dashboard>)
+
+export const createDashboard = (body: DashboardInput) => dashboardPost<Dashboard>('/api/dashboards', body)
+
+export const deleteDashboard = (id: string) => fetch(`/api/dashboards/${id}`, { method: 'DELETE' }).then(json)
+
+export const getDashboardSources = () =>
+  fetch('/api/dashboards/sources').then(
+    json<{ sources: DashboardSource[]; panel_types: PanelType[]; shapes: Record<PanelType, PanelShape> }>,
+  )
+
+export const getDashboardParams = (source: string, params: Record<string, string>) =>
+  dashboardPost<Record<string, { value: string; label: string }[]>>('/api/dashboards/params', {
+    source,
+    params,
+  })
+
+export const getDashboardFields = (request: PanelRequest) =>
+  dashboardPost<FieldInfo[]>('/api/dashboards/fields', request)
+
+export const getDashboardValues = (request: PanelRequest & { field: string }) =>
+  dashboardPost<string[]>('/api/dashboards/values', request)
+
+export const queryPanel = <T>(request: PanelRequest) => dashboardPost<T>('/api/dashboards/query', request)
+
+export const drillPanel = (request: PanelRequest & { point: { group?: string; bucket?: string } }) =>
+  dashboardPost<ShapedRows>('/api/dashboards/drill', request)
+
+export const getDashboardTemplates = () =>
+  fetch('/api/dashboards/templates').then(json<{ id: string; name: string; description: string }[]>)
+
+export const createDashboardFromTemplate = (templateId: string) =>
+  dashboardPost<Dashboard>(`/api/dashboards/templates/${templateId}`, {})
+
+export const createDashboardFromWorkflow = (workflowId: string) =>
+  dashboardPost<Dashboard>(`/api/dashboards/from-workflow/${workflowId}`, {})

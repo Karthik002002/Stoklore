@@ -19,6 +19,7 @@ import {
   SettingsIcon,
   SunIcon,
   WorkflowIcon,
+  LayoutGridIcon,
   TrendingUpIcon,
   UserRoundIcon,
   UsersIcon,
@@ -39,7 +40,7 @@ import { useTheme } from '@/lib/theme'
 import { openProfile } from './Profile'
 import { openWatchlists } from './WatchlistManager'
 import type { LinkProps } from '@tanstack/react-router'
-import { addStock, getWorkflows, searchStocks } from '@/services/api'
+import { addStock, getDashboards, getWorkflows, searchStocks } from '@/services/api'
 
 // Every top-level route in router.jsx that can be reached without a parameter. The ones that
 // can't (/stock/:exchange/:symbol, /paper/:symbol, /paper/trade/:id, /live/:symbol,
@@ -58,6 +59,7 @@ const PAGES: { icon: typeof LayoutDashboardIcon; label: string; to: LinkProps['t
   { icon: BellIcon, label: 'Alerts', to: '/alerts' },
   { icon: BotIcon, label: 'Agent', to: '/agent' },
   { icon: WorkflowIcon, label: 'Workflows', to: '/workflows' },
+  { icon: LayoutGridIcon, label: 'Dashboards', to: '/dashboards' },
 ]
 
 // Matches ManualBacktesting's real `view` tabs (router.jsx's backtestingRoute) - the old 'tab'
@@ -139,6 +141,11 @@ export default function CommandPalette() {
   const exactStockMatch = stockMatches.some((s) => s.symbol === stockQuery)
 
   // Saved workflows by name, so one is two keystrokes away. Only fetched while the palette is open.
+  const { data: dashboards = [] } = useQuery({
+    queryKey: ['dashboards'],
+    queryFn: getDashboards,
+    enabled: open,
+  })
   const { data: workflows = [] } = useQuery({ queryKey: ['workflows'], queryFn: getWorkflows, enabled: open })
 
   // Destinations come from the PAGES/BACKTEST_TABS tables above rather than being written at each
@@ -292,6 +299,23 @@ export default function CommandPalette() {
                   </CommandItem>
                 ))}
               </CommandGroup>
+              {dashboards.length > 0 && (
+                <CommandGroup heading="Dashboards">
+                  {dashboards.map((d) => (
+                    <CommandItem
+                      key={d.id}
+                      value={`Dashboard > ${d.name} ${d.id}`}
+                      onSelect={() => {
+                        navigate({ to: '/dashboards/$dashboardId', params: { dashboardId: d.id } })
+                        close()
+                      }}
+                    >
+                      <LayoutGridIcon className="size-4" />
+                      Dashboard &gt; {d.name}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
               <CommandGroup heading="Paper Trading">
                 {PAPER_TABS.map((t) => (
                   <CommandItem key={t.view} value={t.label} onSelect={() => goTo('/paper', { view: t.view })}>

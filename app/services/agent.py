@@ -161,9 +161,16 @@ def _tool_check_watch_rule(name, symbol=None):
 
 def _tool_run_screen(url, max_pages=4):
     """A screener.in screen's matching companies, as rows keyed by column. Returns the error text
-    rather than raising for a bad URL, so the model can tell the user what to fix."""
+    rather than raising for a bad URL, so the model can tell the user what to fix.
+
+    The login wall is the exception: it raises, so a workflow FAILS on it. Returned as text, a
+    screen step went green with a sentence where its rows should be, the run counted as a success,
+    and the only sign was an empty alert - the failure mode this whole feature exists to avoid.
+    """
     try:
         return scraper.get_screen(url, max_pages=int(max_pages), session_cookie=db.get_screener_cookie())
+    except scraper.ScreenLoginRequired:
+        raise
     except ValueError as e:
         return str(e)
 

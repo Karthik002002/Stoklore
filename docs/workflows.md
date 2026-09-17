@@ -99,6 +99,11 @@ earlier run ends instead of stacking copies. The scheduler ticks **every
 minute**, the shortest an interval can be; with nothing due, a tick is one
 indexed query.
 
+**When the model is unreachable.** An agent step falls back to the model in
+Settings → **Model → Fallback for unattended runs**, and the run says which model
+answered. Without a fallback the step fails, naming the setting — see
+[Model Settings](model-settings.md#a-fallback-model-for-unattended-runs).
+
 ### What a trigger passes in
 
 Event triggers hand their details to the **trigger node**, so the rest of the

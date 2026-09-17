@@ -119,6 +119,58 @@ def test_ema_crossover_always_answers_with_the_symbol():
     assert "52 daily bars" in result["error"], "says what is missing, as data rather than prose"
 
 
+# --- a standby model, so one unreachable provider doesn't end every armed workflow ----------------
+
+
+def _models(*failing):
+    """Fakes _generate: every model answers except the ones named."""
+    asked = []
+
+    def fake(prompt, model):
+        asked.append(model)
+        if model in failing:
+            raise RuntimeError(f"{model} request failed via LiteLLM: Connection error.")
+        return f"[{model}] {prompt}"
+
+    llm._generate = fake
+    return asked
+
+
+def test_generate_uses_the_default_model_when_it_works():
+    asked = _models()
+    assert llm.generate("hi", "litellm/gpt-4o-mini", "ollama/local") == ("[litellm/gpt-4o-mini] hi", "litellm/gpt-4o-mini")
+    assert asked == ["litellm/gpt-4o-mini"], "a working model is never swapped out underneath you"
+
+
+def test_generate_falls_back_when_the_default_is_unreachable():
+    asked = _models("litellm/gpt-4o-mini")
+    text, used = llm.generate("hi", "litellm/gpt-4o-mini", "ollama/local")
+
+    assert (text, used) == ("[ollama/local] hi", "ollama/local")
+    assert asked == ["litellm/gpt-4o-mini", "ollama/local"]
+
+
+def test_generate_says_what_to_do_when_there_is_no_fallback():
+    _models("litellm/gpt-4o-mini")
+    for fallback in (None, "", "litellm/gpt-4o-mini"):  # unset, or pointed at the broken one
+        try:
+            llm.generate("hi", "litellm/gpt-4o-mini", fallback)
+        except RuntimeError as e:
+            assert "Settings → Model" in str(e), str(e)
+        else:
+            raise AssertionError("a model that cannot answer must fail the step")
+
+
+def test_generate_reports_both_when_the_fallback_fails_too():
+    _models("litellm/gpt-4o-mini", "ollama/local")
+    try:
+        llm.generate("hi", "litellm/gpt-4o-mini", "ollama/local")
+    except RuntimeError as e:
+        assert "litellm/gpt-4o-mini failed" in str(e) and "ollama/local failed too" in str(e), str(e)
+    else:
+        raise AssertionError("both models gone is a failure")
+
+
 if __name__ == "__main__":
     test_agent_executes_tool_then_answers()
     test_agent_survives_tool_errors_and_caps_rounds()
@@ -126,5 +178,9 @@ if __name__ == "__main__":
     test_ema_crossover_syncs_a_symbol_with_no_history()
     test_ema_crossover_refreshes_only_stale_history()
     test_ema_crossover_always_answers_with_the_symbol()
+    test_generate_uses_the_default_model_when_it_works()
+    test_generate_falls_back_when_the_default_is_unreachable()
+    test_generate_says_what_to_do_when_there_is_no_fallback()
+    test_generate_reports_both_when_the_fallback_fails_too()
     print("all checks passed")
 

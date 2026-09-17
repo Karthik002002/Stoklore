@@ -128,6 +128,30 @@ def _generate(prompt, model):
     return _omniroute_chat([{"role": "user", "content": prompt}], model)["content"].strip()
 
 
+def generate(prompt, model, fallback=None):
+    """One completion, with a standby model for runs nobody is watching. Returns (text, model_used).
+
+    A workflow at 15:00 is pinned to whatever the default model is, so an unreachable provider - a
+    proxy without egress, a laptop off the VPN, Ollama not running - silently ends every armed
+    workflow at its agent step. The fallback is only reached when the first model FAILS, so a
+    working default is never quietly swapped out underneath you.
+    """
+    try:
+        return _generate(prompt, model), model
+    except Exception as first:
+        if not fallback or fallback == model:
+            raise RuntimeError(
+                f"{first} No fallback model is set - pick one in Settings → Model so unattended runs "
+                "keep working when this one can't be reached."
+            ) from first
+        try:
+            return _generate(prompt, fallback), fallback
+        except Exception as second:
+            raise RuntimeError(
+                f"{model} failed ({first}) and the fallback {fallback} failed too ({second})."
+            ) from second
+
+
 def _chat(messages, model):
     """Multi-turn chat, routed to Ollama's /api/chat or an OpenAI-compatible chat call."""
     if model.startswith("ollama/"):

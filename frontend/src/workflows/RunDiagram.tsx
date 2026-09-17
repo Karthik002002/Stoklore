@@ -323,8 +323,23 @@ const json = (v: unknown) => (typeof v === 'string' ? v : JSON.stringify(v, null
 /** A failure the app can walk you out of. The screener login wall is the one that matters today: it
  *  is not a broken workflow, it is a missing session - and the place to paste one is two clicks away,
  *  so the drawer offers the door rather than only the diagnosis. */
-const SETTINGS_FIX = (error?: string | null) =>
-  error && /screener\.in is asking for a login|Settings → Screener/i.test(error)
+const SETTINGS_FIX = (...text: (string | null | undefined)[]) => {
+  const error = text.filter(Boolean).join(' ')
+  if (
+    /failed via LiteLLM|Ollama is unavailable|No fallback model is set|isn't configured - add its proxy/i.test(
+      error,
+    )
+  ) {
+    return {
+      tab: 'model',
+      title: "The model couldn't be reached, so the step never ran",
+      body: /No fallback model is set/i.test(error)
+        ? 'Pick a fallback model — ideally a local one — and unattended runs keep working when the default provider is down.'
+        : 'Check the provider in Settings → Model, or set a fallback model so runs survive an unreachable one.',
+      action: 'Open Settings → Model',
+    }
+  }
+  return error && /screener\.in is asking for a login|Settings → Screener/i.test(error)
     ? {
         tab: 'screener',
         title: 'screener.in wants a login, not a fix to this workflow',
@@ -334,6 +349,7 @@ const SETTINGS_FIX = (error?: string | null) =>
         action: 'Open Settings → Screener',
       }
     : null
+}
 
 function NodeDrawer({ node, onClose }: { node: WorkflowNode; onClose: () => void }) {
   const navigate = useNavigate()
@@ -341,7 +357,7 @@ function NodeDrawer({ node, onClose }: { node: WorkflowNode; onClose: () => void
   const status = statusOf(d)
   const Icon = KIND_ICON[d.kind] ?? WrenchIcon
   const args = Object.entries(d.args ?? {})
-  const fix = SETTINGS_FIX(d.error)
+  const fix = SETTINGS_FIX(d.error, typeof d.result === 'string' ? d.result : undefined)
   const itemErrors = Array.isArray(d.result)
     ? d.result.filter((r) => typeof r === 'object' && r !== null && 'error' in r).length
     : 0

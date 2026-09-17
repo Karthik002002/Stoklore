@@ -1419,6 +1419,16 @@ def set_last_digest_date(iso_date):
     _set_setting("last_workflow_digest_date", iso_date)
 
 
+def get_fallback_model():
+    """The model an unattended run falls back to when the default one fails. '' = none, and a run
+    that loses its model simply fails."""
+    return _get_setting("fallback_model", "")
+
+
+def set_fallback_model(model):
+    _set_setting("fallback_model", model or "")
+
+
 def get_screener_cookie():
     """The user's own screener.in session cookie, or ''. Screens are public only for the first few
     an anonymous visitor opens; after that screener answers with its register page."""

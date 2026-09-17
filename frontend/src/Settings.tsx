@@ -57,6 +57,8 @@ import {
   deleteWatchRule,
   deleteStockMaster,
   getActiveModel,
+  getFallbackModel,
+  setFallbackModel,
   getActivitySettings,
   getBrokerConfig,
   getBulkCollectStatus,
@@ -95,6 +97,16 @@ function ModelTab() {
   const queryClient = useQueryClient()
   const { data: models } = useQuery({ queryKey: ['models'], queryFn: getModels })
   const { data: active } = useQuery({ queryKey: ['activeModel'], queryFn: getActiveModel })
+  const { data: fallback } = useQuery({ queryKey: ['fallbackModel'], queryFn: getFallbackModel })
+
+  const saveFallback = useMutation({
+    mutationFn: setFallbackModel,
+    onSuccess: (_data, model) => {
+      queryClient.setQueryData(['fallbackModel'], { model })
+      toast.success(model ? `Unattended runs fall back to ${model}` : 'Fallback model cleared')
+    },
+    onError: (e) => toast.error(e.message),
+  })
 
   const save = useMutation({
     mutationFn: setActiveModel,
@@ -125,6 +137,34 @@ function ModelTab() {
           Used for scans, reports, and new chats. Any local Llama, OmniRoute, or LiteLLM model supports the
           tool-calling chatbot (scraping, scans, price lookups); other providers fall back to plain
           retrieval-augmented answers.
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Fallback for unattended runs</p>
+        <Select
+          value={fallback?.model || 'none'}
+          onValueChange={(model) => saveFallback.mutate(model === 'none' ? '' : String(model))}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue placeholder="None" />
+          </SelectTrigger>
+          <SelectContent className="max-h-72">
+            <SelectItem value="none">None — a run fails if the default is unreachable</SelectItem>
+            {(models ?? [])
+              .filter((m) => m.id !== active?.model)
+              .map((m) => (
+                <SelectItem key={m.id} value={m.id}>
+                  {m.label}
+                </SelectItem>
+              ))}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-muted-foreground">
+          Only used when the default model fails — a proxy without egress, a provider that's down, Ollama not
+          running. A workflow runs at 09:15 with nobody watching, so without a fallback one unreachable
+          provider ends every armed workflow at its agent step. A local model is the dependable choice here.
+          The run says which model answered.
         </p>
       </div>
 

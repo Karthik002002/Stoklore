@@ -34,6 +34,18 @@ def set_active_model(req: ActiveModelRequest):
     return {"model": req.model}
 
 
+@router.get("/api/settings/fallback-model")
+def get_fallback_model():
+    """The standby model for unattended runs - empty when there is none."""
+    return {"model": db.get_fallback_model()}
+
+
+@router.put("/api/settings/fallback-model")
+def set_fallback_model(req: ActiveModelRequest):
+    db.set_fallback_model(req.model)
+    return {"model": req.model}
+
+
 @router.get("/api/settings/litellm")
 def get_litellm_config():
     # never echo the api key back - the UI shows "•••• saved" instead of the real value

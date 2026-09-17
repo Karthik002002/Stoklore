@@ -182,7 +182,12 @@ def _run_node(node, context, model, run=None):
 
     if kind == "agent":
         prompt = resolve(data.get("prompt") or "", context)
-        return llm._generate(prompt, model)
+        text, used = llm.generate(prompt, model, (run or {}).get("fallback_model"))
+        if run is not None and used != model:
+            # Said out loud in the run's own reply: a different model answered, and that changes
+            # what the answer is worth.
+            run.setdefault("fell_back_to", set()).add(used)
+        return text
 
     if kind == "condition":
         left = resolve(data.get("left") or "", context)
@@ -226,7 +231,8 @@ def execute(workflow, run_id=None, on_node=None, payload=None):
 
     model = db.get_active_model()
     context, summary = {}, []
-    run = {"workflow": workflow, "run_id": run_id, "payload": payload or {}}
+    run = {"workflow": workflow, "run_id": run_id, "payload": payload or {},
+           "fallback_model": db.get_fallback_model()}
 
     collected = []
 
@@ -294,6 +300,8 @@ def execute(workflow, run_id=None, on_node=None, payload=None):
         elif kind == "agent":
             summary.append(_stringify(result))
 
+    if run.get("fell_back_to"):
+        summary.append(f"(answered by {', '.join(sorted(run['fell_back_to']))} - {model} wasn't reachable)")
     text = "\n\n".join(s for s in summary if s)
     if not text:
         # Every branch was gated off. Saying so beats "Workflow finished", which reads like it

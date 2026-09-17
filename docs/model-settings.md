@@ -94,3 +94,28 @@ catalog of known model ids for that provider (~200 for OpenAI). The
 all is added on the backend side, inside `llm.get_models()` — a plain
 `GET /models` without it would just show the literal string `"openai/*"`
 as one entry instead of the ~200 real ids.
+
+## A fallback model for unattended runs
+
+Settings → **Model** has a second picker: **Fallback for unattended runs**.
+
+A workflow runs at 09:15 with nobody watching, pinned to whatever the default
+model is. When that model can't be reached — a proxy with no egress, a provider
+having a bad ten minutes, Ollama not running — every armed workflow dies at its
+agent step, and the only sign is an alert that never arrived. That is what
+happened to a 15:00 run here: `litellm/gpt-4o-mini` answered fine minutes later,
+so the outage was transient and the schedule was simply unlucky.
+
+- The fallback is tried **only when the default fails**. A working default is
+  never quietly swapped out underneath you.
+- **A local model is the dependable choice**: it's up whenever the machine is.
+- The run says which model answered — *"(answered by ollama/… — litellm/gpt-4o-mini
+  wasn't reachable)"* — because a different model means a different answer, and
+  that belongs in the record rather than hidden.
+- With no fallback set, the step fails with the fix named: *"No fallback model is
+  set - pick one in Settings → Model."* On a run's diagram, that step's drawer
+  offers **Open Settings → Model**.
+
+Checked in `tests/test_agent.py`: the default is used when it works, the fallback
+only on failure, a missing fallback names the setting, and both failing reports
+both.

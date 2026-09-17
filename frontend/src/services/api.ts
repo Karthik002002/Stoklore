@@ -500,6 +500,17 @@ export const getModels = () => fetch('/api/models').then(json<ModelOption[]>)
 
 export const getActiveModel = () => fetch('/api/settings/active-model').then(json<{ model: string | null }>)
 
+/** The standby model an unattended run uses when the default one can't be reached. '' = none. */
+export const getFallbackModel = () =>
+  fetch('/api/settings/fallback-model').then(json<{ model: string | null }>)
+
+export const setFallbackModel = (model: string) =>
+  fetch('/api/settings/fallback-model', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model }),
+  }).then(json<{ model: string }>)
+
 export const setActiveModel = (model: string) =>
   fetch('/api/settings/active-model', {
     method: 'PUT',

@@ -96,6 +96,11 @@ class DashboardRequest(BaseModel):
     settings: dict = {}
 
 
+class HomeBoardRequest(BaseModel):
+    #: [{id, dashboard_id, panel_id | None, layout: {x, y, w, h}}]
+    items: list = []
+
+
 class DashboardQueryRequest(BaseModel):
     query: dict
     variables: dict = {}

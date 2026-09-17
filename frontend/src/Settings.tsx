@@ -3,7 +3,6 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { IconSettings } from '@tabler/icons-react'
 import {
   BookmarkIcon,
   CheckCircle2Icon,
@@ -17,6 +16,7 @@ import {
   XIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { usePageTitle } from '@/lib/usePageTitle'
 import { BrokerLogo } from '@/BrokerLogo'
 import ShortcutsTab from '@/ShortcutsTab'
 import TradeAccountsTab from '@/TradeAccountsTab'
@@ -27,14 +27,6 @@ import { Badge } from '@/components/ui/badge'
 import { TextAreaField, TextField } from '@/components/form'
 import { watchRuleSchema } from '@/lib/schemas'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -1453,109 +1445,94 @@ function StocksMasterTab() {
 }
 
 export default function Settings() {
-  const { settings } = useSearch({ strict: false })
-  const navigate = useNavigate()
+  const { tab } = useSearch({ from: '/settings' })
+  const navigate = useNavigate({ from: '/settings' })
+  usePageTitle('Settings')
 
-  // The dialog is a search param on whatever route is showing, so the reducer can't be checked
-  // against one route's schema - see CommandPalette's openSettings, which does the same thing.
-  const setOpen = (open: boolean) =>
-    navigate({
-      search: ((prev: Record<string, unknown>) => ({
-        ...prev,
-        settings: open ? (settings ?? 'model') : undefined,
-      })) as never,
-      replace: true,
-    })
-  const setTab = (tab: string) =>
-    navigate({
-      search: ((prev: Record<string, unknown>) => ({ ...prev, settings: tab })) as never,
-      replace: true,
-    })
+  const setTab = (next: string) =>
+    navigate({ search: (prev) => ({ ...prev, tab: next as typeof tab }), replace: true })
 
   return (
-    <Dialog open={!!settings} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Settings" />}>
-        <IconSettings className="size-4" />
-      </DialogTrigger>
-      <DialogContent className="flex w-[70%] h-[80%] !max-w-[70%] flex-col overflow-hidden">
-        <DialogHeader className="shrink-0">
-          <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>Models and connections used across scans, reports, and chat.</DialogDescription>
-        </DialogHeader>
+    <div className="flex h-[calc(100vh-1.5rem)] flex-col gap-3 overflow-hidden rounded-xl border bg-card p-4">
+      <div className="shrink-0">
+        <h1 className="font-medium">Settings</h1>
+        <p className="text-sm text-muted-foreground">
+          Models and connections used across scans, reports, and chat.
+        </p>
+      </div>
 
-        <Tabs
-          value={settings ?? 'model'}
-          onValueChange={setTab}
-          orientation="vertical"
-          className="min-h-0 h-full flex-1 flex-row gap-4"
-        >
-          <TabsList className="w-44 shrink-0 self-start !h-full">
-            <TabsIndicator />
-            <TabsTab value="model">Model</TabsTab>
-            <TabsTab value="litellm">LiteLLM</TabsTab>
-            <TabsTab value="omniroute">OmniRoute</TabsTab>
-            <TabsTab value="cogencis">Cogencis</TabsTab>
-            <TabsTab value="telegram">Telegram</TabsTab>
-            <TabsTab value="screener">Screener</TabsTab>
-            <TabsTab value="broker">Broker</TabsTab>
-            <TabsTab value="rules">Watch rules</TabsTab>
-            <TabsTab value="data">Collect data</TabsTab>
-            <TabsTab value="stocks">Manage stocks</TabsTab>
-            <TabsTab value="activity">Activity</TabsTab>
-            <TabsTab value="shortcuts">Shortcuts</TabsTab>
-            <TabsTab value="backtesting">Backtesting</TabsTab>
-            <TabsTab value="accounts">Trade accounts</TabsTab>
-            <TabsTab value="paper-accounts">Paper accounts</TabsTab>
-          </TabsList>
-          <div className="min-w-0 flex-1 overflow-y-auto pr-1">
-            <TabsPanel value="model">
-              <ModelTab />
-            </TabsPanel>
-            <TabsPanel value="omniroute">
-              <OmniRouteTab />
-            </TabsPanel>
-            <TabsPanel value="litellm">
-              <LiteLLMTab />
-            </TabsPanel>
-            <TabsPanel value="cogencis">
-              <CogencisTab />
-            </TabsPanel>
-            <TabsPanel value="telegram">
-              <TelegramTab />
-            </TabsPanel>
-            <TabsPanel value="screener">
-              <ScreenerTab />
-            </TabsPanel>
-            <TabsPanel value="broker">
-              <BrokerTab />
-            </TabsPanel>
-            <TabsPanel value="rules">
-              <WatchRulesTab />
-            </TabsPanel>
-            <TabsPanel value="data">
-              <DataCollectionTab />
-            </TabsPanel>
-            <TabsPanel value="stocks">
-              <StocksMasterTab />
-            </TabsPanel>
-            <TabsPanel value="activity">
-              <ActivityTab />
-            </TabsPanel>
-            <TabsPanel value="shortcuts">
-              <ShortcutsTab />
-            </TabsPanel>
-            <TabsPanel value="backtesting">
-              <ManualBacktestTab />
-            </TabsPanel>
-            <TabsPanel value="accounts">
-              <TradeAccountsTab kind="journal" />
-            </TabsPanel>
-            <TabsPanel value="paper-accounts">
-              <TradeAccountsTab kind="paper" />
-            </TabsPanel>
-          </div>
-        </Tabs>
-      </DialogContent>
-    </Dialog>
+      <Tabs
+        value={tab}
+        onValueChange={setTab}
+        orientation="vertical"
+        className="min-h-0 h-full flex-1 flex-row gap-4"
+      >
+        <TabsList className="w-44 shrink-0 self-start !h-full">
+          <TabsIndicator />
+          <TabsTab value="model">Model</TabsTab>
+          <TabsTab value="litellm">LiteLLM</TabsTab>
+          <TabsTab value="omniroute">OmniRoute</TabsTab>
+          <TabsTab value="cogencis">Cogencis</TabsTab>
+          <TabsTab value="telegram">Telegram</TabsTab>
+          <TabsTab value="screener">Screener</TabsTab>
+          <TabsTab value="broker">Broker</TabsTab>
+          <TabsTab value="rules">Watch rules</TabsTab>
+          <TabsTab value="data">Collect data</TabsTab>
+          <TabsTab value="stocks">Manage stocks</TabsTab>
+          <TabsTab value="activity">Activity</TabsTab>
+          <TabsTab value="shortcuts">Shortcuts</TabsTab>
+          <TabsTab value="backtesting">Backtesting</TabsTab>
+          <TabsTab value="accounts">Trade accounts</TabsTab>
+          <TabsTab value="paper-accounts">Paper accounts</TabsTab>
+        </TabsList>
+        <div className="min-w-0 flex-1 overflow-y-auto pr-1">
+          <TabsPanel value="model">
+            <ModelTab />
+          </TabsPanel>
+          <TabsPanel value="omniroute">
+            <OmniRouteTab />
+          </TabsPanel>
+          <TabsPanel value="litellm">
+            <LiteLLMTab />
+          </TabsPanel>
+          <TabsPanel value="cogencis">
+            <CogencisTab />
+          </TabsPanel>
+          <TabsPanel value="telegram">
+            <TelegramTab />
+          </TabsPanel>
+          <TabsPanel value="screener">
+            <ScreenerTab />
+          </TabsPanel>
+          <TabsPanel value="broker">
+            <BrokerTab />
+          </TabsPanel>
+          <TabsPanel value="rules">
+            <WatchRulesTab />
+          </TabsPanel>
+          <TabsPanel value="data">
+            <DataCollectionTab />
+          </TabsPanel>
+          <TabsPanel value="stocks">
+            <StocksMasterTab />
+          </TabsPanel>
+          <TabsPanel value="activity">
+            <ActivityTab />
+          </TabsPanel>
+          <TabsPanel value="shortcuts">
+            <ShortcutsTab />
+          </TabsPanel>
+          <TabsPanel value="backtesting">
+            <ManualBacktestTab />
+          </TabsPanel>
+          <TabsPanel value="accounts">
+            <TradeAccountsTab kind="journal" />
+          </TabsPanel>
+          <TabsPanel value="paper-accounts">
+            <TradeAccountsTab kind="paper" />
+          </TabsPanel>
+        </div>
+      </Tabs>
+    </div>
   )
 }

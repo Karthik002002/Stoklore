@@ -147,7 +147,7 @@ export default function Holdings() {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => navigate({ search: (prev) => ({ ...prev, settings: 'broker', broker }) })}
+            onClick={() => navigate({ to: '/settings', search: { tab: 'broker', broker } })}
           >
             Configure
           </Button>

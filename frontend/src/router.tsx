@@ -24,7 +24,8 @@ import PaperTradeDetail from './paper/PaperTradeDetail'
 import LiveTrading from './live/LiveTrading'
 import LivePositionChart from './live/LivePositionChart'
 import StockDetail from './StockDetail'
-import StocksList from './StocksList'
+import Home from './Home'
+import Settings from './Settings'
 import Shareholding from './Shareholding'
 import TopNews from './TopNews'
 import TradeSimulation from './TradeSimulation'
@@ -60,11 +61,11 @@ const SETTINGS_TABS = [
   'paper-accounts',
 ] as const
 
-// Lives on the root route (not a leaf) since the Settings dialog is mounted in App.jsx's layout,
-// on top of every page - any page can open it to a specific tab via the same `settings` param,
-// and `broker` here is the one shared by Holdings' own broker picker (see holdingsRoute below),
-// so Settings' Broker sub-tabs and Holdings' broker selection are always in sync.
-type SettingsTab = (typeof SETTINGS_TABS)[number]
+// Settings is its own page (/settings?tab=). `settings` stays on the root route only so a link from
+// when it was a dialog on every page (`/holdings?settings=broker`) still lands - beforeLoad below
+// redirects it. `broker` is shared by Holdings' own broker picker (see holdingsRoute below), so
+// Settings' Broker sub-tabs and Holdings' broker selection are always in sync.
+export type SettingsTab = (typeof SETTINGS_TABS)[number]
 type Broker = 'dhan' | 'kite'
 /** Which listing of a symbol a stock page is showing. */
 export type Exchange = 'NSE' | 'BSE'
@@ -81,15 +82,29 @@ const rootRoute = createRootRoute({
     settings: oneOf(SETTINGS_TABS, search.settings) ? search.settings : undefined,
     broker: search.broker === 'kite' ? 'kite' : 'dhan',
   }),
+  beforeLoad: ({ search }) => {
+    if (search.settings)
+      throw redirect({ to: '/settings', search: { tab: search.settings, broker: search.broker } })
+  },
+})
+
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings',
+  validateSearch: (search: { tab?: SettingsTab } & SearchSchemaInput): { tab: SettingsTab } => ({
+    tab: oneOf(SETTINGS_TABS, search.tab) ? search.tab : 'model',
+  }),
+  component: Settings,
 })
 
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  validateSearch: (search): { list?: string } => ({
+  validateSearch: (search): { list?: string; tab?: 'home' | 'board' } => ({
     list: typeof search.list === 'string' && search.list ? search.list : undefined,
+    tab: search.tab === 'home' || search.tab === 'board' ? search.tab : undefined,
   }),
-  component: StocksList,
+  component: Home,
 })
 
 // A stock is identified by exchange + symbol, not by symbol alone: the same ticker can be listed
@@ -477,6 +492,7 @@ const dashboardRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  settingsRoute,
   stockRoute,
   legacyStockRoute,
   eventsRoute,

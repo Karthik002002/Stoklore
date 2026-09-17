@@ -236,6 +236,17 @@ row"** badge for the same reason.
   and a fan-out over a watchlist can genuinely outlast the gap between two ticks.
 - **A per-item failure inside a fan-out** is that item's result, not the end of
   the run. Seven of eight symbols answering is a useful run.
+  **When every item fails, the node fails** (`every item failed - first: …`):
+  nothing answered is an outage, not data, and handing a list of errors to the
+  next step let it decide nothing had moved.
+- **No live price is an error, not a blank.** `get_price` used to return
+  `{price: null, changePercent: null}` when Yahoo and moneycontrol were both
+  unreachable, and the quote cache kept that blank for 15 minutes. A
+  *Watchlist big moves* run then priced eight stocks from cache in 5 ms, all
+  null, and the model replied `NOTHING_TO_REPORT`. Now a quote with every field
+  empty is never cached — and one already in the cache counts as a miss, so blanks
+  stored before the fix are refetched instead of served — and `get_price` fails
+  with `no live price for SYMBOL`.
 
 ## The daily digest
 

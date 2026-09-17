@@ -154,4 +154,13 @@ assert dashboards.validate(bare["panels"], bare["variables"]) is None and {p["ty
 assert dashboards.validate([{"id": "a", "type": "stat", "query": {"source": "workflow_runs"}, "layout": {"x": 10, "y": 0, "w": 4, "h": 2}}], []), \
     "a panel past the 12th column is refused"
 
-print("ok - dashboards: variables, time, filters, rows, timeseries, aggregate, stat, heatmap, drill, templates, from-workflow")
+# The home board: pins reference a dashboard, or one panel of it, on the same 12-column grid.
+pin = {"id": "p1", "dashboard_id": "d1", "panel_id": "a", "layout": {"x": 0, "y": 0, "w": 6, "h": 8}}
+assert dashboards.validate_home([pin, {**pin, "id": "p2", "panel_id": None}]) is None, "a panel pin and a dashboard pin"
+assert dashboards.validate_home([pin, pin]), "pin ids are unique"
+assert dashboards.validate_home([{**pin, "dashboard_id": ""}]), "a pin needs a dashboard"
+assert dashboards.validate_home([{**pin, "layout": {"x": 8, "y": 0, "w": 6, "h": 8}}]), "a pin past the 12th column is refused"
+assert dashboards.validate_home([{**pin, "layout": {}}]), "a pin needs a position"
+assert dashboards.validate_home("nope"), "items must be a list"
+
+print("ok - dashboards: variables, time, filters, rows, timeseries, aggregate, stat, heatmap, drill, templates, from-workflow, home board")

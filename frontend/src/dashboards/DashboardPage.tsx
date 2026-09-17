@@ -10,6 +10,8 @@ import {
   CopyIcon,
   Maximize2Icon,
   PencilIcon,
+  PinIcon,
+  PinOffIcon,
   PlusIcon,
   RefreshCwIcon,
   SaveIcon,
@@ -42,6 +44,7 @@ import PanelEditor from './PanelEditor'
 import { PanelBody } from './panels'
 import { ALL_TIME, PANEL_META, REFRESH_OPTIONS, TIME_RANGES, newPanelId } from './shared'
 import type { DrillPoint, PanelContext } from './shared'
+import { useHomeBoard } from './useHomeBoard'
 import VariablesDialog from './VariablesDialog'
 
 // One dashboard: a grid of panels you arrange yourself.
@@ -95,26 +98,34 @@ function PanelAction({
   )
 }
 
-function PanelFrame({
+/** One panel with its header. Shared with the home board, which leaves out the actions it has no use
+ *  for (duplicate) and relabels remove as unpin. */
+export function PanelFrame({
   panel,
   ctx,
   edit,
   onEdit,
   onDuplicate,
   onRemove,
+  removeLabel = 'Delete panel',
   onFullscreen,
   onDrill,
   onOpenRow,
+  pinned,
+  onPin,
 }: {
   panel: DashboardPanel
   ctx: PanelContext
   edit: boolean
-  onEdit: () => void
-  onDuplicate: () => void
-  onRemove: () => void
+  onEdit?: () => void
+  onDuplicate?: () => void
+  onRemove?: () => void
+  removeLabel?: string
   onFullscreen: () => void
   onDrill: (point: DrillPoint) => void
   onOpenRow: (row: Record<string, unknown>) => void
+  pinned?: boolean
+  onPin?: () => void
 }) {
   const fetching = useIsFetching({ queryKey: ['panel', ctx.dashboardId, panel.id] }) > 0
   const Icon = PANEL_META[panel.type].icon
@@ -148,17 +159,28 @@ function PanelFrame({
           <PanelAction label="Full screen" onClick={onFullscreen}>
             <Maximize2Icon />
           </PanelAction>
+          {onPin && (
+            <PanelAction label={pinned ? 'Unpin from home' : 'Pin to home'} onClick={onPin}>
+              {pinned ? <PinOffIcon /> : <PinIcon />}
+            </PanelAction>
+          )}
           {edit && (
             <>
-              <PanelAction label="Edit panel" onClick={onEdit}>
-                <PencilIcon />
-              </PanelAction>
-              <PanelAction label="Duplicate panel" onClick={onDuplicate}>
-                <CopyIcon />
-              </PanelAction>
-              <PanelAction label="Delete panel" onClick={onRemove} tone="bad">
-                <Trash2Icon />
-              </PanelAction>
+              {onEdit && (
+                <PanelAction label="Edit panel" onClick={onEdit}>
+                  <PencilIcon />
+                </PanelAction>
+              )}
+              {onDuplicate && (
+                <PanelAction label="Duplicate panel" onClick={onDuplicate}>
+                  <CopyIcon />
+                </PanelAction>
+              )}
+              {onRemove && (
+                <PanelAction label={removeLabel} onClick={onRemove} tone="bad">
+                  <Trash2Icon />
+                </PanelAction>
+              )}
             </>
           )}
         </div>
@@ -217,15 +239,15 @@ function VariablePicker({
  *  looks for its container once, on mount; while the page was still showing its loading spinner there
  *  was no container, so it never measured and the grid stayed at the library's 1280px default -
  *  leaving a gap on any wider screen whenever the board wasn't already cached. */
-function BoardGrid({
+export function BoardGrid({
   panels,
   edit,
   onLayoutChange,
   children,
 }: {
-  panels: DashboardPanel[]
+  panels: { id: string; layout: DashboardPanel['layout'] }[]
   edit: boolean
-  onLayoutChange: (layout: Layout) => void
+  onLayoutChange?: (layout: Layout) => void
   children: React.ReactNode
 }) {
   const { width, containerRef, mounted } = useContainerWidth()
@@ -327,6 +349,7 @@ export default function DashboardPage() {
   })
 
   const panels = draft?.panels ?? NO_PANELS
+  const home = useHomeBoard()
 
   const bottom = Math.max(0, ...panels.map((p) => p.layout.y + p.layout.h))
 
@@ -491,6 +514,15 @@ export default function DashboardPage() {
           >
             <RefreshCwIcon />
           </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            aria-label={home.findPin(dashboardId) ? 'Unpin from home' : 'Pin to home'}
+            title={home.findPin(dashboardId) ? 'Unpin from home' : 'Pin to home'}
+            onClick={() => home.togglePin(dashboardId, null, saved?.panels)}
+          >
+            {home.findPin(dashboardId) ? <PinOffIcon /> : <PinIcon />}
+          </Button>
           {edit ? (
             <>
               <Button size="sm" variant="outline" onClick={addPanel}>
@@ -552,6 +584,13 @@ export default function DashboardPage() {
                   onFullscreen={() => setSearch({ view: panel.id })}
                   onDrill={(point) => setSearch({ drill: { panel: panel.id, ...point } })}
                   onOpenRow={(row) => setOpenRow({ panel: panel.id, row })}
+                  pinned={!!home.findPin(dashboardId, panel.id)}
+                  // Only a saved panel can be pinned - home reads the saved board, not this draft.
+                  onPin={
+                    saved?.panels.some((p) => p.id === panel.id)
+                      ? () => home.togglePin(dashboardId, panel)
+                      : undefined
+                  }
                 />
               </div>
             ))}

@@ -90,7 +90,7 @@ function StateBar({
       {!status?.configured && (
         <span className="text-xs text-muted-foreground">
           No Dhan credentials —{' '}
-          <Link to="." search={(prev) => ({ ...prev, settings: 'broker' })} className="underline">
+          <Link to="/settings" search={{ tab: 'broker' }} className="underline">
             add them in Settings
           </Link>
         </span>

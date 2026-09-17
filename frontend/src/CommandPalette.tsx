@@ -40,6 +40,7 @@ import { useTheme } from '@/lib/theme'
 import { openProfile } from './Profile'
 import { openWatchlists } from './WatchlistManager'
 import type { LinkProps } from '@tanstack/react-router'
+import type { SettingsTab } from './router'
 import { addStock, getDashboards, getWorkflows, searchStocks } from '@/services/api'
 
 // Every top-level route in router.jsx that can be reached without a parameter. The ones that
@@ -48,6 +49,7 @@ import { addStock, getDashboards, getWorkflows, searchStocks } from '@/services/
 // from their own pages, or here by typing @SYMBOL.
 const PAGES: { icon: typeof LayoutDashboardIcon; label: string; to: LinkProps['to'] }[] = [
   { icon: LayoutDashboardIcon, label: 'Stocks', to: '/' },
+  { icon: SettingsIcon, label: 'Settings', to: '/settings' },
   { icon: NewspaperIcon, label: 'Events', to: '/events' },
   { icon: TrendingUpIcon, label: 'Top news', to: '/top-news' },
   { icon: WalletIcon, label: 'Holdings', to: '/holdings' },
@@ -75,6 +77,11 @@ const WORKFLOW_PAGES: { label: string; to: LinkProps['to'] }[] = [
   { label: 'Workflows > New workflow', to: '/workflows/new' },
 ]
 
+const HOME_TABS = [
+  { label: 'Home > Stocks', tab: 'home' },
+  { label: 'Home > My board', tab: 'board' },
+]
+
 const PAPER_TABS = [
   { label: 'Paper Trading > Overview', view: 'overview' },
   { label: 'Paper Trading > Holdings', view: 'holdings' },
@@ -92,6 +99,8 @@ const SETTINGS_TABS = [
   { label: 'Settings > LiteLLM', tab: 'litellm' },
   { label: 'Settings > OmniRoute', tab: 'omniroute' },
   { label: 'Settings > Cogencis', tab: 'cogencis' },
+  { label: 'Settings > Telegram', tab: 'telegram' },
+  { label: 'Settings > Screener', tab: 'screener' },
   { label: 'Settings > Broker', tab: 'broker' },
   { label: 'Settings > Watch rules', tab: 'rules' },
   { label: 'Settings > Collect data', tab: 'data' },
@@ -171,7 +180,7 @@ export default function CommandPalette() {
   })
 
   const openSettings = (tab: string) => {
-    navigate({ search: ((prev: Record<string, unknown>) => ({ ...prev, settings: tab })) as never })
+    navigate({ to: '/settings', search: { tab: tab as SettingsTab } })
     close()
   }
 
@@ -316,6 +325,14 @@ export default function CommandPalette() {
                   ))}
                 </CommandGroup>
               )}
+              <CommandGroup heading="Home">
+                {HOME_TABS.map((t) => (
+                  <CommandItem key={t.tab} value={t.label} onSelect={() => goTo('/', { tab: t.tab })}>
+                    <LayoutDashboardIcon className="size-4" />
+                    {t.label}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
               <CommandGroup heading="Paper Trading">
                 {PAPER_TABS.map((t) => (
                   <CommandItem key={t.view} value={t.label} onSelect={() => goTo('/paper', { view: t.view })}>

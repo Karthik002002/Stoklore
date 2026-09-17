@@ -14,6 +14,7 @@ from app.schemas import (
     DashboardQueryRequest,
     DashboardRequest,
     DashboardValuesRequest,
+    HomeBoardRequest,
 )
 from app.services import dashboards
 
@@ -129,3 +130,18 @@ def delete_dashboard(dashboard_id: str):
     if not db.delete_dashboard(dashboard_id):
         raise HTTPException(status_code=404, detail="no such dashboard")
     return {"ok": True}
+
+
+@router.get("/api/home-board")
+def get_home_board():
+    return db.get_home_board()
+
+
+@router.put("/api/home-board")
+def save_home_board(req: HomeBoardRequest):
+    error = dashboards.validate_home(req.items)
+    if error:
+        raise HTTPException(status_code=422, detail=error)
+    board = {"items": [{**i, "panel_id": i.get("panel_id") or None} for i in req.items]}
+    db.set_home_board(board)
+    return board

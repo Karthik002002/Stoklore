@@ -44,6 +44,30 @@ one stock's history, what workflows collected. Sources are a registry, so more
   same board shows everything or narrows to one stock.
 - ⌘K → **Dashboards**, or any dashboard by name; the grid icon in the sidebar.
 
+## My board — pinned to home
+
+The home page (`/`) has two tabs: **Home**, the stocks terminal it always was, and
+**My board**, what you pinned — so landing shows what you chose to see.
+
+- **Pin a whole dashboard** with the pin button in its header; **pin one panel**
+  with the pin that appears when you hover it. Pin as many as you like, from any
+  dashboard. The same buttons unpin.
+- **Arrange** on My board drags a pin by its header, resizes it from its corner,
+  or unpins it. Each change saves as you make it.
+- A pinned dashboard is a tile holding its own grid, scrolling inside past its
+  height; a pinned panel is just that panel, titled with the board it came from.
+- **Pins are references, not copies.** A pin shows the dashboard's *saved* panel,
+  with that dashboard's default variables and time range. Its edit button opens
+  the panel in its dashboard, and saving there changes it on home too. A pin whose
+  dashboard or panel was deleted says so and offers to unpin.
+- **Which tab opens:** `?tab=home|board` in the URL, else the tab you used last,
+  else My board once anything is pinned.
+- Clicking a mark opens the rows behind it right there; full screen opens the
+  dashboard.
+- The pins are one setting (`home_board`), read and written at
+  `GET/PUT /api/home-board`, and validated like a dashboard's layout: unique ids,
+  a dashboard on every pin, inside the 12-column grid.
+
 ## Every view is a URL
 
 | Part of the view | In the URL |
@@ -170,6 +194,8 @@ Pure, with no database or clock:
 - the *has a value* filter
 - every template and a workflow-built dashboard passing validation, and a panel
   past the 12th column refused
+- home-board pins: a panel pin and a dashboard pin accepted; a duplicate id, a pin
+  with no dashboard or no position, and one past the 12th column refused
 
 The treemap layout (`squarify.selfcheck.mjs`) checks that areas are proportional,
 the tiles cover the panel exactly and never overlap, the tiles stay near-square,
@@ -196,6 +222,9 @@ rendering, which is checked by using the page.
 | `frontend/src/dashboards/panels.tsx` | The eight panel renderers |
 | `frontend/src/dashboards/PanelEditor.tsx` | The live panel editor |
 | `frontend/src/dashboards/DrillDrawer.tsx` | The rows behind a click |
+| `frontend/src/dashboards/HomeBoard.tsx` | My board on the home page |
+| `frontend/src/dashboards/useHomeBoard.ts` | Pins: read, pin/unpin, arrange |
+| `frontend/src/Home.tsx` | The home page's Home / My board tabs |
 | `frontend/src/dashboards/VariablesDialog.tsx` | Dashboard-wide dropdowns |
 | `frontend/src/components/charts/SeriesChart.tsx` | The line chart shared with the Data tab |
 | `frontend/src/components/charts/squarify.ts` | The treemap layout |

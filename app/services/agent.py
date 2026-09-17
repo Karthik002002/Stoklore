@@ -50,7 +50,11 @@ def _tool_get_price(symbol):
     # The quote itself carries no symbol. Put it back, or a workflow that fans this out over a
     # watchlist collects eight anonymous {price, changePercent} rows nobody can tell apart.
     quote = _cached(symbol.upper(), "price", 15, lambda: scraper.get_price(symbol.upper()))
-    return {"symbol": symbol.upper(), **(quote or {})}
+    if not quote or quote.get("price") is None:
+        # A null price handed on reads as "didn't move" - the model answered NOTHING_TO_REPORT for a
+        # watchlist it never saw. Failing names the real problem on the node instead.
+        raise ValueError(f"no live price for {symbol.upper()} - Yahoo and moneycontrol both came back empty")
+    return {"symbol": symbol.upper(), **quote}
 
 
 def _tool_get_movers(count=25):

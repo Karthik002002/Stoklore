@@ -34,6 +34,7 @@ import { useAppliedTheme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 import { getRunWorkflow, getSessionWorkflow } from '@/services/api'
 import type { WorkflowNode } from '@/services/api'
+import type { SettingsTab } from '@/router'
 
 // What the agent actually DID, as a flow diagram: a trigger, a node per tool call, an answer.
 //
@@ -419,12 +420,7 @@ function NodeDrawer({ node, onClose }: { node: WorkflowNode; onClose: () => void
             <Button
               size="sm"
               className="mt-2"
-              onClick={() =>
-                navigate({
-                  to: '.',
-                  search: (prev: Record<string, unknown>) => ({ ...prev, settings: fix.tab }),
-                } as never)
-              }
+              onClick={() => navigate({ to: '/settings', search: { tab: fix.tab as SettingsTab } })}
             >
               <SettingsIcon className="size-3.5" />
               {fix.action}

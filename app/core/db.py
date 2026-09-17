@@ -2736,6 +2736,16 @@ def exchange_of(symbol):
 
 # Public wrappers - the live module stores a handful of scalars (halt flag, halt reason) that need
 # no dedicated accessor each, and reaching into _get_setting from another module would be worse.
+def get_home_board():
+    """The pins on the home page's board - see dashboards.validate_home."""
+    raw = _get_setting("home_board")
+    return json.loads(raw) if raw else {"items": []}
+
+
+def set_home_board(board):
+    _set_setting("home_board", json.dumps(board))
+
+
 def get_setting_value(key, default=None):
     return _get_setting(key, default)
 

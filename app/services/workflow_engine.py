@@ -273,6 +273,10 @@ def execute(workflow, run_id=None, on_node=None, payload=None):
                         result.append(_attempt(node, {**scope, "item": item}, model, kind, run))
                     except Exception as e:  # noqa: BLE001
                         result.append({"error": str(e)})
+                if result and all(isinstance(r, dict) and set(r) == {"error"} for r in result):
+                    # Nothing answered: that is an outage, not data. Passing on a list of errors
+                    # lets the next step "decide" there is nothing to report.
+                    raise ValueError(f"every item failed - first: {result[0]['error']}")
             else:
                 raise ValueError(f"for_each on '{label}' needs a list, got {type(each).__name__}")
             context[node["id"]] = result

@@ -85,7 +85,7 @@ export default function PaperTrading() {
   // Creating an account with a name, a strategy and position caps belongs in one place, and that
   // place already exists - Settings > Paper accounts, which also edits and deletes them. This page
   // only links there rather than growing a second, thinner account form.
-  const manageAccounts = () => navigate({ search: (prev) => ({ ...prev, settings: 'paper-accounts' }) })
+  const manageAccounts = () => navigate({ to: '/settings', search: { tab: 'paper-accounts' } })
 
   const poll = useMutation({
     mutationFn: pollPaperEngine,

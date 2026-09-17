@@ -603,12 +603,7 @@ function RulesPanel({ workflow }: { workflow: Workflow }) {
           <button
             type="button"
             className={cn(buttonVariants({ size: 'xs', variant: 'link' }), 'h-auto px-0 pl-5')}
-            onClick={() =>
-              navigate({
-                to: '.',
-                search: (prev: Record<string, unknown>) => ({ ...prev, settings: 'telegram' }),
-              } as never)
-            }
+            onClick={() => navigate({ to: '/settings', search: { tab: 'telegram' } })}
           >
             Set up Telegram in Settings →
           </button>

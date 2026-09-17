@@ -430,6 +430,31 @@ def validate(panels, variables):
     return None
 
 
+def validate_home(items):
+    """None, or what's wrong with the home board: pins on a 12-column grid, each pointing at a whole
+    dashboard (`panel_id` null) or one panel of it. Pins are references, not copies - editing the
+    panel in its dashboard is what changes it on home too."""
+    if not isinstance(items, list):
+        return "items must be a list"
+    ids = set()
+    for item in items:
+        if not isinstance(item, dict) or not item.get("id") or item["id"] in ids:
+            return "every pin needs a unique id"
+        ids.add(item["id"])
+        if not isinstance(item.get("dashboard_id"), str) or not item["dashboard_id"]:
+            return "every pin needs a dashboard"
+        if item.get("panel_id") is not None and not isinstance(item["panel_id"], str):
+            return "a pin's panel must be an id"
+        layout = item.get("layout") or {}
+        try:
+            x, y, w, h = (int(layout[k]) for k in ("x", "y", "w", "h"))
+        except (KeyError, TypeError, ValueError):
+            return "every pin needs a position"
+        if x < 0 or w < 1 or x + w > 12 or y < 0 or h < 1:
+            return "a pin doesn't fit the 12-column grid"
+    return None
+
+
 # --- building dashboards ------------------------------------------------------------------------------
 
 

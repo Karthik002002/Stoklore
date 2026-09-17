@@ -14,8 +14,9 @@
 - Settings → **LiteLLM** tab: point at your running LiteLLM proxy (URL +
   key) — see the main setup steps in the README if you haven't set one up.
 - Settings → **Cogencis** tab: paste a token to enable Top News.
-- Settings deep-links via URL, e.g. `?settings=broker` opens straight to
-  the Broker tab.
+- Settings is a page, `/settings`, and deep-links via URL: `/settings?tab=broker`
+  opens straight to the Broker tab. An older `?settings=broker` on any page
+  redirects there.
 
 ## Auto-routing and fallback
 

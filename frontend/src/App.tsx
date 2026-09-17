@@ -13,6 +13,7 @@ import {
   IconTrendingUp,
   IconUsersGroup,
   IconWallet,
+  IconSettings,
 } from '@tabler/icons-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
@@ -26,7 +27,6 @@ import useRunNotifications from './agent/useRunNotifications'
 import WatchlistManager from './WatchlistManager'
 import GuiltBanner from './GuiltBanner'
 import Profile from './Profile'
-import Settings from './Settings'
 import type { ComponentType } from 'react'
 import type { LinkProps } from '@tanstack/react-router'
 import ThemeToggle from './ThemeToggle'
@@ -131,9 +131,7 @@ function App() {
             <TooltipIcon label="Profile">
               <Profile />
             </TooltipIcon>
-            <TooltipIcon label="Settings">
-              <Settings />
-            </TooltipIcon>
+            <NavIcon to="/settings" icon={IconSettings} label="Settings" />
             <TooltipIcon label="Toggle theme">
               <ThemeToggle />
             </TooltipIcon>

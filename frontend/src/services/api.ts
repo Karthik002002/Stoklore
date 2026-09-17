@@ -1719,6 +1719,25 @@ export const getDashboards = () => fetch('/api/dashboards').then(json<DashboardS
 
 export const getDashboard = (id: string) => fetch(`/api/dashboards/${id}`).then(json<Dashboard>)
 
+/** A pin on the home page's board: a whole dashboard (`panel_id` null) or one panel of it. A reference,
+ *  not a copy - editing the panel in its dashboard changes it on home too. */
+export type HomePin = {
+  id: string
+  dashboard_id: string
+  panel_id: string | null
+  layout: { x: number; y: number; w: number; h: number }
+}
+export type HomeBoard = { items: HomePin[] }
+
+export const getHomeBoard = () => fetch('/api/home-board').then(json<HomeBoard>)
+
+export const saveHomeBoard = (board: HomeBoard) =>
+  fetch('/api/home-board', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(board),
+  }).then(json<HomeBoard>)
+
 export type DashboardInput = Pick<Dashboard, 'name' | 'description' | 'panels' | 'variables' | 'settings'>
 
 export const saveDashboard = (id: string, body: DashboardInput) =>

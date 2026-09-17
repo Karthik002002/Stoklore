@@ -359,7 +359,9 @@ the day's move), run health and notifications. Market templates — *Market puls
 *Market movers*, *Watchlist heatmap*, *Stock deep-dive*, *Events radar* — read NSE's
 indices and movers, your watchlists' prices, price history and stock events. Drag and resize in edit mode; set a time range,
 auto-refresh and variables like `$symbol`; click any mark to see the rows behind
-it. Build one from a workflow in a click, or start from a template. Sources are a
+it. Build one from a workflow in a click, or start from a template. **Pin** whole
+dashboards or single panels to **My board**, a tab on the home page next to the
+stocks terminal, and arrange them there. Sources are a
 registry, so price history or the journal can feed panels later.
 
 Every workflow screen is its own URL. Each workflow has **Overview / Editor /
@@ -399,9 +401,10 @@ asking for a login, so Settings › **Screener** holds the `sessionid` cookie fr
 your own signed-in session — pasted by you, never a password — and screen fetches
 send it. The day's results roll into one digest at 18:00.
 
-Settings is a tabbed dialog (**Model** / **OmniRoute** / **LiteLLM** /
-**Cogencis** / **Broker** / **Watch rules**), with its open state and active tab in the
-URL (`?settings=broker`) so any page can deep-link into a specific tab —
+Settings is its own page (`/settings`, the gear in the sidebar) with tabs
+(**Model** / **OmniRoute** / **LiteLLM** / **Cogencis** / **Broker** / **Watch rules**
+and the rest), the active tab in the URL (`/settings?tab=broker`) so any page can
+deep-link into a specific tab — an old `?settings=broker` link still lands there —
 the Model tab's dropdown lists whatever's actually reachable right now
 (Ollama is always listed; OmniRoute's and LiteLLM's catalogs are queried
 live and degrade quietly if either isn't running).

@@ -11,11 +11,11 @@ journal, alerts or holdings are one entry each here, and no panel changes when t
 import uuid
 from datetime import datetime
 
-from app.core import db
+from app.core import db, scraper
 from app.core.config import IST
 from app.services import dashboard_query as dq
 
-PANEL_TYPES = ("timeseries", "stat", "table", "bar", "pie", "heatmap", "health", "notifications")
+PANEL_TYPES = ("timeseries", "stat", "table", "bar", "pie", "heatmap", "treemap", "health", "notifications")
 #: What each panel type asks the query layer for.
 TYPE_SHAPE = {
     "timeseries": "timeseries",
@@ -24,6 +24,7 @@ TYPE_SHAPE = {
     "bar": "aggregate",
     "pie": "aggregate",
     "heatmap": "heatmap",
+    "treemap": "treemap",
     "health": "rows",
     "notifications": "rows",
 }
@@ -90,6 +91,167 @@ def _notification_rows(params, since, until):
     return out
 
 
+def _num(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+#: A daily bar belongs to the session's close, and stamping it 15:30 IST (rather than a bare date)
+#: keeps every time in the query layer timezone-aware.
+def _session_close(day):
+    return f"{day.isoformat() if hasattr(day, 'isoformat') else day}T15:30:00+05:30"
+
+
+def _movers_payload():
+    # The router owns NSE's once-a-day movers snapshot (fetch, store, fall back to the last one), so
+    # a dashboard refreshing every 5 seconds reads that snapshot instead of asking NSE again.
+    from app.routers.indices import market_movers
+
+    try:
+        return market_movers()
+    except Exception as e:  # noqa: BLE001 - an HTTPException or an NSE outage; the panel says so
+        raise ValueError(f"NSE's movers aren't available right now: {getattr(e, 'detail', e)}") from e
+
+
+def _mover_rows(params, since, until):
+    payload = _movers_payload()
+    groups = payload.get("groups") or []
+    keys = [g["key"] for g in groups]
+    wanted = params.get("bucket") or ("allSec" if "allSec" in keys else (keys[0] if keys else None))
+    at = _iso(payload.get("fetched_at")) or datetime.now(IST).isoformat()
+    out = []
+    for group in groups:
+        if group["key"] != wanted:
+            continue
+        for side, rows in (("gainer", group.get("gainers") or []), ("loser", group.get("losers") or [])):
+            for r in rows:
+                out.append({
+                    "fetched_at": at,
+                    "symbol": r.get("symbol"),
+                    "side": side,
+                    "changePercent": _num(r.get("perChange")),
+                    "ltp": _num(r.get("ltp")),
+                    "change": _num(r.get("change")),
+                    "prev_price": _num(r.get("prev_price")),
+                    "volume": _num(r.get("trade_quantity")),
+                    "turnover": _num(r.get("turnover")),
+                    "bucket": group.get("label"),
+                    "trade_date": payload.get("trade_date"),
+                    "corporate_action": r.get("ca_purpose"),
+                })
+    return out
+
+
+def _indices_payload():
+    from app.deps import _cached
+
+    return _cached("NSE", "macro-indices", 5, scraper.get_all_indices)
+
+
+def _index_rows(params, since, until):
+    payload = _indices_payload()
+    at = datetime.now(IST).isoformat()
+    seen, out = set(), []
+    for group in payload.get("groups") or []:
+        if params.get("category") and group["key"] != params["category"]:
+            continue
+        for i in group.get("indices") or []:
+            # An index sits in several categories (NIFTY 50 is broad AND derivatives-eligible); across
+            # all categories it counts once.
+            if not params.get("category") and i.get("name") in seen:
+                continue
+            seen.add(i.get("name"))
+            out.append({
+                "fetched_at": at,
+                "name": i.get("name"),
+                "category": group["key"],
+                "percentChange": _num(i.get("percentChange")),
+                "last": _num(i.get("last")),
+                "change": _num(i.get("change")),
+                "perChange30d": _num(i.get("perChange30d")),
+                "perChange365d": _num(i.get("perChange365d")),
+                "advances": _num(i.get("advances")),
+                "declines": _num(i.get("declines")),
+                "unchanged": _num(i.get("unchanged")),
+                "pe": _num(i.get("pe")),
+                "pb": _num(i.get("pb")),
+                "dy": _num(i.get("dy")),
+                "yearHigh": _num(i.get("yearHigh")),
+                "yearLow": _num(i.get("yearLow")),
+            })
+    return out
+
+
+def _watchlist_price_rows(params, since, until):
+    out = []
+    for r in db.watchlist_latest_prices(params.get("list_name") or None):
+        close, prev = _num(r["close"]), _num(r["prev_close"])
+        volume, avg = _num(r["volume"]), _num(r["avg_volume_20"])
+        out.append({
+            "date": _session_close(r["date"]) if r["date"] else None,
+            "symbol": r["symbol"],
+            "list_name": r["list_name"],
+            "changePercent": round((close - prev) / prev * 100, 2) if close and prev else None,
+            "close": close,
+            "prev_close": prev,
+            "change": round(close - prev, 2) if close and prev else None,
+            "volume": volume,
+            "avg_volume_20": round(avg) if avg else None,
+            "volume_ratio": round(volume / avg, 2) if volume and avg else None,
+        })
+    return out
+
+
+def _symbols(params):
+    if params.get("symbol"):
+        return [params["symbol"].upper()]
+    return db.watchlist_symbols(params.get("list_name") or None)
+
+
+def _price_rows(params, since, until):
+    out = []
+    for r in db.price_bars_between(_symbols(params), since, until):
+        close, prev = _num(r["close"]), _num(r["prev_close"])
+        out.append({
+            "date": _session_close(r["date"]),
+            "symbol": r["symbol"],
+            "close": close,
+            "changePercent": round((close - prev) / prev * 100, 2) if close and prev else None,
+            "open": _num(r["open"]),
+            "high": _num(r["high"]),
+            "low": _num(r["low"]),
+            "volume": _num(r["volume"]),
+        })
+    return out
+
+
+def _event_rows(params, since, until):
+    rows = db.list_events(
+        list_name=params.get("list_name") or None,
+        symbol=(params.get("symbol") or "").upper() or None,
+        from_date=since.date().isoformat() if since else None,
+        to_date=until.date().isoformat() if until else None,
+        limit=2000,
+    )
+    return [
+        {
+            "event_time": _iso(r["event_time"]),
+            "symbol": r["symbol"],
+            "event_type": r["event_type"],
+            "headline": r["headline"],
+            "sentiment": r["sentiment_label"],
+            "sentiment_score": _num(r["sentiment_score"]),
+            "list_name": r["list_name"],
+            "url": r["url"],
+            "event_id": r["id"],
+        }
+        for r in rows
+        if r["event_time"]
+    ]
+
+
 SOURCES = {
     "workflow_series": {
         "label": "Workflow data",
@@ -115,14 +277,63 @@ SOURCES = {
         "params": [{"name": "workflow_id", "label": "Workflow (blank = all)", "required": False}],
         "rows": _notification_rows,
     },
+    "market_indices": {
+        "label": "NSE indices",
+        "description": "Every NSE index: today's move, 30-day and 1-year returns, breadth, valuation. Refreshed every 5 minutes.",
+        "time_field": "fetched_at",
+        "snapshot": True,
+        "params": [{"name": "category", "label": "Category (blank = all)", "required": False}],
+        "rows": _index_rows,
+    },
+    "market_movers": {
+        "label": "NSE movers",
+        "description": "NSE's top gainers and losers for one index cut - the day's snapshot.",
+        "time_field": "fetched_at",
+        "snapshot": True,
+        "params": [{"name": "bucket", "label": "Index cut (blank = all securities)", "required": False}],
+        "rows": _mover_rows,
+    },
+    "watchlist_prices": {
+        "label": "Watchlist prices",
+        "description": "Each watchlisted stock's latest close, its daily change and volume against the 20-day average.",
+        "time_field": "date",
+        "snapshot": True,
+        "params": [{"name": "list_name", "label": "Watchlist (blank = all)", "required": False}],
+        "rows": _watchlist_price_rows,
+    },
+    "price_history": {
+        "label": "Price history",
+        "description": "Daily bars - close, change and volume - for one stock or a watchlist.",
+        "time_field": "date",
+        "params": [
+            {"name": "symbol", "label": "Symbol (blank = the watchlist)", "required": False},
+            {"name": "list_name", "label": "Watchlist (blank = all)", "required": False},
+        ],
+        "rows": _price_rows,
+    },
+    "stock_events": {
+        "label": "Stock events",
+        "description": "Corporate events and news the scans found - type, headline and sentiment.",
+        "time_field": "event_time",
+        "params": [
+            {"name": "symbol", "label": "Symbol (blank = all)", "required": False},
+            {"name": "list_name", "label": "Watchlist (blank = all)", "required": False},
+        ],
+        "rows": _event_rows,
+    },
 }
+
+#: The order sources appear in the panel editor - market data first.
+SOURCE_ORDER = ("market_indices", "market_movers", "watchlist_prices", "price_history", "stock_events",
+                "workflow_series", "workflow_runs", "workflow_notifications")
 
 
 def catalogue():
     return [
-        {"id": key, "label": s["label"], "description": s["description"], "time_field": s["time_field"],
-         "params": s["params"]}
-        for key, s in SOURCES.items()
+        {"id": key, "label": SOURCES[key]["label"], "description": SOURCES[key]["description"],
+         "time_field": SOURCES[key]["time_field"], "snapshot": bool(SOURCES[key].get("snapshot")),
+         "params": SOURCES[key]["params"]}
+        for key in SOURCE_ORDER
     ]
 
 
@@ -130,9 +341,26 @@ def param_options(source, params):
     """Choices for each parameter, given the ones already picked - the editor's dropdowns."""
     if source not in SOURCES:
         raise ValueError(f"unknown source '{source}'")
-    out = {"workflow_id": [{"value": w["id"], "label": w["name"]} for w in db.list_workflows()]}
-    if source == "workflow_series" and (params or {}).get("workflow_id"):
-        out["series"] = [{"value": s, "label": s} for s in db.list_series_names(params["workflow_id"])]
+    params = params or {}
+    names = {p["name"] for p in SOURCES[source]["params"]}
+    option = lambda values: [{"value": v, "label": label} for v, label in values]  # noqa: E731
+    out = {}
+    if "workflow_id" in names:
+        out["workflow_id"] = option((w["id"], w["name"]) for w in db.list_workflows())
+    if "series" in names and params.get("workflow_id"):
+        out["series"] = option((s, s) for s in db.list_series_names(params["workflow_id"]))
+    if "list_name" in names:
+        lists = [n if isinstance(n, str) else n.get("name") for n in db.list_watchlist_names()]
+        out["list_name"] = option((n, n) for n in lists if n)
+    if "symbol" in names:
+        out["symbol"] = option((s, s) for s in sorted(db.watchlist_symbols(params.get("list_name") or None)))
+    if "bucket" in names:
+        try:
+            out["bucket"] = option((g["key"], g["label"]) for g in _movers_payload().get("groups") or [])
+        except ValueError:
+            out["bucket"] = []
+    if "category" in names:
+        out["category"] = option((g["key"], g["key"].title()) for g in _indices_payload().get("groups") or [])
     return out
 
 
@@ -145,7 +373,9 @@ def _fetch(query, variables, time_from, time_to):
     source = SOURCES.get((query or {}).get("source"))
     if not source:
         raise ValueError(f"unknown source '{(query or {}).get('source')}'")
-    since, until = _window(time_from, time_to)
+    # A snapshot - today's movers, the latest close - is what it is whatever the range says; filtering
+    # it by "last hour" would only ever blank the panel.
+    since, until = (None, None) if source.get("snapshot") else _window(time_from, time_to)
     params = {k: dq.resolve(v, variables) for k, v in (query.get("params") or {}).items()}
     return source["rows"](params, since, until), {**query, "time_field": source["time_field"]}
 
@@ -268,15 +498,160 @@ def _notifications_overview():
     }
 
 
+def _src(source, **q):
+    params = q.pop("params", {})
+    return {"source": source, "params": params, **q}
+
+
+def _eq(field, value):
+    return {"field": field, "op": "eq", "value": value}
+
+
+def _market_pulse():
+    idx = lambda **q: _src("market_indices", **q)  # noqa: E731
+    sectoral = {"category": "SECTORAL INDICES"}
+    broad = {"category": "BROAD MARKET INDICES"}
+    return {
+        "name": "Market pulse",
+        "description": "Where the market is today: the headline indices, every sector as a heatmap, breadth, "
+                       "and which sectors lead over a month and a year.",
+        "category": "Market",
+        "variables": [],
+        "settings": {"refresh": 300},
+        "panels": [
+            panel("stat", "NIFTY 50", idx(filters=[_eq("name", "NIFTY 50")], value="percentChange"), 0, 0, 3, 4, unit="%"),
+            panel("stat", "NIFTY BANK", idx(filters=[_eq("name", "NIFTY BANK")], value="percentChange"), 3, 0, 3, 4, unit="%"),
+            panel("stat", "NIFTY 500 advancing", idx(filters=[_eq("name", "NIFTY 500")], value="advances"), 6, 0, 3, 4),
+            panel("stat", "NIFTY 500 declining", idx(filters=[_eq("name", "NIFTY 500")], value="declines"), 9, 0, 3, 4, tone="bad"),
+            panel("treemap", "Sectors today", idx(params=sectoral, group_by="name", value="percentChange"), 0, 4, 8, 11, unit="%"),
+            panel("bar", "Broad market today", idx(params=broad, group_by="name", value="percentChange", limit=18), 8, 4, 4, 11, unit="%"),
+            panel("bar", "Sectors over 30 days", idx(params=sectoral, group_by="name", value="perChange30d", limit=21), 0, 15, 6, 10, unit="%"),
+            panel("bar", "Sectors over a year", idx(params=sectoral, group_by="name", value="perChange365d", limit=21), 6, 15, 6, 10, unit="%"),
+            panel("table", "Every index", idx(limit=200), 0, 25, 12, 10),
+        ],
+    }
+
+
+def _market_movers():
+    mov = lambda **q: _src("market_movers", **q)  # noqa: E731
+    return {
+        "name": "Market movers",
+        "description": "NSE's biggest gainers and losers today: a heatmap sized by turnover, the extremes, "
+                       "where the money traded, and corporate actions behind the moves.",
+        "category": "Market",
+        "variables": [],
+        "settings": {"refresh": 300},
+        "panels": [
+            panel("stat", "Gainers", mov(filters=[_eq("side", "gainer")]), 0, 0, 3, 4),
+            panel("stat", "Losers", mov(filters=[_eq("side", "loser")]), 3, 0, 3, 4, tone="bad"),
+            panel("stat", "Best move", mov(value="changePercent", agg="max"), 6, 0, 3, 4, unit="%"),
+            panel("stat", "Worst move", mov(value="changePercent", agg="min"), 9, 0, 3, 4, unit="%"),
+            panel("treemap", "Movers by turnover", mov(group_by="symbol", value="changePercent", size="turnover", limit=40),
+                  0, 4, 8, 12, unit="%"),
+            panel("bar", "Top gainers", mov(filters=[_eq("side", "gainer")], group_by="symbol", value="changePercent", limit=15),
+                  8, 4, 4, 12, unit="%"),
+            panel("bar", "Top losers", mov(filters=[_eq("side", "loser")], group_by="symbol", value="changePercent", sort="asc", limit=15),
+                  0, 16, 4, 10, unit="%"),
+            panel("bar", "Highest turnover", mov(group_by="symbol", value="turnover", limit=15), 4, 16, 4, 10),
+            panel("table", "Corporate actions behind moves",
+                  mov(filters=[{"field": "corporate_action", "op": "set", "value": ""}], limit=50), 8, 16, 4, 10),
+            panel("table", "All movers", mov(limit=100), 0, 26, 12, 10),
+        ],
+    }
+
+
+def _watchlist_heatmap():
+    prices = lambda **q: _src("watchlist_prices", params={"list_name": "$list"}, **q)  # noqa: E731
+    return {
+        "name": "Watchlist heatmap",
+        "description": "Your watchlists at a glance: today's move for every stock as a heatmap, what's up and "
+                       "down, volume surges, and 30 days of daily moves.",
+        "category": "Market",
+        "variables": [{"name": "list", "label": "Watchlist", "query": {"source": "watchlist_prices", "params": {}},
+                       "field": "list_name", "default": dq.ALL}],
+        "settings": {"from": "now-30d"},
+        "panels": [
+            panel("stat", "Advancing", prices(filters=[{"field": "changePercent", "op": "gt", "value": "0"}]), 0, 0, 3, 4),
+            panel("stat", "Declining", prices(filters=[{"field": "changePercent", "op": "lt", "value": "0"}]), 3, 0, 3, 4, tone="bad"),
+            panel("stat", "Average move", prices(value="changePercent", agg="avg"), 6, 0, 3, 4, unit="%"),
+            panel("stat", "Biggest volume surge", prices(value="volume_ratio", agg="max"), 9, 0, 3, 4, unit="× avg"),
+            panel("treemap", "Today's move", prices(group_by="symbol", value="changePercent"), 0, 4, 8, 12, unit="%"),
+            panel("bar", "Best and worst", prices(group_by="symbol", value="changePercent", limit=20), 8, 4, 4, 12, unit="%"),
+            panel("heatmap", "Daily moves, 30 days",
+                  _src("price_history", params={"list_name": "$list"}, group_by="symbol", value="changePercent", agg="last",
+                       bucket="day"), 0, 16, 12, 10, unit="%"),
+            panel("bar", "Volume vs 20-day average", prices(group_by="symbol", value="volume_ratio", limit=20), 0, 26, 4, 10, unit="×"),
+            panel("table", "Prices", prices(limit=200), 4, 26, 8, 10),
+        ],
+    }
+
+
+def _stock_deep_dive():
+    bars = lambda **q: _src("price_history", params={"symbol": "$symbol"}, **q)  # noqa: E731
+    events = lambda **q: _src("stock_events", params={"symbol": "$symbol"}, **q)  # noqa: E731
+    return {
+        "name": "Stock deep-dive",
+        "description": "One stock, picked from the dropdown: its price and volume over time, how it moved each "
+                       "day, and every event and headline behind it.",
+        "category": "Market",
+        "variables": [{"name": "symbol", "label": "Symbol", "query": {"source": "watchlist_prices", "params": {}},
+                       "field": "symbol", "default": dq.ALL}],
+        "settings": {"from": "now-90d"},
+        "panels": [
+            panel("stat", "Close", bars(value="close", agg="last", bucket="day"), 0, 0, 3, 4, unit="₹"),
+            panel("stat", "Day's move", bars(value="changePercent", agg="avg", bucket="day"), 3, 0, 3, 4, unit="%"),
+            panel("stat", "Events in range", events(bucket="day"), 6, 0, 3, 4),
+            panel("stat", "Volume", bars(value="volume", agg="sum", bucket="day"), 9, 0, 3, 4),
+            panel("timeseries", "Close", bars(group_by="symbol", value="close", agg="last", bucket="day"), 0, 4, 8, 10, unit="₹"),
+            panel("pie", "Events by type", events(group_by="event_type"), 8, 4, 4, 10),
+            panel("timeseries", "Volume", bars(group_by="symbol", value="volume", agg="last", bucket="day"), 0, 14, 8, 8),
+            panel("bar", "Sentiment by type", events(group_by="event_type", value="sentiment_score", agg="avg"), 8, 14, 4, 8),
+            panel("table", "Events and headlines", events(limit=200), 0, 22, 12, 10),
+        ],
+    }
+
+
+def _events_radar():
+    ev = lambda **q: _src("stock_events", params={"list_name": "$list"}, **q)  # noqa: E731
+    return {
+        "name": "Events radar",
+        "description": "What's happening across your stocks: event volume per stock per day, the kinds of "
+                       "events, sentiment, and the latest headlines.",
+        "category": "Market",
+        "variables": [{"name": "list", "label": "Watchlist", "query": {"source": "watchlist_prices", "params": {}},
+                       "field": "list_name", "default": dq.ALL}],
+        "settings": {"from": "now-30d"},
+        "panels": [
+            panel("stat", "Events", ev(bucket="day"), 0, 0, 4, 4),
+            panel("stat", "Negative headlines", ev(bucket="day", filters=[_eq("sentiment", "negative")]), 4, 0, 4, 4, tone="bad"),
+            panel("stat", "Positive headlines", ev(bucket="day", filters=[_eq("sentiment", "positive")]), 8, 0, 4, 4),
+            panel("heatmap", "Events per stock per day", ev(group_by="symbol", bucket="day"), 0, 4, 12, 10),
+            panel("treemap", "Where the news is (colour = avg sentiment)",
+                  ev(group_by="symbol", value="sentiment_score", agg="avg"), 0, 14, 6, 10),
+            panel("pie", "By type", ev(group_by="event_type"), 6, 14, 3, 10),
+            panel("bar", "Most-covered stocks", ev(group_by="symbol", limit=15), 9, 14, 3, 10),
+            panel("table", "Latest events", ev(limit=200), 0, 24, 12, 10),
+        ],
+    }
+
+
 TEMPLATES = {
+    "market-pulse": _market_pulse,
+    "market-movers": _market_movers,
+    "watchlist-heatmap": _watchlist_heatmap,
+    "stock-deep-dive": _stock_deep_dive,
+    "events-radar": _events_radar,
     "workflow-health": _workflow_health,
     "notifications-overview": _notifications_overview,
 }
 
 
 def templates():
-    return [{"id": key, **{k: v for k, v in build().items() if k in ("name", "description")}}
-            for key, build in TEMPLATES.items()]
+    return [
+        {"id": key, "category": built.get("category", "Workflows"),
+         **{k: v for k, v in built.items() if k in ("name", "description")}}
+        for key, built in ((key, build()) for key, build in TEMPLATES.items())
+    ]
 
 
 def _pick_group(cols, rows):
@@ -331,6 +706,11 @@ def from_workflow(workflow):
             panels.append(panel("pie", f"Rows by {group}", data(group_by=group, limit=12), 8, y, 4, 9))
         y += 9
         if numbers and group:
+            size = next((c["name"] for c in cols if c["type"] == "number"
+                         and any(w in c["name"].lower() for w in ("cap", "turnover", "volume"))), None)
+            panels.append(panel("treemap", f"{numbers[0]} by {group}" + (f", sized by {size}" if size else ""),
+                                data(value=numbers[0], group_by=group, agg="last", size=size), 0, y, 12, 10))
+            y += 10
             panels.append(panel("heatmap", f"{numbers[0]} by {group} per day",
                                 data(value=numbers[0], group_by=group, agg="avg", bucket="day"), 0, y, 12, 9))
             y += 9

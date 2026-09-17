@@ -1,4 +1,4 @@
-import { Fragment, useMemo } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { Group } from '@visx/group'
@@ -7,6 +7,7 @@ import { format } from 'date-fns'
 import { BellIcon, CircleCheckIcon, CircleXIcon } from 'lucide-react'
 import SeriesChart from '@/components/charts/SeriesChart'
 import { chartTime, seriesColor } from '@/components/charts/colors'
+import { squarify } from '@/components/charts/squarify'
 import { Spinner } from '@/components/ui/spinner'
 import { formatDuration, timeAgoShort } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -18,6 +19,7 @@ import type {
   ShapedRows,
   ShapedSeries,
   ShapedStat,
+  ShapedTreemap,
 } from '@/services/api'
 import { formatSlot } from '@/workflows/status'
 import { formatValue, missingParam, panelRequest, withShape } from './shared'
@@ -82,6 +84,8 @@ export function PanelBody({ panel, ctx, onDrill, onOpenRow }: Props) {
       return <PieViz data={data as ShapedAggregate} panel={panel} onDrill={onDrill} />
     case 'heatmap':
       return <HeatmapViz data={data as ShapedHeatmap} panel={panel} onDrill={onDrill} />
+    case 'treemap':
+      return <TreemapViz data={data as ShapedTreemap} panel={panel} onDrill={onDrill} />
     case 'health':
       return <HealthViz data={data as ShapedRows} />
     case 'notifications':
@@ -430,6 +434,92 @@ function HeatmapViz({
           </Fragment>
         ))}
       </div>
+    </div>
+  )
+}
+
+/** The size an element is actually drawn at - a treemap lays out against its real box. */
+function useBoxSize() {
+  const ref = useRef<HTMLDivElement>(null)
+  const [box, setBox] = useState({ w: 0, h: 0 })
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const observer = new ResizeObserver(([entry]) =>
+      setBox({ w: Math.floor(entry.contentRect.width), h: Math.floor(entry.contentRect.height) }),
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+  return [ref, box] as const
+}
+
+// Neutral slate at zero, deepening to green or red as the move grows - the stock-heatmap convention.
+const NEUTRAL = [71, 85, 105]
+const UP = [22, 163, 74]
+const DOWN = [220, 38, 38]
+const tileColor = (value: number | null, scale: number) => {
+  if (value == null) return `rgb(${NEUTRAL.join(',')})`
+  const t = Math.min(1, Math.abs(value) / (scale || 1))
+  const to = value >= 0 ? UP : DOWN
+  return `rgb(${NEUTRAL.map((c, i) => Math.round(c + (to[i] - c) * t)).join(',')})`
+}
+
+function TreemapViz({
+  data,
+  panel,
+  onDrill,
+}: {
+  data: ShapedTreemap
+  panel: DashboardPanel
+  onDrill: Props['onDrill']
+}) {
+  // The box is always rendered, even when empty, so it's there to be measured from the first frame.
+  const [ref, box] = useBoxSize()
+  const tiles = useMemo(() => squarify(data.items, (i) => i.size, box.w, box.h), [data.items, box.w, box.h])
+  const scale = panel.options.scale || data.color_max || 1
+  return (
+    <div ref={ref} className="relative h-full w-full overflow-hidden rounded-md">
+      {!data.items.length && <Empty>No data in this range</Empty>}
+      {tiles.map(({ x, y, w, h, item }) => {
+        const label = w > 44 && h > 22
+        const detail = w > 64 && h > 40
+        return (
+          <button
+            key={item.key}
+            type="button"
+            onClick={() => onDrill({ group: panel.query.group_by ? item.key : undefined })}
+            title={`${item.key}: ${formatValue(item.color, panel.options)}${
+              panel.query.size ? ` · ${panel.query.size} ${formatValue(item.size)}` : ''
+            }`}
+            className="absolute flex flex-col items-center justify-center overflow-hidden px-1 text-center text-white outline-offset-[-2px] transition-[filter] hover:brightness-125 focus-visible:outline-2 focus-visible:outline-white"
+            style={{
+              left: x,
+              top: y,
+              width: w,
+              height: h,
+              background: tileColor(item.color, scale),
+              boxShadow: 'inset 0 0 0 1px rgba(0, 0, 0, 0.35)',
+            }}
+          >
+            {label && (
+              <span
+                className={cn(
+                  'max-w-full truncate font-semibold',
+                  w > 120 && h > 60 ? 'text-sm' : 'text-[11px]',
+                )}
+              >
+                {item.key}
+              </span>
+            )}
+            {detail && item.color != null && (
+              <span className="text-[11px] tabular-nums opacity-90">
+                {formatValue(item.color, panel.options)}
+              </span>
+            )}
+          </button>
+        )
+      })}
     </div>
   )
 }

@@ -1598,10 +1598,11 @@ export type PanelType =
   | 'bar'
   | 'pie'
   | 'heatmap'
+  | 'treemap'
   | 'health'
   | 'notifications'
-export type PanelShape = 'rows' | 'timeseries' | 'aggregate' | 'stat' | 'heatmap'
-export type PanelOp = 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'contains' | 'in'
+export type PanelShape = 'rows' | 'timeseries' | 'aggregate' | 'stat' | 'heatmap' | 'treemap'
+export type PanelOp = 'eq' | 'ne' | 'gt' | 'gte' | 'lt' | 'lte' | 'contains' | 'in' | 'set'
 export type PanelFilter = { field: string; op: PanelOp; value: string }
 
 /** What a panel asks its source for - see app/services/dashboard_query.py. */
@@ -1613,13 +1614,21 @@ export type PanelQuery = {
   /** The numeric field to plot or aggregate; empty counts rows. */
   value?: string | null
   group_by?: string | null
+  /** A treemap tile's area; empty = equal tiles. */
+  size?: string | null
   agg?: 'last' | 'first' | 'avg' | 'sum' | 'min' | 'max' | 'count'
   bucket?: 'run' | 'hour' | 'day'
   sort?: 'desc' | 'asc'
   limit?: number
 }
 
-export type PanelOptions = { unit?: string; decimals?: number; tone?: 'bad' | 'good' }
+export type PanelOptions = {
+  unit?: string
+  decimals?: number
+  tone?: 'bad' | 'good'
+  /** A treemap's colour scale: ± this value is full colour; empty = the largest value. */
+  scale?: number
+}
 
 export type DashboardPanel = {
   id: string
@@ -1667,6 +1676,8 @@ export type DashboardSource = {
   label: string
   description: string
   time_field: string
+  /** A snapshot (today's movers, latest closes) ignores the time range. */
+  snapshot: boolean
   params: { name: string; label: string; required: boolean }[]
 }
 
@@ -1682,6 +1693,10 @@ export type ShapedStat = {
   spark: { time: string; value: number }[]
 }
 export type ShapedHeatmap = { x: string[]; y: string[]; cells: { x: string; y: string; value: number }[] }
+export type ShapedTreemap = {
+  items: { key: string; size: number; color: number | null; count: number }[]
+  color_max: number | null
+}
 
 /** The "All" choice of a variable - a filter on it drops out rather than matching nothing. */
 export const DASHBOARD_ALL = '__all__'
@@ -1740,7 +1755,9 @@ export const drillPanel = (request: PanelRequest & { point: { group?: string; bu
   dashboardPost<ShapedRows>('/api/dashboards/drill', request)
 
 export const getDashboardTemplates = () =>
-  fetch('/api/dashboards/templates').then(json<{ id: string; name: string; description: string }[]>)
+  fetch('/api/dashboards/templates').then(
+    json<{ id: string; name: string; description: string; category: 'Market' | 'Workflows' }[]>,
+  )
 
 export const createDashboardFromTemplate = (templateId: string) =>
   dashboardPost<Dashboard>(`/api/dashboards/templates/${templateId}`, {})

@@ -94,18 +94,27 @@ export default function DashboardList() {
         <h3 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
           Start from a template
         </h3>
-        {templates.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            disabled={create.isPending}
-            onClick={() => create.mutate({ kind: 'template', id: t.id })}
-            className="block w-full rounded-lg border px-3 py-2 text-left transition-colors hover:bg-muted/50 disabled:opacity-60"
-          >
-            <p className="text-sm font-medium">{t.name}</p>
-            <p className="text-xs text-muted-foreground">{t.description}</p>
-          </button>
-        ))}
+        {(['Market', 'Workflows'] as const).map((category) => {
+          const group = templates.filter((t) => t.category === category)
+          if (!group.length) return null
+          return (
+            <div key={category} className="space-y-1.5">
+              <p className="text-[11px] text-muted-foreground">{category}</p>
+              {group.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  disabled={create.isPending}
+                  onClick={() => create.mutate({ kind: 'template', id: t.id })}
+                  className="block w-full rounded-lg border px-3 py-2 text-left transition-colors hover:bg-muted/50 disabled:opacity-60"
+                >
+                  <p className="text-sm font-medium">{t.name}</p>
+                  <p className="text-xs text-muted-foreground">{t.description}</p>
+                </button>
+              ))}
+            </div>
+          )
+        })}
       </section>
       <section className="space-y-2">
         <h3 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
@@ -140,7 +149,8 @@ export default function DashboardList() {
         <div>
           <h2 className="font-medium">Dashboards</h2>
           <p className="text-xs text-muted-foreground">
-            Workflow data as charts, stats and tables — arranged how you want, drillable down to the rows.
+            Market and workflow data as charts, heatmaps, stats and tables — arranged how you want, drillable
+            down to the rows.
           </p>
         </div>
         <div className="flex gap-2">

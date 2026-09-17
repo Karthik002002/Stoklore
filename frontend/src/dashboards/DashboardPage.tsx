@@ -213,6 +213,44 @@ function VariablePicker({
   )
 }
 
+/** The grid, in a component of its own so it only mounts once the board has loaded. The width hook
+ *  looks for its container once, on mount; while the page was still showing its loading spinner there
+ *  was no container, so it never measured and the grid stayed at the library's 1280px default -
+ *  leaving a gap on any wider screen whenever the board wasn't already cached. */
+function BoardGrid({
+  panels,
+  edit,
+  onLayoutChange,
+  children,
+}: {
+  panels: DashboardPanel[]
+  edit: boolean
+  onLayoutChange: (layout: Layout) => void
+  children: React.ReactNode
+}) {
+  const { width, containerRef, mounted } = useContainerWidth()
+  const layout = useMemo<LayoutItem[]>(
+    () => panels.map((p) => ({ i: p.id, ...p.layout, minW: 2, minH: 3 })),
+    [panels],
+  )
+  return (
+    <div ref={containerRef} className="h-full overflow-y-auto p-1">
+      {mounted && (
+        <GridLayout
+          width={width}
+          layout={layout}
+          gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: [8, 8] }}
+          dragConfig={{ enabled: edit, handle: '.panel-drag', cancel: '.panel-action' }}
+          resizeConfig={{ enabled: edit, handles: ['se'] }}
+          onLayoutChange={onLayoutChange}
+        >
+          {children}
+        </GridLayout>
+      )}
+    </div>
+  )
+}
+
 export default function DashboardPage() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
@@ -288,13 +326,8 @@ export default function DashboardPage() {
     withResolver: true,
   })
 
-  const { width, containerRef, mounted } = useContainerWidth()
-
   const panels = draft?.panels ?? NO_PANELS
-  const layout = useMemo<LayoutItem[]>(
-    () => panels.map((p) => ({ i: p.id, ...p.layout, minW: 2, minH: 3 })),
-    [panels],
-  )
+
   const bottom = Math.max(0, ...panels.map((p) => p.layout.y + p.layout.h))
 
   const update = (next: Partial<Draft>) => setDraft((d) => (d ? { ...d, ...next } : d))
@@ -495,44 +528,35 @@ export default function DashboardPage() {
       </header>
 
       <div className="relative min-h-0 flex-1">
-        <div ref={containerRef} className="h-full overflow-y-auto p-1">
-          {!panels.length ? (
-            <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-sm text-muted-foreground">
-              <p>No panels yet. Add one to chart a workflow's data, its runs or its notifications.</p>
-              <Button size="sm" onClick={addPanel}>
-                <PlusIcon className="size-3.5" />
-                Add panel
-              </Button>
-            </div>
-          ) : (
-            mounted && (
-              <GridLayout
-                width={width}
-                layout={layout}
-                gridConfig={{ cols: COLS, rowHeight: ROW_HEIGHT, margin: [8, 8] }}
-                dragConfig={{ enabled: edit, handle: '.panel-drag', cancel: '.panel-action' }}
-                resizeConfig={{ enabled: edit, handles: ['se'] }}
-                onLayoutChange={onLayoutChange}
-              >
-                {panels.map((panel) => (
-                  <div key={panel.id}>
-                    <PanelFrame
-                      panel={panel}
-                      ctx={ctx}
-                      edit={edit}
-                      onEdit={() => setSearch({ panel: panel.id })}
-                      onDuplicate={() => duplicate(panel)}
-                      onRemove={() => remove(panel)}
-                      onFullscreen={() => setSearch({ view: panel.id })}
-                      onDrill={(point) => setSearch({ drill: { panel: panel.id, ...point } })}
-                      onOpenRow={(row) => setOpenRow({ panel: panel.id, row })}
-                    />
-                  </div>
-                ))}
-              </GridLayout>
-            )
-          )}
-        </div>
+        {!panels.length ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-sm text-muted-foreground">
+            <p>
+              No panels yet. Add one to chart market data, a workflow's data, its runs or its notifications.
+            </p>
+            <Button size="sm" onClick={addPanel}>
+              <PlusIcon className="size-3.5" />
+              Add panel
+            </Button>
+          </div>
+        ) : (
+          <BoardGrid panels={panels} edit={edit} onLayoutChange={onLayoutChange}>
+            {panels.map((panel) => (
+              <div key={panel.id}>
+                <PanelFrame
+                  panel={panel}
+                  ctx={ctx}
+                  edit={edit}
+                  onEdit={() => setSearch({ panel: panel.id })}
+                  onDuplicate={() => duplicate(panel)}
+                  onRemove={() => remove(panel)}
+                  onFullscreen={() => setSearch({ view: panel.id })}
+                  onDrill={(point) => setSearch({ drill: { panel: panel.id, ...point } })}
+                  onOpenRow={(row) => setOpenRow({ panel: panel.id, row })}
+                />
+              </div>
+            ))}
+          </BoardGrid>
+        )}
 
         {fullscreen && (
           <div className="absolute inset-0 z-20 flex flex-col bg-card p-3">

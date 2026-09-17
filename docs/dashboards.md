@@ -2,11 +2,10 @@
 
 [← Back to index](README.md)
 
-`/dashboards` — panels over your workflow data, arranged on a grid the way you
-want, so what workflows collect is visible at a glance instead of one Data tab at
-a time. Workflow data, runs and notifications are the first sources; other
-sources (price history, the journal, alerts, holdings) plug in later without
-changing a panel.
+`/dashboards` — panels over market data and your workflows' data, arranged on a
+grid the way you want: sectors and movers as heatmaps, your watchlist's day,
+one stock's history, what workflows collected. Sources are a registry, so more
+(the journal, alerts, holdings) plug in later without changing a panel.
 
 ## Using it
 
@@ -15,8 +14,20 @@ changing a panel.
     top 10, a table, a pie, a heatmap, its run health and its notifications, with
     a dropdown for the field that names things (usually `symbol`). Also on each
     workflow's **Data** tab as **Build a dashboard**.
-  - **Templates** — *Workflow health* (every workflow's outcomes, durations and
-    failures) and *Notifications overview*.
+    - **Templates**, market first:
+    - *Market pulse* — NIFTY 50 and NIFTY BANK today, NIFTY 500 breadth, every
+      sector as a heatmap, sectors over 30 days and a year, every index.
+    - *Market movers* — NSE's gainers and losers as a heatmap sized by turnover,
+      the extremes, highest turnover, corporate actions behind the moves.
+    - *Watchlist heatmap* — a *Watchlist* dropdown; today's move for each stock as
+      a heatmap, advancing vs declining, volume against the 20-day average, 30
+      days of daily moves as a heatmap.
+    - *Stock deep-dive* — a *Symbol* dropdown; close and volume over time, the
+      day's move, events by type, sentiment, every headline.
+    - *Events radar* — events per stock per day, where the news is (coloured by
+      sentiment), by type, the most-covered stocks, the latest headlines.
+    - *Workflow health* and *Notifications overview* for the workflows
+      themselves.
   - **New dashboard** — blank, opened in edit mode.
 - **View mode** reads. Hover a panel for **View the data** and **Full screen**.
   **Click any mark** — a point on a line, a bar, a slice, a heatmap cell, a stat —
@@ -56,6 +67,7 @@ A reload, or a link sent to yourself, shows exactly that view.
 | **Bar / top N** | one bar per group, largest first; negatives in red | that group's rows |
 | **Pie** | each group's share | that slice's rows |
 | **Heatmap** | a row per group, a column per day | that cell's rows |
+| **Treemap** | a tile per group — area from one number (turnover, market cap, volume, or equal), green or red from another (the day's move) — a stock heatmap | that tile's rows |
 | **Run health** | a bar per workflow run, red when it failed | the run's diagram |
 | **Notifications** | what workflows filed, newest first | the notification in its inbox |
 
@@ -70,10 +82,38 @@ change lands on the board as you make it.
   first avg sum min max count`), group by, time bucket (per run / hour / day),
   order and limit. The fields offered come from the data itself, so a workflow's
   own columns appear with no setup.
-- **Filters** — `field  = ≠ > ≥ < ≤ contains one-of  value`. The value can be a
-  `$variable`.
-- **Display** — unit (`%`, `₹`, `s`), decimals, and for a stat *a rise is bad*,
-  so more failures show red.
+- **Filters** — `field  = ≠ > ≥ < ≤ contains one-of has-a-value  value`. The
+  value can be a `$variable`; *has a value* ignores it (e.g. only movers with a
+  corporate action).
+- **Display** — unit (`%`, `₹`, `s`), decimals; for a stat *a rise is bad*, so
+  more failures show red; for a treemap the **colour scale** — the move that shows
+  full green or red (blank uses the largest).
+
+A treemap's tiles are laid out in the browser, squarified (Bruls et al.) against the
+panel's measured size, so resizing the panel re-packs the tiles instead of
+stretching them. The server sends one size and one colour value per tile.
+
+## Sources
+
+| Source | Rows | Time range |
+|---|---|---|
+| **NSE indices** | every NSE index: today's %, 30-day and 1-year %, advances/declines, P/E, P/B, yield; filter by category (Broad market, Sectoral, Thematic, Strategy…) | snapshot, refreshed every 5 min |
+| **NSE movers** | the day's gainers and losers for one index cut (All securities, NIFTY 50, F&O…): %, last price, volume, turnover, corporate action | snapshot, NSE's once-a-day table |
+| **Watchlist prices** | each watchlisted stock's latest close, previous close, % change, volume vs its 20-day average | snapshot, latest bar |
+| **Price history** | daily bars — close, % change, open/high/low, volume — for one symbol or a watchlist | filtered by range |
+| **Stock events** | events and headlines the scans found — type, sentiment, score | filtered by range |
+| **Workflow data / runs / notifications** | what a workflow collected, every run, what it filed | filtered by range |
+
+**A snapshot ignores the time range.** Today's movers or the latest close are what
+they are; filtering them by "last hour" would only blank the panel.
+
+- **NSE movers** read the snapshot the Movers page already keeps (fetched at most
+  once a day), and NSE indices use the same 5-minute cache as the Indices page. A
+  board refreshing every 5 seconds never asks NSE for more.
+- **Watchlist prices and price history** take the previous close over the whole
+  stored history, *before* the range is applied. So a range's first bar still has
+  its change, and a stock's 20-day average is 20 real bars, not whatever the range
+  cut off.
 
 **A run is one point.** Grouping by run puts everything a single run collected —
 eight symbols priced at 16:00 — at one moment on the x-axis, not eight moments a
@@ -105,11 +145,18 @@ panel  →  query {source, params, filters, value, group_by, agg, bucket, …}
   12-column grid laid out with `react-grid-layout`.
 - **A bad time range** (`?from=yesterday-ish`) is refused with the forms that
   work, not a parse error.
+- **The grid always fills the page.** The grid library measures its container
+  once, when it mounts. The page used to show a loading spinner first, so on a
+  fresh load there was no container to measure, and the grid stayed at the
+  library's 1280px default — a gap on the right of any wider screen, only when
+  the board wasn't already cached. The grid now mounts only after the board has
+  loaded.
 
 ## What is checked
 
 ```bash
 .venv/bin/python tests/dashboards.selfcheck.py
+node frontend/src/components/charts/squarify.selfcheck.mjs
 ```
 
 Pure, with no database or clock:
@@ -119,13 +166,22 @@ Pure, with no database or clock:
 - rows, time series (a run is one point, a group is one line), aggregates, stats
   with their change, heatmaps
 - drill-down for a group that isn't first in its run
-- both templates and a workflow-built dashboard passing validation, and a panel
+- treemap tiles sized and coloured per group, equal tiles, zero sizes dropped
+- the *has a value* filter
+- every template and a workflow-built dashboard passing validation, and a panel
   past the 12th column refused
+
+The treemap layout (`squarify.selfcheck.mjs`) checks that areas are proportional,
+the tiles cover the panel exactly and never overlap, the tiles stay near-square,
+and empty or unmeasured input produces no tiles.
 
 The database side was verified against a throwaway database, never the live one:
 - create, list, get and delete
 - time-bounded run, notification and series reads
-- every template and workflow-built panel running a real query
+- every template and workflow-built panel running a real query — all 61 across
+  the seven templates, with the NSE indices and movers fetched live
+- the latest close, previous close and 20-day average volume against hand-computed
+  numbers, and a range's first bar keeping its change
 - every point on a chart drilling to exactly its own row
 
 **Not covered:** the grid's drag and resize, which are the library's, and
@@ -142,3 +198,4 @@ rendering, which is checked by using the page.
 | `frontend/src/dashboards/DrillDrawer.tsx` | The rows behind a click |
 | `frontend/src/dashboards/VariablesDialog.tsx` | Dashboard-wide dropdowns |
 | `frontend/src/components/charts/SeriesChart.tsx` | The line chart shared with the Data tab |
+| `frontend/src/components/charts/squarify.ts` | The treemap layout |

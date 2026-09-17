@@ -11,7 +11,8 @@ A panel's query:
     params    the source's own arguments (workflow_id, series); may be "$var"
     filters   [{field, op, value}]; value may be "$var", and a variable set to All drops the filter
     shape     rows | timeseries | aggregate | stat | heatmap
-    value     the numeric field to plot or aggregate (none = count rows)
+    value     the numeric field to plot or aggregate (none = count rows); a treemap's colour
+    size      a treemap tile's area - a numeric field, or none for equal tiles
     group_by  split into a line, bar, slice or heatmap row per value of this field
     agg       last | first | avg | sum | min | max | count
     bucket    run | hour | day - how time is grouped
@@ -20,7 +21,7 @@ A panel's query:
 import re
 from datetime import datetime, timedelta, timezone
 
-SHAPES = ("rows", "timeseries", "aggregate", "stat", "heatmap")
+SHAPES = ("rows", "timeseries", "aggregate", "stat", "heatmap", "treemap")
 AGGS = ("last", "first", "avg", "sum", "min", "max", "count")
 BUCKETS = ("run", "hour", "day")
 
@@ -55,6 +56,8 @@ OPS = {
     "lte": lambda a, b: _num(a) is not None and _num(b) is not None and _num(a) <= _num(b),
     "contains": lambda a, b: _s(b).lower() in _s(a).lower(),
     "in": lambda a, b: _s(a).lower() in [x.strip().lower() for x in _s(b).split(",")],
+    # The value is ignored: the field just has to be there - a corporate action, an error, a note.
+    "set": lambda a, _b: a not in (None, "") and _s(a).strip() != "",
 }
 
 
@@ -252,6 +255,26 @@ def shape(rows, query, variables=None):
             "at": points[-1][0].isoformat() if points else None,
             "spark": [{"time": b.isoformat(), "value": v} for b, v in points][-30:],
         }
+
+    if kind == "treemap":
+        # One tile per group: its area from `size` (equal when unset), its colour from `value`. The
+        # tiles are laid out in the browser, against the panel's real size - a layout computed here
+        # would be stretched the moment the panel isn't square.
+        size_field = q.get("size") or None
+        groups = {}
+        for r in rows:
+            groups.setdefault(_s(r.get(group_by)) if group_by else "all", []).append(r)
+        items = []
+        for key, members in groups.items():
+            size = aggregate([m.get(size_field) for m in members], "last") if size_field else 1
+            if size is None or size <= 0:
+                continue
+            color = aggregate([m.get(value) for m in members], agg) if value else None
+            items.append({"key": key, "size": size, "color": color, "count": len(members)})
+        items.sort(key=lambda i: i["size"], reverse=True)
+        items = items[: _limit(q, 100)]
+        colors = [abs(i["color"]) for i in items if i["color"] is not None]
+        return {"items": items, "color_max": max(colors) if colors else None}
 
     cells, xs, ys = {}, set(), set()
     for start, r in _bucketed(rows, time_field, bucket):

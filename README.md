@@ -352,9 +352,12 @@ arming one *is* the confirmation — which is safe because the tool table has no
 order-placing tool in it. Executions are recorded as ordinary runs, so they get
 the same history and the same flow diagram as a chat turn.
 
-**Dashboards** (`/dashboards`, [docs](docs/dashboards.md)) put workflow data on a
-grid you arrange yourself: time series, stats, tables, bars, pies, heatmaps, run
-health and notifications. Drag and resize in edit mode; set a time range,
+**Dashboards** (`/dashboards`, [docs](docs/dashboards.md)) put market and workflow
+data on a grid you arrange yourself: time series, stats, tables, bars, pies,
+heatmaps, **treemaps** (a stock heatmap — tiles sized by turnover, green or red by
+the day's move), run health and notifications. Market templates — *Market pulse*,
+*Market movers*, *Watchlist heatmap*, *Stock deep-dive*, *Events radar* — read NSE's
+indices and movers, your watchlists' prices, price history and stock events. Drag and resize in edit mode; set a time range,
 auto-refresh and variables like `$symbol`; click any mark to see the rows behind
 it. Build one from a workflow in a click, or start from a template. Sources are a
 registry, so price history or the journal can feed panels later.

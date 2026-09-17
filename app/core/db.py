@@ -1749,6 +1749,48 @@ def workflow_notifications_between(workflow_id, since, until, limit=1000):
 # --- dashboards -------------------------------------------------------------------------------------
 
 
+def watchlist_latest_prices(list_name=None):
+    """Every watchlist membership with its latest stored bar, the close before it and a 20-day
+    average volume. The window functions run over the symbol's whole history before LIMIT keeps the
+    newest row, so the previous close and the average are real, not the edge of a one-row slice."""
+    sql = (
+        "SELECT w.symbol, w.list_name, p.date, p.close, p.volume, p.prev_close, p.avg_volume_20 "
+        "FROM watchlist w LEFT JOIN LATERAL ("
+        "  SELECT date, close, volume, LAG(close) OVER (ORDER BY date) AS prev_close, "
+        "  AVG(volume) OVER (ORDER BY date ROWS BETWEEN 20 PRECEDING AND 1 PRECEDING) AS avg_volume_20 "
+        "  FROM price_history WHERE symbol = w.symbol ORDER BY date DESC LIMIT 1"
+        ") p ON true"
+    )
+    params = []
+    if list_name:
+        sql += " WHERE w.list_name = %s"
+        params.append(list_name)
+    with connect() as conn:
+        return conn.execute(sql + " ORDER BY w.list_name, w.symbol", params).fetchall()
+
+
+def price_bars_between(symbols, since=None, until=None, limit=5000):
+    """Daily bars for these symbols, newest first, each with the close before it. The previous close
+    is taken over the whole history before the window is applied, so a range's first bar still has
+    its change."""
+    if not symbols:
+        return []
+    sql = (
+        "SELECT * FROM (SELECT symbol, date, open, high, low, close, volume, "
+        "LAG(close) OVER (PARTITION BY symbol ORDER BY date) AS prev_close "
+        "FROM price_history WHERE symbol = ANY(%s)) t WHERE true"
+    )
+    params = [list(symbols)]
+    if since:
+        sql += " AND date >= %s"
+        params.append(since.date() if hasattr(since, "date") else since)
+    if until:
+        sql += " AND date <= %s"
+        params.append(until.date() if hasattr(until, "date") else until)
+    with connect() as conn:
+        return conn.execute(sql + " ORDER BY date DESC LIMIT %s", (*params, limit)).fetchall()
+
+
 def list_dashboards():
     with connect() as conn:
         return conn.execute(

@@ -59,6 +59,8 @@ assert len(dq.apply_filters(ROWS, [{"field": "symbol", "op": "eq", "value": "$sy
 assert len(dq.apply_filters(ROWS, [{"field": "changePercent", "op": "gt", "value": "3"}])) == 3
 assert len(dq.apply_filters(ROWS, [{"field": "symbol", "op": "in", "value": "TCS, RAIN"}])) == 4
 assert dq.apply_filters([{"unread": True}], [{"field": "unread", "op": "eq", "value": "true"}]), "a boolean matches 'true'"
+has = dq.apply_filters([{"ca": "Dividend"}, {"ca": None}, {"ca": "  "}, {}], [{"field": "ca", "op": "set", "value": ""}])
+assert has == [{"ca": "Dividend"}], "'has a value' ignores the value and skips blanks"
 
 # --- rows -------------------------------------------------------------------------------------------
 out = dq.shape(ROWS, {**Q, "shape": "rows", "limit": 2})
@@ -92,6 +94,17 @@ assert dq.shape([], {**Q, "shape": "stat"})["value"] is None, "no data is None, 
 heat = dq.shape(ROWS, {**Q, "shape": "heatmap", "value": "changePercent", "group_by": "symbol", "agg": "avg"})
 assert len(heat["x"]) == 3 and heat["y"] == ["INFY", "RAIN", "TCS"]
 assert {(c["y"], c["value"]) for c in heat["cells"] if c["x"] == heat["x"][-1]} == {("TCS", 5.0), ("INFY", 4.0), ("RAIN", 7.5)}
+
+# --- treemap: a tile per group, sized and coloured ---------------------------------------------------
+tm = dq.shape(ROWS + [row(2, "r3", "ZERO", 1.0, turnover=0)],
+              {**Q, "shape": "treemap", "group_by": "symbol", "value": "changePercent", "agg": "last", "size": "turnover"})
+assert tm["items"] == [], "no tile has a positive size when the size field is missing - nothing to draw"
+sized = [dict(r, turnover={"TCS": 300, "INFY": 100, "RAIN": 50}[r["symbol"]]) for r in ROWS] + [row(2, "r3", "ZERO", 9.0, turnover=0)]
+tm = dq.shape(sized, {**Q, "shape": "treemap", "group_by": "symbol", "value": "changePercent", "agg": "last", "size": "turnover"})
+assert [(i["key"], i["size"], i["color"]) for i in tm["items"]] == [("TCS", 300, 5.0), ("INFY", 100, 4.0), ("RAIN", 50, 7.5)], tm
+assert tm["color_max"] == 7.5, "the colour scale is the largest move, either way"
+equal = dq.shape(ROWS, {**Q, "shape": "treemap", "group_by": "symbol", "value": "changePercent"})
+assert {i["size"] for i in equal["items"]} == {1}, "no size field = equal tiles"
 
 # --- drill-down: exactly the rows behind a mark ------------------------------------------------------
 point = ts["series"][2]["points"][1]  # TCS in run r2

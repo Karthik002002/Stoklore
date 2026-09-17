@@ -25,6 +25,7 @@ const OPS: { value: PanelOp; label: string }[] = [
   { value: 'lte', label: '≤' },
   { value: 'contains', label: 'contains' },
   { value: 'in', label: 'one of' },
+  { value: 'set', label: 'has a value' },
 ]
 const AGGS = ['last', 'first', 'avg', 'sum', 'min', 'max', 'count'] as const
 const BUCKETS = [
@@ -34,11 +35,12 @@ const BUCKETS = [
 ] as const
 
 const uses = (type: PanelType) => ({
-  value: ['timeseries', 'stat', 'bar', 'pie', 'heatmap'].includes(type),
-  group: ['timeseries', 'bar', 'pie', 'heatmap'].includes(type),
+  value: ['timeseries', 'stat', 'bar', 'pie', 'heatmap', 'treemap'].includes(type),
+  size: type === 'treemap',
+  group: ['timeseries', 'bar', 'pie', 'heatmap', 'treemap'].includes(type),
   bucket: ['timeseries', 'stat', 'heatmap'].includes(type),
   sort: ['bar', 'pie', 'table'].includes(type),
-  limit: ['table', 'bar', 'pie', 'health', 'notifications', 'heatmap'].includes(type),
+  limit: ['table', 'bar', 'pie', 'health', 'notifications', 'heatmap', 'treemap'].includes(type),
 })
 
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
@@ -241,7 +243,7 @@ export default function PanelEditor({
           <Section title="Query">
             {use.value && (
               <div className="grid grid-cols-2 gap-2">
-                <Field label="Value">
+                <Field label={panel.type === 'treemap' ? 'Colour by' : 'Value'}>
                   <Select
                     value={q.value || NONE}
                     onValueChange={(v) => setQuery({ value: v === NONE ? null : String(v) })}
@@ -279,10 +281,37 @@ export default function PanelEditor({
                 </Field>
               </div>
             )}
+            {use.size && (
+              <Field
+                label="Tile size"
+                hint="Turnover, market cap or volume make big names big; Equal gives every tile the same area."
+              >
+                <Select
+                  value={q.size || NONE}
+                  onValueChange={(v) => setQuery({ size: v === NONE ? null : String(v) })}
+                >
+                  <SelectTrigger className="h-8 w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-72">
+                    <SelectItem value={NONE}>Equal</SelectItem>
+                    {numbers.map((f) => (
+                      <SelectItem key={f.name} value={f.name}>
+                        {f.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </Field>
+            )}
             {(use.group || use.bucket) && (
               <div className="grid grid-cols-2 gap-2">
                 {use.group && (
-                  <Field label={panel.type === 'heatmap' ? 'Rows' : 'Group by'}>
+                  <Field
+                    label={
+                      panel.type === 'heatmap' ? 'Rows' : panel.type === 'treemap' ? 'A tile per' : 'Group by'
+                    }
+                  >
                     <Select
                       value={q.group_by || NONE}
                       onValueChange={(v) => setQuery({ group_by: v === NONE ? null : String(v) })}
@@ -398,6 +427,7 @@ export default function PanelEditor({
                   </SelectContent>
                 </Select>
                 <Input
+                  disabled={f.op === 'set'}
                   id={`filter-${i}`}
                   value={f.value}
                   onChange={(e) => setFilter(i, { value: e.target.value })}
@@ -464,6 +494,29 @@ export default function PanelEditor({
                 />
               </Field>
             </div>
+            {panel.type === 'treemap' && (
+              <Field
+                label="Colour scale (±)"
+                hint="The move that shows full green or red. Blank uses the largest one."
+              >
+                <Input
+                  id="panel-scale"
+                  type="number"
+                  min={0}
+                  value={panel.options.scale ?? ''}
+                  placeholder="Auto"
+                  onChange={(e) =>
+                    set({
+                      options: {
+                        ...panel.options,
+                        scale: e.target.value === '' ? undefined : Math.abs(Number(e.target.value)),
+                      },
+                    })
+                  }
+                  className="h-8"
+                />
+              </Field>
+            )}
             {panel.type === 'stat' && (
               <label className="flex items-center gap-2 text-xs">
                 <input

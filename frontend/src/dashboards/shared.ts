@@ -6,6 +6,7 @@ import {
   GaugeIcon,
   Grid3x3Icon,
   HeartPulseIcon,
+  LayoutDashboardIcon,
   TableIcon,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -49,6 +50,12 @@ export const PANEL_META: Record<
     icon: Grid3x3Icon,
     shape: 'heatmap',
     hint: 'A row per group, a column per day',
+  },
+  treemap: {
+    label: 'Treemap',
+    icon: LayoutDashboardIcon,
+    shape: 'treemap',
+    hint: 'A tile per group: area from one number, green or red from another - a stock heatmap',
   },
   health: {
     label: 'Run health',

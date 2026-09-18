@@ -24,7 +24,7 @@
 **Chart** — a shared `PriceChart` component renders both the default 1y
 view and the full-history view off the same code path (candlestick/line
 toggle, a volume pane, EMA overlays computed client-side from the fetched
-bars via `computeEma` in `lib/indicators.js`, hover tooltip). The 1y view
+bars via `computeEma` in `lib/indicators.ts`, hover tooltip). The 1y view
 reads `price_history`; the full-history view only renders once
 `price_history_max` actually has data for that symbol (see
 [Dashboard](dashboard.md#how-it-works) for how each table gets populated).

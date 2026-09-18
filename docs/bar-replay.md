@@ -343,7 +343,7 @@ that mutates an order directly. Clicking one arms `addLevelMode` in
 BarReplay.jsx (`{ orderId, kind }`, toggled off by clicking again) and
 waits for the next chart click:
 
-- `ReplayChart.jsx` gets `addLevelMode`/`onPlaceLevel` as props. A reactive
+- `ReplayChart.tsx` gets `addLevelMode`/`onPlaceLevel` as props. A reactive
   effect (same pattern the disabled "Draw long/short" tool already used
   for this exact reason) disables the chart's own pan/zoom and switches
   the cursor to a crosshair *at arm time*, not inside the click handler -
@@ -364,7 +364,7 @@ waits for the next chart click:
 
 ### Chart & Trade panel: one line, one row, per leg (both sides)
 
-`ReplayChart.jsx`'s draggable-price-line effect and price-line-drawing
+`ReplayChart.tsx`'s draggable-price-line effect and price-line-drawing
 effect both iterate `order.stopLosses` **and** `order.targets` instead of
 reading two flat fields - each leg on either side gets its own line
 (`SL1`/`SL2`… or `T1`/`T2`… once there's more than one on that side),
@@ -391,7 +391,7 @@ represented as the new one-leg-covers-everything shape under the hood.
 
 ### The chart: lightweight-charts, one instance, multiple panes
 
-`ReplayChart.jsx` owns a single `lightweight-charts` instance for the whole
+`ReplayChart.tsx` owns a single `lightweight-charts` instance for the whole
 component's lifetime (torn down and recreated only when the symbol or
 timeframe changes — every other update just calls `.setData()` on existing
 series, which is what lets your zoom/pan survive stepping or playing

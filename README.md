@@ -14,7 +14,7 @@ Runs entirely on your machine. No cloud. No APIs reaching out. No data
 leaving your laptop unless you tell it to.
 
 **Scraping** · **Local LLM chat with tool calling** · **Watchlists & events** ·
-**Price history & EMA crossover** · **Sentiment analysis** ·
+**Price history & 30+ indicators** · **Sentiment analysis** ·
 **Broker-synced holdings** · **Backtesting** ·
 **Bar Replay from 1 minute to 1 month** · **Live-price paper trading**
 
@@ -34,7 +34,7 @@ leaving your laptop unless you tell it to.
   - [`1` Live Dashboard & Watchlists](#1-live-dashboard--watchlists)
   - [`2` AI Chat Agent with Tool Calling](#2-ai-chat-agent-with-tool-calling)
   - [`3` Guard Rails](#3-guard-rails)
-  - [`4` Stock Detail: Charts, Full History & EMA Crossover](#4-stock-detail-charts-full-history--ema-crossover)
+  - [`4` Stock Detail: Charts, History & Indicators](#4-stock-detail-charts-history--indicators)
   - [`5` Watchlist Events Feed](#5-watchlist-events-feed)
   - [`6` Sentiment Analysis](#6-sentiment-analysis)
   - [`7` Multi-Model Support](#7-multi-model-support)
@@ -237,7 +237,7 @@ rails instead of a blanket "trust the model":
 
 </div>
 
-### `4` Stock Detail: Charts, Full History & EMA Crossover
+### `4` Stock Detail: Charts, History & Indicators
 
 - Shared `PriceChart` component (candlestick/line toggle, a TradingView-style
   volume pane, configurable EMA overlays, hover tooltip) — used both for the
@@ -250,6 +250,16 @@ rails instead of a blanket "trust the model":
 - **EMA crossover panel** — two period inputs (with 20/50, 20/100, 50/200
   presets) computing a golden/death cross, or the %-above/below spread when
   there's no crossover, entirely from cached data (no live re-fetch)
+- **36 indicators** live in one pure module
+  (`frontend/src/lib/indicators.ts`, [docs](docs/indicators.md)) — moving
+  averages (EMA, SMA, HMA, KAMA), trend (MACD, ADX), momentum (RSI, Stochastic,
+  Williams %R, CMO), volatility (ATR, Bollinger, Keltner, Donchian, rolling
+  vol), volume (VWAP, MFI, relative and session volume), microstructure
+  (volume delta, velocity/acceleration, VW spread, volume climax), statistical
+  (rolling correlation, z-score, autocorrelation), structure and candle shape
+  (market structure, previous-day levels, gap %, inside/outside, CLV,
+  body/range, wick asymmetry). This page charts the EMA overlays; **Bar Replay
+  draws all of them** (see [`12` Bar Replay](#12-bar-replay))
 - **Backtest summary card** — the stock's latest saved backtest (return,
   win rate, trade count) plus your own lessons-learned note, surfaced
   passively so past homework resurfaces every time you look at the stock
@@ -610,7 +620,7 @@ OHLCV, no backend execution involved:
   80) and shown as a sentence in the trade detail view
 - **Trading costs per account** — slippage (per share or bps), flat +
   percentage brokerage, and other charges, applied per side of the round trip
-  (`app/core/db.py` `trade_accounts` + `frontend/src/lib/tradeCosts.js`). Every
+  (`app/core/db.py` `trade_accounts` + `frontend/src/lib/tradeCosts.ts`). Every
   surface shows gross and net side by side; only a wallet balance is net-only,
   because that money genuinely left the account. Paper accounts carry the same
   rate card, so a paper P&L and a journal P&L are finally comparable
@@ -623,7 +633,7 @@ OHLCV, no backend execution involved:
   **Copy JSON** of whichever trades you've ticked (same fields as the xlsx,
   keyed for code — paste straight into a notebook or the chat agent), and
   **Markdown**/**Copy MD** of the Statistics tab. The xlsx writer is ~60
-  hand-rolled lines (`frontend/src/lib/exportFile.js`) rather than a
+  hand-rolled lines (`frontend/src/lib/exportFile.ts`) rather than a
   megabyte-class dependency — an xlsx is a zip of a few XML parts
 - A direct link into **Bar Replay** (see [`12` Bar Replay](#12-bar-replay))
 
@@ -691,8 +701,18 @@ Bar Replay.
 - **Measure tool** — `Shift`+click, move, click (or Shift+drag) marks out a
   range and reads it back: price change, % move, bars spanned, time elapsed,
   and volume traded across it — TradingView's measure, on the replay chart
-- **Indicators**: EMA, SMA, and RSI (its own pane below the candles, via
-  lightweight-charts' multi-pane support)
+- **36 indicators**, added from a picker and stacked as chips — price overlays
+  (EMAs, SMA, HMA, KAMA, VWAP, Bollinger, Keltner, Donchian, previous-day
+  levels) draw on the candles, and each oscillator *type* gets its own pane
+  below them (RSI, MACD, ADX, Stochastic, Williams %R, CMO, ATR, MFI, relative
+  and session volume, volume delta, velocity/acceleration, VW spread, volume
+  climax, rolling correlation, z-score, autocorrelation, rolling volatility,
+  market structure, gap %, inside/outside, CLV, body/range, wick asymmetry),
+  via lightweight-charts' multi-pane support. Two RSIs of different periods
+  share a pane; an RSI and a CLV never do, because one runs 0–100 and the other
+  −1…+1. The maths is one pure file with its own self-check —
+  [docs/indicators.md](docs/indicators.md) says how each one is computed and
+  where it departs from the textbook
 - **Settings modal** — candle colors, default order quantity, RSI reference
   levels, all editable
 - Every closed trade is logged to the same manual trade journal as the rest
@@ -806,7 +826,7 @@ the chart, and tells you what the broker did. Fills and rejections land in the [
 
 - **One date control everywhere** — shadcn's Base UI `Calendar` (added through the CLI, so it
   matches the project's `base-nova` style) behind a shared `DatePicker`/`DateRangePicker`
-  (`frontend/src/components/DatePicker.jsx`). It replaced every `<input type="date">` in the app:
+  (`frontend/src/components/DatePicker.tsx`). It replaced every `<input type="date">` in the app:
   the events-feed range filter, both balance-adjustment forms, Bar Replay's jump-to-date, the
   journal filter panel's logged-date window, and the shareholding collect span. Values stay `"YYYY-MM-DD"` strings end to end — the API, the forms and
   the URL all already spoke that, and converting at the edges beats spreading `Date` juggling
@@ -815,7 +835,7 @@ the chart, and tells you what the broker did. Fills and rejections land in the [
   Trading and Trade Simulation, all twelve Settings sub-tabs, plus Profile, Watchlists, theme and a
   cache-clearing reload. Type `@SYMBOL` to jump to a stock's detail page; an untracked ticker is
   verified against NSE before it navigates, so the palette never lands on an empty page. The lists
-  in `frontend/src/CommandPalette.jsx` are hand-maintained rather than derived from the router —
+  in `frontend/src/CommandPalette.tsx` are hand-maintained rather than derived from the router —
   a new route or tab has to be added there in the same change, or it simply can't be found
 - **Watchlist canvas (Cmd/Ctrl+B)** — the stock-to-watchlist mapping as a React Flow graph, on one
   shortcut from any page: each watchlist on top with only its stocks listed under it, and stocks
@@ -829,13 +849,13 @@ the chart, and tells you what the broker did. Fills and rejections land in the [
   Backspace turns one off, and clashes are flagged rather than left to be
   discovered when one of the two silently stops firing. Components register by
   id (`useShortcut('replay.buy', …)`) against a single registry
-  (`frontend/src/lib/shortcuts.js`), so the Settings tab, the tooltips and what
+  (`frontend/src/lib/shortcuts.ts`), so the Settings tab, the tooltips and what
   actually fires cannot drift apart. Stored per browser, not per account — a
   keyboard belongs to the machine you're sitting at
 - **Consistency tracker (the Profile modal)** — daily streak, best streak,
   time on the app today against a goal, and a year-long usage graph. Time is
   counted **in the browser**, in `localStorage`, per local calendar day
-  (`frontend/src/lib/activityTime.js`), and pushed to the server every couple
+  (`frontend/src/lib/activityTime.ts`), and pushed to the server every couple
   of minutes as a per-day backlog. The modal counts **live** while it is open —
   the tracker publishes every second to whoever is watching, and does nothing
   at all when nobody is. It used to be counted server-side over a
@@ -875,7 +895,7 @@ the chart, and tells you what the broker did. Fills and rejections land in the [
   lot, ISIN, listing date), and searchable per board. They trade only in fixed
   lots, which is worth knowing before you size a position in one
 - **Spreadsheet/markdown exports with no new dependency** —
-  `frontend/src/lib/exportFile.js` writes a real `.xlsx` (store-only zip of the
+  `frontend/src/lib/exportFile.ts` writes a real `.xlsx` (store-only zip of the
   XML parts, numbers stay numeric) and markdown tables; used by the trade
   journal, paper trade history, Statistics and Trade Simulation
 - An animated gradient app-logo mark and a redesigned icon-rail nav
@@ -893,6 +913,7 @@ the chart, and tells you what the broker did. Fills and rejections land in the [
 | Scraping   | `app/core/scraper.py` — NSE India API + `yfinance`                          |
 | Analysis   | `app/core/llm.py` — Ollama / OmniRoute / LiteLLM (chat + tool calling), `nomic-embed-text` for embeddings; `app/core/sentiment.py` — local FinRoBERTa classifier |
 | Events     | `app/core/events.py` — watchlist-scoped news/price/volume/corporate-action scan |
+| Indicators | `frontend/src/lib/indicators.ts` — 36 indicators (moving averages, trend, momentum, volatility, volume, microstructure, statistical, structure, candle shape), pure and self-checked ([docs](docs/indicators.md)) |
 | Prices     | `app/core/prices.py` — incremental daily OHLCV sync (1y + full-history tiers) + EMA crossover math; `app/core/minute_data.py` — intraday bars (1m–4H) for Bar Replay, streamed on demand from a HuggingFace minute dataset via DuckDB, yfinance fallback |
 | Brokers    | `app/core/broker.py` (Dhan v2) + `app/core/kite.py` (Kite Connect v3) — read-only holdings/margin, normalized to one shape |
 | Backtests  | Manual: `app/core/backtest.py` — long-only EMA-crossover backtest over stored `price_history` (not yet wired into the UI). Auto: user-written Pine Script run client-side via `pinets` (PineTS) against `price_history`/`price_history_max`, saved as templates in `auto_backtest_scripts` |

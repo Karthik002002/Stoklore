@@ -4,7 +4,7 @@ Every indicator available in Bar Replay, what it measures, and **exactly how thi
 computes it** — including the places where the implementation deliberately differs from the
 textbook version.
 
-All the math lives in one file, [`frontend/src/lib/indicators.js`](../frontend/src/lib/indicators.js).
+All the math lives in one file, [`frontend/src/lib/indicators.ts`](../frontend/src/lib/indicators.ts).
 It is pure: no React, no chart library, no network. That's what makes it testable in isolation:
 
 ```bash
@@ -16,7 +16,7 @@ node frontend/src/lib/indicators.selfcheck.mjs
 ## How the registry works
 
 `INDICATOR_TYPES` is a plain object. One entry per indicator, and adding a new one is only ever an
-entry here — [`ReplayChart.jsx`](../frontend/src/features/bar-replay/ReplayChart.jsx) iterates it
+entry here — [`ReplayChart.tsx`](../frontend/src/features/bar-replay/ReplayChart.tsx) iterates it
 generically.
 
 | Field | Meaning |

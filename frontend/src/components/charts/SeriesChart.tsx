@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { LineSeries, createChart } from 'lightweight-charts'
 import type { ISeriesApi, UTCTimestamp } from 'lightweight-charts'
 import type { Dataset } from './colors'
+import { axisTime } from './colors'
 import { fmt } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -40,6 +41,9 @@ export default function SeriesChart({
   const [hidden, setHidden] = useState<Set<string>>(() => new Set())
   const [hovered, setHovered] = useState<string | null>(null)
   const [crosshair, setCrosshair] = useState<Map<string, number> | null>(null)
+  // What the pointer is over, for the tooltip beside it. The legend only appears with two or more
+  // lines, so without this a single-line panel showed no values at all on hover.
+  const [tip, setTip] = useState<{ x: number; y: number; time: UTCTimestamp } | null>(null)
 
   useEffect(() => {
     if (!containerRef.current || !datasets.length) return
@@ -67,13 +71,17 @@ export default function SeriesChart({
     }
     seriesRef.current = map
     chart.subscribeCrosshairMove((param) => {
-      if (!param.time) return setCrosshair(null)
+      if (!param.time || !param.point) {
+        setTip(null)
+        return setCrosshair(null)
+      }
       const values = new Map<string, number>()
       for (const [key, series] of map) {
         const point = param.seriesData.get(series)
         if (point && 'value' in point) values.set(key, point.value)
       }
       setCrosshair(values)
+      setTip({ x: param.point.x, y: param.point.y, time: param.time as UTCTimestamp })
     })
     // The clicked line is the one whose value at that time sits nearest the pointer - the chart
     // reports every series' value at a time, not which line was under the cursor.
@@ -120,6 +128,29 @@ export default function SeriesChart({
     <div className={cn(fill && 'flex h-full min-h-0 flex-col')}>
       <div className={cn('relative', fill ? 'min-h-0 flex-1' : 'h-64')}>
         <div ref={containerRef} className={cn('absolute inset-0', onPointClick && 'cursor-pointer')} />
+        {tip && crosshair && crosshair.size > 0 && (
+          <div
+            role="tooltip"
+            // Flipped to the left of the pointer once it passes half way, so it never leaves the panel.
+            className={cn(
+              'pointer-events-none absolute top-2 z-10 max-w-56 rounded-md border bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md',
+              tip.x > (containerRef.current?.clientWidth ?? 0) / 2 ? '-translate-x-full' : '',
+            )}
+            style={{ left: tip.x + (tip.x > (containerRef.current?.clientWidth ?? 0) / 2 ? -12 : 12) }}
+          >
+            <p className="font-medium">{axisTime(tip.time)}</p>
+            {[...crosshair].map(([key, value]) => (
+              <p key={key} className="flex items-center gap-1.5 whitespace-nowrap">
+                <span
+                  className="size-2 shrink-0 rounded-full"
+                  style={{ background: datasets.find((d) => d.key === key)?.color }}
+                />
+                <span className="truncate">{key}</span>
+                <span className="ml-auto tabular-nums">{format(value)}</span>
+              </p>
+            ))}
+          </div>
+        )}
       </div>
       {datasets.length > 1 && (
         <div className={cn('flex items-start gap-2 border-t', fill ? 'mt-1 shrink-0 pt-1' : 'mt-3 pt-3')}>

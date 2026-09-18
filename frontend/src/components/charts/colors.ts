@@ -36,3 +36,14 @@ export const chartTime = (iso: string) => {
   const ms = new Date(iso).getTime()
   return (Math.floor(ms / 1000) - new Date(ms).getTimezoneOffset() * 60) as UTCTimestamp
 }
+
+/** A chart timestamp read back as the local time it stands for - the inverse of `chartTime`, for a
+ *  tooltip that has only the shifted value the chart reports. */
+export const axisTime = (time: number) =>
+  new Date(time * 1000).toLocaleString('en-IN', {
+    timeZone: 'UTC',
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  })

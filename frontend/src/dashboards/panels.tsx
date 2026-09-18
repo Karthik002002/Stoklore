@@ -22,7 +22,10 @@ import type {
   ShapedTreemap,
 } from '@/services/api'
 import { formatSlot } from '@/workflows/status'
-import { formatValue, missingParam, panelRequest, withShape } from './shared'
+import { useHoverTip } from './HoverTip'
+import PanelBoundary from './PanelBoundary'
+import { matchesShape } from './shaped'
+import { PANEL_META, formatValue, missingParam, panelRequest, withShape } from './shared'
 import type { DrillPoint, PanelContext } from './shared'
 
 // What each panel type draws from its query's shape. Every mark that stands for data is clickable
@@ -49,7 +52,17 @@ export function Empty({ children, tone }: { children: React.ReactNode; tone?: 'b
   )
 }
 
-export function PanelBody({ panel, ctx, onDrill, onOpenRow }: Props) {
+/** The panel, inside its own error boundary: a panel that throws says so in its own frame instead of
+ *  replacing the page with an error screen. */
+export function PanelBody(props: Props) {
+  return (
+    <PanelBoundary resetKey={`${props.panel.type}|${JSON.stringify(props.panel.query)}`}>
+      <PanelContent {...props} />
+    </PanelBoundary>
+  )
+}
+
+function PanelContent({ panel, ctx, onDrill, onOpenRow }: Props) {
   const missing = missingParam(panel)
   const { data, error, isLoading } = useQuery({
     queryKey: ['panel', ctx.dashboardId, panel.id, withShape(panel), ctx.variables, ctx.from, ctx.to],
@@ -70,6 +83,14 @@ export function PanelBody({ panel, ctx, onDrill, onOpenRow }: Props) {
   }
   if (error) return <Empty tone="bad">{(error as Error).message}</Empty>
   if (!data) return <Empty>No data</Empty>
+  // The type just changed and this is still the old shape's data - its own query is already running.
+  if (!matchesShape(PANEL_META[panel.type].shape, data)) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <Spinner className="size-4" />
+      </div>
+    )
+  }
 
   switch (panel.type) {
     case 'timeseries':
@@ -286,17 +307,26 @@ function BarViz({
   panel: DashboardPanel
   onDrill: Props['onDrill']
 }) {
+  const tip = useHoverTip()
   if (!data.items.length) return <Empty>No data in this range</Empty>
   const max = Math.max(...data.items.map((i) => Math.abs(i.value))) || 1
   return (
-    <div className="flex h-full flex-col gap-1 overflow-y-auto">
+    <div className="flex h-full flex-col gap-1 overflow-y-auto" onMouseLeave={tip.hide}>
+      {tip.node}
       {data.items.map((item) => (
         <button
           key={item.key}
           type="button"
           onClick={() => onDrill({ group: panel.query.group_by ? item.key : undefined })}
           className="grid grid-cols-[minmax(3.5rem,32%)_1fr_auto] items-center gap-2 rounded px-1 py-0.5 text-left text-xs transition-colors hover:bg-muted/50"
-          title={`${item.key}: ${formatValue(item.value, panel.options)} (${item.count} rows)`}
+          onMouseMove={(e) =>
+            tip.show(
+              e,
+              `${item.key}: ${formatValue(item.value, panel.options)}`,
+              `${item.count} row${item.count === 1 ? '' : 's'} · click to see them`,
+            )
+          }
+          onMouseLeave={tip.hide}
         >
           <span className="truncate">{item.key}</span>
           <span className="h-3 overflow-hidden rounded-sm bg-muted/60">
@@ -324,12 +354,16 @@ function PieViz({
   panel: DashboardPanel
   onDrill: Props['onDrill']
 }) {
+  const tip = useHoverTip()
   const items = data.items.filter((i) => i.value > 0)
   if (!items.length) return <Empty>No data in this range</Empty>
   const total = items.reduce((sum, i) => sum + i.value, 0)
   const drill = (key: string) => onDrill({ group: panel.query.group_by ? key : undefined })
+  const share = (value: number) =>
+    `${Math.round((value / total) * 100)}% of ${formatValue(total, panel.options)}`
   return (
-    <div className="flex h-full min-h-0 items-center gap-3">
+    <div className="flex h-full min-h-0 items-center gap-3" onMouseLeave={tip.hide}>
+      {tip.node}
       <svg
         viewBox="0 0 100 100"
         className="aspect-square h-full max-h-full shrink-0"
@@ -347,9 +381,15 @@ function PieViz({
                   fill={seriesColor(i)}
                   className="cursor-pointer transition-opacity hover:opacity-75"
                   onClick={() => drill(arc.data.key)}
-                >
-                  <title>{`${arc.data.key}: ${formatValue(arc.data.value, panel.options)}`}</title>
-                </path>
+                  onMouseMove={(e) =>
+                    tip.show(
+                      e,
+                      `${arc.data.key}: ${formatValue(arc.data.value, panel.options)}`,
+                      share(arc.data.value),
+                    )
+                  }
+                  onMouseLeave={tip.hide}
+                />
               ))
             }
           </Pie>
@@ -361,6 +401,10 @@ function PieViz({
             <button
               type="button"
               onClick={() => drill(item.key)}
+              onMouseMove={(e) =>
+                tip.show(e, `${item.key}: ${formatValue(item.value, panel.options)}`, share(item.value))
+              }
+              onMouseLeave={tip.hide}
               className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left hover:bg-muted/50"
             >
               <span className="size-2 shrink-0 rounded-full" style={{ background: seriesColor(i) }} />
@@ -391,13 +435,15 @@ function HeatmapViz({
   panel: DashboardPanel
   onDrill: Props['onDrill']
 }) {
+  const tip = useHoverTip()
   if (!data.cells.length) return <Empty>No data in this range</Empty>
   const values = new Map(data.cells.map((c) => [`${c.y}|${c.x}`, c.value]))
   const maxAbs = Math.max(...data.cells.map((c) => Math.abs(c.value))) || 1
   // Red/green only when the values actually go both ways; one-sided counts get one hue.
   const diverging = data.cells.some((c) => c.value < 0)
   return (
-    <div className="h-full overflow-auto">
+    <div className="h-full overflow-auto" onMouseLeave={tip.hide}>
+      {tip.node}
       <div
         className="grid gap-px text-[10px]"
         style={{
@@ -423,7 +469,15 @@ function HeatmapViz({
                   type="button"
                   disabled={value == null}
                   onClick={() => onDrill({ group: panel.query.group_by ? y : undefined, bucket: x })}
-                  title={`${y} · ${formatSlot(x)} · ${formatValue(value, panel.options)}`}
+                  onMouseMove={(e) =>
+                    tip.show(
+                      e,
+                      `${y} · ${formatValue(value, panel.options)}`,
+                      formatSlot(x),
+                      value == null && 'nothing in this bucket',
+                    )
+                  }
+                  onMouseLeave={tip.hide}
                   className="h-5 rounded-sm transition-transform enabled:hover:scale-110 disabled:cursor-default"
                   style={{
                     background: value == null ? 'var(--color-muted)' : heat(value, maxAbs, diverging),
@@ -476,10 +530,12 @@ function TreemapViz({
 }) {
   // The box is always rendered, even when empty, so it's there to be measured from the first frame.
   const [ref, box] = useBoxSize()
+  const tip = useHoverTip()
   const tiles = useMemo(() => squarify(data.items, (i) => i.size, box.w, box.h), [data.items, box.w, box.h])
   const scale = panel.options.scale || data.color_max || 1
   return (
-    <div ref={ref} className="relative h-full w-full overflow-hidden rounded-md">
+    <div ref={ref} className="relative h-full w-full overflow-hidden rounded-md" onMouseLeave={tip.hide}>
+      {tip.node}
       {!data.items.length && <Empty>No data in this range</Empty>}
       {tiles.map(({ x, y, w, h, item }) => {
         const label = w > 44 && h > 22
@@ -489,9 +545,15 @@ function TreemapViz({
             key={item.key}
             type="button"
             onClick={() => onDrill({ group: panel.query.group_by ? item.key : undefined })}
-            title={`${item.key}: ${formatValue(item.color, panel.options)}${
-              panel.query.size ? ` · ${panel.query.size} ${formatValue(item.size)}` : ''
-            }`}
+            onMouseMove={(e) =>
+              tip.show(
+                e,
+                `${item.key}: ${formatValue(item.color, panel.options)}`,
+                !!panel.query.size && `${panel.query.size} ${formatValue(item.size)}`,
+                `${item.count} row${item.count === 1 ? '' : 's'} · click to see them`,
+              )
+            }
+            onMouseLeave={tip.hide}
             className="absolute flex flex-col items-center justify-center overflow-hidden px-1 text-center text-white outline-offset-[-2px] transition-[filter] hover:brightness-125 focus-visible:outline-2 focus-visible:outline-white"
             style={{
               left: x,

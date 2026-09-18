@@ -169,6 +169,18 @@ panel  →  query {source, params, filters, value, group_by, agg, bucket, …}
   12-column grid laid out with `react-grid-layout`.
 - **A bad time range** (`?from=yesterday-ish`) is refused with the forms that
   work, not a parse error.
+- **Changing a panel's type can't crash the board.** A panel keeps the old data on
+  screen while its new query runs, so changing the type hands the new drawing the
+  old shape — a heatmap read `cells` off a table's rows and threw, and the router's
+  boundary replaced the whole dashboard with an error screen. The data is now
+  checked against the shape first (that panel shows its spinner until its own data
+  lands), and **every panel draws inside its own error boundary**: one that throws
+  anyway says "This panel couldn't be drawn", with the message and a *Try again*,
+  while the rest of the board keeps working.
+- **Hovering any mark names it.** Bars, slices, cells, tiles and lines show a
+  tooltip at the cursor with the value, the bucket or share, and how many rows sit
+  behind it. Line panels get it from the chart's crosshair, so a single-line panel
+  (which has no legend) still reads its values.
 - **The grid always fills the page.** The grid library measures its container
   once, when it mounts. The page used to show a loading spinner first, so on a
   fresh load there was no container to measure, and the grid stayed at the
@@ -181,6 +193,7 @@ panel  →  query {source, params, filters, value, group_by, agg, bucket, …}
 ```bash
 .venv/bin/python tests/dashboards.selfcheck.py
 node frontend/src/components/charts/squarify.selfcheck.mjs
+node frontend/src/dashboards/shaped.selfcheck.mjs
 ```
 
 Pure, with no database or clock:
@@ -196,6 +209,10 @@ Pure, with no database or clock:
   past the 12th column refused
 - home-board pins: a panel pin and a dashboard pin accepted; a duplicate id, a pin
   with no dashboard or no position, and one past the 12th column refused
+
+`shaped.selfcheck.mjs` checks the shape guard: every panel shape accepts its own
+data and refuses the others — including the bar-vs-treemap pair that both carry
+`items`, and the table rows that used to reach a heatmap and crash it.
 
 The treemap layout (`squarify.selfcheck.mjs`) checks that areas are proportional,
 the tiles cover the panel exactly and never overlap, the tiles stay near-square,
@@ -222,6 +239,9 @@ rendering, which is checked by using the page.
 | `frontend/src/dashboards/panels.tsx` | The eight panel renderers |
 | `frontend/src/dashboards/PanelEditor.tsx` | The live panel editor |
 | `frontend/src/dashboards/DrillDrawer.tsx` | The rows behind a click |
+| `frontend/src/dashboards/shaped.ts` | Does this data fit the panel's shape? |
+| `frontend/src/dashboards/PanelBoundary.tsx` | One panel's failure, kept in that panel |
+| `frontend/src/dashboards/HoverTip.tsx` | The tooltip that follows the cursor |
 | `frontend/src/dashboards/HomeBoard.tsx` | My board on the home page |
 | `frontend/src/dashboards/useHomeBoard.ts` | Pins: read, pin/unpin, arrange |
 | `frontend/src/Home.tsx` | The home page's Home / My board tabs |

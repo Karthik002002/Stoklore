@@ -140,6 +140,17 @@ page with charts and indicators, a manual watchlist-events scanner, and a
 chatbot that can actually execute research actions on your behalf — subject
 to guard rails you can see and control.
 
+### Screenshots
+
+| | |
+|---|---|
+| ![Home: indices, watchlist, events, movers](docs/screenshots/home.png) | ![Trading journal dashboard: P&L, win rate, equity curve by account](docs/screenshots/dashboard-trading-journal.png) |
+| **Home** — indices, your watchlist, recent events, NSE movers | **Trading journal dashboard** — P&L after costs, win rate, each account's equity curve |
+| ![Market pulse dashboard: sector heatmap](docs/screenshots/dashboard-market-pulse.png) | ![Market movers dashboard: treemap by turnover](docs/screenshots/dashboard-market-movers.png) |
+| **Market pulse** — every NSE sector as a heatmap, breadth, 30-day and 1-year moves | **Market movers** — gainers and losers sized by turnover |
+| ![Bar Replay on TCS with EMAs, Bollinger, RSI and MACD](docs/screenshots/bar-replay.png) | ![Manual trade journal overview](docs/screenshots/journal.png) |
+| **Bar Replay** — real NSE history bar by bar, 36 indicators | **Trade journal** — P&L, win rate, profit factor, balance curve |
+
 <div align="right">
 
 [![][back-to-top]](#readme-top)

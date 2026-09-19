@@ -362,8 +362,11 @@ arming one *is* the confirmation — which is safe because the tool table has no
 order-placing tool in it. Executions are recorded as ordinary runs, so they get
 the same history and the same flow diagram as a chat turn.
 
-**Dashboards** (`/dashboards`, [docs](docs/dashboards.md)) put market and workflow
-data on a grid you arrange yourself: time series, stats, tables, bars, pies,
+**Dashboards** (`/dashboards`, [docs](docs/dashboards.md)) put your trading journal,
+market and workflow data on a grid you arrange yourself. The *Trading journal*
+template charts P&L after costs, win rate, R, each account's equity curve, and
+where money is made or lost by setup, weekday, session, symbol and emotion, with
+the journal's own numbers (a check holds the two to the paisa). Panels draw time series, stats, tables, bars, pies,
 heatmaps, **treemaps** (a stock heatmap — tiles sized by turnover, green or red by
 the day's move), run health and notifications. Market templates — *Market pulse*,
 *Market movers*, *Watchlist heatmap*, *Stock deep-dive*, *Events radar* — read NSE's

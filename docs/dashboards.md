@@ -2,10 +2,11 @@
 
 [← Back to index](README.md)
 
-`/dashboards` — panels over market data and your workflows' data, arranged on a
-grid the way you want: sectors and movers as heatmaps, your watchlist's day,
-one stock's history, what workflows collected. Sources are a registry, so more
-(the journal, alerts, holdings) plug in later without changing a panel.
+`/dashboards` — panels over your trading journal, market data and your workflows'
+data, arranged on a grid the way you want: your equity curve and where the money
+is made or lost, sectors and movers as heatmaps, your watchlist's day, one stock's
+history, what workflows collected. Sources are a registry, so more (alerts,
+holdings) plug in later without changing a panel.
 
 ## Using it
 
@@ -14,7 +15,14 @@ one stock's history, what workflows collected. Sources are a registry, so more
     top 10, a table, a pie, a heatmap, its run health and its notifications, with
     a dropdown for the field that names things (usually `symbol`). Also on each
     workflow's **Data** tab as **Build a dashboard**.
-    - **Templates**, market first:
+    - **Templates**, trading first:
+    - *Trading journal* — *Account* and *Source* (journal / paper / replay /
+      live) dropdowns; net P&L this week and over the range, win rate and average
+      R this month, trades this week, costs; each account's equity curve; results;
+      net P&L by setup, weekday and NSE session; per symbol per week as a heatmap;
+      by emotion; a treemap of symbols sized by turnover and coloured by net
+      return; average MAE and MFE in R by setup (where to put the stop); every
+      trade.
     - *Market pulse* — NIFTY 50 and NIFTY BANK today, NIFTY 500 breadth, every
       sector as a heatmap, sectors over 30 days and a year, every index.
     - *Market movers* — NSE's gainers and losers as a heatmap sized by turnover,
@@ -90,7 +98,7 @@ A reload, or a link sent to yourself, shows exactly that view.
 | **Table** | the rows themselves, newest first | that row |
 | **Bar / top N** | one bar per group, largest first; negatives in red | that group's rows |
 | **Pie** | each group's share | that slice's rows |
-| **Heatmap** | a row per group, a column per day | that cell's rows |
+| **Heatmap** | a row per group, a column per time bucket (a day, a week…) | that cell's rows |
 | **Treemap** | a tile per group — area from one number (turnover, market cap, volume, or equal), green or red from another (the day's move) — a stock heatmap | that tile's rows |
 | **Run health** | a bar per workflow run, red when it failed | the run's diagram |
 | **Notifications** | what workflows filed, newest first | the notification in its inbox |
@@ -103,8 +111,10 @@ change lands on the board as you make it.
 - **Data** — the source and its choices (a workflow, and a series for workflow
   data).
 - **Query** — the value (a number field, or *Count rows*), the aggregate (`last
-  first avg sum min max count`), group by, time bucket (per run / hour / day),
-  order and limit. The fields offered come from the data itself, so a workflow's
+  first avg sum min max count`), group by, time bucket (per run / hour / day /
+  week / month, or **whole range**), order and limit. Weeks start on Monday. A
+  stat over the *whole range* is a total with no change beside it — "net P&L in
+  range"; over a week it's this week against last. The fields offered come from the data itself, so a workflow's
   own columns appear with no setup.
 - **Filters** — `field  = ≠ > ≥ < ≤ contains one-of has-a-value  value`. The
   value can be a `$variable`; *has a value* ignores it (e.g. only movers with a
@@ -126,6 +136,8 @@ stretching them. The server sends one size and one colour value per tile.
 | **Watchlist prices** | each watchlisted stock's latest close, previous close, % change, volume vs its 20-day average | snapshot, latest bar |
 | **Price history** | daily bars — close, % change, open/high/low, volume — for one symbol or a watchlist | filtered by range |
 | **Stock events** | events and headlines the scans found — type, sentiment, score | filtered by range |
+| **Trade journal** | every journaled trade — hand-logged, paper, Bar Replay and live — with gross and net P&L, costs, return, R, planned and realised R:R, win/loss, holding days, weekday, NSE session, the market at entry (trend, volatility regime, extended, volume spike) and MAE/MFE, plus each account's equity and drawdown | filtered by the trade's market date |
+| **Saved backtests** | the EMA-crossover backtests you saved: strategy, return, win rate, trade count, lessons | filtered by when saved |
 | **Workflow data / runs / notifications** | what a workflow collected, every run, what it filed | filtered by range |
 
 **A snapshot ignores the time range.** Today's movers or the latest close are what
@@ -138,6 +150,29 @@ they are; filtering them by "last hour" would only blank the panel.
   stored history, *before* the range is applied. So a range's first bar still has
   its change, and a stock's 20-day average is 20 real bars, not whatever the range
   cut off.
+
+**The journal's numbers are the journal's.** P&L, costs, R and sessions are
+computed in the browser everywhere else in the app and never stored. A dashboard
+queries on the server, so `app/services/journal_math.py` mirrors
+`manualTrades.ts` and `tradeCosts.ts` formula for formula, down to rounding a
+half-paisa the way the browser does (up, where Python's `round()` goes to even).
+A check runs both on the same trades and fails if they ever differ.
+
+- **Net P&L is after costs** — the account's slippage, brokerage and charges, both
+  sides. The journal's Statistics tab labels its total *Net P&L* but sums *gross*
+  P&L, so the two differ by the costs whenever an account has any.
+- **Win rate** is the journal's definition: closed trades with gross P&L above
+  zero, over all closed trades. It's the average of `win_pct` (100 or 0).
+- **The equity curve starts where the account stood.** Each account's running
+  net P&L is built over its whole history in market-date order, *then* the range
+  is applied, so "last 30 days" starts at the real balance, not zero. It runs per
+  account so the *Account* dropdown leaves a correct curve; a filter on setup or
+  symbol doesn't re-run it, so for those use net P&L by bucket instead.
+- **Dated by market date** (`traded_at`), like the journal's equity curve. A Bar
+  Replay trade taken on 2013 bars lands in 2013.
+- Auto (Pine Script) backtest results aren't stored anywhere, so there is nothing
+  of theirs to chart; *Saved backtests* is the EMA-crossover backtests saved from
+  a stock's page.
 
 **A run is one point.** Grouping by run puts everything a single run collected —
 eight symbols priced at 16:00 — at one moment on the x-axis, not eight moments a
@@ -192,6 +227,7 @@ panel  →  query {source, params, filters, value, group_by, agg, bucket, …}
 
 ```bash
 .venv/bin/python tests/dashboards.selfcheck.py
+.venv/bin/python tests/journal_math.selfcheck.py
 node frontend/src/components/charts/squarify.selfcheck.mjs
 node frontend/src/dashboards/shaped.selfcheck.mjs
 ```
@@ -205,10 +241,27 @@ Pure, with no database or clock:
 - drill-down for a group that isn't first in its run
 - treemap tiles sized and coloured per group, equal tiles, zero sizes dropped
 - the *has a value* filter
+- week, month and whole-range buckets: weeks start Monday, a month on the 1st,
+  the whole range is one total, and drilling a week returns that week's rows
+- the journal source against stubbed trades: costs on both sides, R, holding
+  days, win/loss, paper and replay sources, an open trade and an unassigned one,
+  the equity curve and drawdown per account, and a range that starts mid-history
+  still carrying the earlier trades in the curve
 - every template and a workflow-built dashboard passing validation, and a panel
   past the 12th column refused
 - home-board pins: a panel pin and a dashboard pin accepted; a duplicate id, a pin
   with no dashboard or no position, and one past the 12th column refused
+
+`journal_math.selfcheck.py` runs the journal's own TypeScript (through node) and
+the Python mirror on the same 14 trades — long and short, winners and losers, open,
+no account, zero stop distance, inside the neutral band, a rounding half, every
+session boundary, a UTC timestamp — and fails on any difference. Swapping the
+mirror's rounding for Python's own makes it fail on four numbers, which is the
+drift it exists to catch.
+
+Every *Trading journal* panel was also run against a real journal (124 trades,
+three accounts, paper and replay): equity curves, results, the heatmap, the
+treemap and every stat returned data.
 
 `shaped.selfcheck.mjs` checks the shape guard: every panel shape accepts its own
 data and refuses the others — including the bar-vs-treemap pair that both carry

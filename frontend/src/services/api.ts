@@ -1617,7 +1617,7 @@ export type PanelQuery = {
   /** A treemap tile's area; empty = equal tiles. */
   size?: string | null
   agg?: 'last' | 'first' | 'avg' | 'sum' | 'min' | 'max' | 'count'
-  bucket?: 'run' | 'hour' | 'day'
+  bucket?: 'run' | 'hour' | 'day' | 'week' | 'month' | 'all'
   sort?: 'desc' | 'asc'
   limit?: number
 }
@@ -1775,7 +1775,7 @@ export const drillPanel = (request: PanelRequest & { point: { group?: string; bu
 
 export const getDashboardTemplates = () =>
   fetch('/api/dashboards/templates').then(
-    json<{ id: string; name: string; description: string; category: 'Market' | 'Workflows' }[]>,
+    json<{ id: string; name: string; description: string; category: 'Trading' | 'Market' | 'Workflows' }[]>,
   )
 
 export const createDashboardFromTemplate = (templateId: string) =>

@@ -154,6 +154,66 @@ assert dashboards.validate(bare["panels"], bare["variables"]) is None and {p["ty
 assert dashboards.validate([{"id": "a", "type": "stat", "query": {"source": "workflow_runs"}, "layout": {"x": 10, "y": 0, "w": 4, "h": 2}}], []), \
     "a panel past the 12th column is refused"
 
+# --- buckets: week, month, and the whole range as one --------------------------------------------------
+TQ = {"time_field": "t", "value": "v", "agg": "sum"}
+dated = [{"t": d, "v": v} for d, v in [
+    ("2026-09-07T10:00:00+05:30", 1),   # Monday, week of the 7th
+    ("2026-09-13T10:00:00+05:30", 2),   # Sunday, same week
+    ("2026-09-14T10:00:00+05:30", 4),   # Monday, the next week
+    ("2026-08-31T10:00:00+05:30", 8),   # August
+]]
+weekly = dq.shape(dated, {**TQ, "shape": "stat", "bucket": "week"})
+assert (weekly["value"], weekly["previous"]) == (4, 3), "weeks start on Monday: 7th-13th is one week"
+assert weekly["at"].startswith("2026-09-14"), weekly["at"]
+monthly = dq.shape(dated, {**TQ, "shape": "stat", "bucket": "month"})
+assert (monthly["value"], monthly["previous"]) == (7, 8), "a month bucket starts on the 1st"
+whole = dq.shape(dated, {**TQ, "shape": "stat", "bucket": "all"})
+assert (whole["value"], whole["previous"]) == (15, None), "the whole range is one bucket - a total, no change"
+assert dq.drill(dated, {**TQ, "shape": "stat", "bucket": "week"}, {"bucket": weekly["at"]})["total"] == 1, \
+    "drilling a week returns that week's rows"
+
+# --- the trade journal source ----------------------------------------------------------------------------
+IST_ = timezone(timedelta(hours=5, minutes=30))
+day = lambda d: datetime(2026, 9, d, 10, 0, tzinfo=IST_)  # noqa: E731
+journal = [
+    {"id": 1, "symbol": "TCS", "direction": "long", "quantity": 10, "entry_price": 100.0, "exit_price": 110.0,
+     "stop_loss": 95.0, "target": None, "ideal_risk_amount": 50, "tags": [], "account_id": 1, "traded_at": day(1),
+     "exited_at": day(3), "entried_at": None, "setup": "Breakout", "emotion": None, "result": None,
+     "trade_context": {"mae_r": 0.4, "mfe_r": 2.5, "trend": "up", "vol_spike": {"max_ratio": 3.1}}},
+    {"id": 2, "symbol": "INFY", "direction": "short", "quantity": 5, "entry_price": 200.0, "exit_price": 210.0,
+     "stop_loss": None, "target": None, "ideal_risk_amount": None, "tags": ["paper", "Hit SL"], "account_id": 1,
+     "traded_at": day(10), "exited_at": None, "entried_at": None, "setup": None, "emotion": "FOMO", "result": None,
+     "trade_context": None},
+    {"id": 3, "symbol": "TCS", "direction": "long", "quantity": 1, "entry_price": 100.0, "exit_price": None,
+     "stop_loss": None, "target": None, "ideal_risk_amount": None, "tags": ["replay"], "account_id": None,
+     "traded_at": day(12), "exited_at": None, "entried_at": None, "setup": None, "emotion": None, "result": None,
+     "trade_context": None},
+]
+accounts = [{"id": 1, "name": "Swing", "kind": "journal", **{"slippage_value": 0, "slippage_type": "per_share",
+                                                            "brokerage_flat": 10, "brokerage_pct": 0,
+                                                            "other_charges_pct": 0}}]
+dashboards.db.list_manual_trades = lambda: list(reversed(journal))  # newest-first, as the DB returns them
+dashboards.db.list_trade_accounts = lambda kind="journal": accounts
+jrows = dashboards._journal_rows({}, None, None)
+by_id = {r["trade_id"]: r for r in jrows}
+assert (by_id[1]["gross_pnl"], by_id[1]["costs"], by_id[1]["net_pnl"]) == (100.0, 20.0, 80.0), "₹10 each side"
+assert by_id[1]["r_multiple"] == 2.0 and by_id[1]["win_pct"] == 100 and by_id[1]["holding_days"] == 2.0
+assert by_id[1]["mfe_r"] == 2.5 and by_id[1]["volume_spike"] == 3.1, "the market at entry comes through flat"
+assert by_id[2]["source"] == "paper" and by_id[2]["result"] == "loss" and by_id[2]["win_pct"] == 0
+assert (by_id[2]["account_equity"], by_id[2]["account_drawdown"]) == (10.0, -70.0), \
+    "equity runs per account in market-date order: +80, then -70 from a peak of 80"
+assert by_id[3]["status"] == "open" and by_id[3]["account"] == "Unassigned" and by_id[3]["win_pct"] is None
+assert by_id[3]["account_equity"] is None and by_id[3]["source"] == "replay"
+# A range that starts after trade 1 still carries trade 1 in the equity curve - it starts where the
+# account stood, not at zero.
+ranged = dashboards._journal_rows({}, day(5), None)
+assert [r["trade_id"] for r in ranged] == [2, 3] and ranged[0]["account_equity"] == 10.0
+# Totals the template's stats would show: net P&L over the range, and the win rate.
+assert dq.shape(jrows, {"shape": "stat", "time_field": "traded_at", "value": "net_pnl", "agg": "sum",
+                        "bucket": "all"})["value"] == 10.0
+assert dq.shape(jrows, {"shape": "stat", "time_field": "traded_at", "value": "win_pct", "agg": "avg",
+                        "bucket": "all"})["value"] == 50.0, "one winner of two closed trades"
+
 # The home board: pins reference a dashboard, or one panel of it, on the same 12-column grid.
 pin = {"id": "p1", "dashboard_id": "d1", "panel_id": "a", "layout": {"x": 0, "y": 0, "w": 6, "h": 8}}
 assert dashboards.validate_home([pin, {**pin, "id": "p2", "panel_id": None}]) is None, "a panel pin and a dashboard pin"
@@ -163,4 +223,4 @@ assert dashboards.validate_home([{**pin, "layout": {"x": 8, "y": 0, "w": 6, "h":
 assert dashboards.validate_home([{**pin, "layout": {}}]), "a pin needs a position"
 assert dashboards.validate_home("nope"), "items must be a list"
 
-print("ok - dashboards: variables, time, filters, rows, timeseries, aggregate, stat, heatmap, drill, templates, from-workflow, home board")
+print("ok - dashboards: variables, time, filters, rows, timeseries, aggregate, stat, heatmap, drill, week/month/all buckets, journal source, templates, from-workflow, home board")

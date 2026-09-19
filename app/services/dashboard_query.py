@@ -23,7 +23,8 @@ from datetime import datetime, timedelta, timezone
 
 SHAPES = ("rows", "timeseries", "aggregate", "stat", "heatmap", "treemap")
 AGGS = ("last", "first", "avg", "sum", "min", "max", "count")
-BUCKETS = ("run", "hour", "day")
+#: `all` is the whole range as one bucket - a stat's total rather than its latest day.
+BUCKETS = ("run", "hour", "day", "week", "month", "all")
 
 #: The "All" choice of a variable. A filter whose value resolves to it is dropped, not matched.
 ALL = "__all__"
@@ -123,6 +124,7 @@ def _bucketed(rows, time_field, bucket):
     """[(bucket_start, row)]. A run is one bucket however many rows it collected, placed at its
     earliest row - so eight symbols priced in one run are one point on the x-axis, not eight."""
     starts = {}
+    first = min((t for t in (_time(r, time_field) for r in rows) if t is not None), default=None)
     if bucket == "run":
         for r in rows:
             t = _time(r, time_field)
@@ -138,6 +140,14 @@ def _bucketed(rows, time_field, bucket):
             continue
         if bucket == "day":
             start = t.replace(hour=0, minute=0, second=0, microsecond=0)
+        elif bucket == "week":
+            # Weeks start on Monday, the first trading day - the way a trading week is read.
+            day = t.replace(hour=0, minute=0, second=0, microsecond=0)
+            start = day - timedelta(days=day.weekday())
+        elif bucket == "month":
+            start = t.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        elif bucket == "all":
+            start = first
         elif bucket == "hour":
             start = t.replace(minute=0, second=0, microsecond=0)
         else:

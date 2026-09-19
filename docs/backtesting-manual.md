@@ -55,6 +55,14 @@
   URL (`?account=3`), so a per-strategy view is shareable and survives a
   reload. Accounts themselves are managed in **Settings › Trade accounts**.
 
+### On a dashboard
+
+The journal is also a dashboard source (*Trade journal*), with a **Trading
+journal** template: P&L after costs, win rate, R, each account's equity curve, and
+P&L by setup, weekday, session, symbol and emotion. It computes the same numbers
+this page does, from a Python mirror checked against the TypeScript here on every
+run. Pin any of it to the home page. See [Dashboards](dashboards.md#sources).
+
 ### Exports: CSV, Excel, JSON, Markdown
 
 - **CSV** (`GET /api/manual-trades/export?format=csv`) — the raw backend dump

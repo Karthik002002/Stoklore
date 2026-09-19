@@ -32,6 +32,9 @@ const BUCKETS = [
   { value: 'run', label: 'Per run' },
   { value: 'hour', label: 'Per hour' },
   { value: 'day', label: 'Per day' },
+  { value: 'week', label: 'Per week' },
+  { value: 'month', label: 'Per month' },
+  { value: 'all', label: 'Whole range' },
 ] as const
 
 const uses = (type: PanelType) => ({

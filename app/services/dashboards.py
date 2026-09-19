@@ -14,6 +14,7 @@ from datetime import datetime
 from app.core import db, scraper
 from app.core.config import IST
 from app.services import dashboard_query as dq
+from app.services import journal_math as jm
 
 PANEL_TYPES = ("timeseries", "stat", "table", "bar", "pie", "heatmap", "treemap", "health", "notifications")
 #: What each panel type asks the query layer for.
@@ -252,7 +253,123 @@ def _event_rows(params, since, until):
     ]
 
 
+def _trade_source(tags):
+    """Where a journal row came from. Paper, Bar Replay and live exits file themselves into the same
+    table with a tag, which is what lets one source cover all four."""
+    for tag in ("live", "paper", "replay"):
+        if tag in (tags or []):
+            return tag
+    return "journal"
+
+
+def _journal_rows(params, since, until):
+    accounts = {a["id"]: a for a in db.list_trade_accounts(kind=None)}
+    trades = sorted(db.list_manual_trades(), key=lambda t: (t["traded_at"], t["id"]))
+    out, equity, peak = [], {}, {}
+    for t in trades:
+        account = accounts.get(t["account_id"])
+        name = account["name"] if account else "Unassigned"
+        closed = t["exit_price"] is not None
+        gross, net = jm.pnl(t), jm.net_pnl(t, account)
+        # The equity curve runs over the WHOLE history, per account, before the range is applied:
+        # "last 30 days" of an equity curve should start where the account actually stood, not at 0.
+        # Per account rather than overall, so filtering to one account leaves a curve that is still
+        # right - an overall running total would carry the other accounts' trades inside it.
+        if closed and net is not None:
+            equity[name] = round(equity.get(name, 0) + net, 2)
+            peak[name] = max(peak.get(name, 0), equity[name])
+        # The market at entry and MAE/MFE, frozen on the row when it was journaled (trade_context.py).
+        ctx = t.get("trade_context") or {}
+        # After the equity step, before the row: trades outside the range still move the curve.
+        if (since and t["traded_at"] < since) or (until and t["traded_at"] > until):
+            continue
+        held = (t["exited_at"] - (t.get("entried_at") or t["traded_at"])).total_seconds() / 86400 \
+            if closed and t.get("exited_at") else None
+        out.append({
+            "traded_at": _iso(t["traded_at"]),
+            "exited_at": _iso(t.get("exited_at")),
+            "symbol": t["symbol"],
+            "direction": t["direction"],
+            "account": name,
+            "source": _trade_source(t["tags"]),
+            "setup": t.get("setup") or "No setup",
+            "emotion": t.get("emotion") or "Not logged",
+            "tags": ", ".join(t["tags"] or []),
+            "status": "closed" if closed else "open",
+            "result": (t.get("result") or jm.auto_result(t)) if closed else "open",
+            "quantity": t["quantity"],
+            "entry_price": t["entry_price"],
+            "exit_price": t["exit_price"],
+            "stop_loss": t["stop_loss"],
+            "target": t["target"],
+            "turnover": round(t["entry_price"] * t["quantity"], 2),
+            "gross_pnl": gross,
+            "costs": jm.costs(t, account),
+            "net_pnl": net,
+            "return_pct": jm.return_pct(t),
+            "net_return_pct": jm.net_return_pct(t, account),
+            # Averages to a win rate - the journal's own definition: a closed trade with gross P&L
+            # above zero, over all closed trades.
+            "win_pct": (100 if (gross or 0) > 0 else 0) if closed else None,
+            "r_multiple": jm.r_multiple(t),
+            "realised_rr": jm.realised_rr(t),
+            "planned_rr": jm.planned_rr(t),
+            "risk_amount": jm.risk_amount(t),
+            "ideal_risk": t.get("ideal_risk_amount"),
+            "holding_days": round(held, 2) if held is not None else None,
+            "weekday": jm.weekday(t["traded_at"]),
+            "session": jm.session(t["traded_at"]),
+            "trend": ctx.get("trend"),
+            "vol_regime": ctx.get("vol_regime"),
+            "with_trend": ctx.get("with_trend"),
+            "extended": ctx.get("extended"),
+            "volume_spike": (ctx.get("vol_spike") or {}).get("max_ratio"),
+            "mae_pct": ctx.get("mae_pct"),
+            "mfe_pct": ctx.get("mfe_pct"),
+            "mae_r": ctx.get("mae_r"),
+            "mfe_r": ctx.get("mfe_r"),
+            "account_equity": equity.get(name) if closed else None,
+            "account_drawdown": round(equity[name] - peak[name], 2) if closed and name in equity else None,
+            "trade_id": t["id"],
+        })
+    return out
+
+
+def _backtest_rows(params, since, until):
+    symbol = (params.get("symbol") or "").upper() or None
+    return [
+        {
+            "created_at": _iso(b["created_at"]),
+            "symbol": b["symbol"],
+            "strategy": f"EMA {b['short_period']}/{b['long_period']}",
+            "total_return_pct": _num(b["total_return_pct"]),
+            "win_rate": _num(b["win_rate"]),
+            "num_trades": b["num_trades"],
+            "from_date": _iso(b["from_date"]),
+            "to_date": _iso(b["to_date"]),
+            "lessons": b["lessons"],
+            "backtest_id": b["id"],
+        }
+        for b in db.list_backtests(symbol)
+    ]
+
+
 SOURCES = {
+    "journal_trades": {
+        "label": "Trade journal",
+        "description": "Every journaled trade - hand-logged, paper, Bar Replay and live - with gross and net "
+                       "P&L, R, costs, MAE/MFE, the market at entry and each account's equity curve.",
+        "time_field": "traded_at",
+        "params": [],
+        "rows": _journal_rows,
+    },
+    "ema_backtests": {
+        "label": "Saved backtests",
+        "description": "EMA-crossover backtests you saved: return, win rate and trade count per symbol.",
+        "time_field": "created_at",
+        "params": [{"name": "symbol", "label": "Symbol (blank = all)", "required": False}],
+        "rows": _backtest_rows,
+    },
     "workflow_series": {
         "label": "Workflow data",
         "description": "What a workflow's Collect data nodes gathered, run by run.",
@@ -325,6 +442,7 @@ SOURCES = {
 
 #: The order sources appear in the panel editor - market data first.
 SOURCE_ORDER = ("market_indices", "market_movers", "watchlist_prices", "price_history", "stock_events",
+                "journal_trades", "ema_backtests",
                 "workflow_series", "workflow_runs", "workflow_notifications")
 
 
@@ -660,7 +778,60 @@ def _events_radar():
     }
 
 
+def _trading_journal():
+    # $account and $source narrow every panel; left on All they drop out (dashboard_query.ALL).
+    scope = [_eq("account", "$account"), _eq("source", "$source")]
+    closed = [*scope, _eq("status", "closed")]
+    trades = lambda closed_only=True, filters=(), **q: _src(  # noqa: E731
+        "journal_trades", filters=[*(closed if closed_only else scope), *filters], **q)
+    return {
+        "name": "Trading journal",
+        "description": "Your journal on a dashboard: P&L after costs, win rate, R, each account's equity curve, "
+                       "and where the money is made or lost - by setup, day, session, symbol and emotion.",
+        "category": "Trading",
+        "variables": [
+            {"name": "account", "label": "Account", "query": {"source": "journal_trades", "params": {}},
+             "field": "account", "default": dq.ALL},
+            {"name": "source", "label": "Source", "query": {"source": "journal_trades", "params": {}},
+             "field": "source", "default": dq.ALL},
+        ],
+        "settings": {"from": "now-90d"},
+        "panels": [
+            panel("stat", "Net P&L this week", trades(value="net_pnl", agg="sum", bucket="week"), 0, 0, 2, 4, unit="₹"),
+            panel("stat", "Net P&L in range", trades(value="net_pnl", agg="sum", bucket="all"), 2, 0, 2, 4, unit="₹"),
+            panel("stat", "Win rate this month", trades(value="win_pct", agg="avg", bucket="month"), 4, 0, 2, 4, unit="%"),
+            panel("stat", "Avg R this month", trades(value="r_multiple", agg="avg", bucket="month"), 6, 0, 2, 4,
+                  unit="R"),
+            panel("stat", "Trades this week", trades(closed_only=False, bucket="week"), 8, 0, 2, 4),
+            panel("stat", "Costs this month", trades(value="costs", agg="sum", bucket="month"), 10, 0, 2, 4,
+                  unit="₹", tone="bad"),
+            panel("timeseries", "Equity curve by account",
+                  trades(group_by="account", value="account_equity", agg="last", bucket="day"), 0, 4, 8, 10, unit="₹"),
+            panel("pie", "Results", trades(group_by="result"), 8, 4, 4, 10),
+            panel("bar", "Net P&L by setup", trades(group_by="setup", value="net_pnl", agg="sum"), 0, 14, 4, 9, unit="₹"),
+            panel("bar", "Net P&L by weekday", trades(group_by="weekday", value="net_pnl", agg="sum"), 4, 14, 4, 9,
+                  unit="₹"),
+            panel("bar", "Net P&L by session", trades(group_by="session", value="net_pnl", agg="sum"), 8, 14, 4, 9,
+                  unit="₹"),
+            panel("heatmap", "Net P&L per symbol per week",
+                  trades(group_by="symbol", value="net_pnl", agg="sum", bucket="week"), 0, 23, 8, 10, unit="₹"),
+            panel("bar", "Avg net P&L by emotion", trades(group_by="emotion", value="net_pnl", agg="avg"), 8, 23, 4, 10,
+                  unit="₹"),
+            panel("treemap", "Symbols - size by turnover, colour by net return",
+                  {**trades(group_by="symbol", value="net_return_pct", agg="avg"), "size": "turnover"}, 0, 33, 6, 11,
+                  unit="%"),
+            # How far trades went against you, in R, per setup: the stop-placement question.
+            panel("bar", "Avg MAE (R) by setup", trades(group_by="setup", value="mae_r", agg="avg"), 6, 33, 3, 11,
+                  unit="R", tone="bad"),
+            panel("bar", "Avg MFE (R) by setup", trades(group_by="setup", value="mfe_r", agg="avg"), 9, 33, 3, 11,
+                  unit="R"),
+            panel("table", "Trades", trades(closed_only=False, limit=200), 0, 44, 12, 10),
+        ],
+    }
+
+
 TEMPLATES = {
+    "trading-journal": _trading_journal,
     "market-pulse": _market_pulse,
     "market-movers": _market_movers,
     "watchlist-heatmap": _watchlist_heatmap,

@@ -94,7 +94,7 @@ export default function DashboardList() {
         <h3 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
           Start from a template
         </h3>
-        {(['Market', 'Workflows'] as const).map((category) => {
+        {(['Trading', 'Market', 'Workflows'] as const).map((category) => {
           const group = templates.filter((t) => t.category === category)
           if (!group.length) return null
           return (
@@ -149,8 +149,8 @@ export default function DashboardList() {
         <div>
           <h2 className="font-medium">Dashboards</h2>
           <p className="text-xs text-muted-foreground">
-            Market and workflow data as charts, heatmaps, stats and tables — arranged how you want, drillable
-            down to the rows.
+            Your trading journal, market data and workflow data as charts, heatmaps, stats and tables —
+            arranged how you want, drillable down to the rows.
           </p>
         </div>
         <div className="flex gap-2">

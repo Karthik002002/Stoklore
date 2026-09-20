@@ -148,8 +148,12 @@ to guard rails you can see and control.
 | **Home** — indices, your watchlist, recent events, NSE movers | **Trading journal dashboard** — P&L after costs, win rate, each account's equity curve |
 | ![Market pulse dashboard: sector heatmap](docs/screenshots/dashboard-market-pulse.png) | ![Market movers dashboard: treemap by turnover](docs/screenshots/dashboard-market-movers.png) |
 | **Market pulse** — every NSE sector as a heatmap, breadth, 30-day and 1-year moves | **Market movers** — gainers and losers sized by turnover |
-| ![Bar Replay on TCS with EMAs, Bollinger, RSI and MACD](docs/screenshots/bar-replay.png) | ![Manual trade journal overview](docs/screenshots/journal.png) |
-| **Bar Replay** — real NSE history bar by bar, 36 indicators | **Trade journal** — P&L, win rate, profit factor, balance curve |
+| ![Bar Replay: a COFORGE short with its stop and two targets, Bollinger bands and MACD](docs/screenshots/bar-replay-coforge.png) | ![Bar Replay: a SHRIRAMFIN long with laddered targets, EMA 9/21 and ADX](docs/screenshots/bar-replay-shriramfin.png) |
+| **Bar Replay** — a short on real NSE history: stop, two target legs, R and open P&L on the chart | **Bar Replay** — a long riding a breakout, with laddered targets |
+| ![Bar Replay positions panel: open P&L, risk, exposure and a pending limit order](docs/screenshots/bar-replay-positions.png) | ![Bar Replay: a TCS short with EMA 20/50 and RSI](docs/screenshots/bar-replay-tcs.png) |
+| **Positions** — open P&L, risk and exposure, stop-to-breakeven, partial exits, a pending limit | **Bar Replay** — 36 indicators, each oscillator in its own pane |
+| ![Manual trade journal overview](docs/screenshots/journal.png) | |
+| **Trade journal** — P&L, win rate, profit factor, balance curve | |
 
 <div align="right">
 

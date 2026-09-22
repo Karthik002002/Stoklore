@@ -1,6 +1,7 @@
 """Scans watchlisted symbols for news/price/volume/corporate-action events - no LLM, cheap+fast."""
 from datetime import date
 
+from app.core import classifier
 from app.core import db
 from app.core import scraper
 from app.core import sentiment
@@ -56,6 +57,7 @@ def scan(list_name=None, on_progress=None):
             print(f"skipped {symbol}: {e}")
         if on_progress:
             on_progress(i, len(symbols))
+    classifier.tag_pending_async()  # news events get their Laya tags in the background
     return count
 
 

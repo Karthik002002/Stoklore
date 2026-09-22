@@ -102,6 +102,7 @@ const SETTINGS_TABS = [
   { label: 'Settings > Cogencis', tab: 'cogencis' },
   { label: 'Settings > Telegram', tab: 'telegram' },
   { label: 'Settings > Screener', tab: 'screener' },
+  { label: 'Settings > Classifier', tab: 'classifier' },
   { label: 'Settings > Broker', tab: 'broker' },
   { label: 'Settings > Watch rules', tab: 'rules' },
   { label: 'Settings > Collect data', tab: 'data' },

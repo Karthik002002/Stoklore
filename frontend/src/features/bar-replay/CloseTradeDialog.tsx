@@ -271,8 +271,21 @@ export default function CloseTradeDialog({
             placeholder="How did it feel?"
           />
 
+          <TagField form={form} name="tags" label="Tags" />
+
+          <TextAreaField
+            form={form}
+            name="notes"
+            label="Notes"
+            rows={3}
+            placeholder="What happened, what would you do differently…"
+          />
+
           <TradeReviewFields
             compact
+            notes={form.watch('notes')}
+            emotions={EMOTIONS}
+            onEmotion={(e) => form.setValue('emotion', e)}
             options={backtestSettings?.mistakes ?? []}
             value={review}
             onChange={setReview}
@@ -284,16 +297,6 @@ export default function CloseTradeDialog({
                   )
                 : {}
             }
-          />
-
-          <TagField form={form} name="tags" label="Tags" />
-
-          <TextAreaField
-            form={form}
-            name="notes"
-            label="Notes"
-            rows={3}
-            placeholder="What happened, what would you do differently…"
           />
 
           <label className="flex items-start gap-2 rounded-lg border bg-muted/20 p-2.5 text-xs">

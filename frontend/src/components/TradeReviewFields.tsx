@@ -1,5 +1,11 @@
+import { useState } from 'react'
+import { useMutation, useQuery } from '@tanstack/react-query'
+import { SparklesIcon } from 'lucide-react'
+import { toast } from 'sonner'
+import { Spinner } from '@/components/ui/spinner'
 import { CHECKS, scoreFromChecks } from '@/lib/tradeReview'
 import type { ExecutionChecks, Trade } from '@/lib/types'
+import { getClassifierConfig, suggestReview } from '@/services/api'
 
 /** The review as a form holds it. `checks`/`mistakes` stay null until touched - an untouched
  *  review is "not reviewed", which is a different fact from "reviewed, nothing wrong". */
@@ -43,13 +49,39 @@ export default function TradeReviewFields({
   onChange,
   prefill = {},
   compact = false,
+  notes,
+  emotions = [],
+  onEmotion,
 }: {
   options: string[]
   value: ReviewValue
   onChange: (value: ReviewValue) => void
   prefill?: ExecutionChecks
   compact?: boolean
+  /** The trade's notes - enables "Suggest from notes" when the Laya classifier is on. */
+  notes?: string | null
+  emotions?: string[]
+  onEmotion?: (emotion: string) => void
 }) {
+  const { data: classifier } = useQuery({ queryKey: ['classifierConfig'], queryFn: getClassifierConfig })
+  const [suggested, setSuggested] = useState<string | null>(null)
+  // Pre-selects what Laya reads in the notes. It replaces the mistakes picked so far (the point is
+  // a second opinion to accept or undo), and nothing is stored until the trade itself is saved.
+  const suggest = useMutation({
+    mutationFn: () => suggestReview(notes ?? '', options, emotions),
+    onSuccess: (r) => {
+      if (r.mistakes.length) onChange({ ...value, mistakes: r.mistakes.map((m) => m.label) })
+      if (r.emotion && onEmotion) onEmotion(r.emotion.label)
+      const parts = [
+        ...r.mistakes.map((m) => `${m.label} ${Math.round(m.probability * 100)}%`),
+        ...(r.emotion ? [`feeling ${r.emotion.label}`] : []),
+      ]
+      setSuggested(
+        parts.length ? `Laya suggested: ${parts.join(', ')} — check before saving.` : 'Nothing to suggest.',
+      )
+    },
+    onError: (e) => toast.error(e.message),
+  })
   const shown = value.checks ?? { ...allFalse(), ...prefill }
   const derived = scoreFromChecks(value.checks)
   const score = value.scoreManual ? value.score : derived
@@ -64,7 +96,24 @@ export default function TradeReviewFields({
   return (
     <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
       <div className="space-y-1.5">
-        <p className="text-xs font-medium">Mistakes</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-medium">Mistakes</p>
+          {classifier?.enabled && (
+            <button
+              type="button"
+              disabled={!notes?.trim() || suggest.isPending}
+              title={
+                notes?.trim() ? 'Read the notes with the local Laya classifier' : 'Write some notes first'
+              }
+              onClick={() => suggest.mutate()}
+              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+            >
+              {suggest.isPending ? <Spinner className="size-3" /> : <SparklesIcon className="size-3" />}
+              Suggest from notes
+            </button>
+          )}
+        </div>
+        {suggested && <p className="text-[11px] text-muted-foreground">{suggested}</p>}
         <div className="flex flex-wrap gap-1.5">
           {mistakeOptions.map((m) => {
             const on = value.mistakes?.includes(m)

@@ -76,6 +76,8 @@ import {
   setTelegramConfig,
   testTelegram,
   getScreenerConfig,
+  getClassifierConfig,
+  setClassifierConfig,
   setScreenerConfig,
   clearScreenerConfig,
   testScreener,
@@ -473,6 +475,77 @@ function ScreenerTab() {
         one. The cookie is stored in your own database and sent only to screener.in; it is never shown back
         here, and this app never asks for your screener.in password.
       </p>
+    </div>
+  )
+}
+
+/** The local Laya classifier - typed decisions (pick one / rate / yes-no) with calibrated
+ *  confidence, in one forward pass, beside the chat model rather than instead of it. */
+function ClassifierTab() {
+  const queryClient = useQueryClient()
+  const { data: config } = useQuery({ queryKey: ['classifierConfig'], queryFn: getClassifierConfig })
+  const toggle = useMutation({
+    mutationFn: (enabled: boolean) => setClassifierConfig(enabled),
+    onSuccess: (next) => {
+      queryClient.setQueryData(['classifierConfig'], next)
+      toast.success(next.enabled ? 'Classifier on — the model loads on first use' : 'Classifier off')
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
+  if (!config) return <p className="text-sm text-muted-foreground">Loading…</p>
+
+  return (
+    <div className="space-y-4">
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={config.enabled}
+          disabled={!config.installed || toggle.isPending}
+          onChange={(e) => toggle.mutate(e.target.checked)}
+        />
+        <span>
+          <span className="font-medium">Use the Laya classifier</span>
+          <span className="block text-xs text-muted-foreground">
+            {config.model} · runs locally · ~1.7 GB, downloaded from Hugging Face on first use
+            {config.loaded ? ' · loaded' : ''}
+          </span>
+        </span>
+      </label>
+      {!config.installed && (
+        <p className="rounded-md bg-amber-500/10 px-2 py-1.5 text-xs text-amber-600">
+          The <code>laya</code> package isn't installed in the backend's environment — run{' '}
+          <code>pip install -r requirements.txt</code> and restart.
+        </p>
+      )}
+      <div className="space-y-1.5 text-xs text-muted-foreground">
+        <p className="text-sm font-medium text-foreground">What it does when on</p>
+        <ul className="list-disc space-y-1 pl-4">
+          <li>
+            <span className="text-foreground">Chat guard rails</span> — flags a message that contains
+            credentials, and tool results (scraped news, pages) that try to instruct the assistant. It warns;
+            it never blocks.
+          </li>
+          <li>
+            <span className="text-foreground">News tags</span> — every scraped story gets an event type and a
+            materiality rating in the background, shown on Events, Top news and the stock page, with a
+            “Material only” filter. Turning it on backfills stories already saved.
+          </li>
+          <li>
+            <span className="text-foreground">Journal suggestions</span> — “Suggest from notes” in a trade’s
+            review pre-selects the mistake and emotion the notes describe. You confirm by saving.
+          </li>
+          <li>
+            <span className="text-foreground">classify_text tool</span> — the chat agent and workflow tool
+            nodes can ask it any pick-one, rate-on-a-scale or yes/no question about a piece of text.
+          </li>
+        </ul>
+        <p>
+          It reads only the text it’s given — it has no knowledge of companies beyond that. Off means
+          everything behaves exactly as it did without it.
+        </p>
+      </div>
     </div>
   )
 }
@@ -1488,6 +1561,7 @@ export default function Settings() {
           <TabsTab value="cogencis">Cogencis</TabsTab>
           <TabsTab value="telegram">Telegram</TabsTab>
           <TabsTab value="screener">Screener</TabsTab>
+          <TabsTab value="classifier">Classifier</TabsTab>
           <TabsTab value="broker">Broker</TabsTab>
           <TabsTab value="rules">Watch rules</TabsTab>
           <TabsTab value="data">Collect data</TabsTab>
@@ -1516,6 +1590,9 @@ export default function Settings() {
           </TabsPanel>
           <TabsPanel value="screener">
             <ScreenerTab />
+          </TabsPanel>
+          <TabsPanel value="classifier">
+            <ClassifierTab />
           </TabsPanel>
           <TabsPanel value="broker">
             <BrokerTab />

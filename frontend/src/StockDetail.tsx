@@ -23,6 +23,7 @@ import { getBacktests, getEmaCrossover } from '@/services/api'
 import type { DailyBar } from '@/lib/types'
 import type { StockDetail as StockDetailData } from '@/services/api'
 import DeleteStockButton from './DeleteStockButton'
+import NewsTagBadges from '@/components/NewsTagBadges'
 import EventActionsMenu from './EventActionsMenu'
 import PriceChart from './PriceChart'
 import ScreenerPanel from './ScreenerPanel'
@@ -380,6 +381,7 @@ export default function StockDetail() {
               <div className="flex items-start justify-between gap-2">
                 <span className="font-medium">{n.title}</span>
                 <div className="flex shrink-0 items-center gap-1">
+                  <NewsTagBadges tags={n.laya_tags} />
                   {n.sentiment_label && (
                     <Badge
                       variant="secondary"

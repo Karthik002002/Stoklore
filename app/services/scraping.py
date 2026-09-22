@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import requests
 from fastapi import HTTPException
 
+from app.core import classifier
 from app.core import db
 from app.core import llm
 from app.core import scraper
@@ -93,4 +94,5 @@ def _cached_news(symbol):
         except Exception:
             pass
     db.save_news(symbol, fresh)
+    classifier.tag_pending_async()  # tags show up on the next read; this one isn't held up
     return fresh

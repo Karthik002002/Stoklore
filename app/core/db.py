@@ -248,6 +248,13 @@ CREATE TABLE IF NOT EXISTS stock_events (
 CREATE INDEX IF NOT EXISTS stock_events_symbol_idx ON stock_events (symbol);
 CREATE INDEX IF NOT EXISTS stock_events_time_idx ON stock_events (event_time DESC);
 
+-- Laya classifier tags on news (app/core/classifier.py tag_news): {event, event_confidence,
+-- materiality 0-3, price_sensitive 0-1}. Filled in the background after a scrape, so NULL just means
+-- "not tagged yet" (or the classifier is off) - on stock_events only news rows ever get tagged.
+ALTER TABLE stock_news ADD COLUMN IF NOT EXISTS laya_tags JSONB;
+ALTER TABLE top_news ADD COLUMN IF NOT EXISTS laya_tags JSONB;
+ALTER TABLE stock_events ADD COLUMN IF NOT EXISTS laya_tags JSONB;
+
 -- User-defined "should I act on this" criteria - bridges events/indicators to a decision without
 -- the app itself giving advice: the user writes the bar in plain English (rule_text, e.g. "P/E
 -- under 25 AND no negative events in last 14 days AND EMA20 above EMA50"), the LLM parses it once
@@ -870,7 +877,7 @@ def get_cached_news(symbol, max_age_hours=24):
     with connect() as conn:
         rows = conn.execute(
             "SELECT title, summary, url, published_at, sentiment_label, sentiment_score, source, origin, "
-            "scraped_at FROM stock_news WHERE symbol = %s ORDER BY published_at DESC NULLS LAST",
+            "scraped_at, laya_tags FROM stock_news WHERE symbol = %s ORDER BY published_at DESC NULLS LAST",
             (symbol,),
         ).fetchall()
     if not rows:
@@ -897,6 +904,33 @@ def save_news(symbol, items):
             )
 
 
+# The three places news lands, and how to read each row's text. Only news rows of stock_events
+# are tagged - a price move or volume spike has no text worth classifying.
+_NEWS_TABLES = {
+    "stock_news": "SELECT id, title, summary FROM stock_news WHERE laya_tags IS NULL",
+    "top_news": "SELECT id, title, summary FROM top_news WHERE laya_tags IS NULL",
+    "stock_events": "SELECT id, headline AS title, detail AS summary FROM stock_events "
+                    "WHERE laya_tags IS NULL AND event_type IN ('news', 'research')",
+}
+
+
+def untagged_news(limit=25):
+    """News rows across every table that the classifier hasn't tagged yet, newest ids first."""
+    rows = []
+    with connect() as conn:
+        for table, query in _NEWS_TABLES.items():
+            rows += [{**r, "table": table} for r in
+                     conn.execute(f"{query} ORDER BY id DESC LIMIT %s", (limit,)).fetchall()]
+    return rows[:limit]
+
+
+def set_news_tags(table, row_id, tags):
+    if table not in _NEWS_TABLES:
+        raise ValueError(f"{table} isn't a news table")
+    with connect() as conn:
+        conn.execute(f"UPDATE {table} SET laya_tags = %s WHERE id = %s", (Jsonb(tags), row_id))
+
+
 def top_news_is_fresh(max_age_hours=24):
     """True if the top-news cache has been scraped within max_age_hours (caller should re-scrape
     the first page wholesale if not - see save_top_news)."""
@@ -914,7 +948,7 @@ def get_top_news_page(offset, limit):
     """Paginated slice of the cached top-news feed, newest first."""
     with connect() as conn:
         return conn.execute(
-            "SELECT title, summary, url, published_at, source, isins "
+            "SELECT title, summary, url, published_at, source, isins, laya_tags "
             "FROM top_news ORDER BY published_at DESC NULLS LAST OFFSET %s LIMIT %s",
             (offset, limit),
         ).fetchall()
@@ -1069,14 +1103,14 @@ def list_events(list_name=None, symbol=None, from_date=None, to_date=None, limit
     if list_name:
         query = (
             "SELECT e.id, e.symbol, e.event_type, e.headline, e.detail, e.url, e.event_time, "
-            "e.sentiment_label, e.sentiment_score, e.scraped_at, w.list_name "
+            "e.sentiment_label, e.sentiment_score, e.scraped_at, e.laya_tags, w.list_name "
             "FROM stock_events e JOIN watchlist w ON w.symbol = e.symbol AND w.list_name = %s"
         )
         params = [list_name]
     else:
         query = (
             "SELECT e.id, e.symbol, e.event_type, e.headline, e.detail, e.url, e.event_time, "
-            "e.sentiment_label, e.sentiment_score, e.scraped_at, w.list_name "
+            "e.sentiment_label, e.sentiment_score, e.scraped_at, e.laya_tags, w.list_name "
             "FROM stock_events e LEFT JOIN LATERAL "
             "(SELECT list_name FROM watchlist w2 WHERE w2.symbol = e.symbol LIMIT 1) w ON true"
         )

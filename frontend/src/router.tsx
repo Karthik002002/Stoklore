@@ -50,6 +50,7 @@ const SETTINGS_TABS = [
   'cogencis',
   'telegram',
   'screener',
+  'classifier',
   'broker',
   'rules',
   'data',

@@ -1,10 +1,12 @@
 from fastapi import APIRouter
 from fastapi import HTTPException
 
+from app.core import classifier
 from app.core import db
 from app.core import llm
 
 from app.schemas import (
+    ClassifierConfigRequest,
     ScreenerConfigRequest,
     TelegramConfigRequest,
     ActiveBrokerRequest,
@@ -155,6 +157,29 @@ def test_telegram():
     if error:
         raise HTTPException(status_code=400, detail=error)
     return {"ok": True}
+
+
+# --- Laya classifier: local typed classification (guard rails, news tags, journal suggestions) --
+
+
+@router.get("/api/settings/classifier")
+def get_classifier_config():
+    return {
+        "enabled": classifier.enabled(),
+        "installed": classifier.installed(),
+        "loaded": classifier.loaded(),
+        "model": classifier.MODEL_ID,
+    }
+
+
+@router.put("/api/settings/classifier")
+def set_classifier_config(req: ClassifierConfigRequest):
+    if req.enabled and not classifier.installed():
+        raise HTTPException(status_code=422, detail="the laya package isn't installed - pip install laya")
+    classifier.set_enabled(req.enabled)
+    if req.enabled:
+        classifier.tag_pending_async()  # backfill tags on news already in the database
+    return get_classifier_config()
 
 
 # --- screener.in: the user's own session, so unattended screen runs aren't stopped by the wall -------

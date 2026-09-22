@@ -664,6 +664,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/manual-trades/suggest-review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suggest Review
+         * @description Laya's read of a trade's notes: likely mistakes and the emotion. Suggestions only - the form
+         *     pre-selects them and nothing is stored until the user saves the trade.
+         */
+        post: operations["suggest_review_api_manual_trades_suggest_review_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/trade-reviews": {
         parameters: {
             query?: never;
@@ -1562,6 +1583,24 @@ export interface paths {
          * @description Sends one message now, so a wrong chat id shows up here rather than as silence at 9am.
          */
         post: operations["test_telegram_api_settings_telegram_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/settings/classifier": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Classifier Config */
+        get: operations["get_classifier_config_api_settings_classifier_get"];
+        /** Set Classifier Config */
+        put: operations["set_classifier_config_api_settings_classifier_put"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3070,6 +3109,11 @@ export interface components {
             /** Model */
             model?: string | null;
         };
+        /** ClassifierConfigRequest */
+        ClassifierConfigRequest: {
+            /** Enabled */
+            enabled: boolean;
+        };
         /** CogencisConfigRequest */
         CogencisConfigRequest: {
             /** Token */
@@ -3449,6 +3493,21 @@ export interface components {
         ReorderWatchlistsRequest: {
             /** Names */
             names: string[];
+        };
+        /** ReviewSuggestRequest */
+        ReviewSuggestRequest: {
+            /** Notes */
+            notes: string;
+            /**
+             * Mistakes
+             * @default []
+             */
+            mistakes: string[];
+            /**
+             * Emotions
+             * @default []
+             */
+            emotions: string[];
         };
         /** ScrapeRequest */
         ScrapeRequest: {
@@ -4950,6 +5009,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TradingGoalRequest"][];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggest_review_api_manual_trades_suggest_review_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReviewSuggestRequest"];
             };
         };
         responses: {
@@ -6776,6 +6868,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_classifier_config_api_settings_classifier_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    set_classifier_config_api_settings_classifier_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClassifierConfigRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

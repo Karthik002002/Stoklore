@@ -285,6 +285,16 @@ class TradeAccountRequest(BaseModel):
         }
 
 
+class ClassifierConfigRequest(BaseModel):
+    enabled: bool
+
+
+class ReviewSuggestRequest(BaseModel):
+    notes: str
+    mistakes: list[str] = []  # the vocabulary to pick from - the form's own list
+    emotions: list[str] = []
+
+
 class ManualBacktestSettingsRequest(BaseModel):
     setups: list[str] = []
     mistakes: list[str] | None = None  # None = keep the stored list

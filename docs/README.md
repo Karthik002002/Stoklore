@@ -10,6 +10,7 @@ why it exists, see the main [README](../README.md) — these docs are the
 - [Events Feed](events-feed.md)
 - [Sentiment (`/sentiment`)](sentiment.md)
 - [Model Settings](model-settings.md)
+- [Laya Classifier](classifier.md) — guard rails, news tags, journal suggestions, `classify_text`
 - [Watch Rules](watch-rules.md)
 - [Top News](top-news.md)
 - [Holdings](holdings.md)

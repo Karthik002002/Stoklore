@@ -10,6 +10,7 @@ from datetime import date
 import requests
 from fastapi import HTTPException
 
+from app.core import classifier
 from app.core import db
 from app.core import llm
 from app.core import prices
@@ -179,6 +180,12 @@ def _tool_run_screen(url, max_pages=4):
         return str(e)
 
 
+def _tool_classify_text(text, question, type="choice", options=None):
+    """Laya: one typed question about a piece of text, answered with a calibrated confidence. Also
+    the Classify step in workflows, which call the same tool registry."""
+    return classifier.classify(text, question, type, options)
+
+
 def _tool_get_recent_events(days=1, list_name=None):
     """Events already sitting in the feed from the last `days` days. The READ side of the event
     scan: scan_events starts a scan and returns at once, so a workflow that wants to react to what
@@ -232,6 +239,7 @@ REAL_TOOL_IMPLS = {
     "check_watch_rule": _tool_check_watch_rule,
     "run_screen": _tool_run_screen,
     "get_recent_events": _tool_get_recent_events,
+    "classify_text": _tool_classify_text,
 }
 
 
@@ -331,6 +339,20 @@ AGENT_TOOLS = [
         "does not start one.",
         {"days": {"type": "integer", "description": "how many days back, default 1"},
          **_LIST_PROP}),
+    _fn("classify_text", "Classifies a piece of text with the local Laya model - one typed question, "
+        "answered in ~0.3s with a calibrated confidence instead of generated prose. Use it to sort, "
+        "tag or screen text (news, notes, a scraped page) against the user's own categories. Refer to "
+        "the input as `text` in the question, e.g. 'What kind of event is `text` about?'. The model "
+        "only reads what is in the text - it has no outside knowledge of companies.",
+        {"text": {"type": "string", "description": "the text to classify"},
+         "question": {"type": "string", "description": "the question, referring to the input as `text`"},
+         "type": {"type": "string", "enum": ["choice", "score", "noul"],
+                  "description": "choice = pick one option; score = a point on an ordered scale; "
+                                 "noul = yes/no with a probability"},
+         "options": {"type": "array", "items": {"type": "string"},
+                     "description": "choice: the labels, optionally 'label: description'; score: the "
+                                    "scale from lowest to highest; omit for noul"}},
+        ["text", "question"]),
 ]
 
 AGENT_SYSTEM = (
@@ -354,7 +376,8 @@ AGENT_SYSTEM = (
     "run on the first call; when a tool result says requires_confirmation, relay its message to "
     "the user verbatim-ish and stop, do not retry it in this turn. Every other tool "
     "(get_movers, scan_events, sync_prices, web_search, scrape_url, get_price, get_ema_crossover, "
-    "list_watchlists, list_chat_sessions, search_reports, add_stock_event, check_watch_rule) runs "
+    "list_watchlists, list_chat_sessions, search_reports, add_stock_event, check_watch_rule, "
+    "classify_text) runs "
     "freely - call them immediately, never ask the user for permission or say you're about to before calling one of "
     "these. A completed tool call's result is already in your conversation history on later "
     "turns - reuse it instead of re-calling the same tool for a follow-up question about the same "

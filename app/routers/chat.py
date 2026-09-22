@@ -5,6 +5,7 @@ import uuid
 
 from fastapi.responses import StreamingResponse
 
+from app.core import classifier
 from app.core import db
 from app.core import llm
 from app.core import rules
@@ -214,6 +215,10 @@ def post_chat(req: ChatRequest):
     model = db.get_session_model(req.sessionId) or db.get_active_model()
 
     user_text = _text(req.messages[-1])
+    # Advisory: flags credentials about to be sent to a model provider, or pasted text that tries
+    # to steer the assistant. Surfaced as a warning in the chat, never a refusal. None when the Laya
+    # classifier is off.
+    guard_flags = classifier.guard(user_text)
 
     use_agent = False
     reply = None
@@ -246,6 +251,8 @@ def post_chat(req: ChatRequest):
 
     def stream():
         yield _sse({"type": "start", "messageId": str(uuid.uuid4())})
+        if guard_flags:
+            yield _sse({"type": "data-guard", "data": {"flags": guard_flags}})
 
         final_reply = reply
         if confirm_call:

@@ -15,6 +15,7 @@
 // rather than an `undefined` at runtime. Adding return annotations to the routers in app/ would
 // let these be generated too; until then, this file is the record.
 import type { components } from './api.types.ts'
+import type { NewsTags } from '@/lib/newsTags'
 import type { Goal } from '@/lib/tradeGoals'
 import type { DailyBar, StockMasterRow, Trade, TradeAccount } from '@/lib/types'
 
@@ -284,6 +285,7 @@ export type StockNews = {
   source: string | null
   origin: string | null
   sentiment_label: string | null
+  laya_tags?: NewsTags | null
 }
 
 /** A scraped page kept for a symbol. */
@@ -371,6 +373,7 @@ export type FeedEvent = {
   event_time: string | null
   sentiment_label: 'positive' | 'negative' | 'neutral' | null
   sentiment_score: number | null
+  laya_tags?: NewsTags | null
 }
 
 /** How much a symbol is being covered right now versus its own baseline. */
@@ -1218,6 +1221,31 @@ export const saveTradeReview = (review: TradeReviewRequest, id?: number) =>
 
 export const deleteTradeReview = (id: number) =>
   fetch(`/api/trade-reviews/${id}`, { method: 'DELETE' }).then(json)
+
+/** The local Laya classifier (Settings > Classifier). */
+export type ClassifierConfig = { enabled: boolean; installed: boolean; loaded: boolean; model: string }
+
+export const getClassifierConfig = () => fetch('/api/settings/classifier').then(json<ClassifierConfig>)
+
+export const setClassifierConfig = (enabled: boolean) =>
+  fetch('/api/settings/classifier', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled }),
+  }).then(json<ClassifierConfig>)
+
+/** What Laya reads in a trade's notes - suggestions for the review form, never saved on their own. */
+export type ReviewSuggestion = {
+  mistakes: { label: string; probability: number }[]
+  emotion: { label: string; confidence: number } | null
+}
+
+export const suggestReview = (notes: string, mistakes: string[], emotions: string[]) =>
+  fetch('/api/manual-trades/suggest-review', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notes, mistakes, emotions }),
+  }).then(json<ReviewSuggestion>)
 
 export const getTradingGoals = () => fetch('/api/trading-goals').then(json<Goal[]>)
 

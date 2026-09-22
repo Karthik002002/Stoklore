@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.core import backup
+from app.core import classifier
 from app.core import db
 from app.core import live
 from app.core import llm
@@ -33,6 +34,8 @@ def _startup():
     db.purge_old(days=14)
     llm.configure_litellm(db.get_litellm_base_url(), db.get_litellm_api_key())
     llm.configure_omniroute(db.get_omniroute_base_url(), db.get_omniroute_api_key())
+    # A no-op until the Laya classifier is switched on in Settings > Classifier.
+    llm.TOOL_RESULT_GUARD = classifier.injection_flagged
     threading.Thread(target=_auto_event_scan_loop, daemon=True).start()
     # One NSE shareholding sweep per IST day: the newest 90-day window (one request covering every
     # listed company), then the XBRL detail for the handful of filings that actually moved. See

@@ -12,6 +12,7 @@ from typing import Literal
 from fastapi import File, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 
+from app.core import classifier
 from app.core import db
 from app.core import llm
 from app.core import trade_context
@@ -21,6 +22,7 @@ from app.schemas import (
     BalanceAdjustmentRequest,
     ManualBacktestSettingsRequest,
     ManualTradeRequest,
+    ReviewSuggestRequest,
     TradeReviewRequest,
     TradingGoalRequest,
 )
@@ -244,6 +246,18 @@ def save_trading_goals(goals: list[TradingGoalRequest]):
     saved = [g.model_dump() for g in goals]
     db.set_trading_goals(saved)
     return saved
+
+
+@router.post("/api/manual-trades/suggest-review")
+def suggest_review(req: ReviewSuggestRequest):
+    """Laya's read of a trade's notes: likely mistakes and the emotion. Suggestions only - the form
+    pre-selects them and nothing is stored until the user saves the trade."""
+    if not req.notes.strip():
+        raise HTTPException(status_code=422, detail="write some notes first - suggestions come from them")
+    result = classifier.suggest_review(req.notes, req.mistakes, req.emotions)
+    if result is None:
+        raise HTTPException(status_code=409, detail="the Laya classifier is off - enable it in Settings > Classifier")
+    return result
 
 
 @router.get("/api/trade-reviews")

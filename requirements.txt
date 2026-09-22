@@ -22,6 +22,10 @@ pandas==3.0.3
 duckdb==1.5.5
 transformers==5.14.1
 torch==2.13.0
+# Laya: local typed classification (the open-source alternative to Jev) - guard rails, news tags,
+# journal suggestions, the classify_text tool. Off by default (Settings > Classifier); the ~1.7GB
+# model downloads from Hugging Face on first use. See app/core/classifier.py.
+laya==0.3.5
 
 # LiteLLM proxy CLI - optional, only needed for the litellm/* model backend (see Settings > LiteLLM)
 litellm[proxy]==1.93.0

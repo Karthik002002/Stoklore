@@ -435,6 +435,9 @@ function TradeFormDialog({
               value={review}
               onChange={setReview}
               prefill={isOpen ? {} : prefill}
+              notes={trade?.notes}
+              emotions={EMOTIONS}
+              onEmotion={(e) => form.setValue('emotion', e)}
             />
 
             <div className="grid grid-cols-2 gap-2">

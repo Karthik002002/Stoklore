@@ -8,6 +8,8 @@ import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatDateTime, timeAgoShort } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
+import NewsTagBadges from '@/components/NewsTagBadges'
+import { isMaterial, type NewsTags } from '@/lib/newsTags'
 import EventActionsMenu from './EventActionsMenu'
 
 /** One story in the feed. `affected_symbols` is filled in per request by matching the story's
@@ -20,6 +22,7 @@ type NewsItem = {
   source: string | null
   isins: string | null
   affected_symbols: string[]
+  laya_tags?: NewsTags | null
 }
 type NewsPage = { items: NewsItem[]; total: number }
 
@@ -46,6 +49,7 @@ function NewsRow({ n }: { n: NewsItem }) {
         )}
         {n.source && <span className="w-24 shrink-0 truncate font-semibold text-primary">{n.source}</span>}
         <p className="min-w-0 flex-1 truncate">{n.title}</p>
+        <NewsTagBadges tags={n.laya_tags} />
         {n.affected_symbols.length > 0 && (
           <div className="flex shrink-0 items-center gap-1" onClick={(e) => e.stopPropagation()}>
             {n.affected_symbols.map((symbol) => (
@@ -91,6 +95,7 @@ export default function TopNews() {
   const [total, setTotal] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [onlyAffecting, setOnlyAffecting] = useState(false)
+  const [onlyMaterial, setOnlyMaterial] = useState(false)
   const [reloading, setReloading] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [query, setQuery] = useState('')
@@ -148,12 +153,13 @@ export default function TopNews() {
 
   const visible = useMemo(() => {
     let v = onlyAffecting ? news?.filter((n) => n.affected_symbols.length > 0) : news
+    if (onlyMaterial && v) v = v.filter((n) => isMaterial(n.laya_tags))
     if (query.trim() && v) {
       const q = query.trim().toLowerCase()
       v = v.filter((n) => n.title.toLowerCase().includes(q) || n.summary?.toLowerCase().includes(q))
     }
     return v
-  }, [news, onlyAffecting, query])
+  }, [news, onlyAffecting, onlyMaterial, query])
 
   return (
     <div className="space-y-3 font-mono">
@@ -181,6 +187,17 @@ export default function TopNews() {
         >
           Affecting my watchlist only
         </Button>
+        {/* Only once Laya has tagged something - otherwise it would filter the feed to nothing. */}
+        {news?.some((n) => n.laya_tags) && (
+          <Button
+            variant={onlyMaterial ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => setOnlyMaterial((v) => !v)}
+            title="Stories the Laya classifier rates moderate or major, or likely to move the price"
+          >
+            Material only
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="icon-sm"

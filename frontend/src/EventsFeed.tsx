@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import NewsTagBadges from '@/components/NewsTagBadges'
+import { isMaterial } from '@/lib/newsTags'
 import { Link } from '@tanstack/react-router'
 import { CalendarIcon, RadarIcon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
@@ -95,6 +97,7 @@ export default function EventsFeed() {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [presetsOpen, setPresetsOpen] = useState(false)
+  const [onlyMaterial, setOnlyMaterial] = useState(false)
 
   const load = () => {
     const params = new URLSearchParams()
@@ -227,6 +230,17 @@ export default function EventsFeed() {
             <XIcon className="size-4" />
           </Button>
         )}
+        {/* Only once Laya has tagged something - otherwise it would filter the feed to nothing. */}
+        {eventsList?.some((e) => e.laya_tags) && (
+          <Button
+            variant={onlyMaterial ? 'secondary' : 'ghost'}
+            size="sm"
+            onClick={() => setOnlyMaterial((v) => !v)}
+            title="News the Laya classifier rates moderate or major, or likely to move the price. Hides price moves and other untagged events."
+          >
+            Material only
+          </Button>
+        )}
       </div>
 
       {scanStatus?.running && (
@@ -267,7 +281,7 @@ export default function EventsFeed() {
 
       {(eventsList?.length ?? 0) > 0 && eventsList && (
         <div className="space-y-2">
-          {eventsList.map((e) => (
+          {(onlyMaterial ? eventsList.filter((e) => isMaterial(e.laya_tags)) : eventsList).map((e) => (
             <div key={e.id} className="flex items-start gap-3 rounded-lg border bg-card px-3 py-2.5 text-sm">
               <Badge variant="outline" className="mt-0.5 shrink-0">
                 {EVENT_LABELS[e.event_type]}
@@ -287,6 +301,7 @@ export default function EventsFeed() {
                       {e.sentiment_label}
                     </Badge>
                   )}
+                  <NewsTagBadges tags={e.laya_tags} />
                 </div>
                 <p className="mt-0.5">{e.headline}</p>
                 {e.detail && <p className="mt-0.5 text-muted-foreground">{e.detail}</p>}

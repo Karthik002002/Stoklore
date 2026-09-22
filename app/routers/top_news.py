@@ -4,6 +4,7 @@ import time
 
 from fastapi import HTTPException
 
+from app.core import classifier
 from app.core import db
 from app.core import scraper
 
@@ -74,6 +75,7 @@ def top_news(force: bool = False, offset: int = 0, limit: int = 30):
 
         page = db.get_top_news_page(offset, limit)
         total = db.count_top_news()
+    classifier.tag_pending_async()
 
     symbol_by_isin = {}
     for symbol in db.watchlist_symbols():

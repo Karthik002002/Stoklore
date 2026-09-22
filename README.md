@@ -166,7 +166,8 @@ to guard rails you can see and control.
 ### `1` Live Dashboard & Watchlists
 
 - **NIFTY 50 / SENSEX** index cards with a live sparkline chart on the home page
-- Tracked-stocks table with live price + day change, refreshed via a shared
+- Tracked-stocks table (every scraped symbol plus everything on a watchlist,
+  report or not) with live price + day change, refreshed via a shared
   TTL cache (`stock_cache`) instead of hitting Yahoo Finance on every request
 - **Watchlists**: bookmark any tracked stock into named lists, move a stock
   between lists, filter the table by tab
@@ -187,7 +188,7 @@ The floating chat isn't just RAG — it's a real tool-calling agent that talks
 directly to Ollama's or an OpenAI-compatible server's native function-calling
 API (no LangChain, no framework):
 
-- **14 explicit tools** (`app/main.py` + `app/routers/`, `AGENT_TOOLS`/`REAL_TOOL_IMPLS`) covering
+- **17 explicit tools** (`app/main.py` + `app/routers/`, `AGENT_TOOLS`/`REAL_TOOL_IMPLS`) covering
   live price/EMA/movers lookups (the EMA one syncs a symbol's price history
   itself when it's missing or stale — "run a price sync first" is not something
   an unattended workflow can act on), watchlist listing, broker-synced holdings
@@ -196,7 +197,10 @@ API (no LangChain, no framework):
   web search, recording a verified event, checking a user-defined watch
   rule, fetching/analyzing an arbitrary URL (`scrape_url`, nothing saved to
   disk — separate from `POST /api/scrape`, which does write one), and
-  listing past chat session titles ("what have I asked about before")
+  listing past chat session titles ("what have I asked about before"), and
+  `classify_text` — a typed question about any text, answered by the local
+  [Laya classifier](docs/classifier.md) with a calibrated confidence (also a
+  workflow tool node)
 - **`@` tag menu** in the chat input autocompletes stocks, watch rules, *and*
   events — tagging an event inserts its source URL (not just its headline),
   which is what makes `scrape_url` actually have something to fetch
@@ -240,6 +244,12 @@ rails instead of a blanket "trust the model":
   before it re-enters the model's context, with a regex flag for obvious
   override phrasing ("ignore previous instructions", "reveal your system
   prompt", etc.)
+- **Laya classifier guard** (optional, Settings › Classifier) — a local
+  decision model reads every tool result for reworded injections the regex
+  misses, and each chat message for credentials or steering attempts, and
+  warns (never blocks). Same model tags scraped news with an event type and
+  materiality and suggests a trade's mistake/emotion from its notes — see
+  [docs/classifier.md](docs/classifier.md)
 - **LiteLLM proxy-level guardrails** (optional) — `config/litellm.config.example.yaml`
   is the tracked template (copy it to `config/litellm.config.yaml`, which is
   gitignored/per-developer); guardrails go under a top-level `guardrails:`

@@ -71,6 +71,19 @@ type ChatSession = { id: string; title: string | null; model: string | null; cre
 // threading a callback down through App's whole tree.
 const TAG_EVENT = 'chat:tag'
 
+// The Laya guard's read of the message just sent (app/routers/chat.py). A warning, never a block:
+// the message has already gone to the model by the time this arrives.
+const GUARD_TEXT: Record<string, string> = {
+  sensitive_data: 'looks like it contains credentials or personal data',
+  prompt_injection: 'contains instructions aimed at the assistant',
+  jailbreak: 'tries to override the assistant’s rules',
+}
+
+function guardWarning(flags: Record<string, number>) {
+  const reasons = Object.entries(flags).map(([k, p]) => `${GUARD_TEXT[k] ?? k} (${Math.round(p * 100)}%)`)
+  if (reasons.length) toast.warning(`Guard: this message ${reasons.join('; ')}`)
+}
+
 export function tagInChat(url: string, label?: string) {
   window.dispatchEvent(new CustomEvent(TAG_EVENT, { detail: { url, label } }))
 }
@@ -275,6 +288,7 @@ function ChatThread({
     transport: new DefaultChatTransport({ api: '/api/chat', body: { sessionId: chatId } }),
     onData: (part) => {
       if (part.type === 'data-title') onTitle(chatId, (part.data as { title: string }).title)
+      if (part.type === 'data-guard') guardWarning((part.data as { flags: Record<string, number> }).flags)
     },
     onFinish: ({ message }) => onDone(textOf(message)),
   })

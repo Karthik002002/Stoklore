@@ -794,10 +794,16 @@ def list_recent_items(limit=20):
 
 
 def list_symbols():
+    """Every tracked symbol: anything with a scraped report, plus anything on a watchlist. A price
+    doesn't need a report, and a watchlisted stock that had never been scraped (or had its reports
+    cleared) used to drop out of /api/stocks entirely - unpriced, and missing from its own watchlist
+    tab. Watchlist-only symbols come back with report_count 0 and no last_scraped."""
     with connect() as conn:
         return conn.execute(
-            "SELECT symbol, count(*) AS report_count, max(scraped_at) AS last_scraped "
-            "FROM scraped_items GROUP BY symbol ORDER BY max(scraped_at) DESC"
+            "SELECT symbol, sum(reports)::int AS report_count, max(scraped_at) AS last_scraped FROM ("
+            "  SELECT symbol, 1 AS reports, scraped_at FROM scraped_items"
+            "  UNION ALL SELECT DISTINCT symbol, 0, NULL::timestamptz FROM watchlist"
+            ") s GROUP BY symbol ORDER BY max(scraped_at) DESC NULLS LAST, symbol"
         ).fetchall()
 
 

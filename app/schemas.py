@@ -6,7 +6,9 @@ importing another's schemas.
 """
 from typing import Literal
 
-from pydantic import BaseModel
+from datetime import date
+
+from pydantic import BaseModel, Field
 
 from app.core import price_sources
 
@@ -223,6 +225,25 @@ class ManualTradeRequest(BaseModel):
     # can't be bounded, so those two metrics are left out of the snapshot rather than guessed at.
     entried_at: str | None = None
     exited_at: str | None = None
+    # The review (see the manual_trades column comments). On a PUT these are applied only when
+    # actually sent - omitting them leaves the stored review alone - so a caller that predates them
+    # (bulk edit, the paper engine) can't wipe one. Send null/[] explicitly to clear.
+    mistakes: list[str] | None = None
+    execution_checks: dict[str, bool] | None = None
+    execution_score: int | None = Field(default=None, ge=1, le=10)
+    pre_trade_checks: dict[str, bool] | None = None
+
+
+class TradeReviewRequest(BaseModel):
+    account_id: int | None = None
+    period_start: date
+    period_end: date
+    keep: str | None = None
+    stop: str | None = None
+    improve: str | None = None
+    test: str | None = None
+    change: str | None = None  # the ONE rule change this review commits to
+    change_from: date | None = None  # when it takes effect - the before/after split
 
 
 class TradeAccountRequest(BaseModel):
@@ -266,6 +287,7 @@ class TradeAccountRequest(BaseModel):
 
 class ManualBacktestSettingsRequest(BaseModel):
     setups: list[str] = []
+    mistakes: list[str] | None = None  # None = keep the stored list
     risk_deviation_tolerance_pct: float = 10
     opening_balance: float = 0
 

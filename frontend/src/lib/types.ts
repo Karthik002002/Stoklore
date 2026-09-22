@@ -82,7 +82,19 @@ export interface Trade {
   entried_at: string | null
   exited_at: string | null
   trade_context: TradeContext | null
+  /** The review - why it went the way it did. null = not reviewed; [] = reviewed, nothing wrong. */
+  mistakes: string[] | null
+  execution_checks: ExecutionChecks | null
+  execution_score: number | null
+  /** The same checks, ticked on the Bar Replay order ticket before the fill. */
+  pre_trade_checks: ExecutionChecks | null
+  image_filename_entry: string | null
+  /** Absolute URL for image_filename_entry - the chart at entry. Added by the router. */
+  image_entry_url: string | null
 }
+
+/** Keyed by lib/tradeReview.ts CHECKS. A key that is absent was never ticked either way. */
+export type ExecutionChecks = Record<string, boolean>
 
 /** A trade account, with the cost rate card that makes gross and net comparable across accounts. */
 export interface TradeAccount {

@@ -41,6 +41,7 @@ import IndicatorControls from './IndicatorControls'
 import PositionsList from './PositionsList'
 import { riskReward } from './orderEngine'
 import { DRAW_TOOLS } from './ReplayChart'
+import { useBarReplayStore } from './store'
 
 // Every control for a replay session lives in this one bar pinned under the chart - the chart
 // itself is never covered. It replaced a set of floating cards (Setup/Indicators/Trade/Playback)
@@ -167,6 +168,7 @@ function Hint({ label, keys, children }: { label: string; keys?: string; childre
 }
 
 function SetupPopover({ setup }: { setup: SetupBag }) {
+  const blind = useBarReplayStore((s) => !!s.settings.blind)
   const {
     symbol,
     onSymbolChange,
@@ -201,7 +203,7 @@ function SetupPopover({ setup }: { setup: SetupBag }) {
       >
         <PopoverTrigger render={<Button variant="ghost" size="sm" className="gap-1.5" />}>
           <SlidersHorizontalIcon className="size-4" />
-          {symbol ?? 'Pick a symbol'}
+          {symbol ? (blind ? 'Hidden symbol' : symbol) : 'Pick a symbol'}
           <Badge variant="outline" className="ml-1 font-mono text-[10px]">
             {REPLAY_TIMEFRAMES.find((t) => t.value === timeframe)?.label ?? timeframe}
           </Badge>
@@ -404,6 +406,7 @@ function DrawingsPopover({ draw }: { draw: DrawBag }) {
 }
 
 function PlaybackControls({ playback }: { playback: PlaybackBag }) {
+  const blind = useBarReplayStore((s) => !!s.settings.blind)
   const {
     playing,
     atEnd,
@@ -470,7 +473,7 @@ function PlaybackControls({ playback }: { playback: PlaybackBag }) {
       </Select>
       <DateJumpMenu
         bars={bars}
-        value={dateDraft}
+        value={blind ? null : dateDraft}
         onSelect={onJumpDate}
         placeholder="Jump to date"
         triggerClassName="w-32 text-xs"

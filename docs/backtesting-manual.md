@@ -5,11 +5,12 @@
 ## Using it
 
 - `/backtesting` (currently the only mode on this page — see
-  [Backtesting — Auto](backtesting-auto.md) for why), with four sub-tabs:
-  **Overview**, **Trades**, **Statistics**, **Goals**.
+  [Backtesting — Auto](backtesting-auto.md) for why), with five sub-tabs:
+  **Overview**, **Trades**, **Statistics**, **Goals**, **Reviews**.
 - **Add Trade** to log a trade by hand (symbol, direction, quantity,
-  entry/exit, stop-loss/target, ideal risk ₹, emotion, tags, notes, an
-  optional screenshot). Result (profit/loss/neutral) auto-computes from
+  entry/exit, stop-loss/target, ideal risk ₹, emotion, tags, notes, the
+  [review](#trade-review-mistakes-checklist-score), and two optional
+  screenshots — **entry** and **exit**). Result (profit/loss/neutral) auto-computes from
   entry/exit/direction, but overriding it by hand stops it from silently
   recomputing on further edits. Tick "still open" to skip the exit price.
   A closed trade also gets an optional **Closed** date next to **Opened** —
@@ -19,12 +20,16 @@
   form — reviewing a trade is the common action, editing it the rare one, so
   editing is one click further in (the **Edit** button inside that modal).
   See [Trade detail](#trade-detail-what-the-trade-did-vs-what-you-did) below.
+- **Stop loss means the stop at entry.** R, risk deviation and MAE-in-R are all
+  measured to it, so a stop later trailed to breakeven belongs in the notes, not
+  in this field. Bar Replay and Paper Trading journal the initial stop for you.
 - **Bulk Trades** to import several trades at once from screenshots — each
   image is analyzed and its fields pre-filled for you to confirm.
 - The **Trades** tab lists every trade with a filter bar (setup, NSE
   session, risk discipline, expected-R range, **logged-date window**), row
   checkboxes for **Bulk edit** (set a setup and/or add a tag across the
-  selection in one go), and two exports (see
+  selection in one go — it no longer wipes the close date, which the old
+  full-row PUT did), and two exports (see
   [Exports](#exports-csv-excel-markdown) below).
 - **The date window filters on `created_at`, not `traded_at`** — the same
   reading as the Logged column and the Goals tab. A Bar Replay trade on 2013
@@ -44,6 +49,8 @@
   a **Risk & expectancy** section (see below).
 - The **Statistics** tab (see below) is a deeper, TradesViz-style drill-down
   across many angles, all driven by the same closed trades.
+- The **Reviews** tab (see [below](#reviews-tab-one-evidence-based-change)) holds
+  Keep / Stop / Improve / Test write-ups and the one rule change each commits to.
 - The **Goals** tab (see below) scores your trades against targets/limits
   you define, per day/week/month — bucketed by when each trade was **logged**,
   so replayed and paper trades count toward the day you actually did the work.
@@ -205,6 +212,43 @@ four sections:
 The modal re-reads the trade from the live list rather than the snapshot
 captured when the row was clicked, so an edit made from inside it is reflected
 immediately.
+
+### Trade review: mistakes, checklist, score
+
+The numbers above say *what* a trade did. The review says *why*, and lives on
+four nullable columns (`mistakes TEXT[]`, `execution_checks JSONB`,
+`execution_score SMALLINT`, `pre_trade_checks JSONB`), edited in the trade form
+and in Bar Replay's close dialog (`components/TradeReviewFields.tsx`).
+
+- **Mistakes** come from a list in **Settings › Backtesting**, seeded with
+  Setup, Entry, Position sizing, Stop, Exit, Overtrading, Chasing, FOMO,
+  Revenge trading, Rule violation and **Normal loss**. Normal loss is the one
+  label that isn't a mistake: a loss that followed the plan is the cost of the
+  strategy, and it is left out of every mistake count. Renaming a label in
+  Settings doesn't rewrite trades already tagged with the old one — the form
+  keeps showing it on those trades.
+- **Execution checklist** — entry rules, position size, stop honoured, exit
+  rules, no impulsive decisions, followed the plan. Position size and stop
+  honoured come **pre-ticked** from the trade's own numbers (risk deviation vs
+  the tolerance; whether the loss overran the stop), and nothing is saved until
+  you touch the checklist.
+- **Execution score 1–10** is `round(1 + 9 × passed / 6)` from the checklist
+  unless you click a number, which latches it (same pattern as Result).
+- **Untouched means not reviewed.** `NULL` mistakes is "not reviewed", `[]` is
+  "reviewed, nothing wrong" — the Mistake dimension shows them as separate
+  buckets. A PUT only writes the review fields it actually sends
+  (`model_fields_set` in the router), so bulk edit and anything else that
+  predates them can't wipe a review.
+- Every review field is a Statistics **dimension** (Mistake, Execution score,
+  Source) and a **filter** (Mistakes, Execution). A trade with two mistakes
+  counts under both, like tags — so *net P&L by mistake* is what each mistake
+  cost and *trade count by mistake* is how often it repeats.
+- The detail view's **Review** section shows the score, the mistakes and the
+  checklist; for a Bar Replay trade with a pre-trade checklist, *planned* and
+  *did* sit side by side, with a check you planned and then broke highlighted.
+
+The math is `frontend/src/lib/tradeReview.ts`, pure
+(`node src/lib/tradeReview.selfcheck.mjs`).
 
 ### Four timestamps, four different questions
 
@@ -372,6 +416,22 @@ same `seriesFor(trades, dimension, metric)` call with different keys —
 adding a row to either lookup makes every chart that reads it pick it up,
 nothing per-chart to wire up.
 
+- **Strategy vs behaviour** — the review's 2×2. *Strategy* is judged at setup
+  level (the setup's average P&L across the trades on screen), because one
+  trade's outcome says almost nothing about a strategy; *execution* is the
+  trade's own score, good at 7+. Cells: keep collecting data / fix behaviour /
+  review the strategy / don't diagnose the strategy yet. Trades with no setup or
+  no score are counted under the grid rather than silently dropped.
+- **Patterns** — *profit concentration*: what your top 5 winners made, their
+  share of gross profit, and net P&L **without** them (an edge that goes negative
+  without five trades is luck). *Streak effects*: win rate and average P&L on the
+  trade right after 2+ losses or 2+ wins, in logged order.
+- **Setup scorecard** — per setup: trades, win rate with a **95% Wilson
+  interval**, avg P&L, avg R, and the same split by source (**Replay / Paper /
+  Journal**, read off the `replay`/`paper` tags). It spans every account and both
+  books, matched by setup name, and ignores the account picker and filters —
+  "does this setup survive going from replay to paper to live" is a cross-account
+  question. Rows under 20 trades are greyed out.
 - **Overall statistics** is a searchable, collapsible panel of every
   single-number stat at once (`overallStats()`), including risk-discipline
   numbers not shown elsewhere: Sortino ratio, SQN rating, recovery factor,
@@ -449,3 +509,24 @@ a stale percentage on screen.
   green/red-by-outcome is what reads at a glance across a table that dense;
   the ≥/≤ badge on each column header is what tells you which kind of goal
   it is).
+
+### Reviews tab: one evidence-based change
+
+`trade_reviews` rows (`/api/trade-reviews`, `ManualReviews.tsx`), scoped to the
+account picker (an "All accounts" review is its own scope). Hand-typed, so
+deleting an account keeps its reviews (`ON DELETE SET NULL`).
+
+- A review covers a period (default: last Monday–Sunday) and is written next to
+  that period's **evidence** — trades, win rate, net P&L, avg R, avg execution,
+  mistake rate, P&L by setup and the most repeated mistakes — so it's written
+  from the numbers, not from memory.
+- Four boxes: **Keep** (what works?), **Stop** (what hurts results?),
+  **Improve** (what can be executed better?), **Test** (what deserves study?).
+- **One change**, with the date it takes effect (default: the Monday after the
+  period). Each review card then compares trades logged **before** that date
+  with trades **after** it, each side bounded by the neighbouring changes in the
+  same scope — the "after" of one change stops where the next begins, so two
+  changes never get credit for each other. Under 20 trades since the change, the
+  card says it's too early to call.
+- Periods and before/after split on `created_at` (the day you did the work),
+  like Goals, and the tab ignores the Trades filters, also like Goals.

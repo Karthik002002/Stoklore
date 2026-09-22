@@ -24,6 +24,15 @@ import {
   trendSeries,
   whenYouTrade,
 } from '@/lib/tradeStats'
+import {
+  MIN_SAMPLE,
+  profitConcentration,
+  type Quadrant,
+  SOURCES,
+  setupScorecard,
+  strategyBehaviorMatrix,
+  streakEffects,
+} from '@/lib/tradeReview'
 
 const PERIODS = { week: { label: 'Week' }, month: { label: 'Month' } }
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -643,6 +652,225 @@ function CalendarHeatmap({ trades }: { trades: Trade[] }) {
   )
 }
 
+// --- Strategy vs behaviour: the review's 2×2 ------------------------------------------------------
+
+const QUADRANTS: { key: Quadrant; title: string; verdict: string; tone: string }[] = [
+  {
+    key: 'keep',
+    title: 'Good strategy + good execution',
+    verdict: 'Keep collecting data',
+    tone: 'bg-emerald-500/10',
+  },
+  {
+    key: 'fixBehavior',
+    title: 'Good strategy + poor execution',
+    verdict: 'Fix behaviour',
+    tone: 'bg-amber-500/10',
+  },
+  {
+    key: 'reviewStrategy',
+    title: 'Poor strategy + good execution',
+    verdict: 'Review the strategy',
+    tone: 'bg-orange-500/10',
+  },
+  {
+    key: 'undiagnosed',
+    title: 'Poor strategy + poor execution',
+    verdict: "Don't diagnose the strategy yet",
+    tone: 'bg-red-500/10',
+  },
+]
+
+function StrategyBehaviorPanel({ trades }: { trades: Trade[] }) {
+  const m = useMemo(() => strategyBehaviorMatrix(trades), [trades])
+  const placed = QUADRANTS.reduce((n, q) => n + m.cells[q.key].count, 0)
+  return (
+    <Panel
+      title="Strategy vs behaviour"
+      hint={`Strategy = does the setup make money on average here. Execution = the trade's score, good at 7+. Don't change a good strategy to solve an execution problem.`}
+      className="lg:col-span-2"
+    >
+      {placed === 0 ? (
+        <Empty>Score some trades (Execution score) and give them a setup to place them here.</Empty>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            {QUADRANTS.map((q) => {
+              const c = m.cells[q.key]
+              return (
+                <div key={q.key} className={`rounded-lg border p-3 ${q.tone}`}>
+                  <p className="text-xs text-muted-foreground">{q.title}</p>
+                  <p className="text-sm font-semibold">{q.verdict}</p>
+                  <p className="mt-1 text-sm tabular-nums">
+                    {c.count} trade{c.count === 1 ? '' : 's'} ·{' '}
+                    <span className={c.netPnl >= 0 ? 'text-up' : 'text-down'}>{inr(c.netPnl)}</span>
+                  </p>
+                  {c.setups.length > 0 && (
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground" title={c.setups.join(', ')}>
+                      {c.setups.join(', ')}
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          {(m.noSetup > 0 || m.noScore > 0) && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Not placed: {m.noSetup} without a setup, {m.noScore} not scored.
+            </p>
+          )}
+        </>
+      )}
+    </Panel>
+  )
+}
+
+// --- Setup scorecard: sample size, confidence, and replay → paper → journal ---------------------
+
+function ScoreCell({ c }: { c: ReturnType<typeof setupScorecard>[number]['all'] }) {
+  if (!c) return <span className="text-muted-foreground">—</span>
+  return (
+    <span className={c.thin ? 'text-muted-foreground' : ''}>
+      <span className="tabular-nums">{c.count}</span>
+      <span className="text-muted-foreground"> · </span>
+      <span className="tabular-nums">{fmt(c.winRate, 0)}%</span>
+      <span className="text-muted-foreground"> · </span>
+      <span className={`tabular-nums ${c.avgPnl >= 0 ? 'text-up' : 'text-down'}`}>{inr(c.avgPnl)}</span>
+    </span>
+  )
+}
+
+function SetupScorecardPanel({ trades }: { trades: Trade[] }) {
+  const rows = useMemo(() => setupScorecard(trades), [trades])
+  return (
+    <Panel
+      title="Setup scorecard"
+      hint={`Every account and both books (journal and paper), matched by setup name - ignores the account picker and filters. Win-rate range is a 95% interval; rows under ${MIN_SAMPLE} trades are greyed out as too thin to act on.`}
+      className="lg:col-span-2"
+    >
+      {rows.length === 0 ? (
+        <Empty />
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b text-left text-muted-foreground">
+                <th className="py-1.5 pr-3 font-medium">Setup</th>
+                <th className="py-1.5 pr-3 text-right font-medium">Trades</th>
+                <th className="py-1.5 pr-3 text-right font-medium">Win rate (95% range)</th>
+                <th className="py-1.5 pr-3 text-right font-medium">Avg P&L</th>
+                <th className="py-1.5 pr-3 text-right font-medium">Avg R</th>
+                {SOURCES.map((src) => (
+                  <th key={src} className="py-1.5 pr-3 font-medium" title="Trades · win rate · avg P&L">
+                    {src}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const a = r.all
+                return (
+                  <tr
+                    key={r.setup}
+                    className={`border-b last:border-0 ${a?.thin ? 'text-muted-foreground' : ''}`}
+                  >
+                    <td className="py-1.5 pr-3 font-medium">{r.setup}</td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums">{a?.count}</td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums">
+                      {a ? `${fmt(a.winRate, 0)}%` : '—'}
+                      {a?.ci && (
+                        <span className="text-muted-foreground">
+                          {' '}
+                          ({fmt(a.ci.low, 0)}–{fmt(a.ci.high, 0)})
+                        </span>
+                      )}
+                    </td>
+                    <td
+                      className={`py-1.5 pr-3 text-right tabular-nums ${(a?.avgPnl ?? 0) >= 0 ? 'text-up' : 'text-down'}`}
+                    >
+                      {inr(a?.avgPnl)}
+                    </td>
+                    <td className="py-1.5 pr-3 text-right tabular-nums">
+                      {a?.avgR == null ? '—' : `${fmt(a.avgR, 2)}R`}
+                    </td>
+                    {SOURCES.map((src) => (
+                      <td key={src} className="py-1.5 pr-3 whitespace-nowrap">
+                        <ScoreCell c={r.bySource[src]} />
+                      </td>
+                    ))}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Panel>
+  )
+}
+
+// --- Patterns you can't see trade by trade --------------------------------------------------------
+
+function PatternsPanel({ trades }: { trades: Trade[] }) {
+  const conc = useMemo(() => profitConcentration(trades), [trades])
+  const streaks = useMemo(() => streakEffects(trades), [trades])
+  if (!conc) return null
+  const row = (label: string, r: typeof streaks.all) => (
+    <div className="grid grid-cols-4 gap-2 py-1 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="text-right tabular-nums">{r.count}</span>
+      <span className="text-right tabular-nums">{r.winRate == null ? '—' : `${fmt(r.winRate, 1)}%`}</span>
+      <span className={`text-right tabular-nums ${(r.avgPnl ?? 0) >= 0 ? 'text-up' : 'text-down'}`}>
+        {r.avgPnl == null ? '—' : inr(r.avgPnl)}
+      </span>
+    </div>
+  )
+  return (
+    <Panel title="Patterns" hint="Things a sample shows that no single trade does." className="lg:col-span-2">
+      <div className="grid gap-4 md:grid-cols-2">
+        <div className="space-y-1">
+          <p className="text-xs font-medium">Profit concentration</p>
+          <p className="text-sm">
+            Your top {conc.top} winner{conc.top === 1 ? '' : 's'} made{' '}
+            <span className="font-semibold tabular-nums">{inr(conc.topSum)}</span>
+            {conc.shareOfGross != null && <> — {fmt(conc.shareOfGross, 1)}% of all gross profit</>}.
+          </p>
+          <p className="text-sm">
+            Net without them:{' '}
+            <span
+              className={`font-semibold tabular-nums ${conc.netWithoutTop >= 0 ? 'text-up' : 'text-down'}`}
+            >
+              {inr(conc.netWithoutTop)}
+            </span>{' '}
+            <span className="text-muted-foreground">(vs {inr(conc.net)} with)</span>
+          </p>
+          {conc.net > 0 && conc.netWithoutTop < 0 && (
+            <p className="text-xs text-amber-600">
+              The result rests on a handful of trades. Worth knowing before trusting the average.
+            </p>
+          )}
+        </div>
+        <div>
+          <p className="text-xs font-medium">Streak effects</p>
+          <p className="mb-1 text-[11px] text-muted-foreground">
+            The trade right after {streaks.run}+ losses or wins in a row, in the order you logged them.
+          </p>
+          <div className="grid grid-cols-4 gap-2 border-b pb-1 text-[11px] text-muted-foreground">
+            <span />
+            <span className="text-right">Trades</span>
+            <span className="text-right">Win rate</span>
+            <span className="text-right">Avg P&L</span>
+          </div>
+          {row(`After ${streaks.run}+ losses`, streaks.afterLosses)}
+          {row(`After ${streaks.run}+ wins`, streaks.afterWins)}
+          {row('All trades', streaks.all)}
+        </div>
+      </div>
+    </Panel>
+  )
+}
+
 // --- Overall statistics: the searchable single-number panel --------------------------------------
 
 function OverallStatistics({ trades }: { trades: Trade[] }) {
@@ -740,7 +968,13 @@ function statisticsMd(trades: Trade[], closed: Trade[]) {
   return parts.join('\n\n')
 }
 
-export default function ManualStatistics({ trades }: { trades: Trade[] }) {
+export default function ManualStatistics({
+  trades,
+  allTrades = trades,
+}: {
+  trades: Trade[]
+  allTrades?: Trade[]
+}) {
   const closed = useMemo(() => closedTrades(trades), [trades])
 
   if (!trades?.length) {
@@ -757,6 +991,9 @@ export default function ManualStatistics({ trades }: { trades: Trade[] }) {
         <MdActions build={() => statisticsMd(trades, closed)} name="trading-statistics" />
       </div>
       <OverallStatistics trades={trades} />
+      <StrategyBehaviorPanel trades={closed} />
+      <PatternsPanel trades={closed} />
+      <SetupScorecardPanel trades={allTrades} />
       <MetricByDimension trades={closed} />
       <DistributionPanel trades={closed} />
       <WinLossMix trades={closed} />

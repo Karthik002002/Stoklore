@@ -181,4 +181,9 @@ assert reasons(paper.missed_fills(short_pos, bar(20, 99.0, 99.5, 88.0, 91.0))) =
 # Gapped UP through a short's stop: fills at the open, which is worse than the level.
 assert paper.missed_fills(short_pos, bar(20, 112.0, 115.0, 110.0, 113.0))[0]["price"] == 112.0
 
-print("ok - paper: triggers, fill pricing, ladders, stop-wins, limits, P&L, classification, hours, catch-up")
+# Initial risk is measured to the TIGHTEST stop, in either direction; no stop -> None.
+assert paper.nearest_stop([{"price": 90.0}, {"price": 95.0}], 100.0) == 95.0
+assert paper.nearest_stop([{"price": 112.0}, {"price": 104.0}], 100.0) == 104.0
+assert paper.nearest_stop([], 100.0) is None
+
+print("ok - paper: triggers, fill pricing, ladders, stop-wins, limits, P&L, classification, hours, catch-up, initial stop")

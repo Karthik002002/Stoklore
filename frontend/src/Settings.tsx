@@ -1049,12 +1049,14 @@ function ManualBacktestTab() {
     queryFn: getManualBacktestSettings,
   })
   const [setups, setSetups] = useState<string[] | null>(null)
+  const [mistakes, setMistakes] = useState<string[]>([])
   const [tolerance, setTolerance] = useState('')
   const [openingBalance, setOpeningBalance] = useState('')
 
   useEffect(() => {
     if (config) {
       setSetups(config.setups)
+      setMistakes(config.mistakes ?? [])
       setTolerance(String(config.risk_deviation_tolerance_pct))
       setOpeningBalance(String(config.opening_balance))
     }
@@ -1064,6 +1066,7 @@ function ManualBacktestTab() {
     mutationFn: () =>
       setManualBacktestSettings({
         setups: setups ?? [],
+        mistakes,
         risk_deviation_tolerance_pct: Number(tolerance),
         opening_balance: Number(openingBalance),
       }),
@@ -1085,6 +1088,16 @@ function ManualBacktestTab() {
           Suggested values for the Setup field when logging a manual trade - what you actually type there
           isn't restricted to this list, it's just autocomplete so the same setup name stays spelled the same
           way across trades (needed for the per-setup breakdown on the Overview tab to group correctly).
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <p className="text-sm font-medium">Mistakes</p>
+        <TagInput value={mistakes} onChange={setMistakes} placeholder="Add a mistake, e.g. Moved stop…" />
+        <p className="text-xs text-muted-foreground">
+          What a trade review picks from. Keep "Normal loss" — it's where a loss that followed the plan goes,
+          and it's left out of every mistake count. Renaming one here doesn't rewrite trades already tagged
+          with the old name.
         </p>
       </div>
 

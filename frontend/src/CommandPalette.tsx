@@ -71,6 +71,7 @@ const BACKTEST_TABS = [
   { label: 'Backtesting > Trades', view: 'trades' },
   { label: 'Backtesting > Statistics', view: 'statistics' },
   { label: 'Backtesting > Goals', view: 'goals' },
+  { label: 'Backtesting > Reviews', view: 'reviews' },
 ]
 
 const WORKFLOW_PAGES: { label: string; to: LinkProps['to'] }[] = [

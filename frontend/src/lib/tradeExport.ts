@@ -4,6 +4,7 @@
 // files with the same name and different columns. The screenshot is not exported: it is not data.
 import { autoResult, tradePnl, tradeReturnPct, tradeRRDisplay } from '@/lib/manualTrades'
 import { accountFor, accountsById, tradeCosts, tradeNetPnl } from '@/lib/tradeCosts'
+import { executionScore } from '@/lib/tradeReview'
 import type { CellValue } from './exportFile.ts'
 import type { Trade, TradeAccount } from './types.ts'
 
@@ -64,6 +65,8 @@ const COLUMNS: Column[] = [
   ['Result', (t) => t.result ?? autoResult(t) ?? '', 'result'],
   ['Emotion', (t) => t.emotion ?? '', 'emotion'],
   ['Tags', (t) => (t.tags ?? []).join(', '), 'tags', (t) => t.tags ?? []],
+  ['Mistakes', (t) => (t.mistakes ?? []).join(', '), 'mistakes', (t) => t.mistakes],
+  ['Execution score', (t) => executionScore(t), 'execution_score'],
   ['Hours held', (t) => hoursHeld(t), 'hours_held'],
   ['Notes', (t) => t.notes ?? '', 'notes'],
 ]

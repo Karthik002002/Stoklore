@@ -35,6 +35,7 @@ export type BacktestSaveRequest = Schemas['BacktestSaveRequest']
 export type BalanceAdjustmentRequest = Schemas['BalanceAdjustmentRequest']
 export type TradingGoalRequest = Schemas['TradingGoalRequest']
 export type ManualBacktestSettingsRequest = Schemas['ManualBacktestSettingsRequest']
+export type TradeReviewRequest = Schemas['TradeReviewRequest']
 export type ActivitySettingsRequest = Schemas['ActivitySettingsRequest']
 export type ActivityDay = Schemas['ActivityDay']
 export type BulkMaxCollectRequest = Schemas['BulkMaxCollectRequest']
@@ -1145,10 +1146,11 @@ export const updateManualTrade = (id: number, trade: ManualTradeRequest) =>
 export const deleteManualTrade = (id: number) =>
   fetch(`/api/manual-trades/${id}`, { method: 'DELETE' }).then(json)
 
-export const uploadManualTradeImage = (id: number, file: File | Blob) => {
+// 'exit' is the after/at-close shot every trade always had; 'entry' is the chart when it opened.
+export const uploadManualTradeImage = (id: number, file: File | Blob, kind: 'exit' | 'entry' = 'exit') => {
   const form = new FormData()
   form.append('file', file)
-  return fetch(`/api/manual-trades/${id}/image`, { method: 'POST', body: form }).then(json)
+  return fetch(`/api/manual-trades/${id}/image?kind=${kind}`, { method: 'POST', body: form }).then(json)
 }
 
 export const analyzeBulkTradeImage = (file: File, model?: string) => {
@@ -1189,6 +1191,33 @@ export const setManualBacktestSettings = (settings: ManualBacktestSettingsReques
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(settings),
   }).then(json)
+
+/** A Keep/Stop/Improve/Test review of one period, and the one rule change it commits to. */
+export type TradeReview = {
+  id: number
+  account_id: number | null
+  period_start: string
+  period_end: string
+  keep: string | null
+  stop: string | null
+  improve: string | null
+  test: string | null
+  change: string | null
+  change_from: string | null
+  created_at: string
+}
+
+export const getTradeReviews = () => fetch('/api/trade-reviews').then(json<TradeReview[]>)
+
+export const saveTradeReview = (review: TradeReviewRequest, id?: number) =>
+  fetch(id == null ? '/api/trade-reviews' : `/api/trade-reviews/${id}`, {
+    method: id == null ? 'POST' : 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(review),
+  }).then(json)
+
+export const deleteTradeReview = (id: number) =>
+  fetch(`/api/trade-reviews/${id}`, { method: 'DELETE' }).then(json)
 
 export const getTradingGoals = () => fetch('/api/trading-goals').then(json<Goal[]>)
 

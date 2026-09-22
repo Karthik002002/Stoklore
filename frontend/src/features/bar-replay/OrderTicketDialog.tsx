@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { inr } from '@/lib/format'
+import { CHECKS } from '@/lib/tradeReview'
 import { riskReward, sizeByRisk } from './orderEngine'
 import type { ReplayBar } from './store'
 
@@ -25,6 +26,8 @@ export type OrderDraft = {
   /** Chandelier trailing stop, armed from the ticket and carried onto the placed order. */
   trailing?: { atrPeriod?: number; atrMult: number } | null
   notes?: string
+  /** The pre-trade checklist - ticked before the fill, compared with the close-time review. */
+  preChecks?: Record<string, boolean>
 }
 
 const numeric = (v: string | number | null | undefined) => (v === '' || v == null ? null : Number(v))
@@ -431,6 +434,28 @@ export default function OrderTicketDialog({
                   ? `${inr(reward)} (${rewardPct.toFixed(2)}%)`
                   : '—'}
               </span>
+            </div>
+          </div>
+
+          <div className="space-y-1 rounded-lg border p-2.5">
+            <p className="text-xs font-medium">
+              Before you enter{' '}
+              <span className="font-normal text-muted-foreground">— optional, saved with the trade</span>
+            </p>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+              {CHECKS.map((c) => (
+                <label key={c.key} className="flex items-center gap-1.5 text-xs">
+                  <input
+                    type="checkbox"
+                    className="size-3.5 accent-primary"
+                    checked={!!draft.preChecks?.[c.key]}
+                    onChange={(e) =>
+                      onChange({ preChecks: { ...draft.preChecks, [c.key]: e.target.checked } })
+                    }
+                  />
+                  {c.pre}
+                </label>
+              ))}
             </div>
           </div>
 

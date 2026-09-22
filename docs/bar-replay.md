@@ -103,11 +103,21 @@ paper-trade it.
   again": that is the setting, and it lives on the account where it can be
   reasoned about between sessions rather than dismissed mid-tilt.
 - Drag a stop-loss/target line directly on the chart to adjust it after
-  placing the order.
+  placing the order. The journal still records the **initial stop** — the
+  tightest one when the order was placed, or the first one added to a naked
+  position (`ReplayOrder.initialStop`, `orderEngine.nearestStop`). Moving it to
+  breakeven or trailing it changes what closes the trade, not the trade's risk;
+  journaling the moved stop recorded ~zero risk and made R meaningless.
+- **Pre-trade checklist** (optional, on the order ticket) — the review's six
+  checks phrased as "am I about to…". Stored on the order only if something is
+  ticked, then on the journaled trade as `pre_trade_checks`, where the detail
+  view compares it with the post-trade checklist. The one-key market orders
+  skip it, like they skip the ticket.
 - If price gaps clean past a stop-loss/target instead of touching it, the
   trade still closes — filled at that bar's open, not the skipped level.
 - Closing a trade (manually or automatically) opens a feedback dialog
-  (result/emotion/notes) and pauses playback while it's open. That dialog
+  (result/emotion/notes, plus the [review](backtesting-manual.md#trade-review-mistakes-checklist-score):
+  mistakes, execution checklist and score) and pauses playback while it's open. That dialog
   carries a **Jump to a random date after logging** checkbox — tick it once
   and every subsequent close ends with the same random jump the shuffle button
   makes, so you're not clicking it by hand between trades. The preference is
@@ -183,6 +193,13 @@ paper-trade it.
   market orders (`Shift+B`/`Shift+S`) alike, so the two can never disagree.
   The ticket also has a **Size by risk** field that back-solves the share
   count from a % of the account you're willing to lose to the tightest stop.
+
+**Blind replay**
+- Settings › Preferences › **Blind replay** hides the time axis, the crosshair's
+  date label, the legend's date, the jump-to-date field's value and the date in
+  the random-jump message, and shows "Hidden symbol" instead of the ticker. Pair
+  it with Random bar. The price level can still hint at the era, and the symbol
+  is one you picked — it removes the dates, not your memory of the stock.
 
 **Persistence**
 - Everything here (symbol, timeframe, bar position, open orders, drawings,
@@ -490,3 +507,11 @@ dialog's mutation actually creates the trade, it uploads that captured
 image right after, through the same upload endpoint the manual trade form
 uses for user-picked files — Bar Replay just supplies a captured `Blob`
 instead of something you selected from disk.
+
+The chart is also captured on the bar a position **fills** on — a market order
+when it's placed, a limit when the engine fills it — one frame later so the
+entry line is in the picture, and uploaded as the trade's **entry** screenshot
+(`?kind=entry`, stored in `image_filename_entry`). Gated on `entryBarIndex`, so a
+position already open is never photographed at a later bar and filed as its
+entry. Held in memory only (a PNG doesn't belong in localStorage): a position
+carried across a reload closes without an entry shot.

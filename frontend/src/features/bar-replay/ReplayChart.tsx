@@ -594,6 +594,15 @@ const ReplayChart = forwardRef(function ReplayChart(
     candleSeriesRef.current?.applyOptions(candleOptionsFrom(settings))
   }, [settings])
 
+  // Blind replay: the time axis and the crosshair's date label go, so nothing on the chart says
+  // when this is. resetKey is a dependency because a symbol/timeframe change recreates the chart.
+  useEffect(() => {
+    chartRef.current?.applyOptions({
+      timeScale: { visible: !settings.blind },
+      crosshair: { vertLine: { labelVisible: !settings.blind } },
+    })
+  }, [settings.blind, resetKey])
+
   // Drag-to-adjust: pointerdown near an entry/SL/target line grabs it (and pauses chart pan/zoom
   // so a vertical drag doesn't also scrub the timeline), pointermove repositions the line live
   // via applyOptions (cheap, no React re-render), pointerup commits the final price. Bound once
@@ -1393,7 +1402,9 @@ const ReplayChart = forwardRef(function ReplayChart(
       {/* Top-left stack: the hovered bar's OHLCV, and what drawing tool is armed. One column so
           the two never sit on top of each other. */}
       <div className="pointer-events-none absolute top-2 left-2 z-20 flex flex-col items-start gap-1">
-        {legendBar && <OhlcvLegend bar={legendBar} prev={bars[legendIndex - 1] ?? null} />}
+        {legendBar && (
+          <OhlcvLegend bar={legendBar} prev={bars[legendIndex - 1] ?? null} blind={!!settings.blind} />
+        )}
         {tool && (
           <div className="rounded border bg-background/90 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm">
             {DRAW_TOOLS[tool].label} — {DRAW_TOOLS[tool].hint.toLowerCase()} · Esc to cancel
@@ -1457,7 +1468,7 @@ export default ReplayChart
 // The hovered bar, read out TradingView-style. Prices are plain numbers rather than inr(): the
 // axis already carries the currency, and eight ₹ signs in one line is noise. Colour follows the
 // candle's own direction (close vs open), so the legend agrees with the bar it describes.
-function OhlcvLegend({ bar, prev }: { bar: ReplayBar; prev: ReplayBar | null }) {
+function OhlcvLegend({ bar, prev, blind }: { bar: ReplayBar; prev: ReplayBar | null; blind: boolean }) {
   const up = bar.close >= bar.open
   const tone = up ? 'text-up' : 'text-down'
   const change = prev ? bar.close - prev.close : null
@@ -1465,7 +1476,7 @@ function OhlcvLegend({ bar, prev }: { bar: ReplayBar; prev: ReplayBar | null }) 
 
   return (
     <div className="flex flex-wrap items-center gap-x-2 rounded border bg-background/85 px-2 py-1 text-[11px] tabular-nums shadow-sm backdrop-blur-sm">
-      <span className="text-muted-foreground">{stamp(bar)}</span>
+      {!blind && <span className="text-muted-foreground">{stamp(bar)}</span>}
       {(
         [
           ['O', bar.open],

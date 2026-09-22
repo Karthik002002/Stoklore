@@ -212,6 +212,22 @@ export default function SettingsDialog({
 
           <TabsPanel value="preferences" className="max-h-[65vh] space-y-5 overflow-y-auto">
             <SizingFields draft={draft} set={set} balance={balance} price={price} />
+            <label className="flex items-start gap-2 border-t pt-4 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={!!draft.blind}
+                onChange={(e) => set('blind')(e.target.checked)}
+              />
+              <span>
+                <span className="font-medium">Blind replay</span>
+                <span className="block text-xs text-muted-foreground">
+                  Hides dates (axis, legend, jump field, messages) and the symbol name, so you can't match the
+                  chart to what you remember happening next. Pair it with Random bar. The price level can
+                  still hint at the era.
+                </span>
+              </span>
+            </label>
           </TabsPanel>
         </Tabs>
 

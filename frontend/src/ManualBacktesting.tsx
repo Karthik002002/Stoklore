@@ -16,6 +16,12 @@ import { Field, SelectField, TagField, TextField } from '@/components/form'
 import ImageLightbox from '@/components/ImageLightbox'
 import SymbolCombobox from '@/components/SymbolCombobox'
 import TradeFilterDialog, { FilterButton, FilterChips } from '@/components/TradeFilterDialog'
+import TradeReviewFields, {
+  EMPTY_REVIEW,
+  reviewFromTrade,
+  reviewPayload,
+  type ReviewValue,
+} from '@/components/TradeReviewFields'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -43,6 +49,7 @@ import { tradeSchema } from '@/lib/schemas'
 import type { Filters } from '@/lib/tradeFilters'
 import { activeCount, filterTrades, parseFilters, serializeFilters } from '@/lib/tradeFilters'
 import { accountBalance, capWarnings, journalTrades, tradesForAccount } from '@/lib/tradeAccounts'
+import { prefillChecks } from '@/lib/tradeReview'
 import { accountFor, accountHasCosts, accountsById, tradeCosts, tradeNetPnl } from '@/lib/tradeCosts'
 import {
   createManualTrade,
@@ -56,6 +63,7 @@ import {
 } from '@/services/api'
 import ManualGoals from './ManualGoals'
 import ManualOverview from './ManualOverview'
+import ManualReviews from './ManualReviews'
 import ManualStatistics from './ManualStatistics'
 import TradeDetailDialog from './TradeDetailDialog'
 
@@ -78,6 +86,7 @@ function emptyForm(accountId: number | null = null): TradeInput {
     emotion: '',
     tags: [],
     imageFile: null,
+    imageEntryFile: null,
     accountId,
   }
 }
@@ -117,6 +126,7 @@ function formFromTrade(t: Trade): TradeInput {
     emotion: t.emotion ?? '',
     tags: t.tags ?? [],
     imageFile: null,
+    imageEntryFile: null,
     accountId: t.account_id ?? null,
   }
 }
@@ -149,7 +159,10 @@ function TradeFormDialog({
   defaultAccountId?: number | null
   trades: Trade[]
 }) {
-  const [lightboxOpen, setLightboxOpen] = useState(false)
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+  // Held outside react-hook-form: it's one composite value with its own "untouched" state (see
+  // TradeReviewFields), not a set of independently validated inputs.
+  const [review, setReview] = useState<ReviewValue>(EMPTY_REVIEW)
   const { data: backtestSettings } = useQuery({
     queryKey: ['manualBacktestSettings'],
     queryFn: getManualBacktestSettings,
@@ -166,12 +179,25 @@ function TradeFormDialog({
   })
 
   useEffect(() => {
-    if (open) form.reset(trade ? formFromTrade(trade) : emptyForm(defaultAccountId ?? null))
+    if (!open) return
+    form.reset(trade ? formFromTrade(trade) : emptyForm(defaultAccountId ?? null))
+    setReview(trade ? reviewFromTrade(trade) : EMPTY_REVIEW)
   }, [open, trade, defaultAccountId, form])
 
   // Live values the rest of the dialog reacts to (cap warnings, the auto-computed result, whether
   // the exit field is disabled). watch() re-renders on change the same way the old useState did.
-  const [accountId, quantity, entryPrice, exitPrice, direction, isOpen, resultManual, result] = form.watch([
+  const [
+    accountId,
+    quantity,
+    entryPrice,
+    exitPrice,
+    direction,
+    isOpen,
+    resultManual,
+    result,
+    stopLoss,
+    idealRisk,
+  ] = form.watch([
     'accountId',
     'quantity',
     'entryPrice',
@@ -180,6 +206,8 @@ function TradeFormDialog({
     'isOpen',
     'resultManual',
     'result',
+    'stopLoss',
+    'idealRiskAmount',
   ])
 
   const account = accounts.find((a) => a.id === accountId) ?? null
@@ -205,6 +233,18 @@ function TradeFormDialog({
     exit_price: isOpen ? null : numeric(exitPrice),
   })
   const effectiveResult = resultManual ? result : computedResult
+  // What the numbers already say about sizing and the stop, pre-ticked on the checklist.
+  const prefill = prefillChecks(
+    {
+      direction,
+      quantity: numeric(quantity) ?? 0,
+      entry_price: numeric(entryPrice) ?? 0,
+      exit_price: isOpen ? null : numeric(exitPrice),
+      stop_loss: numeric(stopLoss),
+      ideal_risk_amount: numeric(idealRisk),
+    },
+    backtestSettings?.risk_deviation_tolerance_pct ?? 10,
+  )
 
   const accountOptions = [
     { value: NO_ACCOUNT, label: 'No account' },
@@ -236,6 +276,7 @@ function TradeFormDialog({
         // measure an excursion over a position that hasn't finished.
         exited_at: !values.isOpen && values.exitedAt ? new Date(values.exitedAt).toISOString() : null,
         account_id: values.accountId,
+        ...reviewPayload(review),
       }
       let id
       if (trade) {
@@ -244,6 +285,7 @@ function TradeFormDialog({
       } else {
         id = (await createManualTrade(payload)).id
       }
+      if (values.imageEntryFile) await uploadManualTradeImage(id, values.imageEntryFile, 'entry')
       if (values.imageFile) await uploadManualTradeImage(id, values.imageFile)
     },
     onSuccess: () => {
@@ -334,7 +376,14 @@ function TradeFormDialog({
             </div>
 
             <div className="grid grid-cols-2 gap-2">
-              <TextField form={form} name="stopLoss" label="Stop loss ₹" type="number" step="0.01" />
+              <TextField
+                form={form}
+                name="stopLoss"
+                label="Stop loss ₹"
+                type="number"
+                step="0.01"
+                hint="The stop at entry, not a trailed one — R is measured to it."
+              />
               <TextField form={form} name="target" label="Target ₹" type="number" step="0.01" />
             </div>
 
@@ -381,30 +430,29 @@ function TradeFormDialog({
 
             <TagField form={form} name="tags" label="Tags (setup, mistakes, anything)" />
 
-            <Field label="Trade screenshot">
-              <Controller
-                control={form.control}
-                name="imageFile"
-                render={({ field }) => (
-                  <>
-                    <input
-                      type="file"
-                      accept="image/png,image/jpeg,image/webp,image/gif"
-                      onChange={(e) => field.onChange(e.target.files?.[0] ?? null)}
-                      className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-muted file:px-3 file:py-1.5 file:text-sm file:text-foreground"
-                    />
-                    {trade?.image_url && !field.value && (
-                      <img
-                        src={trade.image_url}
-                        alt="Trade"
-                        className="mt-2 max-h-32 cursor-pointer rounded-lg border"
-                        onClick={() => setLightboxOpen(true)}
-                      />
-                    )}
-                  </>
-                )}
+            <TradeReviewFields
+              options={backtestSettings?.mistakes ?? []}
+              value={review}
+              onChange={setReview}
+              prefill={isOpen ? {} : prefill}
+            />
+
+            <div className="grid grid-cols-2 gap-2">
+              <ScreenshotField
+                form={form}
+                name="imageEntryFile"
+                label="Entry screenshot"
+                current={trade?.image_entry_url}
+                onView={setLightboxSrc}
               />
-            </Field>
+              <ScreenshotField
+                form={form}
+                name="imageFile"
+                label="Exit screenshot"
+                current={trade?.image_url}
+                onView={setLightboxSrc}
+              />
+            </div>
 
             <Button type="submit" className="w-full" disabled={save.isPending}>
               {save.isPending && <Spinner className="size-4" />}
@@ -413,8 +461,55 @@ function TradeFormDialog({
           </form>
         </DialogContent>
       </Dialog>
-      <ImageLightbox src={trade?.image_url} open={lightboxOpen} onOpenChange={setLightboxOpen} />
+      <ImageLightbox
+        src={lightboxSrc}
+        open={!!lightboxSrc}
+        onOpenChange={(next) => !next && setLightboxSrc(null)}
+      />
     </>
+  )
+}
+
+// One of the two chart screenshots. "Your memory changes. The chart doesn't." - the entry shot is
+// what you saw when you decided, the exit shot what happened after.
+function ScreenshotField({
+  form,
+  name,
+  label,
+  current,
+  onView,
+}: {
+  form: ReturnType<typeof useForm<TradeInput, unknown, TradeValues>>
+  name: 'imageFile' | 'imageEntryFile'
+  label: string
+  current?: string | null
+  onView: (src: string) => void
+}) {
+  return (
+    <Field label={label}>
+      <Controller
+        control={form.control}
+        name={name}
+        render={({ field }) => (
+          <>
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif"
+              onChange={(e) => field.onChange(e.target.files?.[0] ?? null)}
+              className="block w-full text-xs text-muted-foreground file:mr-2 file:rounded-md file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs file:text-foreground"
+            />
+            {current && !field.value && (
+              <img
+                src={current}
+                alt={label}
+                className="mt-2 max-h-24 cursor-pointer rounded-lg border"
+                onClick={() => onView(current)}
+              />
+            )}
+          </>
+        )}
+      />
+    </Field>
   )
 }
 
@@ -643,6 +738,9 @@ function toUpdatePayload(t: Trade) {
     tags: t.tags,
     notes: t.notes,
     traded_at: t.traded_at,
+    // Without it the PUT (a full-row replace) wiped every selected trade's close date, and MAE/MFE
+    // with it. The review fields are left out on purpose: omitted means "leave as stored".
+    exited_at: t.exited_at,
     account_id: t.account_id,
   }
 }
@@ -871,6 +969,7 @@ export default function ManualBacktesting() {
             <TabsTab value="trades">Trades</TabsTab>
             <TabsTab value="statistics">Statistics</TabsTab>
             <TabsTab value="goals">Goals</TabsTab>
+            <TabsTab value="reviews">Reviews</TabsTab>
             <TabsIndicator />
           </TabsList>
           <div className="flex items-center gap-2">
@@ -975,13 +1074,17 @@ export default function ManualBacktesting() {
           />
         </TabsPanel>
         <TabsPanel value="statistics">
-          <ManualStatistics trades={filteredTrades} />
+          <ManualStatistics trades={filteredTrades} allTrades={allTrades} />
         </TabsPanel>
         {/* Goals deliberately ignores the filters: a target is measured against what was actually
             traded, and letting a filter hide the losses would turn progress into a flattering
             fiction rather than a measurement. */}
         <TabsPanel value="goals">
           <ManualGoals trades={trades} />
+        </TabsPanel>
+        {/* Unfiltered, like Goals: a review is of what was actually traded in the period. */}
+        <TabsPanel value="reviews">
+          <ManualReviews trades={trades} accountId={account ?? null} />
         </TabsPanel>
       </Tabs>
 

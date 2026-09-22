@@ -172,7 +172,7 @@ const shareholdingRoute = createRoute({
   component: Shareholding,
 })
 
-const BACKTESTING_VIEWS = ['overview', 'trades', 'statistics', 'goals'] as const
+const BACKTESTING_VIEWS = ['overview', 'trades', 'statistics', 'goals', 'reviews'] as const
 type BacktestingView = (typeof BACKTESTING_VIEWS)[number]
 
 const backtestingRoute = createRoute({

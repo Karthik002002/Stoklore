@@ -17,6 +17,7 @@ import ConfirmOrderDialog from './ConfirmOrderDialog'
 import LossStreakDialog from './LossStreakDialog'
 import OrderTicketDialog from './OrderTicketDialog'
 import {
+  nearestStop,
   orderWarnings,
   preferredQuantity,
   processBarForOrders,
@@ -214,6 +215,10 @@ export default function BarReplay() {
   // chart at close time isn't state the chart needs to re-render for, so a ref fits better than
   // threading a callback prop down just to call it back up.
   const replayChartRef = useRef<ReplayChartHandle | null>(null)
+  // The chart at entry, per order id, journaled as the trade's entry screenshot. Memory only - a
+  // PNG doesn't belong in localStorage - so a position carried across a reload closes without one.
+  const entryShotsRef = useRef(new Map<string, Blob>())
+  const entryShotTriedRef = useRef(new Set<string>())
 
   const {
     maxHistory,
@@ -314,6 +319,23 @@ export default function BarReplay() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentIndex])
 
+  // Snapshot the chart on the bar a position fills on - a market order the moment it's placed, a
+  // limit when the engine fills it. Gated on entryBarIndex so a position that's been open a while
+  // (say, after a reload) is never photographed at some later bar and filed as its entry. One
+  // frame later, so the entry line the fill just added is in the picture.
+  useEffect(() => {
+    const fresh = orders.filter(
+      (o) => o.status === 'open' && o.entryBarIndex === currentIndex && !entryShotTriedRef.current.has(o.id),
+    )
+    if (!fresh.length) return
+    fresh.forEach((o) => entryShotTriedRef.current.add(o.id))
+    requestAnimationFrame(() => {
+      replayChartRef.current?.captureScreenshot().then((blob) => {
+        if (blob) fresh.forEach((o) => entryShotsRef.current.set(o.id, blob))
+      })
+    })
+  }, [orders, currentIndex])
+
   useEffect(() => {
     if (!playing || !started) return
     if (atEnd) {
@@ -361,7 +383,9 @@ export default function BarReplay() {
     const bar = allBars[Math.floor(Math.random() * allBars.length)]
     if (!bar.date) return
     jumpToDate(bar.date)
-    toast.success(`Jumped to ${bar.date}`, { description: 'Random bar — replay paused here.' })
+    toast.success(chartSettings.blind ? 'Jumped to a random bar' : `Jumped to ${bar.date}`, {
+      description: 'Random bar — replay paused here.',
+    })
   }
 
   // The date field's displayed value tracks what's typed/picked immediately, but the actual
@@ -404,6 +428,7 @@ export default function BarReplay() {
       // "Size by risk" input in the ticket - a % of account balance the user is willing to lose
       // to the tightest stop. Back-solves the Shares field on demand (see sizeByRisk).
       sizeRiskPct: '',
+      preChecks: {},
     })
   }
   const updateDraft = (patch: Partial<OrderDraft>) => setOrderDraft((d) => (d ? { ...d, ...patch } : d))
@@ -463,6 +488,11 @@ export default function BarReplay() {
       // Only meaningful if the position also has at least one SL leg to trail. Kept on the
       // order (not on individual legs) since one trail rule ratchets every leg together.
       trailing: orderDraft.slEnabled ? (orderDraft.trailing ?? null) : null,
+      initialStop: orderDraft.slEnabled ? nearestStop(legsFrom(orderDraft.stopLosses), entryPrice) : null,
+      // Only when something was ticked - an untouched checklist is "not used", not "failed all six".
+      preTradeChecks: Object.values(orderDraft.preChecks ?? {}).some(Boolean)
+        ? (orderDraft.preChecks ?? null)
+        : null,
     }
     const warnings = warningsFor(newOrder.quantity, entryPrice)
     if (warnings.length) {
@@ -566,7 +596,12 @@ export default function BarReplay() {
     const remaining = order.quantity - covered
     if (remaining <= 0) return
     const newLeg = { id: crypto.randomUUID(), price: round2(price), qty: remaining }
-    setOrders(orders.map((o) => (o.id === orderId ? { ...o, [legField]: [...o[legField], newLeg] } : o)))
+    // A position opened naked gets its initial stop from the first stop it is given; moving or
+    // adding stops after that never changes it.
+    const initialStop = kind === 'stopLoss' && order.initialStop == null ? newLeg.price : order.initialStop
+    setOrders(
+      orders.map((o) => (o.id === orderId ? { ...o, [legField]: [...o[legField], newLeg], initialStop } : o)),
+    )
   }
 
   // Editing a leg's quantity in place on its chart pill. Validation lives in the engine
@@ -890,6 +925,7 @@ export default function BarReplay() {
         leg={activeClose?.leg ?? null}
         partialQty={activeClose?.partialQty ?? null}
         chartImage={activeClose?.chartImage}
+        entryImage={activeClose ? (entryShotsRef.current.get(activeClose.order.id) ?? null) : null}
         accountId={accountId}
         // The replayed bars this trade actually opened and closed on - what it gets journaled
         // under. Read off the order itself, where it was stamped at fill. The index lookup is
@@ -931,6 +967,7 @@ export default function BarReplay() {
             setOrders(orders.map((o) => (o.id === order.id ? { ...o, quantity: remainingQty } : o)))
           } else {
             setOrders(orders.filter((o) => o.id !== order.id))
+            entryShotsRef.current.delete(order.id)
           }
           setCloseQueue((q) => q.slice(1))
           // Only once the last queued close is dealt with: a laddered exit can queue several

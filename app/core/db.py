@@ -523,6 +523,41 @@ ALTER TABLE manual_trades ADD COLUMN IF NOT EXISTS entried_at TIMESTAMPTZ;
 -- rather than a column per feature: the feature set will change, and this way that costs no DDL.
 -- See trade_context.py.
 ALTER TABLE manual_trades ADD COLUMN IF NOT EXISTS trade_context JSONB;
+-- The behaviour half of a trade review: WHY it went the way it did, as opposed to the numbers
+-- above, which only say what happened. All nullable, and NULL means "not reviewed" - distinct
+-- from an empty mistakes list, which is a reviewed trade with nothing wrong in it.
+--   mistakes          one or more labels from the Settings list (seeded with 'Normal loss', so a
+--                     loss that followed the plan isn't forced into a mistake bucket)
+--   execution_checks  {entry_rules, position_size, stop_honored, exit_rules, no_impulse,
+--                     followed_plan: bool}, ticked after the trade
+--   execution_score   1-10; derived from the checks by the UI, overridable, stored as shown
+--   pre_trade_checks  the same keys, ticked on the Bar Replay order ticket BEFORE the fill, so
+--                     what you planned can be compared with what you did
+ALTER TABLE manual_trades ADD COLUMN IF NOT EXISTS mistakes TEXT[];
+ALTER TABLE manual_trades ADD COLUMN IF NOT EXISTS execution_checks JSONB;
+ALTER TABLE manual_trades ADD COLUMN IF NOT EXISTS execution_score SMALLINT;
+ALTER TABLE manual_trades ADD COLUMN IF NOT EXISTS pre_trade_checks JSONB;
+-- The chart at entry. image_filename stays the exit/after shot it always was, so every existing
+-- screenshot keeps its meaning.
+ALTER TABLE manual_trades ADD COLUMN IF NOT EXISTS image_filename_entry TEXT;
+
+-- Periodic reviews (Keep / Stop / Improve / Test) with the ONE rule change each commits to.
+-- change_from is when that change took effect: the Reviews tab splits the account's trades there
+-- and compares before with after, so a change is measured instead of remembered. Hand-typed and
+-- irreplaceable, so deleting an account keeps its reviews (SET NULL) rather than cascading.
+CREATE TABLE IF NOT EXISTS trade_reviews (
+  id SERIAL PRIMARY KEY,
+  account_id INTEGER REFERENCES trade_accounts(id) ON DELETE SET NULL,
+  period_start DATE NOT NULL,
+  period_end DATE NOT NULL,
+  keep TEXT,
+  stop TEXT,
+  improve TEXT,
+  test TEXT,
+  change TEXT,
+  change_from DATE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 -- OPEN paper-trading positions only. A position leaves this table the moment it fully closes -
 -- its realized outcome is written to manual_trades (tagged 'paper', under the paper account), so
@@ -548,6 +583,11 @@ CREATE TABLE IF NOT EXISTS paper_positions (
   opened_at TIMESTAMPTZ            -- when it actually filled; null while pending
 );
 CREATE INDEX IF NOT EXISTS paper_positions_account_idx ON paper_positions (account_id);
+-- The nearest stop when the position was placed (or when its first stop was added). Journaled as
+-- the trade's stop_loss instead of whatever stop was live at the close: a stop moved to breakeven
+-- or trailed up would otherwise record ~zero risk and make every R figure on that trade
+-- meaningless.
+ALTER TABLE paper_positions ADD COLUMN IF NOT EXISTS initial_stop_loss REAL;
 
 -- Deposits and withdrawals against an account's wallet, plus manual corrections to the running
 -- balance curve (broker true-ups that aren't trades themselves).
@@ -2168,14 +2208,14 @@ def paper_position_symbols():
 
 
 def create_paper_position(account_id, symbol, direction, order_type, status, quantity, entry_price,
-                          stop_losses, targets, notes=None, opened_at=None):
+                          stop_losses, targets, notes=None, opened_at=None, initial_stop_loss=None):
     with connect() as conn:
         row = conn.execute(
             "INSERT INTO paper_positions (account_id, symbol, direction, order_type, status, "
-            "quantity, entry_price, stop_losses, targets, notes, opened_at) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            "quantity, entry_price, stop_losses, targets, notes, opened_at, initial_stop_loss) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (account_id, symbol, direction, order_type, status, quantity, entry_price,
-             Jsonb(stop_losses or []), Jsonb(targets or []), notes, opened_at),
+             Jsonb(stop_losses or []), Jsonb(targets or []), notes, opened_at, initial_stop_loss),
         ).fetchone()
     return row["id"]
 
@@ -2184,7 +2224,8 @@ def update_paper_position(position_id, **fields):
     """Partial update - only the named columns are touched. The engine uses this to shrink a
     position after a partial exit and to fill a resting limit, both of which change two or three
     columns and must leave the rest alone."""
-    allowed = {"status", "quantity", "entry_price", "stop_losses", "targets", "notes", "opened_at"}
+    allowed = {"status", "quantity", "entry_price", "stop_losses", "targets", "notes", "opened_at",
+               "initial_stop_loss"}
     sets, params = [], []
     for key, value in fields.items():
         if key not in allowed:
@@ -2236,22 +2277,26 @@ def create_manual_trade(symbol, direction, quantity, entry_price, exit_price, st
                          is_open, result, emotion, tags, notes, traded_at, image_filename=None,
                          setup=None, ideal_risk_amount=None, account_id=None,
                          account_balance_at_trade=None, exited_at=None, trade_context=None,
-                         entried_at=None):
+                         entried_at=None, mistakes=None, execution_checks=None,
+                         execution_score=None, pre_trade_checks=None):
     with connect() as conn:
         row = conn.execute(
             "INSERT INTO manual_trades (symbol, direction, quantity, entry_price, exit_price, "
             "stop_loss, target, is_open, result, emotion, tags, notes, traded_at, image_filename, "
             "setup, ideal_risk_amount, account_id, account_balance_at_trade, exited_at, "
-            "trade_context, entried_at) VALUES "
+            "trade_context, entried_at, mistakes, execution_checks, execution_score, "
+            "pre_trade_checks) VALUES "
             "(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, COALESCE(%s, now()), %s, %s, %s, %s, "
             # entried_at falls back to traded_at (and then to now()) rather than being left NULL:
             # for every caller but Bar Replay the entry IS what traded_at means.
-            "%s, %s, %s, COALESCE(%s, %s, now())) "
+            "%s, %s, %s, COALESCE(%s, %s, now()), %s, %s, %s, %s) "
             "RETURNING id",
             (symbol, direction, quantity, entry_price, exit_price, stop_loss, target, is_open,
              result, emotion, tags, notes, traded_at, image_filename, setup, ideal_risk_amount,
              account_id, account_balance_at_trade, exited_at,
-             Jsonb(trade_context) if trade_context is not None else None, entried_at, traded_at),
+             Jsonb(trade_context) if trade_context is not None else None, entried_at, traded_at,
+             mistakes, _jsonb_or_none(execution_checks), execution_score,
+             _jsonb_or_none(pre_trade_checks)),
         ).fetchone()
     return row["id"]
 
@@ -2311,9 +2356,69 @@ def delete_manual_trade(trade_id):
         conn.execute("DELETE FROM manual_trades WHERE id = %s", (trade_id,))
 
 
-def update_manual_trade_image(trade_id, filename):
+def update_manual_trade_image(trade_id, filename, entry=False):
+    column = "image_filename_entry" if entry else "image_filename"
     with connect() as conn:
-        conn.execute("UPDATE manual_trades SET image_filename = %s WHERE id = %s", (filename, trade_id))
+        conn.execute(f"UPDATE manual_trades SET {column} = %s WHERE id = %s", (filename, trade_id))
+
+
+# The review fields are written only when the caller actually sent them (see the router's
+# model_fields_set), unlike update_manual_trade's full-row replace: bulk edit and every other PUT
+# that predates these columns would otherwise blank a review it never knew existed.
+REVIEW_FIELDS = ("mistakes", "execution_checks", "execution_score", "pre_trade_checks")
+
+
+def update_manual_trade_review(trade_id, fields):
+    sets, params = [], []
+    for key, value in fields.items():
+        if key not in REVIEW_FIELDS:
+            raise ValueError(f"cannot update manual_trades.{key} as a review field")
+        sets.append(f"{key} = %s")
+        params.append(_jsonb_or_none(value) if key.endswith("_checks") else value)
+    if not sets:
+        return
+    with connect() as conn:
+        conn.execute(f"UPDATE manual_trades SET {', '.join(sets)} WHERE id = %s", (*params, trade_id))
+
+
+def _jsonb_or_none(value):
+    return Jsonb(value) if value is not None else None
+
+
+def list_trade_reviews():
+    with connect() as conn:
+        return conn.execute(
+            "SELECT * FROM trade_reviews ORDER BY period_end DESC, id DESC"
+        ).fetchall()
+
+
+TRADE_REVIEW_COLUMNS = ("account_id", "period_start", "period_end", "keep", "stop", "improve",
+                        "test", "change", "change_from")
+
+
+def create_trade_review(review):
+    cols = ", ".join(TRADE_REVIEW_COLUMNS)
+    marks = ", ".join(["%s"] * len(TRADE_REVIEW_COLUMNS))
+    with connect() as conn:
+        row = conn.execute(
+            f"INSERT INTO trade_reviews ({cols}) VALUES ({marks}) RETURNING id",
+            tuple(review.get(c) for c in TRADE_REVIEW_COLUMNS),
+        ).fetchone()
+    return row["id"]
+
+
+def update_trade_review(review_id, review):
+    sets = ", ".join(f"{c} = %s" for c in TRADE_REVIEW_COLUMNS)
+    with connect() as conn:
+        conn.execute(
+            f"UPDATE trade_reviews SET {sets} WHERE id = %s",
+            (*(review.get(c) for c in TRADE_REVIEW_COLUMNS), review_id),
+        )
+
+
+def delete_trade_review(review_id):
+    with connect() as conn:
+        conn.execute("DELETE FROM trade_reviews WHERE id = %s", (review_id,))
 
 
 def add_activity_seconds(seconds, day=None):
@@ -2393,8 +2498,17 @@ def set_activity_daily_goal_minutes(minutes):
 
 
 # --- Manual backtesting settings (setups list, risk discipline, opening balance) ---------------
+# The mistake vocabulary a trade review picks from. 'Normal loss' is deliberately in it: a loss
+# that followed the plan is the cost of the strategy, and without somewhere to put it every red
+# trade reads as an error.
+DEFAULT_MISTAKES = [
+    "Setup", "Entry", "Position sizing", "Stop", "Exit", "Overtrading", "Chasing", "FOMO",
+    "Revenge trading", "Rule violation", "Normal loss",
+]
+
 DEFAULT_MANUAL_BACKTEST_SETTINGS = {
     "setups": [],
+    "mistakes": DEFAULT_MISTAKES,
     "risk_deviation_tolerance_pct": 10,
     "opening_balance": 0,
 }
@@ -2719,14 +2833,14 @@ def upsert_bse_master(rows):
 
 
 def exchange_of(symbol):
-    """'NSE' or 'BSE' for a symbol - which one its prices should be fetched from. Defaults to NSE
-    for anything not in the master at all, which is what every symbol did before BSE existed (and
-    what a hand-typed journal symbol still does)."""
+    """('NSE' | 'BSE', 'MAIN' | 'SME') for a symbol - which exchange its prices should be fetched
+    from, and which board. Defaults to NSE main board for anything not in the master at all, which
+    is what every symbol did before BSE existed (and what a hand-typed journal symbol still does)."""
     with connect() as conn:
         row = conn.execute(
-            "SELECT exchange FROM stocks_master WHERE symbol = %s", (symbol,)
-        ).fetchone()
-    return (row or {}).get("exchange") or "NSE"
+            "SELECT exchange, board FROM stocks_master WHERE symbol = %s", (symbol,)
+        ).fetchone() or {}
+    return row.get("exchange") or "NSE", row.get("board") or "MAIN"
 
 
 # --- alerts + live trading -----------------------------------------------------------------------

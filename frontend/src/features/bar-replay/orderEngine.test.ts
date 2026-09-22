@@ -4,6 +4,7 @@
 // orderEngine.js for why it exists).
 import assert from 'node:assert'
 import {
+  nearestStop,
   processBarForOrders,
   riskReward,
   setLegQty,
@@ -732,3 +733,8 @@ console.log('orderEngine.test.js: entryDate assertions passed')
 // No account selected (Bar Replay allows that), or nothing to size: nothing to say, no crash.
 assert.deepStrictEqual(sizeWarnings({ quantity: 1, price: 5000, balance: 0, settings: {} }), [])
 assert.deepStrictEqual(sizeWarnings({ quantity: 0, price: 5000, balance: 10000, settings: {} }), [])
+
+// Initial risk is measured to the tightest stop, either direction; no stop -> null.
+assert.strictEqual(nearestStop([{ price: 90 }, { price: 95 }], 100), 95)
+assert.strictEqual(nearestStop([{ price: 112 }, { price: 104 }], 100), 104)
+assert.strictEqual(nearestStop([], 100), null)

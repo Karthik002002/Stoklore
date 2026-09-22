@@ -8,6 +8,7 @@ import html
 import json
 import re
 from datetime import datetime, timedelta
+from functools import lru_cache
 
 import yfinance as yf
 from bs4 import BeautifulSoup
@@ -42,8 +43,29 @@ def _stock_ticker(symbol):
     the moment a master import runs, and this is a local DB read in front of a network fetch that
     costs several orders of magnitude more.
     """
-    exchange = db.exchange_of(symbol)
+    exchange, board = db.exchange_of(symbol)
+    if exchange == "NSE" and board == "SME":
+        return _ticker(_nse_sme_yahoo_symbol(symbol))
     return _ticker(f"{symbol}.{YF_SUFFIX.get(exchange, 'NS')}")
+
+
+@lru_cache(maxsize=1024)
+def _nse_sme_yahoo_symbol(symbol):
+    """Yahoo is inconsistent about NSE SME stocks: some carry full history under the plain
+    SYMBOL.NS, others exist only as SYMBOL-SM.NS (for both the SM and ST series) - and that one holds
+    just the latest quote, no history. So the plain ticker wins whenever it has any bars, and -SM is
+    the fallback that at least resolves the stock.
+
+    ponytail: cached per process (one probe per SME symbol), so a stock Yahoo later backfills under
+    the plain ticker is picked up on restart. NSE's own SME history API is the upgrade path if
+    -SM-only stocks need real charts."""
+    plain = f"{symbol}.NS"
+    try:
+        if not _ticker(plain).history(period="5d").empty:
+            return plain
+    except Exception:
+        pass
+    return f"{symbol}-SM.NS"
 
 
 def _nse_json(path):

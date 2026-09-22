@@ -5,6 +5,11 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { InfoIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { SelectField, TagField, TextAreaField } from '@/components/form'
+import TradeReviewFields, {
+  EMPTY_REVIEW,
+  reviewPayload,
+  type ReviewValue,
+} from '@/components/TradeReviewFields'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Spinner } from '@/components/ui/spinner'
@@ -12,9 +17,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { inr } from '@/lib/format'
 import { autoResult, EMOTIONS, NEUTRAL_PNL_BAND, tradePnl } from '@/lib/manualTrades'
 import { tradeCosts, tradeNetPnl } from '@/lib/tradeCosts'
+import { prefillChecks } from '@/lib/tradeReview'
 import { closeTradeSchema } from '@/lib/schemas'
 import type { ReplayLeg, ReplayOrder } from './store'
-import { createManualTrade, getTradeAccounts, uploadManualTradeImage } from '@/services/api'
+import {
+  createManualTrade,
+  getManualBacktestSettings,
+  getTradeAccounts,
+  uploadManualTradeImage,
+} from '@/services/api'
 import { CLOSE_REASON_LABEL } from './orderEngine'
 import { useBarReplayStore } from './store'
 
@@ -43,6 +54,7 @@ export default function CloseTradeDialog({
   leg,
   partialQty,
   chartImage,
+  entryImage,
   accountId,
   entryDate,
   exitDate,
@@ -61,6 +73,8 @@ export default function CloseTradeDialog({
   /** A PNG snapshot of the chart at the close (see ReplayChart's captureScreenshot), attached
    *  to the journal entry. */
   chartImage?: Blob | null
+  /** The chart on the bar the position filled on (see BarReplay's entryShotsRef). */
+  entryImage?: Blob | null
   accountId?: number | null
   entryDate?: string | null
   exitDate?: string | null
@@ -97,7 +111,10 @@ export default function CloseTradeDialog({
   // "is there a leg", or a target hit would get misreported as its stop-loss price and vice
   // versa. Falls back to the position's first remaining level on that side for a manual close
   // (no reason to attribute to either) - informational only, same as before laddering existed.
-  const stopLossPrice = reason === 'stop_loss' ? leg?.price : (order?.stopLosses?.[0]?.price ?? null)
+  // The INITIAL stop wins when there is one: a stop moved to breakeven or trailed up is still what
+  // closed the trade, but journaling it as the stop would record ~zero risk and break R.
+  const stopLossPrice =
+    order?.initialStop ?? (reason === 'stop_loss' ? leg?.price : (order?.stopLosses?.[0]?.price ?? null))
   const targetPrice = reason === 'target' ? leg?.price : (order?.targets?.[0]?.price ?? null)
 
   const closingTrade = order
@@ -115,6 +132,11 @@ export default function CloseTradeDialog({
     queryKey: ['tradeAccounts'],
     queryFn: () => getTradeAccounts(),
   })
+  const { data: backtestSettings } = useQuery({
+    queryKey: ['manualBacktestSettings'],
+    queryFn: getManualBacktestSettings,
+  })
+  const [review, setReview] = useState<ReviewValue>(EMPTY_REVIEW)
   const account = accounts.find((a) => a.id === accountId) ?? null
   const costs = closingTrade ? tradeCosts(closingTrade, account) : null
   const net = closingTrade ? tradeNetPnl(closingTrade, account) : null
@@ -136,6 +158,10 @@ export default function CloseTradeDialog({
   useEffect(() => {
     if (open) form.reset({ result: computedResult, emotion: null, tags: [], notes: '' })
   }, [open, computedResult, form])
+  // Fresh per close, not per re-render: a laddered exit queues several dialogs for the same order.
+  useEffect(() => {
+    if (open) setReview(EMPTY_REVIEW)
+  }, [open, leg?.id, order?.id])
 
   const save = useMutation({
     mutationFn: async (values: CloseTradeForm) => {
@@ -166,11 +192,14 @@ export default function CloseTradeDialog({
         exited_at: exitDate ?? null,
         image_filename: null,
         account_id: accountId ?? null,
+        pre_trade_checks: order.preTradeChecks ?? null,
+        ...reviewPayload(review),
       })
       // The chart snapshot (see BarReplay's captureScreenshot) is taken at close time, before
       // this dialog even opens - same upload-after-create flow as the manual trade form's own
       // screenshot upload, just from a captured Blob instead of a user-picked file.
       if (chartImage) await uploadManualTradeImage(id, chartImage)
+      if (entryImage) await uploadManualTradeImage(id, entryImage, 'entry')
     },
     onSuccess: () => {
       toast.success('Trade logged')
@@ -187,7 +216,7 @@ export default function CloseTradeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-h-[90vh] max-w-md overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="capitalize">
             Close {symbol} {order.direction}
@@ -240,6 +269,21 @@ export default function CloseTradeDialog({
             label="Emotion"
             options={EMOTION_OPTIONS}
             placeholder="How did it feel?"
+          />
+
+          <TradeReviewFields
+            compact
+            options={backtestSettings?.mistakes ?? []}
+            value={review}
+            onChange={setReview}
+            prefill={
+              closingTrade
+                ? prefillChecks(
+                    { ...closingTrade, stop_loss: stopLossPrice ?? null, ideal_risk_amount: null },
+                    backtestSettings?.risk_deviation_tolerance_pct ?? 10,
+                  )
+                : {}
+            }
           />
 
           <TagField form={form} name="tags" label="Tags" />

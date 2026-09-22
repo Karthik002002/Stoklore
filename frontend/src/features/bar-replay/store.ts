@@ -31,6 +31,11 @@ export type ReplayOrder = {
   notes?: string | null
   /** Chandelier-style trailing stop, when one was armed (see orderEngine's trailStops). */
   trailing?: { atrPeriod?: number; atrMult: number } | null
+  /** The tightest stop when the order was placed (or when its first stop was added) - what the
+   *  journal records as the stop, whatever the live stop was moved or trailed to since. */
+  initialStop?: number | null
+  /** The order ticket's pre-trade checklist, if anything on it was ticked (lib/tradeReview CHECKS). */
+  preTradeChecks?: Record<string, boolean> | null
 }
 
 /** A shape drawn over the chart, anchored to fractional bar index + price so it survives pan,
@@ -97,6 +102,9 @@ export const DEFAULT_CHART_SETTINGS = {
   sizeMode: 'qty',
   capitalPct: 10,
   rsiLevels: [30, 70],
+  // Blind replay: no dates on the axis, legend, jump field or toasts, and the symbol masked, so
+  // what's on the chart can't be matched to what you remember happening next.
+  blind: false,
 }
 
 const DEFAULT_INDICATORS: IndicatorConfig[] = [{ key: 'default-ema20', type: 'ema', period: 20 }]

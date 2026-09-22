@@ -209,6 +209,16 @@ export function setLegQty(
 //
 // Returns null (not 0) for any missing input, so callers can distinguish "not enough info to
 // size" from "sized to zero shares". Rounds DOWN - a fractional share doesn't exist here.
+/** The stop a position's INITIAL risk is measured to: the tightest leg, same as sizeByRisk. Frozen
+ *  onto the order when it's placed (ReplayOrder.initialStop) and journaled as the trade's stop -
+ *  a stop later moved to breakeven or trailed up would otherwise record ~zero risk and break every
+ *  R figure on that trade. */
+export function nearestStop(stopLosses: LegAmounts[] | null | undefined, entryPrice: number) {
+  const prices = (stopLosses ?? []).map((l) => l?.price).filter((p): p is number => p != null)
+  if (!prices.length) return null
+  return prices.reduce((best, p) => (Math.abs(p - entryPrice) < Math.abs(best - entryPrice) ? p : best))
+}
+
 export function sizeByRisk({
   balance,
   riskPct,

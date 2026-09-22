@@ -9,6 +9,7 @@
 // Pure functions, no React - the panel renders these, the tabs consume them, and the self-check
 // (`node frontend/src/lib/tradeFilters.selfcheck.mjs`) runs them with no DOM.
 import { expectedR, riskStatus, sessionFor } from './manualTrades.ts'
+import { executionBucket } from './tradeReview.ts'
 import type { Trade } from './types.ts'
 
 /** One thing a row can be grouped by. `of` returns the row's value(s): a string, null (→ NONE),
@@ -67,6 +68,8 @@ export const FACETS: Facet<Trade>[] = [
   { key: 'direction', label: 'Direction', of: (t) => t.direction },
   { key: 'session', label: 'Session', of: (t) => sessionFor(t) },
   { key: 'emotion', label: 'Emotion', of: (t) => t.emotion },
+  { key: 'mistake', label: 'Mistakes', of: (t) => t.mistakes ?? [] },
+  { key: 'execution', label: 'Execution', of: (t) => executionBucket(t) },
   { key: 'risk', label: 'Risk sizing', of: (t, tol) => riskStatus(t, tol), label_: RISK_LABEL },
 ]
 

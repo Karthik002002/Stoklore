@@ -597,15 +597,37 @@ OHLCV, no backend execution involved:
   **Execute** — until max data exists for the picked symbol, Execute stays
   disabled with an inline message
 
-**Manual** — a full manual trade journal, four sub-tabs (`Overview` /
-`Trades` / `Statistics` / `Goals`):
+**Manual** — a full manual trade journal, five sub-tabs (`Overview` /
+`Trades` / `Statistics` / `Goals` / `Reviews`):
 
 - **Add/Edit trade dialog** — symbol, direction, setup (autocompletes from
   your past setups), quantity, entry/exit, stop-loss, target, ideal risk ₹,
-  emotion, free-form tags, and a trade screenshot. Result (profit/loss/
+  emotion, free-form tags, and two screenshots (entry and exit). Result (profit/loss/
   neutral) auto-computes from entry/exit/direction but can be overridden by
   hand — once overridden it stops silently recomputing over what you set.
   An open trade skips the exit price requirement entirely
+- **Trade review: why, not just what** — each trade carries **mistakes** (picked
+  from a list you edit in Settings, seeded with Setup / Entry / Position sizing /
+  Stop / Exit / Overtrading / Chasing / FOMO / Revenge / Rule violation and
+  **Normal loss**, so a loss that followed the plan isn't forced into a mistake
+  bucket), a six-item **execution checklist**, and a **1–10 execution score**
+  derived from the checklist and overridable. Sizing and stop come pre-ticked
+  from the numbers. Both are Statistics dimensions and trade filters, so "net
+  P&L by mistake" is what each mistake cost you. Untouched = not reviewed, kept
+  distinct from "reviewed, nothing wrong"
+- **Strategy vs behaviour** — the Statistics tab's 2×2: setup expectancy
+  (does the setup make money on average) against execution score (7+), with the
+  verdict per cell — keep collecting data / fix behaviour / review the strategy
+  / don't diagnose yet. Plus **Patterns** (how much of your profit is your top 5
+  trades and what you'd have without them; win rate right after 2+ losses or
+  wins) and a **Setup scorecard** — 95% win-rate range per setup, rows under 20
+  trades greyed out, split **Replay → Paper → Journal** to see whether a
+  practised edge survives live prices
+- **Reviews tab** — Keep / Stop / Improve / Test per period, written next to the
+  period's own numbers and repeating mistakes, plus **one rule change** with the
+  date it takes effect. Each review compares the trades before that date with
+  the trades after it (up to the next change, so two changes never get credit
+  for each other)
 - **Bulk Trades** — add several trades at once from screenshots
   (`BulkTradesDialog`, backed by `POST /api/manual-trades/bulk/analyze`)
 - **Bulk edit** — select trades via row checkboxes, then set a setup and/or
@@ -697,7 +719,15 @@ Bar Replay.
   If a bar gaps clean past a level instead of touching it, the trade still
   closes — filled at the bar's open, not the skipped level
 - Stop-loss/target lines are **draggable directly on the chart** to adjust
-  them after the fact
+  them after the fact. The journal records the **initial** stop, not the one
+  you moved or trailed — a stop at breakeven would otherwise log zero risk and
+  break every R figure (same for Paper Trading)
+- **Pre-trade checklist** on the order ticket (optional) — the same six checks
+  as the post-trade review, so the trade's detail view shows what you planned
+  next to what you did. Closing a trade takes the review too, and the chart is
+  captured at **entry** as well as at exit
+- **Blind replay** (Settings › Preferences) — hides every date and the symbol
+  name; pair it with Random bar
 - **Order sizing preference** — a fixed share count, or a % of the selected
   account's live balance at the current price, so position size tracks the
   account instead of a number set weeks ago. One preference, read by both the
@@ -907,7 +937,9 @@ the chart, and tells you what the broker did. Fills and rejections land in the [
   rather than overwriting an NSE row — two companies sharing a ticker is exactly where guessing
   does damage. Price fetching picks Yahoo's `.NS` or `.BO` line off the row's `exchange`, so
   watchlists, events, the journal, Bar Replay and simulation all work for BSE names with no
-  migration: they only ever stored a bare symbol
+  migration: they only ever stored a bare symbol. NSE SME names use the plain `.NS` line when
+  Yahoo has history there, and fall back to `SYMBOL-SM.NS` when it doesn't (probed once per symbol) —
+  that ticker resolves the stock but carries only the latest quote, so charts for those stay thin
 - **NSE EMERGE (SME) names are first-class** — imported by the same parser as
   the main board, badged everywhere a symbol is picked (SME, series, market
   lot, ISIN, listing date), and searchable per board. They trade only in fixed

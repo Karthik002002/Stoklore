@@ -66,6 +66,13 @@ def legs_by_proximity(legs, entry_price):
     return sorted(legs, key=lambda leg: abs(leg["price"] - entry_price))
 
 
+def nearest_stop(stops, entry_price):
+    """The stop a position's initial risk is measured to - the tightest one, same as Bar Replay's
+    sizeByRisk. None when there is no stop at all."""
+    legs = legs_by_proximity(stops or [], entry_price)
+    return legs[0]["price"] if legs else None
+
+
 def check_position(position, price):
     """Which legs of one position the latest price has triggered.
 
@@ -231,6 +238,9 @@ def _journal_close(position, fill, account_id):
     target_price = fill["leg"]["price"] if fill["reason"] == "target" else (
         remaining_targets[0]["price"] if remaining_targets else None
     )
+    # The stop at entry, not the one live at the close - see paper_positions.initial_stop_loss.
+    if position.get("initial_stop_loss") is not None:
+        stop_price = position["initial_stop_loss"]
     opened = position.get("opened_at")
     return db.create_manual_trade(
         position["symbol"], position["direction"], fill["qty"], position["entry_price"],

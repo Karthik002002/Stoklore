@@ -7,6 +7,8 @@ import os
 import uuid
 from datetime import datetime
 
+from typing import Literal
+
 from fastapi import File, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 
@@ -19,6 +21,7 @@ from app.schemas import (
     BalanceAdjustmentRequest,
     ManualBacktestSettingsRequest,
     ManualTradeRequest,
+    TradeReviewRequest,
     TradingGoalRequest,
 )
 
@@ -38,6 +41,9 @@ def manual_trades(request: Request):
         # Full URL (not just the bare filename) so the frontend never has to know or guess the
         # /uploads mount path itself - one source of truth, here, for where images actually live.
         t["image_url"] = f"{request.base_url}uploads/{t['image_filename']}" if t["image_filename"] else None
+        t["image_entry_url"] = (
+            f"{request.base_url}uploads/{t['image_filename_entry']}" if t["image_filename_entry"] else None
+        )
     return trades
 
 
@@ -127,7 +133,8 @@ def create_manual_trade(req: ManualTradeRequest):
         req.symbol.strip().upper(), req.direction, req.quantity, req.entry_price, req.exit_price,
         req.stop_loss, req.target, req.is_open, req.result, req.emotion, req.tags, req.notes,
         req.traded_at, req.image_filename, req.setup, req.ideal_risk_amount, req.account_id, balance,
-        req.exited_at, _trade_context(req), req.entried_at,
+        req.exited_at, _trade_context(req), req.entried_at, req.mistakes, req.execution_checks,
+        req.execution_score, req.pre_trade_checks,
     )
     return {"id": trade_id}
 
@@ -148,6 +155,9 @@ def update_manual_trade(trade_id: int, req: ManualTradeRequest):
         req.notes, req.traded_at, req.setup, req.ideal_risk_amount, req.account_id, balance,
         req.exited_at, context, req.entried_at,
     )
+    db.update_manual_trade_review(
+        trade_id, {k: getattr(req, k) for k in db.REVIEW_FIELDS if k in req.model_fields_set}
+    )
     return {"ok": True}
 
 
@@ -165,7 +175,9 @@ ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 
 
 @router.post("/api/manual-trades/{trade_id}/image")
-async def upload_manual_trade_image(trade_id: int, file: UploadFile = File(...)):
+async def upload_manual_trade_image(
+    trade_id: int, file: UploadFile = File(...), kind: Literal["exit", "entry"] = "exit"
+):
     # ponytail: re-uploading (editing a trade's screenshot) orphans the old file on disk instead
     # of deleting it - add cleanup if upload volume ever makes that worth doing.
     if file.content_type not in ALLOWED_IMAGE_TYPES:
@@ -174,7 +186,7 @@ async def upload_manual_trade_image(trade_id: int, file: UploadFile = File(...))
     filename = f"{trade_id}-{uuid.uuid4().hex}{ext}"
     with open(os.path.join(UPLOAD_DIR, filename), "wb") as f:
         f.write(await file.read())
-    db.update_manual_trade_image(trade_id, filename)
+    db.update_manual_trade_image(trade_id, filename, entry=kind == "entry")
     return {"filename": filename}
 
 
@@ -209,8 +221,10 @@ def get_manual_backtest_settings():
 
 @router.put("/api/settings/manual-backtest")
 def set_manual_backtest_settings(req: ManualBacktestSettingsRequest):
+    mistakes = req.mistakes if req.mistakes is not None else db.get_manual_backtest_settings()["mistakes"]
     settings = {
         "setups": [s.strip() for s in req.setups if s.strip()],
+        "mistakes": [m.strip() for m in mistakes if m.strip()],
         "risk_deviation_tolerance_pct": req.risk_deviation_tolerance_pct,
         "opening_balance": req.opening_balance,
     }
@@ -230,6 +244,38 @@ def save_trading_goals(goals: list[TradingGoalRequest]):
     saved = [g.model_dump() for g in goals]
     db.set_trading_goals(saved)
     return saved
+
+
+@router.get("/api/trade-reviews")
+def trade_reviews():
+    return db.list_trade_reviews()
+
+
+def _review_payload(req):
+    if req.period_end < req.period_start:
+        raise HTTPException(status_code=422, detail="period end can't be before period start")
+    # Whitespace-only is "not written", stored as NULL, so the tab can tell an empty box from text.
+    return {
+        **req.model_dump(),
+        **{k: (getattr(req, k) or "").strip() or None for k in ("keep", "stop", "improve", "test", "change")},
+    }
+
+
+@router.post("/api/trade-reviews")
+def create_trade_review(req: TradeReviewRequest):
+    return {"id": db.create_trade_review(_review_payload(req))}
+
+
+@router.put("/api/trade-reviews/{review_id}")
+def update_trade_review(review_id: int, req: TradeReviewRequest):
+    db.update_trade_review(review_id, _review_payload(req))
+    return {"ok": True}
+
+
+@router.delete("/api/trade-reviews/{review_id}")
+def delete_trade_review(review_id: int):
+    db.delete_trade_review(review_id)
+    return {"ok": True}
 
 
 @router.get("/api/manual-trades/balance-adjustments")
@@ -256,7 +302,7 @@ def delete_balance_adjustment(adjustment_id: int):
 MANUAL_TRADE_EXPORT_FIELDS = [
     "id", "symbol", "direction", "setup", "quantity", "entry_price", "exit_price", "stop_loss",
     "target", "ideal_risk_amount", "is_open", "result", "emotion", "tags", "notes", "traded_at",
-    "account_id", "account_balance_at_trade",
+    "account_id", "account_balance_at_trade", "mistakes", "execution_score",
 ]
 
 
@@ -271,7 +317,7 @@ def export_manual_trades(format: str = "csv"):
         writer = csv.DictWriter(buf, fieldnames=MANUAL_TRADE_EXPORT_FIELDS, extrasaction="ignore")
         writer.writeheader()
         for t in trades:
-            writer.writerow({**t, "tags": ", ".join(t["tags"])})
+            writer.writerow({**t, "tags": ", ".join(t["tags"]), "mistakes": ", ".join(t["mistakes"] or [])})
         body, media_type, filename = buf.getvalue(), "text/csv", "manual-trades.csv"
     else:
         raise HTTPException(status_code=422, detail="format must be 'csv' or 'json'")

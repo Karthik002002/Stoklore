@@ -28,7 +28,9 @@ def _live_scrape(symbol, model):
         return db.latest_item_markdown(symbol)
     news = scraper.get_news(symbol)
     financials = scraper.get_financials(symbol)
-    if not news and not financials.get("sector"):
+    # shortName counts as "this stock exists": SME stocks have no sector on Yahoo and often no
+    # news, and requiring either one rejected every one of them.
+    if not news and not (financials.get("sector") or financials.get("shortName")):
         return None
     markdown = llm.build_markdown(symbol, financials, news, model=model)
     db.insert_scraped_item(symbol, markdown, _embed_or_none(markdown))

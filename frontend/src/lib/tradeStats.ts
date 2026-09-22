@@ -26,6 +26,7 @@ import {
 } from './manualTrades.ts'
 import { accountReturnPct } from './tradeAccounts.ts'
 import { extensionBucket, rangePosBucket, trendAlignmentBucket, volRegimeBucket } from './tradeContext.ts'
+import { EXECUTION_ORDER, executionBucket, mistakeLabels, SOURCES, sourceOf } from './tradeReview.ts'
 import type { Trade } from './types.ts'
 
 /** One way of slicing the journal. `of` returns a label, or an array of labels for a multi-valued
@@ -142,6 +143,11 @@ export const DIMENSIONS: Record<string, Dimension> = {
   setup: { label: 'Setup', of: (t: Trade) => t.setup || 'Untagged' },
   tag: { label: 'Tag', of: (t: Trade) => (t.tags?.length ? t.tags : ['Untagged']), multi: true },
   emotion: { label: 'Emotion', of: (t: Trade) => t.emotion || 'Untagged' },
+  // The review (lib/tradeReview.ts). A trade with two mistakes counts under both, like tags, so
+  // "net P&L by mistake" reads as what each mistake cost and "trade count" as how often it repeats.
+  mistake: { label: 'Mistake', of: mistakeLabels, multi: true },
+  execution: { label: 'Execution score', of: executionBucket, order: EXECUTION_ORDER },
+  source: { label: 'Source', of: sourceOf, order: [...SOURCES] },
   direction: {
     label: 'Position',
     of: (t: Trade) => (t.direction === 'short' ? 'Short' : 'Long'),

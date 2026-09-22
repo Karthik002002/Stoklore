@@ -110,6 +110,7 @@ def create_paper_order(req: PaperOrderRequest):
         req.account_id, symbol, req.direction, req.order_type, status, req.quantity, entry,
         [leg.model_dump() for leg in req.stop_losses], [leg.model_dump() for leg in req.targets],
         req.notes, opened_at,
+        initial_stop_loss=paper.nearest_stop([leg.model_dump() for leg in req.stop_losses], entry),
     )
     return {"id": position_id, "entry_price": entry, "status": status}
 
@@ -119,11 +120,13 @@ def modify_paper_position(position_id: int, req: PaperModifyRequest):
     position = db.get_paper_position(position_id)
     if not position:
         raise HTTPException(status_code=404, detail="no such paper position")
-    db.update_paper_position(
-        position_id,
-        stop_losses=[leg.model_dump() for leg in req.stop_losses],
-        targets=[leg.model_dump() for leg in req.targets],
-    )
+    stops = [leg.model_dump() for leg in req.stop_losses]
+    fields = {"stop_losses": stops, "targets": [leg.model_dump() for leg in req.targets]}
+    # Moving a stop never touches the initial one; only a position that had NO stop gets one here,
+    # from the first stop it is given.
+    if position.get("initial_stop_loss") is None and stops:
+        fields["initial_stop_loss"] = paper.nearest_stop(stops, position["entry_price"])
+    db.update_paper_position(position_id, **fields)
     return {"ok": True}
 
 

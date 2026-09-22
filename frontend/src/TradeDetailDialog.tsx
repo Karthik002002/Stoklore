@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronDownIcon, ChevronUpIcon, PencilIcon } from 'lucide-react'
 import ImageLightbox from '@/components/ImageLightbox'
+import { ChecksReadout } from '@/components/TradeReviewFields'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -20,6 +21,7 @@ import {
 import { stopOverrunPct, targetCapturePct } from '@/lib/tradeStats'
 import { contextGap, contextReadings, excursionReading, hasContext } from '@/lib/tradeContext'
 import { tradeCosts, tradeNetPnl, tradeNetReturnPct } from '@/lib/tradeCosts'
+import { executionScore, GOOD_EXECUTION, NORMAL_LOSS } from '@/lib/tradeReview'
 import type { Trade } from '@/lib/types'
 import { getTradeAccounts } from '@/services/api'
 
@@ -134,7 +136,7 @@ export default function TradeDetailDialog({
     queryKey: ['tradeAccounts'],
     queryFn: () => getTradeAccounts(),
   })
-  const [lightboxOpen, setLightboxOpen] = useState(false)
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
 
   const index = trade ? trades.findIndex((t) => t.id === trade.id) : -1
   const step = (delta: number) => {
@@ -419,7 +421,65 @@ export default function TradeDetailDialog({
               )}
             </Section>
 
-            {(trade.notes || trade.tags.length > 0 || trade.emotion || trade.image_url) && (
+            <Section
+              title="Review"
+              hint="Why it went the way it did. A winner can have poor execution; a loser excellent execution."
+            >
+              {trade.mistakes == null && trade.execution_checks == null && trade.execution_score == null ? (
+                <p className="text-sm text-muted-foreground">
+                  Not reviewed yet — Edit to add mistakes and an execution score.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {executionScore(trade) != null && (
+                      <Badge
+                        variant={(executionScore(trade) ?? 0) >= GOOD_EXECUTION ? 'secondary' : 'outline'}
+                      >
+                        Execution {executionScore(trade)}/10
+                      </Badge>
+                    )}
+                    {(trade.mistakes ?? []).length === 0 ? (
+                      <span className="text-xs text-muted-foreground">No mistakes recorded</span>
+                    ) : (
+                      (trade.mistakes ?? []).map((m) => (
+                        <Badge key={m} variant={m === NORMAL_LOSS ? 'outline' : 'destructive'}>
+                          {m}
+                        </Badge>
+                      ))
+                    )}
+                  </div>
+                  {(trade.execution_checks || trade.pre_trade_checks) && <ChecksReadout trade={trade} />}
+                </div>
+              )}
+            </Section>
+
+            {(trade.image_entry_url || trade.image_url) && (
+              <Section title="Chart" hint="Your memory changes. The chart doesn't.">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {(
+                    [
+                      ['At entry', trade.image_entry_url],
+                      ['At exit', trade.image_url],
+                    ] as const
+                  ).map(([label, src]) =>
+                    src ? (
+                      <figure key={label} className="space-y-1">
+                        <img
+                          src={src}
+                          alt={`Chart ${label.toLowerCase()}`}
+                          className="max-h-64 w-full cursor-pointer rounded-lg border object-contain"
+                          onClick={() => setLightboxSrc(src)}
+                        />
+                        <figcaption className="text-xs text-muted-foreground">{label}</figcaption>
+                      </figure>
+                    ) : null,
+                  )}
+                </div>
+              </Section>
+            )}
+
+            {(trade.notes || trade.tags.length > 0 || trade.emotion) && (
               <Section title="Your notes">
                 <div className="space-y-2">
                   {(trade.emotion || trade.tags?.length > 0) && (
@@ -433,21 +493,17 @@ export default function TradeDetailDialog({
                     </div>
                   )}
                   {trade.notes && <p className="text-sm whitespace-pre-wrap">{trade.notes}</p>}
-                  {trade.image_url && (
-                    <img
-                      src={trade.image_url}
-                      alt="Trade"
-                      className="max-h-64 cursor-pointer rounded-lg border"
-                      onClick={() => setLightboxOpen(true)}
-                    />
-                  )}
                 </div>
               </Section>
             )}
           </div>
         </DialogContent>
       </Dialog>
-      <ImageLightbox src={trade.image_url} open={lightboxOpen} onOpenChange={setLightboxOpen} />
+      <ImageLightbox
+        src={lightboxSrc}
+        open={!!lightboxSrc}
+        onOpenChange={(next) => !next && setLightboxSrc(null)}
+      />
     </>
   )
 }

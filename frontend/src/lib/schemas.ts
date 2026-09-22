@@ -72,6 +72,7 @@ export const tradeSchema = z
     exitedAt: z.string().nullish(),
     accountId: z.number().nullable(),
     imageFile: z.any().nullish(),
+    imageEntryFile: z.any().nullish(),
   })
   .refine((v) => !v.exitedAt || !v.tradedAt || v.exitedAt >= v.tradedAt, {
     path: ['exitedAt'],

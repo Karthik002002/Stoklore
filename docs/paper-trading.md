@@ -169,6 +169,15 @@ by exactly that slice with its remaining legs still active. A two-leg ladder
 unwinding produces two rows — which is what actually happened. Only when
 nothing is left does the position disappear.
 
+### The initial stop is what gets journaled
+
+`paper_positions.initial_stop_loss` is the tightest stop when the order is
+placed, or the first stop given to a position opened without one. Modifying
+stops never changes it, and `_journal_close` writes it as the trade's
+`stop_loss` instead of whichever stop was live at the close — a stop moved to
+breakeven would otherwise log ~zero risk and break every R figure. Positions
+opened before the column existed have none and fall back to the old behaviour.
+
 ### Journal rows, not a paper history table
 
 A closed paper position is a `manual_trades` row rather than a paper-specific

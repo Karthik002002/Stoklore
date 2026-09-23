@@ -13,7 +13,7 @@ pokes you when something actually happened.
 Runs entirely on your machine. No cloud. No APIs reaching out. No data 
 leaving your laptop unless you tell it to.
 
-**Scraping** · **Local LLM chat with tool calling** · **Watchlists & events** ·
+**Scraping** · **Local LLM chat with tool calling** · **Voice capture** · **Watchlists & events** ·
 **Price history & 30+ indicators** · **Sentiment analysis** ·
 **Broker-synced holdings** · **Backtesting** ·
 **Bar Replay from 1 minute to 1 month** · **Live-price paper trading**
@@ -244,6 +244,13 @@ rails instead of a blanket "trust the model":
   before it re-enters the model's context, with a regex flag for obvious
   override phrasing ("ignore previous instructions", "reveal your system
   prompt", etc.)
+- **Voice capture** — hold ⌘⇧V, speak, release. Transcribed locally by
+  `whisper-base.en` (no new dependency: the `transformers`/`torch` already
+  installed for sentiment), then typed into the focused field, used to navigate
+  ("open bar replay"), or sent to the agent ("what are today's top gainers"),
+  which has the tools to act on it. Silence is never sent to Whisper — a muted
+  mic hallucinates as "you", which would otherwise reach the agent as a
+  message. Rebindable in Settings › Shortcuts; see [docs/voice.md](docs/voice.md)
 - **Laya classifier guard** (optional, Settings › Classifier) — a local
   decision model reads every tool result for reworded injections the regex
   misses, and each chat message for credentials or steering attempts, and

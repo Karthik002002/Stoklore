@@ -70,6 +70,9 @@ type ChatSession = { id: string; title: string | null; model: string | null; cre
 // distant components (event/news cards) to tell it "open yourself and tag this URL" without
 // threading a callback down through App's whole tree.
 const TAG_EVENT = 'chat:tag'
+// Voice capture (VoiceCapture.tsx) handing a transcript straight to the agent, rather than
+// inserting it for the user to press Enter on - saying it IS the send.
+const ASK_EVENT = 'chat:ask'
 
 // The Laya guard's read of the message just sent (app/routers/chat.py). A warning, never a block:
 // the message has already gone to the model by the time this arrives.
@@ -86,6 +89,11 @@ function guardWarning(flags: Record<string, number>) {
 
 export function tagInChat(url: string, label?: string) {
   window.dispatchEvent(new CustomEvent(TAG_EVENT, { detail: { url, label } }))
+}
+
+/** Opens the chat and sends `text` as a message. Used by voice capture. */
+export function askInChat(text: string) {
+  window.dispatchEvent(new CustomEvent(ASK_EVENT, { detail: { text } }))
 }
 
 // Streamed tool parts arrive typed `tool-${name}` (or `dynamic-tool` when the client has no
@@ -271,6 +279,8 @@ function ChatThread({
   open,
   pendingInsert,
   onInsertHandled,
+  pendingAsk,
+  onAskHandled,
 }: {
   chatId: string
   initialMessages: UIMessage[]
@@ -281,6 +291,9 @@ function ChatThread({
   open: boolean
   pendingInsert?: { text: string } | null
   onInsertHandled?: () => void
+  /** A message to send as-is (voice). Nonce'd so saying the same thing twice still sends twice. */
+  pendingAsk?: { text: string; nonce: number } | null
+  onAskHandled?: () => void
 }) {
   const { messages, setMessages, sendMessage, status } = useChat({
     id: chatId,
@@ -321,6 +334,16 @@ function ChatThread({
     }
     sendMessage({ text }, model ? { body: { model } } : undefined)
   }
+
+  // Sending is deferred to an effect (not done in the window listener) because the listener lives
+  // in the parent, which is where the panel gets opened - this thread may not be mounted yet.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!pendingAsk?.text) return
+    if (isBusy) return // one stream at a time; the next tick retries
+    submitMessage(pendingAsk.text)
+    onAskHandled?.()
+  }, [pendingAsk?.nonce, isBusy])
 
   return (
     <>
@@ -440,6 +463,7 @@ export default function ChatWidget() {
   const [initialMessages, setInitialMessages] = useState<UIMessage[]>([])
   const [model, setModel] = useState<string | null>(null)
   const [pendingInsert, setPendingInsert] = useState<{ text: string; nonce: number } | null>(null)
+  const [pendingAsk, setPendingAsk] = useState<{ text: string; nonce: number } | null>(null)
 
   const { data: models } = useQuery({ queryKey: ['models'], queryFn: getModels })
   const { data: active } = useQuery({ queryKey: ['activeModel'], queryFn: getActiveModel })
@@ -466,6 +490,15 @@ export default function ChatWidget() {
     }
     window.addEventListener(TAG_EVENT, onTag)
     return () => window.removeEventListener(TAG_EVENT, onTag)
+  }, [])
+
+  useEffect(() => {
+    const onAsk = (e: Event) => {
+      setOpen(true)
+      setPendingAsk({ text: (e as CustomEvent<{ text: string }>).detail.text, nonce: Date.now() })
+    }
+    window.addEventListener(ASK_EVENT, onAsk)
+    return () => window.removeEventListener(ASK_EVENT, onAsk)
   }, [])
 
   const openSession = async (session: ChatSession) => {
@@ -587,6 +620,8 @@ export default function ChatWidget() {
           open={open}
           pendingInsert={pendingInsert}
           onInsertHandled={() => setPendingInsert(null)}
+          pendingAsk={pendingAsk}
+          onAskHandled={() => setPendingAsk(null)}
         />
       </div>
 

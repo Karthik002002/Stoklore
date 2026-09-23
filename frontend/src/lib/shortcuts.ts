@@ -33,6 +33,8 @@ export const SHORTCUTS = [
   { id: 'global.commandPalette', scope: 'Global', label: 'Command palette', default: 'Mod+K' },
   { id: 'global.chat', scope: 'Global', label: 'Toggle AI chat', default: 'Mod+/' },
   { id: 'global.watchlists', scope: 'Global', label: 'Watchlists (map stocks to lists)', default: 'Mod+B' },
+  // Hold-to-talk, so this one is read on keydown AND keyup (see VoiceCapture.tsx).
+  { id: 'global.voice', scope: 'Global', label: 'Voice capture (hold to talk)', default: 'Mod+shift+v' },
 
   { id: 'workflow.save', scope: 'Workflow editor', label: 'Save the workflow', default: 'Mod+S' },
 

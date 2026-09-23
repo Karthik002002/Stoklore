@@ -6,6 +6,7 @@ why it exists, see the main [README](../README.md) — these docs are the
 
 - [Dashboard & Watchlists](dashboard.md)
 - [Chat Agent](chat-agent.md)
+- [Voice Capture](voice.md) — hold a key, talk; local Whisper
 - [Stock Detail](stock-detail.md)
 - [Events Feed](events-feed.md)
 - [Sentiment (`/sentiment`)](sentiment.md)

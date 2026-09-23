@@ -5,16 +5,13 @@ import { useShortcut } from '@/lib/shortcuts'
 import { toast } from 'sonner'
 import {
   ArrowRightIcon,
-  BellIcon,
   BookmarkIcon,
-  BotIcon,
   CandlestickChartIcon,
   ChartNoAxesCombinedIcon,
   ClapperboardIcon,
   FlaskConicalIcon,
   LayoutDashboardIcon,
   MoonIcon,
-  NewspaperIcon,
   RefreshCwIcon,
   SettingsIcon,
   SunIcon,
@@ -22,9 +19,6 @@ import {
   LayoutGridIcon,
   TrendingUpIcon,
   UserRoundIcon,
-  UsersIcon,
-  WalletIcon,
-  ZapIcon,
 } from 'lucide-react'
 import {
   Command,
@@ -37,86 +31,21 @@ import {
 } from '@/components/ui/command'
 import { Spinner } from '@/components/ui/spinner'
 import { useTheme } from '@/lib/theme'
+import {
+  BACKTEST_TABS,
+  HOME_TABS,
+  PAGES,
+  PAPER_TABS,
+  SETTINGS_TABS,
+  SIMULATION_MODES,
+  WORKFLOW_PAGES,
+} from '@/lib/navTargets'
 import { openProfile } from './Profile'
 import { openWatchlists } from './WatchlistManager'
 import type { LinkProps } from '@tanstack/react-router'
 import type { SettingsTab } from './router'
 import { addStock, getDashboards, getWorkflows, searchStocks } from '@/services/api'
 
-// Every top-level route in router.jsx that can be reached without a parameter. The ones that
-// can't (/stock/:exchange/:symbol, /paper/:symbol, /paper/trade/:id, /live/:symbol,
-// /backtest/auto/:scriptId) are reached
-// from their own pages, or here by typing @SYMBOL.
-const PAGES: { icon: typeof LayoutDashboardIcon; label: string; to: LinkProps['to'] }[] = [
-  { icon: LayoutDashboardIcon, label: 'Stocks', to: '/' },
-  { icon: SettingsIcon, label: 'Settings', to: '/settings' },
-  { icon: NewspaperIcon, label: 'Events', to: '/events' },
-  { icon: TrendingUpIcon, label: 'Top news', to: '/top-news' },
-  { icon: WalletIcon, label: 'Holdings', to: '/holdings' },
-  { icon: UsersIcon, label: 'Shareholding', to: '/shareholding' },
-  { icon: FlaskConicalIcon, label: 'Backtesting', to: '/backtesting' },
-  { icon: CandlestickChartIcon, label: 'Paper Trading', to: '/paper' },
-  { icon: ZapIcon, label: 'Live Trading', to: '/live' },
-  { icon: ChartNoAxesCombinedIcon, label: 'Trade Simulation', to: '/simulation' },
-  { icon: BellIcon, label: 'Alerts', to: '/alerts' },
-  { icon: BotIcon, label: 'Agent', to: '/agent' },
-  { icon: WorkflowIcon, label: 'Workflows', to: '/workflows' },
-  { icon: LayoutGridIcon, label: 'Dashboards', to: '/dashboards' },
-]
-
-// Matches ManualBacktesting's real `view` tabs (router.jsx's backtestingRoute) - the old 'tab'
-// param here pointed at the disabled Auto/Manual switcher and did nothing.
-const BACKTEST_TABS = [
-  { label: 'Backtesting > Overview', view: 'overview' },
-  { label: 'Backtesting > Trades', view: 'trades' },
-  { label: 'Backtesting > Statistics', view: 'statistics' },
-  { label: 'Backtesting > Goals', view: 'goals' },
-  { label: 'Backtesting > Reviews', view: 'reviews' },
-]
-
-const WORKFLOW_PAGES: { label: string; to: LinkProps['to'] }[] = [
-  { label: 'Workflows > New workflow', to: '/workflows/new' },
-]
-
-const HOME_TABS = [
-  { label: 'Home > Stocks', tab: 'home' },
-  { label: 'Home > My board', tab: 'board' },
-]
-
-const PAPER_TABS = [
-  { label: 'Paper Trading > Overview', view: 'overview' },
-  { label: 'Paper Trading > Holdings', view: 'holdings' },
-  { label: 'Paper Trading > Trades', view: 'trades' },
-]
-
-const SIMULATION_MODES = [
-  { label: 'Trade Simulation > Single account', mode: 'single' },
-  { label: 'Trade Simulation > Multiple accounts', mode: 'multiple' },
-]
-
-// Mirrors Settings.jsx's TabsTab list exactly.
-const SETTINGS_TABS = [
-  { label: 'Settings > Model', tab: 'model' },
-  { label: 'Settings > LiteLLM', tab: 'litellm' },
-  { label: 'Settings > OmniRoute', tab: 'omniroute' },
-  { label: 'Settings > Cogencis', tab: 'cogencis' },
-  { label: 'Settings > Telegram', tab: 'telegram' },
-  { label: 'Settings > Screener', tab: 'screener' },
-  { label: 'Settings > Classifier', tab: 'classifier' },
-  { label: 'Settings > Broker', tab: 'broker' },
-  { label: 'Settings > Watch rules', tab: 'rules' },
-  { label: 'Settings > Collect data', tab: 'data' },
-  { label: 'Settings > Manage stocks', tab: 'stocks' },
-  { label: 'Settings > Activity', tab: 'activity' },
-  { label: 'Settings > Shortcuts', tab: 'shortcuts' },
-  { label: 'Settings > Backtesting', tab: 'backtesting' },
-  { label: 'Settings > Trade accounts', tab: 'accounts' },
-  { label: 'Settings > Paper accounts', tab: 'paper-accounts' },
-]
-
-// KEEP THIS FILE IN SYNC. It is the app's own index of itself: a new route, page tab or
-// settings tab that isn't listed above simply cannot be found here, and the palette is where
-// people look first. Adding or renaming one of those is not done until this file lists it.
 //
 // Global Cmd/Ctrl+K palette: pages + Backtesting/Settings tabs by default, or "@SYMBOL" to
 // search stocks (same "@" convention ChatInput's tag menu already uses) and jump to its detail

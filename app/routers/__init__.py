@@ -46,6 +46,7 @@ from app.routers import (
     system,
     top_news,
     trade_accounts,
+    voice,
     watch_rules,
     watchlists,
     workflows,
@@ -80,6 +81,7 @@ for _module in (
     reports,
     chat,
     agent,
+    voice,
     workflows,
     dashboards,
 ):

@@ -4,6 +4,7 @@ How to use what's in the app, page by page. For *what* each feature is and
 why it exists, see the main [README](../README.md) — these docs are the
 "how do I actually do X" reference.
 
+- [Installation](installation.md) — prerequisites, setup and per-OS commands
 - [Dashboard & Watchlists](dashboard.md)
 - [Chat Agent](chat-agent.md)
 - [Voice Capture](voice.md) — hold a key, talk; local Whisper

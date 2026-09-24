@@ -987,7 +987,7 @@ the chart, and tells you what the broker did. Fills and rejections land in the [
 | Paper      | `app/core/paper.py` — background poller (20s, market hours only) that marks open `paper_positions` against live quotes and fires laddered simulated exits into the manual journal; `app/core/trade_context.py` — one-time entry-context + MAE/MFE snapshot stored on every trade |
 | Symbols    | `app/core/stocks_master.py` — NSE's listed-equity master (main board + EMERGE/SME from the same parser, board derived from the SERIES code), searchable per board |
 | Storage    | Postgres + pgvector (`app/core/db.py`)                                      |
-| API        | FastAPI (`app/main.py` + `app/routers/`) — chat streams over the AI SDK UI Message Stream protocol; 14 explicit agent tools (`AGENT_TOOLS`/`REAL_TOOL_IMPLS`) |
+| API        | FastAPI (`app/main.py` + `app/routers/`) — chat streams over the AI SDK UI Message Stream protocol; 17 explicit agent tools (`AGENT_TOOLS`/`REAL_TOOL_IMPLS`) |
 | Frontend   | React + Vite, shadcn/ui, AI Elements, `@ai-sdk/react`, lightweight-charts, `pinets` (in-browser Pine Script v5 runtime) (`frontend/`) |
 | Tracing    | Langfuse (optional, self-hosted via `config/docker-compose.langfuse.yml`) — traces every LiteLLM call: prompts, tool calls, latency, cost |
 
@@ -998,6 +998,10 @@ the chart, and tells you what the broker did. Fills and rejections land in the [
 </div>
 
 ## 🚀 Running It
+
+**First time on this machine?** Follow [docs/installation.md](docs/installation.md) — Python/Node/
+Postgres versions, the virtualenv, `createdb crawler`, `npm ci`, and per-OS commands (macOS,
+Ubuntu/Debian, Windows via WSL). The steps below assume that's done.
 
 ```bash
 ollama serve   # start Ollama first (if it isn't already running)
@@ -1012,9 +1016,11 @@ scans manually from the UI (or `POST /api/events/scan` and
 `POST /api/prices/sync`) whenever you want fresh data; a `app/cli.py` CLI scan
 is still available standalone (see below).
 
-Requires Postgres (`postgresql@17` + `pgvector`) and Ollama with `llama3.1`
-and `nomic-embed-text` pulled. See `docs/warning.md` before running large
-prompts/long sessions against the local model.
+Requires Postgres (`postgresql@17` + `pgvector`), and — for the AI features only — Ollama
+with `nomic-embed-text` and a chat model of your choice pulled, then selected in
+**Settings › Model**. The built-in default model id is a GGUF you won't have until you
+pull it, so pick from that list on a fresh install. See `docs/warning.md` before running
+large prompts/long sessions against the local model.
 
 **Optional: LiteLLM proxy** (for `litellm/*` models) — install with
 `pip install 'litellm[proxy]'` (already in `requirements.txt`), then
@@ -1052,12 +1058,13 @@ then pass `--skills yourfilename` to `app/cli.py`. No registration needed.
 
 ## ⌨️ CLI Scan
 
-`app/cli.py` still runs the original movers-based scan standalone:
+`app/cli.py` still runs the original movers-based scan standalone. Run it as a module (as a file
+path, `app` isn't importable):
 
 ```bash
-.venv/bin/python main.py --skills movement,volume --limit 10   # NSE movers
-.venv/bin/python main.py --watchlist                           # every watchlisted symbol
-.venv/bin/python main.py --watchlist "Banking"                 # one watchlist only
+.venv/bin/python -m app.cli --skills movement,volume --limit 10   # NSE movers
+.venv/bin/python -m app.cli --watchlist                           # every watchlisted symbol
+.venv/bin/python -m app.cli --watchlist "Banking"                 # one watchlist only
 ```
 
 <div align="right">

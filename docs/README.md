@@ -23,6 +23,7 @@ why it exists, see the main [README](../README.md) — these docs are the
 - [Indicators](indicators.md) — every indicator and how it's calculated
 - [Paper Trading](paper-trading.md)
 - [Live Trading (Dhan)](live-trading.md)
+- [Engine (C++ algo trading)](engine.md) — backtest sweeps and paper/live runs of an external C++ engine
 - [Agent](agent.md)
 - [Workflows](workflows.md) — triggers, notifications, per-workflow pages
 - [Dashboards](dashboards.md) — panels over workflow data, arranged on a grid

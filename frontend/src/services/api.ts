@@ -40,6 +40,8 @@ export type TradeReviewRequest = Schemas['TradeReviewRequest']
 export type ActivitySettingsRequest = Schemas['ActivitySettingsRequest']
 export type ActivityDay = Schemas['ActivityDay']
 export type BulkMaxCollectRequest = Schemas['BulkMaxCollectRequest']
+export type EngineBacktestRequest = Schemas['EngineBacktestRequest']
+export type EngineSettingsRequest = Schemas['EngineSettingsRequest']
 
 // --- Response shapes this app actually reads ---------------------------------------------------
 // Only the ones typed code depends on. Everything else stays `unknown` on purpose (see above).
@@ -1840,3 +1842,93 @@ export const createDashboardFromTemplate = (templateId: string) =>
 
 export const createDashboardFromWorkflow = (workflowId: string) =>
   dashboardPost<Dashboard>(`/api/dashboards/from-workflow/${workflowId}`, {})
+
+// --- C++ trading engine (~/Coding/hft) - app/routers/engine.py -------------------------------------
+// Backtest, paper and live runs share one shape: the engine's own report JSON. Times are
+// IST-shifted epoch seconds, as on every chart endpoint.
+
+export type EngineStrategy = { name: string; params: Record<string, number> }
+
+export type EngineSummary = {
+  net: number
+  gross: number
+  costs: number
+  trades: number
+  win_rate: number
+  avg_win: number
+  avg_loss: number
+  max_dd: number
+  sharpe: number
+  days: number
+  from: number
+  to: number
+}
+
+export type EngineRunRow = {
+  id: string
+  source: 'backtest' | 'paper' | 'live'
+  created: string
+  strategy: string
+  params: Record<string, number>
+  symbols: string[]
+  interval: string
+  summary: EngineSummary
+  /** backtests only: the sweep this run belongs to, and which params that sweep varied */
+  batch?: string
+  varied?: string[]
+  label?: string | null
+  /** paper/live only */
+  halted?: boolean
+}
+
+/** [symbol, entry time, exit time, signed qty, entry px, exit px, gross pnl] */
+export type EngineTrade = [string, number, number, number, number, number, number]
+
+export type EngineRun = EngineRunRow & {
+  equity: [number, number][]
+  daily: [number, number][]
+  by_symbol: Record<string, { pnl: number; trades: number }>
+  trades: EngineTrade[]
+}
+
+export type EngineSettings = {
+  name: string
+  engine_dir: string
+  vps: string
+  vps_reports: string
+  built: boolean
+}
+
+export const getEngineStrategies = () => fetch('/api/engine/strategies').then(json<EngineStrategy[]>)
+
+export const getEngineRuns = () => fetch('/api/engine/runs').then(json<EngineRunRow[]>)
+
+export const getEngineRun = (id: string) =>
+  fetch(`/api/engine/runs/${encodeURIComponent(id)}`).then(json<EngineRun>)
+
+export const runEngineBacktest = (req: EngineBacktestRequest) =>
+  fetch('/api/engine/backtest', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  }).then(json<{ batch: string; runs: EngineRunRow[] }>)
+
+export const deleteEngineRun = (id: string) =>
+  fetch(`/api/engine/runs/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(json)
+
+export const deleteEngineBatch = (batch: string) =>
+  fetch(`/api/engine/batches/${encodeURIComponent(batch)}`, { method: 'DELETE' }).then(
+    json<{ deleted: number }>,
+  )
+
+export const getEngineSettings = () => fetch('/api/engine/settings').then(json<EngineSettings>)
+
+export const updateEngineSettings = (settings: EngineSettingsRequest) =>
+  fetch('/api/engine/settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  }).then(json<EngineSettings>)
+
+export const syncEngineLive = () =>
+  fetch('/api/engine/live/sync', { method: 'POST' }).then(json<{ reports: number }>)

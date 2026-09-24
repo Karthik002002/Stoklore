@@ -4,6 +4,7 @@ import {
   BotIcon,
   CandlestickChartIcon,
   ChartNoAxesCombinedIcon,
+  CpuIcon,
   FlaskConicalIcon,
   LayoutDashboardIcon,
   LayoutGridIcon,
@@ -30,6 +31,7 @@ export const PAGES: { icon: typeof LayoutDashboardIcon; label: string; to: LinkP
   { icon: FlaskConicalIcon, label: 'Backtesting', to: '/backtesting' },
   { icon: CandlestickChartIcon, label: 'Paper Trading', to: '/paper' },
   { icon: ZapIcon, label: 'Live Trading', to: '/live' },
+  { icon: CpuIcon, label: 'Algo engine', to: '/engine' },
   { icon: ChartNoAxesCombinedIcon, label: 'Trade Simulation', to: '/simulation' },
   { icon: BellIcon, label: 'Alerts', to: '/alerts' },
   { icon: BotIcon, label: 'Agent', to: '/agent' },
@@ -85,6 +87,7 @@ export const SETTINGS_TABS = [
   { label: 'Settings > Backtesting', tab: 'backtesting' },
   { label: 'Settings > Trade accounts', tab: 'accounts' },
   { label: 'Settings > Paper accounts', tab: 'paper-accounts' },
+  { label: 'Settings > Algo engine', tab: 'engine' },
 ]
 
 // KEEP THIS FILE IN SYNC. It is the app's own index of itself: a new route, page tab or

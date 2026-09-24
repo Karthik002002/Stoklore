@@ -15,6 +15,7 @@ import Alerts from './Alerts'
 import App from './App'
 import AutoBacktestDetail from './AutoBacktestDetail'
 import Backtesting from './Backtesting'
+import Engine from './Engine'
 import BarReplay from './features/bar-replay'
 import EventsFeed from './EventsFeed'
 import Holdings from './Holdings'
@@ -60,6 +61,7 @@ const SETTINGS_TABS = [
   'backtesting',
   'accounts',
   'paper-accounts',
+  'engine',
 ] as const
 
 // Settings is its own page (/settings?tab=). `settings` stays on the root route only so a link from
@@ -405,6 +407,18 @@ const livePositionRoute = createRoute({
   component: LivePositionChart,
 })
 
+// The C++ trading engine's backtests, sweeps and paper/live sessions (app/routers/engine.py). `run`
+// is the open run's detail and `batch` the sweep the heatmap shows, so both survive a reload.
+const engineRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/engine',
+  validateSearch: (search): { run?: string; batch?: string } => ({
+    run: typeof search.run === 'string' && search.run ? search.run : undefined,
+    batch: typeof search.batch === 'string' && search.batch ? search.batch : undefined,
+  }),
+  component: Engine,
+})
+
 const simulationRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/simulation',
@@ -523,6 +537,7 @@ const routeTree = rootRoute.addChildren([
   liveRoute,
   livePositionRoute,
   simulationRoute,
+  engineRoute,
   autoBacktestDetailRoute,
   barReplayRoute,
   dashboardsRoute,

@@ -440,3 +440,20 @@ class AlertUpdateRequest(BaseModel):
     trigger_mode: Literal["once", "once_per_day", "every_time"] | None = None
     expires_at: str | None = None
     active: bool | None = None
+
+
+class EngineBacktestRequest(BaseModel):
+    strategy: str
+    symbols: list[str]
+    interval: str = "5m"
+    # every value list is one axis of the sweep; the run count is the product of their lengths
+    params: dict[str, list[float]] = {}
+    cost_bps: float = Field(3, ge=0, le=100)
+    label: str | None = None
+
+
+class EngineSettingsRequest(BaseModel):
+    name: str = ""
+    engine_dir: str = ""
+    vps: str = ""
+    vps_reports: str = ""

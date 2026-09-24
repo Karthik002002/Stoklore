@@ -3,6 +3,7 @@ import {
   IconBolt,
   IconChartCandle,
   IconChartHistogram,
+  IconCpu,
   IconRobot,
   IconSitemap,
   IconFlask,
@@ -16,9 +17,11 @@ import {
   IconSettings,
 } from '@tabler/icons-react'
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Toaster } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { getEngineSettings } from '@/services/api'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import ActivityTracker from './ActivityTracker'
 import ChatWidget from './ChatWidget'
@@ -43,6 +46,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/backtesting', icon: IconFlask, label: 'Backtesting' },
   { to: '/paper', icon: IconChartCandle, label: 'Paper Trading' },
   { to: '/live', icon: IconBolt, label: 'Live Trading' },
+  { to: '/engine', icon: IconCpu, label: 'Algo engine' },
   { to: '/simulation', icon: IconChartHistogram, label: 'Trade Simulation' },
   { to: '/agent', icon: IconRobot, label: 'Agent' },
   { to: '/workflows', icon: IconSitemap, label: 'Workflows' },
@@ -106,6 +110,12 @@ function ReloadButton() {
 function App() {
   // Background runs finish while you're on another page - see agent/useRunNotifications.ts.
   useRunNotifications()
+  // the engine's user-chosen name (Settings > Algo engine) labels its nav icon
+  const { data: engineName } = useQuery({
+    queryKey: ['engineSettings'],
+    queryFn: getEngineSettings,
+    select: (s) => s.name,
+  })
   const isBarReplay = window.location.pathname.includes('/backtest/replay')
   return (
     <TooltipProvider>
@@ -121,7 +131,11 @@ function App() {
 
           <nav className="flex flex-col gap-1">
             {NAV_ITEMS.map((item) => (
-              <NavIcon key={item.to} {...item} />
+              <NavIcon
+                key={item.to}
+                {...item}
+                label={item.to === '/engine' ? (engineName ?? item.label) : item.label}
+              />
             ))}
           </nav>
 

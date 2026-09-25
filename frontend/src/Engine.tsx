@@ -25,6 +25,7 @@ import {
   comboCount,
   drawdown,
   fanPaths,
+  focusRange,
   histogram,
   istTime,
   markerRange,
@@ -39,6 +40,7 @@ import {
   sweepGrid,
   tradeMarkers,
 } from '@/lib/engine'
+import type { RunTrade } from '@/lib/engine'
 import { fmt, formatDateTime, inr } from '@/lib/format'
 import type { SheetData } from '@/lib/exportFile'
 import { downloadCsv, downloadXlsx } from '@/lib/exportFile'
@@ -449,7 +451,7 @@ function DailyBars({ daily }: { daily: [number, number][] }) {
  *  own interval), so an arrow sits on the exact bar that filled - no resampling in between to argue
  *  with. Entry prices in the trade list are that bar's open, which is what makes this worth looking
  *  at: you can see what the strategy saw. */
-function ExecutionsChart({ run }: { run: EngineRun }) {
+function ExecutionsChart({ run, focus }: { run: EngineRun; focus: RunTrade | null }) {
   const [symbol, setSymbol] = useState(run.symbols[0] ?? '')
   const ref = useRef<HTMLDivElement>(null)
   const {
@@ -462,6 +464,11 @@ function ExecutionsChart({ run }: { run: EngineRun }) {
     enabled: !!symbol,
     staleTime: 5 * 60_000,
   })
+
+  // A clicked trade switches the symbol tab to its own, if it isn't showing already.
+  useEffect(() => {
+    if (focus) setSymbol(focus[0])
+  }, [focus])
 
   const markers = useMemo(() => tradeMarkers(run.trades, symbol, COLORS), [run.trades, symbol])
   const total = useMemo(() => run.trades.filter((t) => t[0] === symbol).length, [run.trades, symbol])
@@ -496,16 +503,20 @@ function ExecutionsChart({ run }: { run: EngineRun }) {
       })),
     )
     if (markers.length) createSeriesMarkers(candles, markers as never)
-    // Open on the LAST few trades, not on all of them: 300 trades can span months of 5m bars, and
-    // at that zoom every arrow is a smear. The rest are still there to pan and zoom out to.
-    const range = markerRange(markers.slice(-OPENING_MARKERS))
+    // A clicked trade wins: zoom tight on its own entry/exit. Otherwise open on the LAST few trades,
+    // not on all of them - 300 trades can span months of 5m bars, and at that zoom every arrow is a
+    // smear. The rest are still there to pan and zoom out to.
+    const range =
+      focus && focus[0] === symbol
+        ? focusRange(focus[1], focus[2], run.interval)
+        : markerRange(markers.slice(-OPENING_MARKERS))
     if (range) {
       chart.timeScale().setVisibleRange({ from: range.from as UTCTimestamp, to: range.to as UTCTimestamp })
     } else {
       chart.timeScale().fitContent()
     }
     return () => chart.remove()
-  }, [bars, markers])
+  }, [bars, markers, focus, symbol, run.interval])
 
   if (!run.symbols.length) return null
   return (
@@ -556,6 +567,7 @@ function RunDetail({ id, onClose }: { id: string; onClose: () => void }) {
     queryFn: () => getEngineRun(id),
     refetchInterval: (q) => (q.state.data && q.state.data.source !== 'backtest' ? 60_000 : false),
   })
+  const [focus, setFocus] = useState<RunTrade | null>(null)
   const remove = useMutation({
     mutationFn: () => deleteEngineRun(id),
     onSuccess: () => {
@@ -669,11 +681,12 @@ function RunDetail({ id, onClose }: { id: string; onClose: () => void }) {
             </Table>
           </div>
         </div>
-        <ExecutionsChart run={run} />
+        <ExecutionsChart run={run} focus={focus} />
         <div>
           <p className="mb-1 text-xs text-muted-foreground">
             Trades{' '}
             {run.trades.length > trades.length ? `(latest ${trades.length} of ${run.trades.length})` : ''}
+            {' · click a row to zoom the chart above onto it'}
           </p>
           <div className="max-h-96 overflow-auto rounded-lg border">
             <Table>
@@ -690,18 +703,28 @@ function RunDetail({ id, onClose }: { id: string; onClose: () => void }) {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {trades.map(([sym, tin, tout, qty, pin, pout, pnl], i) => (
-                  <TableRow key={i}>
-                    <TableCell className="font-medium">{sym}</TableCell>
-                    <TableCell>{qty > 0 ? 'Long' : 'Short'}</TableCell>
-                    <TableCell className="text-right tabular-nums">{Math.abs(qty)}</TableCell>
-                    <TableCell className="tabular-nums">{istTime(tin)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{fmt(pin)}</TableCell>
-                    <TableCell className="tabular-nums">{istTime(tout)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{fmt(pout)}</TableCell>
-                    <TableCell className={cn('text-right tabular-nums', pnlClass(pnl))}>{inr(pnl)}</TableCell>
-                  </TableRow>
-                ))}
+                {trades.map((trade, i) => {
+                  const [sym, tin, tout, qty, pin, pout, pnl] = trade
+                  const active = focus?.[0] === sym && focus?.[1] === tin && focus?.[2] === tout
+                  return (
+                    <TableRow
+                      key={i}
+                      className={cn('cursor-pointer', active && 'bg-muted')}
+                      onClick={() => setFocus(trade)}
+                    >
+                      <TableCell className="font-medium">{sym}</TableCell>
+                      <TableCell>{qty > 0 ? 'Long' : 'Short'}</TableCell>
+                      <TableCell className="text-right tabular-nums">{Math.abs(qty)}</TableCell>
+                      <TableCell className="tabular-nums">{istTime(tin)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmt(pin)}</TableCell>
+                      <TableCell className="tabular-nums">{istTime(tout)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{fmt(pout)}</TableCell>
+                      <TableCell className={cn('text-right tabular-nums', pnlClass(pnl))}>
+                        {inr(pnl)}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
             </Table>
           </div>

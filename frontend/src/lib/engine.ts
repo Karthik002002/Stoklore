@@ -111,6 +111,18 @@ export function markerRange(markers: TradeMarker[], marginRatio = 0.05) {
   return { from: from - margin, to: to + margin }
 }
 
+/** Bar interval ("1m", "5m", "15m", "1H", "4H") in seconds. */
+export const intervalSeconds = (interval: string) =>
+  parseInt(interval, 10) * (interval.endsWith('H') ? 3600 : 60)
+
+/** Time window to zoom the executions chart on one clicked trade: entry to exit, padded with a few
+ *  bars either side so the candles it broke out of / into stay visible - the trade's own two points
+ *  alone, with no padding, is two arrows on a blank chart. */
+export function focusRange(entry: number, exit: number, interval: string, pad = 10) {
+  const margin = Math.max(intervalSeconds(interval) * pad, Math.round((exit - entry) * 0.5))
+  return { from: entry - margin, to: exit + margin }
+}
+
 // --- parameter sweeps (backtest --sweep) ---------------------------------------------------------
 
 export type SweepRunLike = { params: Record<string, number>; axis: string }

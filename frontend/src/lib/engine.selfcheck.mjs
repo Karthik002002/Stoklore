@@ -13,6 +13,8 @@ import {
   sweepCount,
   comboCount,
   drawdown,
+  focusRange,
+  intervalSeconds,
   markerRange,
   parseValues,
   sweepGrid,
@@ -95,6 +97,17 @@ assert.ok(r.from < 100 && r.to > 400, JSON.stringify(r))
 // Margin never collapses to zero on a single-instant range, which would be an unusable window.
 const tiny = markerRange(tradeMarkers([['INFY', 5, 5, 1, 1, 1, 1]], 'INFY', C))
 assert.ok(tiny.to - tiny.from >= 120, JSON.stringify(tiny))
+
+// --- clicking a trade: the window the chart zooms to -----------------------------------------
+assert.equal(intervalSeconds('5m'), 300)
+assert.equal(intervalSeconds('1H'), 3600)
+assert.equal(intervalSeconds('4H'), 14400)
+// A short scalp still gets bar-padding on both sides, not just its own two points.
+const scalp = focusRange(1000, 1300, '5m', 10)
+assert.deepEqual(scalp, { from: 1000 - 3000, to: 1300 + 3000 })
+// A trade held a long time pads proportionally to its own length instead, once that's the bigger term.
+const held = focusRange(0, 100_000, '5m', 10)
+assert.deepEqual(held, { from: -50_000, to: 150_000 })
 
 assert.equal(
   sweepCount('oat', [

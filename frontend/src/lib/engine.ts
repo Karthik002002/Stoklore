@@ -50,3 +50,63 @@ export function drawdown(equity: [number, number][]): [number, number][] {
 
 /** Engine times are IST-shifted epoch seconds, so the UTC reading of them is the IST wall clock. */
 export const istTime = (t: number) => new Date(t * 1000).toISOString().slice(0, 16).replace('T', ' ')
+
+// --- executions on the candle chart ---------------------------------------------------------------
+// A run's trades, as lightweight-charts markers. Kept here (pure) rather than inside the chart
+// effect so the arithmetic that decides where an arrow lands is checkable without a DOM.
+
+/** [symbol, entry time, exit time, signed qty, entry px, exit px, gross pnl] - api.ts EngineTrade. */
+export type RunTrade = [string, number, number, number, number, number, number]
+
+export type TradeMarker = {
+  time: number
+  position: 'aboveBar' | 'belowBar'
+  shape: 'arrowUp' | 'arrowDown'
+  color: string
+  text: string
+}
+
+/** A long entry points up from under the bar, a short entry down from above it; each exit is the
+ *  mirror of its entry and takes the trade's colour - green if that trade made money, red if not.
+ *  So an arrow's direction says what was done, and an exit's colour says how it went. */
+export function tradeMarkers(
+  trades: RunTrade[],
+  symbol: string,
+  colors: { up: string; down: string },
+  limit = 300,
+): TradeMarker[] {
+  // The most recent `limit` trades: markers are drawn for every bar in the series, and thousands of
+  // them cost more than they inform. The caller says how many were left out.
+  const mine = trades.filter((t) => t[0] === symbol).slice(-limit)
+  const markers: TradeMarker[] = []
+  for (const [, entry, exit, qty, , , pnl] of mine) {
+    const long = qty > 0
+    const won = pnl >= 0
+    markers.push({
+      time: entry,
+      position: long ? 'belowBar' : 'aboveBar',
+      shape: long ? 'arrowUp' : 'arrowDown',
+      color: long ? colors.up : colors.down,
+      text: `${long ? 'B' : 'S'} ${Math.abs(qty)}`,
+    })
+    markers.push({
+      time: exit,
+      position: long ? 'aboveBar' : 'belowBar',
+      shape: long ? 'arrowDown' : 'arrowUp',
+      color: won ? colors.up : colors.down,
+      text: `${pnl >= 0 ? '+' : ''}${Math.round(pnl)}`,
+    })
+  }
+  // Same bar can hold an exit and the next entry; the chart wants them in time order.
+  return markers.sort((a, b) => a.time - b.time)
+}
+
+/** Where to look when the chart opens: the marked trades, plus a margin so the arrows aren't on the
+ *  edge. Null when there is nothing to frame, which means "leave the chart where it is". */
+export function markerRange(markers: TradeMarker[], marginRatio = 0.05) {
+  if (!markers.length) return null
+  const from = markers[0].time
+  const to = markers[markers.length - 1].time
+  const margin = Math.max(Math.round((to - from) * marginRatio), 60)
+  return { from: from - margin, to: to + margin }
+}

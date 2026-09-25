@@ -44,6 +44,7 @@ leaving your laptop unless you tell it to.
   - [`11` Backtesting](#11-backtesting)
   - [`12` Bar Replay](#12-bar-replay)
   - [`13` Paper Trading](#13-paper-trading)
+  - [`14` Algo Engine (C++)](#14-algo-engine-c)
   - [`*` What's more](#-whats-more)
 - [🧱 Stack](#-stack)
 - [🚀 Running It](#-running-it)
@@ -152,8 +153,10 @@ to guard rails you can see and control.
 | **Bar Replay** — a short on real NSE history: stop, two target legs, R and open P&L on the chart | **Bar Replay** — a long riding a breakout, with laddered targets |
 | ![Bar Replay positions panel: open P&L, risk, exposure and a pending limit order](docs/screenshots/bar-replay-positions.png) | ![Bar Replay: a TCS short with EMA 20/50 and RSI](docs/screenshots/bar-replay-tcs.png) |
 | **Positions** — open P&L, risk and exposure, stop-to-breakeven, partial exits, a pending limit | **Bar Replay** — 36 indicators, each oscillator in its own pane |
-| ![Manual trade journal overview](docs/screenshots/journal.png) | |
-| **Trade journal** — P&L, win rate, profit factor, balance curve | |
+| ![Manual trade journal overview](docs/screenshots/journal.png) | ![Algo Engine: a backtest sweep run with summary tiles, equity and drawdown, daily P&L](docs/screenshots/engine-run.png) |
+| **Trade journal** — P&L, win rate, profit factor, balance curve | **Algo Engine** — a C++ strategy backtested on Stoklore's bars: net vs gross after costs, equity, drawdown, daily P&L |
+| ![Algo Engine executions: 5m candles with buy and sell arrows on the exact fill bars](docs/screenshots/engine-executions.png) | |
+| **Executions on candles** — every fill on the bar it filled: ▲ buy, ▼ sell, exit arrows green when the trade made money | |
 
 <div align="right">
 
@@ -892,6 +895,33 @@ the chart, and tells you what the broker did. Fills and rejections land in the [
 - **Round trips journal themselves** into `manual_trades` tagged `live`, read off positions going
   flat rather than by stitching orders — so partial exits and averaging in still file as one trade
 - Full details, and what is *not* verified yet: [docs/live-trading.md](docs/live-trading.md)
+
+<div align="right">
+
+[![][back-to-top]](#readme-top)
+
+</div>
+
+### `14` Algo Engine (C++)
+
+An `/engine` page that drives an **external C++ trading engine**: Stoklore supplies the bars and the
+UI, the engine supplies the trading logic. The same compiled strategy you backtest here is what
+trades on the VPS, and its paper/live sessions land on this page beside the backtests.
+
+- **Backtests and parameter sweeps** — every param takes a value (`9`), a list (`5,9,13`) or a
+  range (`5:20:5`); every combination runs, up to 200. Orders fill at the next bar's open with a
+  flat cost in bps per side, and positions square off at 15:15
+- **Sweep heatmap** — pick two axes and each cell shows its best run over the rest, so a parameter
+  that only works in one corner is visible as one
+- **Run detail** — net vs gross P&L with costs broken out, win rate, avg win/loss, max drawdown,
+  Sharpe, equity with drawdown, daily P&L, and per-symbol totals
+- **Executions on candles** — the run's own bars with every fill marked: ▲ buy, ▼ sell, and each
+  exit arrow green when that trade made money. The candles come from the same source the backtest
+  ran on, so an arrow sits on the exact bar that filled rather than on a resampled approximation
+- **Compare** — tick runs in the table to overlay their equity or drawdown curves
+- **Paper and live runs** pulled off the VPS with `rsync` over ssh, rendered through the same views
+
+Full details: [docs/engine.md](docs/engine.md).
 
 <div align="right">
 

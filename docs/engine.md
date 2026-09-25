@@ -33,8 +33,19 @@ Any field left empty falls back to an environment variable, which is handy for h
   coloured best to worst within the sweep. Click a cell to open that run. With more than two varied
   params, pick the two axes, and each cell shows its best run over the rest.
 - **Compare:** tick runs in the table to overlay their equity or drawdown curves.
-- **Run detail:** summary tiles, equity with drawdown, daily P&L, per-symbol P&L, and the latest
-  300 trades. Paper/live runs refresh every minute while open.
+- **Run detail:** summary tiles, equity with drawdown, daily P&L, per-symbol P&L, the executions
+  chart (below), and the latest 300 trades. Paper/live runs refresh every minute while open.
+- **Executions on candles:** the run's own bars with every fill marked — ▲ for a buy, ▼ for a sell,
+  and each exit arrow green when that trade made money, red when it didn't. One tab per symbol when
+  a run traded several.
+
+  The candles come from the same source the backtest ran on (`minute_data`, at the run's interval),
+  so an arrow sits on the exact bar that filled rather than on a resampled approximation of it —
+  entry prices in the trade table are that bar's open.
+
+  It marks the **latest 300 trades** and opens framed on the last 20 of them (~500 bars). Markers
+  are drawn for the whole series, so thousands of them cost more than they tell you, and at a
+  four-month zoom every arrow is a smear; pan or zoom out to walk back through the rest.
 
 ## Where the data lives
 

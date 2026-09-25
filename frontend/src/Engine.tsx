@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { UseQueryResult } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { HistogramSeries, createChart } from 'lightweight-charts'
+import { CandlestickSeries, HistogramSeries, createChart, createSeriesMarkers } from 'lightweight-charts'
 import type { UTCTimestamp } from 'lightweight-charts'
 import { PlayIcon, RefreshCwIcon, SettingsIcon, Trash2Icon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
@@ -15,7 +15,15 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { comboCount, drawdown, istTime, parseValues, sweepGrid } from '@/lib/engine'
+import {
+  comboCount,
+  drawdown,
+  istTime,
+  markerRange,
+  parseValues,
+  sweepGrid,
+  tradeMarkers,
+} from '@/lib/engine'
 import { fmt, formatDateTime, inr } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { cn } from '@/lib/utils'
@@ -27,6 +35,7 @@ import {
   getEngineRuns,
   getEngineSettings,
   getEngineStrategies,
+  getIntradayBars,
   runEngineBacktest,
   syncEngineLive,
 } from '@/services/api'
@@ -47,6 +56,9 @@ const METRICS: Record<Metric, { label: string; better: 1 | -1; format: (v: numbe
 }
 type SortKey = 'created' | Metric | 'trades'
 const COLORS = { text: '#9ca3af', grid: 'rgba(148, 163, 184, 0.15)', up: '#22c55e', down: '#ef4444' }
+
+//: How many markers (two per trade) the executions chart frames when it opens - see ExecutionsChart.
+const OPENING_MARKERS = 40
 
 const pnlClass = (v: number) => (v > 0 ? 'text-success' : v < 0 ? 'text-destructive' : '')
 
@@ -274,6 +286,112 @@ function DailyBars({ daily }: { daily: [number, number][] }) {
   return <div ref={ref} className="h-44" />
 }
 
+/** The run's own bars, with its executions marked on them.
+ *
+ *  The candles come from the same source the engine backtested against (`minute_data`, at the run's
+ *  own interval), so an arrow sits on the exact bar that filled - no resampling in between to argue
+ *  with. Entry prices in the trade list are that bar's open, which is what makes this worth looking
+ *  at: you can see what the strategy saw. */
+function ExecutionsChart({ run }: { run: EngineRun }) {
+  const [symbol, setSymbol] = useState(run.symbols[0] ?? '')
+  const ref = useRef<HTMLDivElement>(null)
+  const {
+    data: bars,
+    isLoading,
+    error,
+  } = useQuery({
+    queryKey: ['intradayBars', symbol, run.interval],
+    queryFn: () => getIntradayBars(symbol, run.interval),
+    enabled: !!symbol,
+    staleTime: 5 * 60_000,
+  })
+
+  const markers = useMemo(() => tradeMarkers(run.trades, symbol, COLORS), [run.trades, symbol])
+  const total = useMemo(() => run.trades.filter((t) => t[0] === symbol).length, [run.trades, symbol])
+
+  useEffect(() => {
+    const rows = bars?.bars
+    if (!ref.current || !rows?.length) return
+    const chart = createChart(ref.current, {
+      autoSize: true,
+      layout: { background: { color: 'transparent' }, textColor: COLORS.text, attributionLogo: false },
+      grid: { vertLines: { visible: false }, horzLines: { color: COLORS.grid } },
+      // Bar times are already IST-shifted (see minute_data.py) and the chart renders UTC, so the
+      // axis reads as market-local time.
+      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
+      rightPriceScale: { borderVisible: false },
+      localization: { priceFormatter: (p: number) => fmt(p) },
+    })
+    const candles = chart.addSeries(CandlestickSeries, {
+      upColor: COLORS.up,
+      downColor: COLORS.down,
+      wickUpColor: COLORS.up,
+      wickDownColor: COLORS.down,
+      borderVisible: false,
+    })
+    candles.setData(
+      rows.map((b) => ({
+        time: b.time as UTCTimestamp,
+        open: b.open,
+        high: b.high,
+        low: b.low,
+        close: b.close,
+      })),
+    )
+    if (markers.length) createSeriesMarkers(candles, markers as never)
+    // Open on the LAST few trades, not on all of them: 300 trades can span months of 5m bars, and
+    // at that zoom every arrow is a smear. The rest are still there to pan and zoom out to.
+    const range = markerRange(markers.slice(-OPENING_MARKERS))
+    if (range) {
+      chart.timeScale().setVisibleRange({ from: range.from as UTCTimestamp, to: range.to as UTCTimestamp })
+    } else {
+      chart.timeScale().fitContent()
+    }
+    return () => chart.remove()
+  }, [bars, markers])
+
+  if (!run.symbols.length) return null
+  return (
+    <div>
+      <div className="mb-1 flex flex-wrap items-center gap-2">
+        <p className="text-xs text-muted-foreground">
+          Executions on {run.interval} candles
+          {total > markers.length / 2 ? ` (latest ${markers.length / 2} of ${total} trades)` : ''}
+        </p>
+        <span className="text-[11px] text-muted-foreground">
+          ▲ buy · ▼ sell · exit arrow green when that trade made money
+        </span>
+        {run.symbols.length > 1 && (
+          <div className="ml-auto flex gap-1">
+            {run.symbols.map((sym) => (
+              <Button
+                key={sym}
+                size="sm"
+                variant={sym === symbol ? 'secondary' : 'ghost'}
+                onClick={() => setSymbol(sym)}
+              >
+                {sym}
+              </Button>
+            ))}
+          </div>
+        )}
+      </div>
+      {error ? (
+        <p className="rounded-lg border p-4 text-sm text-destructive">
+          {error instanceof Error ? error.message : 'Could not load bars'}
+        </p>
+      ) : isLoading ? (
+        <div className="flex h-96 items-center justify-center gap-2 rounded-lg border text-sm text-muted-foreground">
+          <Spinner className="size-4" /> Loading {symbol} {run.interval} bars — the first fetch of a symbol
+          takes a few seconds
+        </div>
+      ) : (
+        <div ref={ref} className="h-96 rounded-lg border" />
+      )}
+    </div>
+  )
+}
+
 function RunDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const queryClient = useQueryClient()
   const { data: run, error } = useQuery({
@@ -393,6 +511,7 @@ function RunDetail({ id, onClose }: { id: string; onClose: () => void }) {
             </Table>
           </div>
         </div>
+        <ExecutionsChart run={run} />
         <div>
           <p className="mb-1 text-xs text-muted-foreground">
             Trades{' '}

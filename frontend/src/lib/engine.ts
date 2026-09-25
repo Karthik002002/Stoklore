@@ -110,3 +110,295 @@ export function markerRange(markers: TradeMarker[], marginRatio = 0.05) {
   const margin = Math.max(Math.round((to - from) * marginRatio), 60)
   return { from: from - margin, to: to + margin }
 }
+
+// --- parameter sweeps (backtest --sweep) ---------------------------------------------------------
+
+export type SweepRunLike = { params: Record<string, number>; axis: string }
+
+/** How many runs a sweep makes. A param with one value is fixed. oat: the base run plus every
+ *  swept value other than that param's base. grid: the product of the swept lists. */
+export function sweepCount(mode: 'oat' | 'grid', lists: { values: number[]; base: number }[]) {
+  const swept = lists.filter((l) => l.values.length > 1)
+  if (!swept.length) return 0
+  return mode === 'grid'
+    ? swept.reduce((n, l) => n * l.values.length, 1)
+    : 1 + swept.reduce((n, l) => n + l.values.filter((v) => v !== l.base).length, 0)
+}
+
+/** A one-at-a-time sweep as one series per swept param: its runs in value order, with the base run
+ *  (axis "") slotted in at the param's base value, since that run is also that param's point. */
+export function oatSeries<R extends SweepRunLike>(runs: R[], params: string[]) {
+  const base = runs.find((r) => r.axis === '')
+  return params.map((param) => ({
+    param,
+    points: [...runs.filter((r) => r.axis === param), ...(base ? [base] : [])]
+      .map((run) => ({ value: run.params[param], run, isBase: run === base }))
+      .sort((a, b) => a.value - b.value),
+  }))
+}
+
+/** A run that took no trades. Its metrics are all exactly zero, which is not a result: leave it off
+ *  the colour scale and out of "best", or a grid full of dead cells reads as a grid of bad ones. */
+export const noTrades = (summary: { trades?: number }) => !summary.trades
+
+/** Equal-width buckets of `values`, for a distribution bar chart. Empty in, empty out. */
+export function histogram(values: number[], bins = 20) {
+  if (!values.length) return { lo: 0, hi: 0, width: 0, counts: [] as number[] }
+  // reduce, not spread: a grid sweep can be 20,000 runs, which is past a safe argument count
+  const lo = values.reduce((a, v) => Math.min(a, v), Infinity)
+  const hi = values.reduce((a, v) => Math.max(a, v), -Infinity)
+  const width = (hi - lo) / bins || 1
+  const counts = Array<number>(bins).fill(0)
+  for (const v of values) counts[Math.min(Math.floor((v - lo) / width), bins - 1)]++
+  return { lo, hi, width, counts }
+}
+
+/** Many runs' equity sparklines on one pair of axes: every curve spans the full width whatever its
+ *  own length, and all share one value scale, so the fan shows how far apart the runs actually end
+ *  up. Reduce rather than spread - a big grid sweep is far past the argument limit. */
+export function fanPaths(sparks: number[][], w = 100, h = 100) {
+  let lo = 0
+  let hi = 0
+  for (const s of sparks)
+    for (const v of s) {
+      if (v < lo) lo = v
+      if (v > hi) hi = v
+    }
+  const y = (v: number) => (hi === lo ? h / 2 : h - ((v - lo) / (hi - lo)) * h)
+  return {
+    lo,
+    hi,
+    zero: y(0),
+    paths: sparks.map((s) =>
+      s.length < 2 ? '' : s.map((v, i) => `${(i / (s.length - 1)) * w},${y(v)}`).join(' '),
+    ),
+  }
+}
+
+/** How far a param moves a metric across its own range: the spread from worst to best. Ranks which
+ *  params matter - a big spread means that param needs care, a flat one can be left alone. */
+export function spread(values: number[]) {
+  return values.length ? Math.max(...values) - Math.min(...values) : 0
+}
+
+// --- export: every engine view as spreadsheet sheets (lib/exportFile writes them) -----------------
+
+type Cell = string | number | null | undefined
+type Sheet = { sheet: string; headers: Cell[]; rows: Cell[][] }
+type Summary = Record<string, number | undefined>
+
+/** Every summary field a run or sweep reports, in reading order. Older runs lack the later ones. */
+export const SUMMARY_COLUMNS: [string, string][] = [
+  ['net', 'Net P&L'],
+  ['gross', 'Gross P&L'],
+  ['costs', 'Costs'],
+  ['trades', 'Trades'],
+  ['win_rate', 'Win rate %'],
+  ['avg_win', 'Avg win'],
+  ['avg_loss', 'Avg loss'],
+  ['profit_factor', 'Profit factor'],
+  ['expectancy', 'Expectancy / trade'],
+  ['max_dd', 'Max drawdown'],
+  ['ret_dd', 'Return / drawdown'],
+  ['sharpe', 'Sharpe (daily)'],
+  ['trades_per_day', 'Trades / day'],
+  ['avg_hold_min', 'Avg hold (min)'],
+  ['days', 'Days'],
+]
+const metrics = (s: Summary) => SUMMARY_COLUMNS.map(([k]) => s[k] ?? null)
+const period = (s: Summary) => [s.from ? istTime(s.from) : null, s.to ? istTime(s.to) : null]
+const paramsText = (p: Record<string, number>) =>
+  Object.entries(p)
+    .map(([k, v]) => `${k}=${v}`)
+    .join(' ')
+
+type RunLike = {
+  id: string
+  source: string
+  strategy: string
+  label?: string | null
+  symbols: string[]
+  interval: string
+  params: Record<string, number>
+  summary: Summary
+  created: string
+}
+
+/** One run (backtest, paper or live) as a workbook: summary, trades, daily, per symbol, equity. */
+export function runSheets(
+  run: RunLike & {
+    trades: RunTrade[]
+    daily: [number, number][]
+    by_symbol: Record<string, { pnl: number; trades: number }>
+    equity: [number, number][]
+  },
+): Sheet[] {
+  let cum = 0
+  return [
+    {
+      sheet: 'Summary',
+      headers: ['Field', 'Value'],
+      rows: [
+        ['Run', run.id],
+        ['Source', run.source],
+        ['Strategy', run.strategy],
+        ['Label', run.label ?? null],
+        ['Symbols', run.symbols.join(', ')],
+        ['Bars', run.interval],
+        ['From (IST)', period(run.summary)[0]],
+        ['To (IST)', period(run.summary)[1]],
+        ...Object.entries(run.params).map(([k, v]): Cell[] => [`param: ${k}`, v]),
+        ...SUMMARY_COLUMNS.map(([k, label]): Cell[] => [label, run.summary[k] ?? null]),
+      ],
+    },
+    {
+      sheet: 'Trades',
+      headers: [
+        'Symbol',
+        'Side',
+        'Qty',
+        'Entry (IST)',
+        'Entry px',
+        'Exit (IST)',
+        'Exit px',
+        'Gross P&L',
+        'Held (min)',
+      ],
+      rows: run.trades.map(([sym, tin, tout, qty, pin, pout, pnl]) => [
+        sym,
+        qty > 0 ? 'Long' : 'Short',
+        Math.abs(qty),
+        istTime(tin),
+        pin,
+        istTime(tout),
+        pout,
+        pnl,
+        Math.round((tout - tin) / 60),
+      ]),
+    },
+    {
+      sheet: 'Daily',
+      headers: ['Date', 'P&L', 'Cumulative'],
+      rows: run.daily.map(([t, v]) => [istTime(t).slice(0, 10), v, (cum += v)]),
+    },
+    {
+      sheet: 'By symbol',
+      headers: ['Symbol', 'Trades', 'Gross P&L'],
+      rows: Object.entries(run.by_symbol).map(([s, v]) => [s, v.trades, v.pnl]),
+    },
+    {
+      sheet: 'Equity',
+      headers: ['Time (IST)', 'Equity', 'Drawdown'],
+      rows: drawdown(run.equity).map(([t, dd], i) => [istTime(t), run.equity[i][1], dd]),
+    },
+  ]
+}
+
+/** The runs list: one row per run, every metric. */
+export function runsSheet(runs: RunLike[]): Sheet {
+  return {
+    sheet: 'Runs',
+    headers: [
+      'Run',
+      'Source',
+      'Strategy',
+      'Label',
+      'Params',
+      'Symbols',
+      'Bars',
+      'From (IST)',
+      'To (IST)',
+      ...SUMMARY_COLUMNS.map(([, l]) => l),
+      'Created',
+    ],
+    rows: runs.map((r) => [
+      r.id,
+      r.source,
+      r.strategy,
+      r.label ?? null,
+      paramsText(r.params),
+      r.symbols.join(', '),
+      r.interval,
+      ...period(r.summary),
+      ...metrics(r.summary),
+      r.created,
+    ]),
+  }
+}
+
+type SweepLike = {
+  id: string
+  mode: 'oat' | 'grid'
+  strategy: string
+  label: string | null
+  symbols: string[]
+  interval: string
+  cost_bps: number
+  base: Record<string, number>
+  axes: Record<string, number[]>
+  created: string
+  runs: (SweepRunLike & { summary: Summary })[]
+}
+
+/** A sweep as a workbook: settings, every run (one column per param), and for one-at-a-time sweeps
+ *  the per-param impact. The runs sheet is also what the CSV export writes. */
+export function sweepSheets(sweep: SweepLike): Sheet[] {
+  const params = Object.keys(sweep.base)
+  const swept = Object.keys(sweep.axes)
+  const runs: Sheet = {
+    sheet: 'Runs',
+    headers: [...(sweep.mode === 'oat' ? ['Varies'] : []), ...params, ...SUMMARY_COLUMNS.map(([, l]) => l)],
+    rows: sweep.runs.map((r) => [
+      ...(sweep.mode === 'oat' ? [r.axis || 'base'] : []),
+      ...params.map((k) => r.params[k]),
+      ...metrics(r.summary),
+    ]),
+  }
+  const sheets: Sheet[] = [
+    {
+      sheet: 'Sweep',
+      headers: ['Field', 'Value'],
+      rows: [
+        ['Sweep', sweep.id],
+        ['Mode', sweep.mode === 'oat' ? 'one at a time' : 'grid'],
+        ['Strategy', sweep.strategy],
+        ['Label', sweep.label],
+        ['Symbols', sweep.symbols.join(', ')],
+        ['Bars', sweep.interval],
+        ['Cost (bps/side)', sweep.cost_bps],
+        ['Runs', sweep.runs.length],
+        ['Created', sweep.created],
+        ...params.map((k): Cell[] => [
+          `${sweep.mode === 'oat' ? 'base' : swept.includes(k) ? 'swept' : 'fixed'}: ${k}`,
+          swept.includes(k)
+            ? sweep.axes[k].join(', ') + (sweep.mode === 'oat' ? ` (base ${sweep.base[k]})` : '')
+            : sweep.base[k],
+        ]),
+      ],
+    },
+    runs,
+  ]
+  if (sweep.mode === 'oat') {
+    const keys: [string, string][] = [
+      ['net', 'Net P&L'],
+      ['sharpe', 'Sharpe'],
+      ['ret_dd', 'Return / drawdown'],
+      ['max_dd', 'Max drawdown'],
+    ]
+    sheets.push({
+      sheet: 'Impact',
+      headers: ['Param', 'Base', 'Values', 'Best value (net)', ...keys.map(([, l]) => `${l} spread`)],
+      rows: oatSeries(sweep.runs, swept).map(({ param, points }) => {
+        const best = [...points].sort((a, b) => (b.run.summary.net ?? 0) - (a.run.summary.net ?? 0))[0]
+        return [
+          param,
+          sweep.base[param],
+          points.length,
+          best?.value,
+          ...keys.map(([k]) => spread(points.map((p) => p.run.summary[k] ?? 0))),
+        ]
+      }),
+    })
+  }
+  return sheets
+}

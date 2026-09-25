@@ -480,6 +480,20 @@ class EngineBacktestRequest(BaseModel):
     label: str | None = None
 
 
+class EngineSweepRequest(BaseModel):
+    strategy: str
+    symbols: list[str]
+    interval: str = "5m"
+    # "oat" = one param at a time around the base values; "grid" = every combination
+    mode: Literal["oat", "grid"] = "oat"
+    # as typed: "9" | "5,9,13" | "5:20:5"; a param with several values is swept, one value is fixed
+    params: dict[str, str] = {}
+    # oat only: base value for a swept param (default: the strategy's default)
+    base: dict[str, float] = {}
+    cost_bps: float = Field(3, ge=0, le=100)
+    label: str | None = None
+
+
 class EngineSettingsRequest(BaseModel):
     name: str = ""
     engine_dir: str = ""

@@ -41,6 +41,7 @@ export type ActivitySettingsRequest = Schemas['ActivitySettingsRequest']
 export type ActivityDay = Schemas['ActivityDay']
 export type BulkMaxCollectRequest = Schemas['BulkMaxCollectRequest']
 export type EngineBacktestRequest = Schemas['EngineBacktestRequest']
+export type EngineSweepRequest = Schemas['EngineSweepRequest']
 export type EngineSettingsRequest = Schemas['EngineSettingsRequest']
 
 // --- Response shapes this app actually reads ---------------------------------------------------
@@ -1941,6 +1942,12 @@ export type EngineSummary = {
   days: number
   from: number
   to: number
+  /** calibration metrics - on runs made after they were added */
+  profit_factor?: number
+  expectancy?: number
+  avg_hold_min?: number
+  trades_per_day?: number
+  ret_dd?: number
 }
 
 export type EngineRunRow = {
@@ -2011,3 +2018,46 @@ export const updateEngineSettings = (settings: EngineSettingsRequest) =>
 
 export const syncEngineLive = () =>
   fetch('/api/engine/live/sync', { method: 'POST' }).then(json<{ reports: number }>)
+
+/** One parameter set of a sweep: its summary and a ~40-point equity sparkline, not its trades. */
+export type EngineSweepRun = {
+  params: Record<string, number>
+  /** oat: the param this run varies, "" for the base run. grid: always "". */
+  axis: string
+  summary: EngineSummary
+  spark: number[]
+}
+
+export type EngineSweepRow = {
+  id: string
+  created: string
+  label: string | null
+  strategy: string
+  mode: 'oat' | 'grid'
+  symbols: string[]
+  interval: string
+  cost_bps: number
+  /** every param's value in the base run (oat) / its fixed value (grid) */
+  base: Record<string, number>
+  /** the swept params and their values */
+  axes: Record<string, number[]>
+  count: number
+  best: { params: Record<string, number>; summary: EngineSummary } | null
+}
+
+export type EngineSweep = Omit<EngineSweepRow, 'count' | 'best'> & { runs: EngineSweepRun[] }
+
+export const runEngineSweep = (req: EngineSweepRequest) =>
+  fetch('/api/engine/sweep', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  }).then(json<EngineSweep>)
+
+export const getEngineSweeps = () => fetch('/api/engine/sweeps').then(json<EngineSweepRow[]>)
+
+export const getEngineSweep = (id: string) =>
+  fetch(`/api/engine/sweeps/${encodeURIComponent(id)}`).then(json<EngineSweep>)
+
+export const deleteEngineSweep = (id: string) =>
+  fetch(`/api/engine/sweeps/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(json)

@@ -1,6 +1,23 @@
 // node src/lib/engine.selfcheck.mjs
 import assert from 'node:assert/strict'
-import { comboCount, drawdown, markerRange, parseValues, sweepGrid, tradeMarkers } from './engine.ts'
+import {
+  fanPaths,
+  histogram,
+  noTrades,
+  oatSeries,
+  runSheets,
+  runsSheet,
+  sweepSheets,
+  SUMMARY_COLUMNS,
+  spread,
+  sweepCount,
+  comboCount,
+  drawdown,
+  markerRange,
+  parseValues,
+  sweepGrid,
+  tradeMarkers,
+} from './engine.ts'
 
 assert.deepEqual(parseValues('9'), [9])
 assert.deepEqual(parseValues(' 5, 9 ,13,9 '), [5, 9, 13])
@@ -78,5 +95,160 @@ assert.ok(r.from < 100 && r.to > 400, JSON.stringify(r))
 // Margin never collapses to zero on a single-instant range, which would be an unusable window.
 const tiny = markerRange(tradeMarkers([['INFY', 5, 5, 1, 1, 1, 1]], 'INFY', C))
 assert.ok(tiny.to - tiny.from >= 120, JSON.stringify(tiny))
+
+assert.equal(
+  sweepCount('oat', [
+    { values: [5, 9, 13], base: 9 },
+    { values: [21, 34], base: 21 },
+    { values: [1], base: 1 },
+  ]),
+  4,
+)
+assert.equal(sweepCount('oat', [{ values: [5, 13], base: 9 }]), 3)
+assert.equal(
+  sweepCount('grid', [
+    { values: [5, 9, 13], base: 9 },
+    { values: [21, 34], base: 21 },
+  ]),
+  6,
+)
+assert.equal(sweepCount('grid', [{ values: [1], base: 1 }]), 0)
+const oat = [
+  { params: { fast: 9, slow: 21 }, axis: '' },
+  { params: { fast: 5, slow: 21 }, axis: 'fast' },
+  { params: { fast: 13, slow: 21 }, axis: 'fast' },
+  { params: { fast: 9, slow: 34 }, axis: 'slow' },
+]
+const series = oatSeries(oat, ['fast', 'slow'])
+assert.deepEqual(
+  series[0].points.map((p) => [p.value, p.isBase]),
+  [
+    [5, false],
+    [9, true],
+    [13, false],
+  ],
+)
+assert.deepEqual(
+  series[1].points.map((p) => p.value),
+  [21, 34],
+)
+assert.equal(spread([3, -2, 7]), 9)
+assert.equal(spread([]), 0)
+// exports
+const sum = {
+  net: 50,
+  gross: 60,
+  costs: 10,
+  trades: 2,
+  sharpe: 1.5,
+  max_dd: 20,
+  from: 1718104500,
+  to: 1718190900,
+}
+const run = {
+  id: 'bt-1',
+  source: 'backtest',
+  strategy: 'ema_cross',
+  label: null,
+  symbols: ['TCS'],
+  interval: '5m',
+  params: { fast: 9 },
+  summary: sum,
+  created: '2026-09-25',
+  trades: [['TCS', 1718104500, 1718106300, -3, 100, 90, 30]],
+  daily: [
+    [1718064000, 30],
+    [1718150400, 20],
+  ],
+  by_symbol: { TCS: { pnl: 30, trades: 1 } },
+  equity: [
+    [1718104500, 0],
+    [1718106300, 30],
+    [1718190900, 10],
+  ],
+}
+const rs = runSheets(run)
+assert.deepEqual(
+  rs.map((x) => x.sheet),
+  ['Summary', 'Trades', 'Daily', 'By symbol', 'Equity'],
+)
+assert.deepEqual(rs[1].rows[0], ['TCS', 'Short', 3, '2024-06-11 11:15', 100, '2024-06-11 11:45', 90, 30, 30])
+assert.deepEqual(
+  rs[2].rows.map((r) => r[2]),
+  [30, 50],
+)
+assert.deepEqual(
+  rs[4].rows.map((r) => r[2]),
+  [0, 0, -20],
+)
+assert.ok(rs[0].rows.some((r) => r[0] === 'param: fast' && r[1] === 9))
+const list = runsSheet([run])
+assert.equal(list.headers.length, list.rows[0].length)
+assert.equal(list.rows[0][list.headers.indexOf('Net P&L')], 50)
+assert.equal(list.rows[0][list.headers.indexOf('Profit factor')], null, 'older runs lack new metrics')
+const sw = {
+  id: 'sw-1',
+  mode: 'oat',
+  strategy: 'ema_cross',
+  label: null,
+  symbols: ['TCS'],
+  interval: '5m',
+  cost_bps: 3,
+  base: { fast: 9, qty: 1 },
+  axes: { fast: [5, 13] },
+  created: '2026-09-25',
+  runs: [
+    { params: { fast: 9, qty: 1 }, axis: '', summary: { net: 10 } },
+    { params: { fast: 5, qty: 1 }, axis: 'fast', summary: { net: -5 } },
+    { params: { fast: 13, qty: 1 }, axis: 'fast', summary: { net: 40 } },
+  ],
+}
+const ss = sweepSheets(sw)
+assert.deepEqual(
+  ss.map((x) => x.sheet),
+  ['Sweep', 'Runs', 'Impact'],
+)
+assert.deepEqual(ss[1].headers.slice(0, 3), ['Varies', 'fast', 'qty'])
+assert.deepEqual(
+  ss[1].rows.map((r) => r[0]),
+  ['base', 'fast', 'fast'],
+)
+assert.deepEqual(ss[2].rows[0].slice(0, 5), ['fast', 9, 3, 13, 45])
+assert.deepEqual(
+  sweepSheets({ ...sw, mode: 'grid' }).map((x) => x.sheet),
+  ['Sweep', 'Runs'],
+)
+assert.equal(SUMMARY_COLUMNS.length, 15)
+
+// --- multi-run views -------------------------------------------------------------------------
+assert.equal(noTrades({ trades: 0 }), true, 'a run that took no trades is not a result')
+assert.equal(noTrades({}), true, 'missing is dead too')
+assert.equal(noTrades({ trades: 8 }), false)
+
+const h = histogram([0, 1, 2, 3, 4, 10], 5)
+assert.deepEqual([h.lo, h.hi, h.width], [0, 10, 2])
+assert.deepEqual(h.counts, [2, 2, 1, 0, 1], 'the top value lands in the last bin, not past it')
+assert.deepEqual(histogram([], 5).counts, [])
+assert.deepEqual(histogram([7, 7, 7], 4).counts, [3, 0, 0, 0], 'a flat set does not divide by zero')
+
+// two runs of different length still span the full width, on one shared scale (0 always included)
+const fan = fanPaths(
+  [
+    [0, 10],
+    [0, -5, 5],
+  ],
+  100,
+  100,
+)
+assert.deepEqual([fan.lo, fan.hi, fan.zero], [-5, 10, 100 - (5 / 15) * 100])
+assert.deepEqual(
+  fan.paths[0].split(' ').map((p) => p.split(',')[0]),
+  ['0', '100'],
+)
+assert.deepEqual(
+  fan.paths[1].split(' ').map((p) => p.split(',')[0]),
+  ['0', '50', '100'],
+)
+assert.equal(fanPaths([[1]]).paths[0], '', 'one point is not a curve')
 
 console.log('engine selfcheck passed')

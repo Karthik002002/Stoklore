@@ -409,13 +409,15 @@ const livePositionRoute = createRoute({
 })
 
 // The C++ trading engine's backtests, sweeps and paper/live sessions (app/routers/engine.py). `run`
-// is the open run's detail and `batch` the sweep the heatmap shows, so both survive a reload.
+// is the open run's detail, `batch` the batch the heatmap shows and `sweep` the open parameter sweep,
+// so all survive a reload.
 const engineRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/engine',
-  validateSearch: (search): { run?: string; batch?: string } => ({
+  validateSearch: (search): { run?: string; batch?: string; sweep?: string } => ({
     run: typeof search.run === 'string' && search.run ? search.run : undefined,
     batch: typeof search.batch === 'string' && search.batch ? search.batch : undefined,
+    sweep: typeof search.sweep === 'string' && search.sweep ? search.sweep : undefined,
   }),
   component: Engine,
 })

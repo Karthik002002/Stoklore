@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { mdTable, xlsxBlob } from './exportFile.ts'
+import { csvText, mdTable, xlsxBlob } from './exportFile.ts'
 
 const blob = xlsxBlob({
   sheet: 'Trades',
@@ -30,5 +30,36 @@ assert.match(sheet, /<c r="B3"><v>0<\/v><\/c>/, 'zero is a value, not a blank')
 assert.doesNotMatch(sheet, /r="C3"/, 'empty cells are omitted')
 
 assert.equal(mdTable(['A', 'B'], [['x|y', null]]), '| A | B |\n| --- | --- |\n| x\\|y | — |')
+
+// several sheets: every part present, names cleaned and made unique
+const multi = join(tmpdir(), 'exportFile.selfcheck.multi.xlsx')
+const book = xlsxBlob([
+  { sheet: 'Summary', headers: ['k', 'v'], rows: [['net', 5]] },
+  { sheet: 'Trades/All', headers: ['s'], rows: [['TCS']] },
+  { sheet: 'summary', headers: ['x'], rows: [] },
+])
+writeFileSync(multi, Buffer.from(await book.arrayBuffer()))
+execFileSync('unzip', ['-t', multi])
+const wb = execFileSync('unzip', ['-p', multi, 'xl/workbook.xml'], { encoding: 'utf8' })
+assert.deepEqual(
+  [...wb.matchAll(/name="([^"]+)"/g)].map((m) => m[1]),
+  ['Summary', 'Trades All', 'summary 3'],
+)
+assert.match(execFileSync('unzip', ['-p', multi, 'xl/worksheets/sheet2.xml'], { encoding: 'utf8' }), /TCS/)
+assert.match(
+  execFileSync('unzip', ['-p', multi, '\\[Content_Types].xml'], { encoding: 'utf8' }),
+  /sheet3\.xml/,
+)
+
+assert.equal(
+  csvText({
+    headers: ['a', 'b', 'c'],
+    rows: [
+      ['x,y', 'say "hi"', -1.5],
+      [null, 0, 'line\nbreak'],
+    ],
+  }),
+  '\ufeffa,b,c\r\n"x,y","say ""hi""",-1.5\r\n,0,"line\nbreak"\r\n',
+)
 
 console.log('exportFile selfcheck PASSED')

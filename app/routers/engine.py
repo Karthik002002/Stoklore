@@ -9,6 +9,7 @@ touches the journal database except the settings below.
 
     <engine folder>/runs/<id>.json        backtests started from this page
     <engine folder>/runs/live/<id>.json   paper/live session reports, rsynced from the VPS
+    <engine folder>/runs/sweeps/<id>.json parameter sweeps: one summary per parameter set, no trades
 
 Where things live is per-install, so none of it is hardcoded: each location is a setting saved
 from Settings > Algo engine, falling back to an env var, then to the default below. The name is
@@ -29,7 +30,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.core import db
 from app.core import minute_data
-from app.schemas import EngineBacktestRequest, EngineSettingsRequest
+from app.schemas import EngineBacktestRequest, EngineSettingsRequest, EngineSweepRequest
 
 router = APIRouter(tags=["engine"])
 
@@ -121,6 +122,18 @@ def _path(run_id):
     raise HTTPException(404, f"No run '{run_id}'")
 
 
+def _check(root, strategy, symbols, interval):
+    """Validates what every run needs; returns the cleaned symbol list."""
+    if strategy not in {s["name"] for s in _engine(root, "--list")}:
+        raise HTTPException(422, f"Unknown strategy '{strategy}'")
+    symbols = sorted({s.strip().upper() for s in symbols if s.strip()})
+    if not symbols or not all(SAFE_ID.match(s) for s in symbols):
+        raise HTTPException(422, "Give at least one valid NSE symbol")
+    if interval not in minute_data.BUCKETS:
+        raise HTTPException(422, f"interval must be one of {list(minute_data.BUCKETS)}")
+    return symbols
+
+
 @router.get("/api/engine/strategies")
 def engine_strategies():
     return _engine(_root(), "--list")
@@ -132,14 +145,7 @@ def engine_backtest(req: EngineBacktestRequest):
     each is milliseconds of C++; the only slow part is Stoklore's first extract of a new symbol."""
     root = _root()
     runs_dir = _runs(root)[0]
-    strategies = {s["name"] for s in _engine(root, "--list")}
-    if req.strategy not in strategies:
-        raise HTTPException(422, f"Unknown strategy '{req.strategy}'")
-    symbols = sorted({s.strip().upper() for s in req.symbols if s.strip()})
-    if not symbols or not all(SAFE_ID.match(s) for s in symbols):
-        raise HTTPException(422, "Give at least one valid NSE symbol")
-    if req.interval not in minute_data.BUCKETS:
-        raise HTTPException(422, f"interval must be one of {list(minute_data.BUCKETS)}")
+    symbols = _check(root, req.strategy, req.symbols, req.interval)
     grid = {k: v for k, v in req.params.items() if v}
     if not all(PARAM.match(k) for k in grid):
         raise HTTPException(422, "Bad parameter name")
@@ -200,6 +206,85 @@ def engine_delete_batch(batch: str):
         p.unlink()
         _rows.pop(p, None)
     return {"deleted": len(paths)}
+
+
+# --- parameter sweeps: calibration ----------------------------------------------------------------
+# One engine process loads the bars once and runs every parameter set in parallel (backtest
+# --sweep), so thousands of runs take seconds. A sweep keeps each run's summary and a small equity
+# sparkline, not its trades - opening one runs it again as a normal backtest, with full detail.
+
+VALUES = re.compile(r"^[0-9eE.,:+\- ]+$")  # "9" | "5,9,13" | "5:20:5" - the engine parses them
+
+
+def _sweeps_dir(root):
+    return root / "runs" / "sweeps"
+
+
+def _sweep_path(sweep_id):
+    path = _sweeps_dir(_root()) / f"{sweep_id}.json"
+    if not SAFE_ID.match(sweep_id) or not path.exists():
+        raise HTTPException(404, f"No sweep '{sweep_id}'")
+    return path
+
+
+def _sweep_row(path):
+    """List view of a sweep: everything but the runs, plus its count and best run by net P&L."""
+    mtime = path.stat().st_mtime
+    hit = _rows.get(path)
+    if not hit or hit[0] != mtime:
+        d = json.loads(path.read_text())
+        runs = d.pop("runs")
+        best = max(runs, key=lambda r: r["summary"]["net"], default=None)
+        d.update(count=len(runs), best={"params": best["params"], "summary": best["summary"]} if best else None)
+        hit = _rows[path] = (mtime, d)
+    return hit[1]
+
+
+@router.post("/api/engine/sweep")
+def engine_sweep(req: EngineSweepRequest):
+    """mode "oat": each param with several values walks its range while the others hold their base
+    value. mode "grid": every combination. A param with one value is fixed for the whole sweep."""
+    root = _root()
+    symbols = _check(root, req.strategy, req.symbols, req.interval)
+    params = {k: v.strip() for k, v in req.params.items() if v.strip()}
+    if not all(PARAM.match(k) for k in [*params, *req.base]):
+        raise HTTPException(422, "Bad parameter name")
+    if not all(VALUES.match(v) for v in params.values()):
+        raise HTTPException(422, "Param values must be numbers, lists (5,9,13) or ranges (5:20:5)")
+    files = [_bars_csv(root, s, req.interval) for s in symbols]
+    args = [f"{k}={v}" for k, v in params.items()] + [f"base.{k}={v:g}" for k, v in req.base.items()]
+    try:
+        result = _engine(root, req.strategy, *files, *args, f"cost_bps={req.cost_bps:g}", f"--sweep={req.mode}")
+    except HTTPException as e:
+        raise HTTPException(422 if e.status_code == 500 else e.status_code, e.detail) from e
+    result.update(id=f"sw-{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}",
+                  created=datetime.now(timezone.utc).isoformat(), label=(req.label or "").strip() or None,
+                  symbols=symbols, interval=req.interval, cost_bps=req.cost_bps)
+    folder = _sweeps_dir(root)
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{result['id']}.json").write_text(json.dumps(result))
+    return result
+
+
+@router.get("/api/engine/sweeps")
+def engine_sweeps():
+    root = _root(required=False)
+    if not root:
+        return []
+    return sorted((_sweep_row(p) for p in _sweeps_dir(root).glob("*.json")), key=lambda r: r["created"], reverse=True)
+
+
+@router.get("/api/engine/sweeps/{sweep_id}")
+def engine_sweep_detail(sweep_id: str):
+    return json.loads(_sweep_path(sweep_id).read_text())
+
+
+@router.delete("/api/engine/sweeps/{sweep_id}")
+def engine_delete_sweep(sweep_id: str):
+    path = _sweep_path(sweep_id)
+    path.unlink()
+    _rows.pop(path, None)
+    return {"ok": True}
 
 
 @router.get("/api/engine/settings")

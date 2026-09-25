@@ -912,7 +912,15 @@ trades on the VPS, and its paper/live sessions land on this page beside the back
   range (`5:20:5`); every combination runs, up to 200. Orders fill at the next bar's open with a
   flat cost in bps per side, and positions square off at 15:15
 - **Sweep heatmap** — pick two axes and each cell shows its best run over the rest, so a parameter
-  that only works in one corner is visible as one
+  that only works in one corner is visible as one. Each cell carries its trade count, the best is
+  ringed, and parameter sets that took **no trades** are drawn dashed and grey rather than as a red
+  zero — they are held out of the colour scale, out of "best" and out of the median, because a run
+  that never fired is not a losing run
+- **Every run's equity on one chart** — one curve per parameter set on a shared scale, best in green
+  and worst in red, which says whether the sweep found a strategy (a tight bundle) or a parameter
+  (one curve climbing out of a flat mess)
+- **Metric distribution** — the chosen metric as a histogram across the sweep with its median, so a
+  lone spike reads as the overfit it is
 - **Run detail** — net vs gross P&L with costs broken out, win rate, avg win/loss, max drawdown,
   Sharpe, equity with drawdown, daily P&L, and per-symbol totals
 - **Executions on candles** — the run's own bars with every fill marked: ▲ buy, ▼ sell, and each

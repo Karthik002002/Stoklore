@@ -160,28 +160,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/auth/local-reset": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Auth Local Reset
-         * @description Wipes the account so setup can run again. Refused for anything proxied: this is authorised
-         *     by being at the machine, where the database is readable anyway. The CLI equivalent, for when
-         *     you can't even load the page, is `python -m app.reset_login`.
-         */
-        post: operations["auth_local_reset_api_auth_local_reset_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/auth/recovery-code": {
         parameters: {
             query?: never;
@@ -833,6 +811,62 @@ export interface paths {
          * @description A whole sweep. Matches only this page's own `bt-<batch>-<n>` files, never live reports.
          */
         delete: operations["engine_delete_batch_api_engine_batches__batch__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/engine/sweep": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Engine Sweep
+         * @description mode "oat": each param with several values walks its range while the others hold their base
+         *     value. mode "grid": every combination. A param with one value is fixed for the whole sweep.
+         */
+        post: operations["engine_sweep_api_engine_sweep_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/engine/sweeps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Engine Sweeps */
+        get: operations["engine_sweeps_api_engine_sweeps_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/engine/sweeps/{sweep_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Engine Sweep Detail */
+        get: operations["engine_sweep_detail_api_engine_sweeps__sweep_id__get"];
+        put?: never;
+        post?: never;
+        /** Engine Delete Sweep */
+        delete: operations["engine_delete_sweep_api_engine_sweeps__sweep_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3664,6 +3698,45 @@ export interface components {
              */
             vps_reports: string;
         };
+        /** EngineSweepRequest */
+        EngineSweepRequest: {
+            /** Strategy */
+            strategy: string;
+            /** Symbols */
+            symbols: string[];
+            /**
+             * Interval
+             * @default 5m
+             */
+            interval: string;
+            /**
+             * Mode
+             * @default oat
+             * @enum {string}
+             */
+            mode: "oat" | "grid";
+            /**
+             * Params
+             * @default {}
+             */
+            params: {
+                [key: string]: string;
+            };
+            /**
+             * Base
+             * @default {}
+             */
+            base: {
+                [key: string]: number;
+            };
+            /**
+             * Cost Bps
+             * @default 3
+             */
+            cost_bps: number;
+            /** Label */
+            label?: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -4438,26 +4511,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    auth_local_reset_api_auth_local_reset_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": unknown;
                 };
             };
         };
@@ -5611,6 +5664,121 @@ export interface operations {
             header?: never;
             path: {
                 batch: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    engine_sweep_api_engine_sweep_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EngineSweepRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    engine_sweeps_api_engine_sweeps_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    engine_sweep_detail_api_engine_sweeps__sweep_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sweep_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    engine_delete_sweep_api_engine_sweeps__sweep_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sweep_id: string;
             };
             cookie?: never;
         };

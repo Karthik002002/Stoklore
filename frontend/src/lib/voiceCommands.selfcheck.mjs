@@ -7,7 +7,9 @@ import { matchNavTarget, normalize, routeTranscript, scoreTarget } from './voice
 const route = (text, opts) => routeTranscript(text, opts)
 const where = (text) => {
   const r = route(text)
-  return r.kind === 'navigate' ? `${r.target.to}${r.target.search ? ` ${JSON.stringify(r.target.search)}` : ''}` : r.kind
+  return r.kind === 'navigate'
+    ? `${r.target.to}${r.target.search ? ` ${JSON.stringify(r.target.search)}` : ''}`
+    : r.kind
 }
 
 assert.equal(normalize('  Open Bar Replay. '), 'open bar replay')
@@ -38,7 +40,10 @@ assert.equal(where('go to mars'), 'chat')
 // A focused text field means dictation, whatever the words are - this is the safety rule.
 assert.equal(route('delete everything', { intoField: true }).kind, 'dictate')
 assert.equal(route('open bar replay', { intoField: true }).kind, 'dictate')
-assert.equal(route('chased the breakout, moved my stop', { intoField: true }).text, 'chased the breakout, moved my stop')
+assert.equal(
+  route('chased the breakout, moved my stop', { intoField: true }).text,
+  'chased the breakout, moved my stop',
+)
 
 // Nothing said, nothing done.
 assert.equal(route('').kind, 'empty')
@@ -52,4 +57,6 @@ for (const target of NAV_TARGETS) {
   assert.equal(match.target.label, target.label, `"${target.label}" matched "${match.target.label}"`)
 }
 
-console.log(`ok - voiceCommands: navigation verbs, aliases, dictation, fallthrough, ${NAV_TARGETS.length} targets`)
+console.log(
+  `ok - voiceCommands: navigation verbs, aliases, dictation, fallthrough, ${NAV_TARGETS.length} targets`,
+)

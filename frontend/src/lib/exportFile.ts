@@ -101,22 +101,34 @@ const cell = (ref: string, v: CellValue) => {
   return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${xmlEscape(v)}</t></is></c>`
 }
 
-/** One sheet, header row bolded via a single style. Values are written as numbers when they are
- *  numbers, so Excel can sum a P&L column without the user retyping it. */
-export function xlsxBlob({ sheet = 'Sheet1', headers, rows }: SheetData) {
+const sheetXml = ({ headers, rows }: SheetData) => {
   const body = [headers, ...rows]
     .map((r, y) => {
       const cells = r.map((v, x) => cell(`${colName(x)}${y + 1}`, y === 0 ? String(v) : v)).join('')
       return `<row r="${y + 1}"${y === 0 ? ' s="1"' : ''}>${cells}</row>`
     })
     .join('')
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${body}</sheetData></worksheet>`
+}
 
-  const name = sheet.replace(/[[\]:*?/\\]/g, ' ').slice(0, 31) || 'Sheet1'
+/** A workbook of one or more sheets, header rows bolded via a single style. Values are written as
+ *  numbers when they are numbers, so Excel can sum a P&L column without the user retyping it. */
+export function xlsxBlob(data: SheetData | SheetData[]) {
+  const sheets = Array.isArray(data) ? data : [data]
+  // Excel refuses a workbook with a repeated or over-long sheet name, or one using []:*?/\
+  const used = new Set<string>()
+  const names = sheets.map(({ sheet = 'Sheet1' }, i) => {
+    let name = sheet.replace(/[[\]:*?/\\]/g, ' ').slice(0, 31) || `Sheet${i + 1}`
+    while (used.has(name.toLowerCase())) name = `${name.slice(0, 27)} ${i + 1}`
+    used.add(name.toLowerCase())
+    return name
+  })
+  const n = sheets.map((_, i) => i + 1)
   return zip(
     [
       [
         '[Content_Types].xml',
-        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`,
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${n.map((i) => `<Override PartName="/xl/worksheets/sheet${i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`,
       ],
       [
         '_rels/.rels',
@@ -124,23 +136,31 @@ export function xlsxBlob({ sheet = 'Sheet1', headers, rows }: SheetData) {
       ],
       [
         'xl/workbook.xml',
-        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${xmlEscape(name)}" sheetId="1" r:id="rId1"/></sheets></workbook>`,
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${n.map((i) => `<sheet name="${xmlEscape(names[i - 1])}" sheetId="${i}" r:id="rId${i}"/>`).join('')}</sheets></workbook>`,
       ],
       [
         'xl/_rels/workbook.xml.rels',
-        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${n.map((i) => `<Relationship Id="rId${i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i}.xml"/>`).join('')}<Relationship Id="rId${sheets.length + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
       ],
       [
         'xl/styles.xml',
         `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="1"><fill><patternFill patternType="none"/></fill></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="2"><xf xfId="0"/><xf xfId="0" fontId="1" applyFont="1"/></cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`,
       ],
-      [
-        'xl/worksheets/sheet1.xml',
-        `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${body}</sheetData></worksheet>`,
-      ],
+      ...sheets.map((sh, i): [string, string] => [`xl/worksheets/sheet${i + 1}.xml`, sheetXml(sh)]),
     ],
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   )
+}
+
+/** RFC 4180 CSV: fields with a comma, quote or newline are quoted, quotes doubled. CRLF line ends
+ *  and a BOM so Excel opens it as UTF-8 (₹, names) instead of guessing the encoding. */
+export function csvText({ headers, rows }: SheetData) {
+  const field = (v: CellValue) => {
+    if (v == null) return ''
+    const s = String(v)
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  return `\ufeff${[headers, ...rows].map((r) => r.map(field).join(',')).join('\r\n')}\r\n`
 }
 
 const stamp = () => new Date().toISOString().slice(0, 10)
@@ -155,8 +175,11 @@ export function download(blobOrText: Blob | string, filename: string, type = 'te
   URL.revokeObjectURL(url)
 }
 
-export const downloadXlsx = (sheetData: SheetData, name: string) =>
+export const downloadXlsx = (sheetData: SheetData | SheetData[], name: string) =>
   download(xlsxBlob(sheetData), `${name}-${stamp()}.xlsx`)
+
+export const downloadCsv = (sheetData: SheetData, name: string) =>
+  download(csvText(sheetData), `${name}-${stamp()}.csv`, 'text/csv;charset=utf-8')
 
 export const downloadMd = (text: string, name: string) =>
   download(text, `${name}-${stamp()}.md`, 'text/markdown;charset=utf-8')

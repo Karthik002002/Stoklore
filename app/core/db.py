@@ -610,6 +610,30 @@ CREATE TABLE IF NOT EXISTS balance_adjustments (
 ALTER TABLE balance_adjustments ADD COLUMN IF NOT EXISTS account_id INTEGER
   REFERENCES trade_accounts(id) ON DELETE CASCADE;
 
+-- Live login sessions (app/core/auth.py). Only the SHA-256 of each cookie token is here, so a
+-- database dump hands over no usable session. Rows are deleted on logout, on expiry, and whenever
+-- the credentials change; `last_seen` is what the idle timeout measures.
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  token_hash TEXT PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  user_agent TEXT
+);
+
+-- Browsers that have completed a FULL login (password + PIN) and may therefore unlock with the PIN
+-- alone until `expires_at`. Same storage rule as auth_sessions: only the hash of the cookie token.
+-- `pin_failures` is what caps PIN guessing - a few wrong ones and the row is deleted, which demotes
+-- that browser back to a full login.
+CREATE TABLE IF NOT EXISTS auth_devices (
+  token_hash TEXT PRIMARY KEY,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  pin_failures INTEGER NOT NULL DEFAULT 0,
+  user_agent TEXT
+);
+
 -- Daily usage-time + "did they analyze/review today" signals for the consistency/streak feature
 -- (Profile modal). "traded" is deliberately NOT a column here - it's derived live from
 -- manual_trades.created_at wherever needed, so it can never drift out of sync with the trade
@@ -2898,6 +2922,104 @@ def get_home_board():
 
 def set_home_board(board):
     _set_setting("home_board", json.dumps(board))
+
+
+# --- login sessions (app/core/auth.py) -----------------------------------------------------------
+
+
+def create_auth_session(token_hash, expires_at, user_agent=None):
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO auth_sessions (token_hash, expires_at, user_agent) VALUES (%s, %s, %s)",
+            (token_hash, expires_at, user_agent),
+        )
+
+
+def get_auth_session(token_hash):
+    with connect() as conn:
+        return conn.execute(
+            "SELECT token_hash, created_at, last_seen, expires_at FROM auth_sessions WHERE token_hash = %s",
+            (token_hash,),
+        ).fetchone()
+
+
+def touch_auth_session(token_hash, seen_at):
+    with connect() as conn:
+        conn.execute("UPDATE auth_sessions SET last_seen = %s WHERE token_hash = %s", (seen_at, token_hash))
+
+
+def delete_auth_session(token_hash):
+    with connect() as conn:
+        conn.execute("DELETE FROM auth_sessions WHERE token_hash = %s", (token_hash,))
+
+
+def delete_all_auth_sessions():
+    with connect() as conn:
+        conn.execute("DELETE FROM auth_sessions")
+
+
+def purge_expired_auth_sessions():
+    """Called at startup - dead rows otherwise accumulate for as long as the app lives."""
+    with connect() as conn:
+        conn.execute("DELETE FROM auth_sessions WHERE expires_at <= now()")
+
+
+def create_auth_device(token_hash, expires_at, user_agent=None):
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO auth_devices (token_hash, expires_at, user_agent) VALUES (%s, %s, %s)",
+            (token_hash, expires_at, user_agent),
+        )
+
+
+def get_auth_device(token_hash):
+    with connect() as conn:
+        return conn.execute(
+            "SELECT token_hash, created_at, last_seen, expires_at, pin_failures FROM auth_devices "
+            "WHERE token_hash = %s",
+            (token_hash,),
+        ).fetchone()
+
+
+def touch_auth_device(token_hash, seen_at):
+    with connect() as conn:
+        conn.execute("UPDATE auth_devices SET last_seen = %s WHERE token_hash = %s", (seen_at, token_hash))
+
+
+def bump_auth_device_failures(token_hash):
+    """Returns the new failure count, so the caller can revoke the device at the limit."""
+    with connect() as conn:
+        row = conn.execute(
+            "UPDATE auth_devices SET pin_failures = pin_failures + 1 WHERE token_hash = %s "
+            "RETURNING pin_failures",
+            (token_hash,),
+        ).fetchone()
+    return row["pin_failures"] if row else 0
+
+
+def clear_auth_device_failures(token_hash):
+    with connect() as conn:
+        conn.execute("UPDATE auth_devices SET pin_failures = 0 WHERE token_hash = %s", (token_hash,))
+
+
+def delete_auth_device(token_hash):
+    with connect() as conn:
+        conn.execute("DELETE FROM auth_devices WHERE token_hash = %s", (token_hash,))
+
+
+def delete_all_auth_devices():
+    with connect() as conn:
+        conn.execute("DELETE FROM auth_devices")
+
+
+def count_auth_devices():
+    with connect() as conn:
+        return conn.execute("SELECT count(*) AS n FROM auth_devices WHERE expires_at > now()").fetchone()["n"]
+
+
+def purge_expired_auth_devices():
+    with connect() as conn:
+        conn.execute("DELETE FROM auth_devices WHERE expires_at <= now()")
 
 
 def get_setting_value(key, default=None):

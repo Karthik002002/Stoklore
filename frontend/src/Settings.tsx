@@ -77,6 +77,9 @@ import {
   setTelegramConfig,
   testTelegram,
   getScreenerConfig,
+  changeCredentials,
+  getAuthStatus,
+  newRecoveryCode,
   getClassifierConfig,
   setClassifierConfig,
   setScreenerConfig,
@@ -476,6 +479,147 @@ function ScreenerTab() {
         one. The cookie is stored in your own database and sent only to screener.in; it is never shown back
         here, and this app never asks for your screener.in password.
       </p>
+    </div>
+  )
+}
+
+/** The one account. Password + PIN, a 48-hour trusted-device window, and the recovery code.
+ *  See docs/authentication.md. */
+function AccountTab() {
+  const queryClient = useQueryClient()
+  const { data: status } = useQuery({ queryKey: ['authStatus'], queryFn: getAuthStatus })
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [currentPin, setCurrentPin] = useState('')
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [pin, setPin] = useState('')
+  const [code, setCode] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (status?.username) setUsername((u) => u || status.username || '')
+  }, [status?.username])
+
+  const minPin = status?.pin_length ?? 6
+  const proven = currentPassword.length > 0 && currentPin.length >= minPin
+
+  const save = useMutation({
+    mutationFn: () =>
+      changeCredentials({ username, password, pin }, { password: currentPassword, pin: currentPin }),
+    onSuccess: () => {
+      setCurrentPassword('')
+      setCurrentPin('')
+      setPassword('')
+      setPin('')
+      queryClient.invalidateQueries({ queryKey: ['authStatus'] })
+      toast.success('Changed — every other browser was signed out and untrusted')
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
+  const regenerate = useMutation({
+    mutationFn: () => newRecoveryCode(currentPassword, currentPin),
+    onSuccess: (r) => {
+      setCode(r.recovery_code)
+      setCurrentPassword('')
+      setCurrentPin('')
+      toast.success('New code issued — the previous one no longer works')
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
+  return (
+    <div className="max-w-md space-y-4">
+      <div>
+        <p className="text-sm font-medium">Signed in as {status?.username ?? '—'}</p>
+        <p className="text-xs text-muted-foreground">
+          One account, on this machine only. Sign in with the password and PIN; for the next 48 hours this
+          browser unlocks with the PIN alone. The password, PIN and recovery code are hashed (scrypt) — none
+          of them can be read back.
+        </p>
+      </div>
+
+      <div className="space-y-2 rounded-lg border p-3">
+        <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+          Confirm it's you
+        </p>
+        <Input
+          type="password"
+          placeholder="Current password"
+          autoComplete="current-password"
+          value={currentPassword}
+          onChange={(e) => setCurrentPassword(e.target.value)}
+        />
+        <Input
+          type="password"
+          inputMode="numeric"
+          placeholder="Current PIN"
+          autoComplete="off"
+          value={currentPin}
+          onChange={(e) => setCurrentPin(e.target.value.replace(/\D/g, ''))}
+        />
+        <p className="text-xs text-muted-foreground">Needed for both actions below.</p>
+      </div>
+
+      <div className="space-y-2 rounded-lg border p-3">
+        <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">New credentials</p>
+        <Input placeholder="Display name" value={username} onChange={(e) => setUsername(e.target.value)} />
+        <Input
+          type="password"
+          placeholder="New password (8+ characters)"
+          autoComplete="new-password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+        <Input
+          type="password"
+          inputMode="numeric"
+          placeholder={`New PIN (${minPin}-12 digits)`}
+          autoComplete="off"
+          value={pin}
+          onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))}
+        />
+        <Button
+          size="sm"
+          disabled={
+            !proven || !username.trim() || password.length < 8 || pin.length < minPin || save.isPending
+          }
+          onClick={() => save.mutate()}
+        >
+          {save.isPending && <Spinner className="size-4" />}
+          Change credentials
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          Saving ends every session except this one, and untrusts every other browser — which is how you cut
+          off a device you no longer have.
+        </p>
+      </div>
+
+      <div className="space-y-2 rounded-lg border p-3">
+        <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Recovery code</p>
+        <p className="text-xs text-muted-foreground">
+          {status?.has_recovery_code
+            ? 'One code exists. It was shown once; issuing a new one replaces it.'
+            : 'No code is set — issue one so you can get back in from away.'}
+        </p>
+        {code && (
+          <p className="rounded-md border bg-muted/40 p-2 text-center font-mono text-sm tracking-wider select-all">
+            {code}
+          </p>
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={!proven || regenerate.isPending}
+          onClick={() => regenerate.mutate()}
+        >
+          {regenerate.isPending && <Spinner className="size-4" />}
+          Issue a new recovery code
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          Copy it now — it is stored hashed and cannot be shown again. Anyone holding it can reset the login
+          from anywhere, so keep it where you keep the password.
+        </p>
+      </div>
     </div>
   )
 }
@@ -1556,6 +1700,7 @@ export default function Settings() {
       >
         <TabsList className="w-44 shrink-0 self-start !h-full">
           <TabsIndicator />
+          <TabsTab value="account">Account</TabsTab>
           <TabsTab value="model">Model</TabsTab>
           <TabsTab value="litellm">LiteLLM</TabsTab>
           <TabsTab value="omniroute">OmniRoute</TabsTab>
@@ -1575,6 +1720,9 @@ export default function Settings() {
           <TabsTab value="engine">Algo engine</TabsTab>
         </TabsList>
         <div className="min-w-0 flex-1 overflow-y-auto pr-1">
+          <TabsPanel value="account">
+            <AccountTab />
+          </TabsPanel>
           <TabsPanel value="model">
             <ModelTab />
           </TabsPanel>

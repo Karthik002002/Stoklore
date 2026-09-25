@@ -196,6 +196,11 @@ cd frontend && npm run dev -- --port 5180
 **Then open <http://localhost:5180>.** The frontend proxies `/api` to port 8010 for you — there's
 nothing to configure.
 
+**First screen is *Create your login*** — one account: a display name, a password (8+ characters)
+and a PIN (6–12 digits), created from this machine only. You'll then be shown a **one-time recovery
+code** — save it. Day to day you sign in with the PIN alone; the password is asked for every 48
+hours. Details and every reset path: [authentication.md](authentication.md).
+
 The API does no scanning at startup, so the first page load is fast and empty. Add a stock from the
 dashboard, or trigger a scan from the UI, to get data in.
 
@@ -300,4 +305,6 @@ git config core.hooksPath .githooks
 | Port already in use | `./scripts/kill.sh` (macOS), or `lsof -ti :8010 :5180 \| xargs kill -9` |
 | Chat replies with a model error | **Settings › Model** — pick a model you've actually pulled ([step 9](#9-optional-ai-models-and-what-they-cost)) |
 | `FileNotFoundError: local_data/scraped.json` | `mkdir local_data` in the repo root |
+| Forgot the password or PIN | With your recovery code: *Use a recovery code* on the login screen. Without it, on the machine: `.venv/bin/python -m app.reset_login` |
+| `no account configured yet` from every endpoint | Open the UI and complete *Create your login* — an instance with no account refuses everything |
 | Voice key does nothing | The browser needs microphone permission, and a secure context — `localhost` counts |

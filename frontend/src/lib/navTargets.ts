@@ -71,6 +71,7 @@ export const SIMULATION_MODES = [
 
 // Mirrors Settings.jsx's TabsTab list exactly.
 export const SETTINGS_TABS = [
+  { label: 'Settings > Account', tab: 'account' },
   { label: 'Settings > Model', tab: 'model' },
   { label: 'Settings > LiteLLM', tab: 'litellm' },
   { label: 'Settings > OmniRoute', tab: 'omniroute' },

@@ -228,6 +228,18 @@ API (no LangChain, no framework):
 
 ### `3` Guard Rails
 
+**Login.** One account in front of everything: **password + PIN** to sign in, then the **PIN alone
+for 48 hours** on that browser. The API refuses any request without a valid session — every `/api`
+route, `/uploads`, and the OpenAPI docs — so the UI's login screen is the polite half of the gate,
+not the gate itself. Secrets are scrypt-hashed; session and device tokens are stored only as
+hashes in HttpOnly SameSite=Strict cookies; five wrong PINs untrust the browser and force the
+password back; wrong-password and wrong-PIN answer identically. Set up on first run from the
+machine itself — never through a tunnel — which also hands you a one-time recovery code. There is
+no reset endpoint (one needing no credentials would be reachable by any page your browser opens);
+the fallback is `python -m app.reset_login` on the machine. See
+[docs/authentication.md](docs/authentication.md).
+
+
 Because the agent can call real endpoints, it ships with layered guard
 rails instead of a blanket "trust the model":
 

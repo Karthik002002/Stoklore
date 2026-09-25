@@ -4,6 +4,205 @@
  */
 
 export interface paths {
+    "/api/auth/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Auth Status
+         * @description Everything the login screen needs to decide what to show: is there an account, am I in, and
+         *     may this browser offer just the PIN?
+         */
+        get: operations["auth_status_api_auth_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/setup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Setup
+         * @description Creates the one account. Allowed exactly once, and never through a proxy: otherwise whoever
+         *     found the tunnel URL first could claim an instance that isn't theirs.
+         *
+         *     The recovery code is returned here and never again - it exists only in this response.
+         */
+        post: operations["auth_setup_api_auth_setup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Login
+         * @description The full login: password + PIN. Trusts this browser for 48 hours.
+         */
+        post: operations["auth_login_api_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Unlock
+         * @description The PIN alone, on a browser that already passed a full login inside the trust window.
+         *
+         *     A wrong PIN counts against that device and revokes its trust after a few, so this is not a
+         *     guessing surface even for someone holding a stolen device cookie.
+         */
+        post: operations["auth_unlock_api_auth_unlock_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Logout
+         * @description Ends the session. `forget_device=true` also drops this browser's trust, so the next visit
+         *     needs the password - what you'd use on a machine you're handing back.
+         */
+        post: operations["auth_logout_api_auth_logout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/change": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Change
+         * @description Change the credentials. Authenticated (the middleware already checked) AND re-proves the
+         *     current password + PIN, so a borrowed open laptop can't silently lock the owner out.
+         *
+         *     Every other session and every trusted device is dropped - if the reason for changing is that
+         *     something leaked, leaving them alive would defeat the change.
+         */
+        post: operations["auth_change_api_auth_change_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/recover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Recover
+         * @description The one-time code: sets a new password and PIN from anywhere, including over a tunnel.
+         *
+         *     Rate-limited like a login, single-use (a fresh code is issued and returned once), and it throws
+         *     away every session and every trusted device - the point of using it is that something went
+         *     wrong.
+         */
+        post: operations["auth_recover_api_auth_recover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/local-reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth Local Reset
+         * @description Wipes the account so setup can run again. Refused for anything proxied: this is authorised
+         *     by being at the machine, where the database is readable anyway. The CLI equivalent, for when
+         *     you can't even load the page, is `python -m app.reset_login`.
+         */
+        post: operations["auth_local_reset_api_auth_local_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/auth/recovery-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Auth New Recovery Code
+         * @description A fresh recovery code, shown once. Re-proves the password and PIN first - otherwise an open
+         *     laptop would hand out a permanent key to the app.
+         */
+        post: operations["auth_new_recovery_code_api_auth_recovery_code_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/backup/status": {
         parameters: {
             query?: never;
@@ -3554,6 +3753,16 @@ export interface components {
             /** Api Base Url */
             api_base_url?: string | null;
         };
+        /**
+         * LoginRequest
+         * @description The full login - and the re-proof before handing out a new recovery code.
+         */
+        LoginRequest: {
+            /** Password */
+            password: string;
+            /** Pin */
+            pin: string;
+        };
         /** ManualBacktestSettingsRequest */
         ManualBacktestSettingsRequest: {
             /**
@@ -3706,6 +3915,15 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
+        /** RecoverRequest */
+        RecoverRequest: {
+            /** Code */
+            code: string;
+            /** Password */
+            password: string;
+            /** Pin */
+            pin: string;
+        };
         /** RenameWatchlistRequest */
         RenameWatchlistRequest: {
             /** New Name */
@@ -3763,6 +3981,24 @@ export interface components {
         SentimentRequest: {
             /** Url */
             url: string;
+        };
+        /**
+         * SetupRequest
+         * @description Creating the account, and changing it. `username` is a display label, not a credential. The
+         *     `current_*` fields are only read by /api/auth/change, which re-proves the existing password and
+         *     PIN before replacing them.
+         */
+        SetupRequest: {
+            /** Username */
+            username: string;
+            /** Password */
+            password: string;
+            /** Pin */
+            pin: string;
+            /** Current Password */
+            current_password?: string | null;
+            /** Current Pin */
+            current_pin?: string | null;
         };
         /** TelegramConfigRequest */
         TelegramConfigRequest: {
@@ -3900,6 +4136,14 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /**
+         * UnlockRequest
+         * @description The PIN alone, on a browser that already holds a valid device token.
+         */
+        UnlockRequest: {
+            /** Pin */
+            pin: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -3982,6 +4226,275 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    auth_status_api_auth_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    auth_setup_api_auth_setup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_login_api_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_unlock_api_auth_unlock_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UnlockRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_logout_api_auth_logout_post: {
+        parameters: {
+            query?: {
+                forget_device?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_change_api_auth_change_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_recover_api_auth_recover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RecoverRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    auth_local_reset_api_auth_local_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    auth_new_recovery_code_api_auth_recovery_code_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     backup_status_api_backup_status_get: {
         parameters: {
             query?: never;

@@ -34,6 +34,8 @@ import Profile from './Profile'
 import type { ComponentType } from 'react'
 import type { LinkProps } from '@tanstack/react-router'
 import ThemeToggle from './ThemeToggle'
+import LoginGate from './LoginGate'
+import SignOutButton from './SignOutButton'
 
 type NavItem = { to: LinkProps['to']; icon: ComponentType<{ className?: string }>; label: string }
 
@@ -119,55 +121,62 @@ function App() {
   const isBarReplay = window.location.pathname.includes('/backtest/replay')
   return (
     <TooltipProvider>
-      <div className="flex min-h-screen ">
-        <aside className="no-print sticky top-0 flex h-screen w-14 shrink-0 flex-col items-center gap-1 border-r bg-background py-4">
-          <Link
-            to="/"
-            aria-label="NSE Research"
-            className="mb-5 flex size-8 items-center justify-center rounded-xl p-2 [animation:gradient-move_4s_ease-in-out_infinite] [background-image:linear-gradient(135deg,rgba(126,20,255,0.4),rgba(134,59,255,0.4),rgba(71,191,255,0.4),rgba(126,20,255,0.4))] [background-size:200%_200%]"
-          >
-            <img src="/favicon.svg" alt="" className="size-full drop-shadow-sm" />
-          </Link>
+      <LoginGate>
+        <div className="flex min-h-screen ">
+          <aside className="no-print sticky top-0 flex h-screen w-14 shrink-0 flex-col items-center gap-1 border-r bg-background py-4">
+            <Link
+              to="/"
+              aria-label="NSE Research"
+              className="mb-5 flex size-8 items-center justify-center rounded-xl p-2 [animation:gradient-move_4s_ease-in-out_infinite] [background-image:linear-gradient(135deg,rgba(126,20,255,0.4),rgba(134,59,255,0.4),rgba(71,191,255,0.4),rgba(126,20,255,0.4))] [background-size:200%_200%]"
+            >
+              <img src="/favicon.svg" alt="" className="size-full drop-shadow-sm" />
+            </Link>
 
-          <nav className="flex flex-col gap-1">
-            {NAV_ITEMS.map((item) => (
-              <NavIcon
-                key={item.to}
-                {...item}
-                label={item.to === '/engine' ? (engineName ?? item.label) : item.label}
-              />
-            ))}
-          </nav>
+            <nav className="flex flex-col gap-1">
+              {NAV_ITEMS.map((item) => (
+                <NavIcon
+                  key={item.to}
+                  {...item}
+                  label={item.to === '/engine' ? (engineName ?? item.label) : item.label}
+                />
+              ))}
+            </nav>
 
-          <div className="mt-auto flex flex-col items-center gap-1">
-            <TooltipIcon label="Reload">
-              <ReloadButton />
-            </TooltipIcon>
-            <TooltipIcon label="Profile">
-              <Profile />
-            </TooltipIcon>
-            <NavIcon to="/settings" icon={IconSettings} label="Settings" />
-            <TooltipIcon label="Toggle theme">
-              <ThemeToggle />
-            </TooltipIcon>
-          </div>
-        </aside>
+            <div className="mt-auto flex flex-col items-center gap-1">
+              <TooltipIcon label="Reload">
+                <ReloadButton />
+              </TooltipIcon>
+              <TooltipIcon label="Profile">
+                <Profile />
+              </TooltipIcon>
+              <NavIcon to="/settings" icon={IconSettings} label="Settings" />
+              <TooltipIcon label="Toggle theme">
+                <ThemeToggle />
+              </TooltipIcon>
+              <TooltipIcon label="Sign out">
+                <SignOutButton />
+              </TooltipIcon>
+            </div>
+          </aside>
 
-        {/* Full available width, no centered max-width column - the dashboard/table views are
+          {/* Full available width, no centered max-width column - the dashboard/table views are
             dense and horizontal, so capping them at a reading-width column wasted most of the
             screen. min-w-0 is what actually lets wide tables scroll inside this flex child
             instead of forcing the whole page to overflow sideways. */}
-        <main className={`min-w-0 flex-1 px-2 py-3 `}>
-          <GuiltBanner />
-          <Outlet />
-        </main>
-      </div>
+          <main className={`min-w-0 flex-1 px-2 py-3 `}>
+            <GuiltBanner />
+            <Outlet />
+          </main>
+        </div>
 
-      <ActivityTracker />
-      {!isBarReplay && <ChatWidget />}
-      <CommandPalette />
-      <VoiceCapture />
-      <WatchlistManager />
+        <ActivityTracker />
+        {!isBarReplay && <ChatWidget />}
+        <CommandPalette />
+        <VoiceCapture />
+        <WatchlistManager />
+      </LoginGate>
+      {/* Outside the gate: a toast is how a failed sign-in and a dropped session announce
+          themselves, so it has to exist while the login dialog is up. */}
       <Toaster position="top-center" richColors closeButton />
     </TooltipProvider>
   )

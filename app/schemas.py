@@ -285,6 +285,34 @@ class TradeAccountRequest(BaseModel):
         }
 
 
+class SetupRequest(BaseModel):
+    """Creating the account, and changing it. `username` is a display label, not a credential. The
+    `current_*` fields are only read by /api/auth/change, which re-proves the existing password and
+    PIN before replacing them."""
+    username: str
+    password: str
+    pin: str
+    current_password: str | None = None
+    current_pin: str | None = None
+
+
+class LoginRequest(BaseModel):
+    """The full login - and the re-proof before handing out a new recovery code."""
+    password: str
+    pin: str
+
+
+class UnlockRequest(BaseModel):
+    """The PIN alone, on a browser that already holds a valid device token."""
+    pin: str
+
+
+class RecoverRequest(BaseModel):
+    code: str
+    password: str
+    pin: str
+
+
 class ClassifierConfigRequest(BaseModel):
     enabled: bool
 

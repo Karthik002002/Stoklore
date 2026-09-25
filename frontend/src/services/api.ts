@@ -258,9 +258,19 @@ const queryEntries = (params: Record<string, unknown>): [string, string][] =>
     .filter(([, v]) => v != null && v !== '')
     .map(([k, v]) => [k, String(v)])
 
+/** Fired when the backend says the session is gone (expired, logged out elsewhere, or the
+ *  credentials changed). LoginGate listens and puts the login dialog back up, so a stale tab can't
+ *  sit there looking signed in. */
+export const AUTH_EXPIRED_EVENT = 'auth:expired'
+
 async function json<T = unknown>(res: Response): Promise<T> {
   if (!res.ok) {
     const { detail } = await res.json().catch(() => ({}))
+    // The auth endpoints answer 401 as a normal "wrong credentials" reply - only an unexpected 401
+    // from the rest of the API means the session itself is gone.
+    if (res.status === 401 && !new URL(res.url, location.origin).pathname.startsWith('/api/auth/')) {
+      window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+    }
     throw new Error(detail || `${res.status} ${res.statusText}`)
   }
   return res.json()
@@ -1248,6 +1258,75 @@ export const suggestReview = (notes: string, mistakes: string[], emotions: strin
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ notes, mistakes, emotions }),
   }).then(json<ReviewSuggestion>)
+
+// --- login ----------------------------------------------------------------------------------------
+// The session lives in an HttpOnly cookie the browser attaches by itself: there is no token here to
+// keep, and nothing for a script on the page to read.
+
+export type AuthStatus = {
+  configured: boolean
+  authenticated: boolean
+  /** This browser did a full login inside the trust window, so the PIN alone unlocks it. */
+  device_trusted: boolean
+  username: string | null
+  pin_length: number
+  has_recovery_code: boolean
+}
+
+/** What every way in answers with. `recovery_code` appears only where a new one was issued. */
+export type SignedIn = {
+  ok: true
+  username: string | null
+  trusted_until: string | null
+  recovery_code?: string
+}
+
+export const getAuthStatus = () => fetch('/api/auth/status').then(json<AuthStatus>)
+
+const authPost = <T>(path: string, body?: unknown) =>
+  fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  }).then(json<T>)
+
+/** The full login. Trusts this browser for 48 hours, after which the password is needed again. */
+export const login = (password: string, pin: string) =>
+  authPost<SignedIn>('/api/auth/login', { password, pin })
+
+/** The PIN alone - only works on a browser the backend already trusts. */
+export const unlock = (pin: string) => authPost<SignedIn>('/api/auth/unlock', { pin })
+
+/** Only possible once, and only from the machine running the app (never through a tunnel). The
+ *  recovery code comes back here and is never retrievable again. */
+export const setupAccount = (creds: { username: string; password: string; pin: string }) =>
+  authPost<SignedIn>('/api/auth/setup', creds)
+
+/** `forgetDevice` also drops this browser's trust, so the next visit needs the password. */
+export const logout = (forgetDevice = false) =>
+  authPost<{ ok: true }>(`/api/auth/logout?forget_device=${forgetDevice}`)
+
+/** Re-proves the current password and PIN, then signs every other browser out and untrusts them. */
+export const changeCredentials = (
+  next: { username: string; password: string; pin: string },
+  current: { password: string; pin: string },
+) =>
+  authPost<SignedIn>('/api/auth/change', {
+    ...next,
+    current_password: current.password,
+    current_pin: current.pin,
+  })
+
+/** The one-time code: works from anywhere, including through a tunnel. Issues a fresh code. */
+export const recoverAccount = (code: string, password: string, pin: string) =>
+  authPost<SignedIn>('/api/auth/recover', { code, password, pin })
+
+/** A fresh recovery code, shown once. Needs the current password and PIN. */
+export const newRecoveryCode = (password: string, pin: string) =>
+  authPost<{ recovery_code: string }>('/api/auth/recovery-code', { password, pin })
+
+// There is no reset endpoint on purpose: one that needed no credentials would be reachable by any
+// page the browser opens. Wiping a forgotten login is `python -m app.reset_login` on the machine.
 
 export const getTradingGoals = () => fetch('/api/trading-goals').then(json<Goal[]>)
 

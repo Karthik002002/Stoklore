@@ -23,6 +23,7 @@ with, rather than relying on the order of this list.
 from fastapi import APIRouter
 
 from app.routers import (
+    auth,
     activity,
     agent,
     alerts,
@@ -58,6 +59,7 @@ router = APIRouter()
 # Ordered to mirror the original api.py, which keeps the OpenAPI page grouped the way the app
 # actually reads: market data first, then the journal, then chat.
 for _module in (
+    auth,
     backup,
     events,
     top_news,

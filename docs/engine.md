@@ -29,6 +29,12 @@ Any field left empty falls back to an environment variable, which is handy for h
 - **New backtest:** pick a strategy, symbols, and bar size (1m–4H, from the same minute dataset
   Bar Replay uses). Every strategy param takes one value `9`, a list `5,9,13`, or a range `5:20:5`.
   Every combination runs in parallel as one *sweep* (max 200 runs).
+  - **Symbols** is a multi-select of your watchlist, grouped by list - not free text. Any watchlist
+    symbol can be picked whether or not its bars have been fetched yet: the first backtest that
+    needs an uncached symbol pulls and caches its bars automatically (a few extra seconds for that
+    run, same as any other first use of a symbol - see [Limits](#limits)), so there's nothing
+    separate to "prepare" before running. The selection is remembered per browser (`localStorage`),
+    so the page reopens with the same symbols next time.
 - **Sweep heatmap:** net P&L, Sharpe, max drawdown, or win rate for each param combination,
   coloured best to worst within the sweep, with each cell's trade count under its value and the best
   cell ringed. Click a cell to open that run. With more than two varied params, pick the two axes,

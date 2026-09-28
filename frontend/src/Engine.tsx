@@ -4,7 +4,16 @@ import type { UseQueryResult } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { CandlestickSeries, HistogramSeries, createChart, createSeriesMarkers } from 'lightweight-charts'
 import type { UTCTimestamp } from 'lightweight-charts'
-import { DownloadIcon, PlayIcon, RefreshCwIcon, SettingsIcon, Trash2Icon, XIcon } from 'lucide-react'
+import {
+  CheckIcon,
+  ChevronsUpDownIcon,
+  DownloadIcon,
+  PlayIcon,
+  RefreshCwIcon,
+  SettingsIcon,
+  Trash2Icon,
+  XIcon,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import SeriesChart from '@/components/charts/SeriesChart'
 import { seriesColor } from '@/components/charts/colors'
@@ -17,7 +26,16 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command'
 import { Input } from '@/components/ui/input'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -58,6 +76,7 @@ import {
   getEngineSweep,
   getEngineSweeps,
   getIntradayBars,
+  getWatchlist,
   runEngineBacktest,
   runEngineSweep,
   syncEngineLive,
@@ -82,6 +101,9 @@ const COLORS = { text: '#9ca3af', grid: 'rgba(148, 163, 184, 0.15)', up: '#22c55
 
 //: How many markers (two per trade) the executions chart frames when it opens - see ExecutionsChart.
 const OPENING_MARKERS = 40
+
+// The last symbol selection, so reopening the page doesn't start from scratch every time.
+const SYMBOLS_KEY = 'engine.symbols'
 
 const pnlClass = (v: number) => (v > 0 ? 'text-success' : v < 0 ? 'text-destructive' : '')
 
@@ -196,6 +218,76 @@ const MODE_HELP: Record<Mode, React.ReactNode> = {
   ),
 }
 
+/** Multi-select of the user's watchlist symbols, grouped by list. Any watchlist symbol can be run
+ *  whether or not its bars are cached yet - `_bars_csv` (app/routers/engine.py) pulls and caches an
+ *  uncached symbol on the first backtest that needs it, so picking a fresh one just costs that run
+ *  a few extra seconds instead of failing. Selection persists to localStorage (see SYMBOLS_KEY),
+ *  not just this session's state. */
+function SymbolPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const { data: watchlist } = useQuery({ queryKey: ['watchlist'], queryFn: getWatchlist })
+  const [open, setOpen] = useState(false)
+  const groups = useMemo(() => {
+    const byList = new Map<string, string[]>()
+    for (const { symbol, list_name } of watchlist ?? [])
+      byList.set(list_name, [...(byList.get(list_name) ?? []), symbol])
+    return [...byList.entries()].sort(([a], [b]) => a.localeCompare(b))
+  }, [watchlist])
+  const toggle = (sym: string) =>
+    onChange(value.includes(sym) ? value.filter((s) => s !== sym) : [...value, sym])
+
+  return (
+    <div className="flex flex-col gap-1">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger
+          render={<Button variant="outline" size="sm" className="h-7 w-52 justify-between font-normal" />}
+        >
+          <span className={cn('truncate', !value.length && 'text-muted-foreground')}>
+            {value.length ? value.join(', ') : 'Select symbols'}
+          </span>
+          <ChevronsUpDownIcon className="size-3.5 shrink-0 opacity-50" />
+        </PopoverTrigger>
+        <PopoverContent className="w-64 p-0" align="start">
+          <Command>
+            <CommandInput placeholder="Filter watchlist…" />
+            <CommandList className="max-h-72">
+              <CommandEmpty>
+                {watchlist?.length ? 'No matches.' : 'No watchlist symbols yet - add some first.'}
+              </CommandEmpty>
+              {groups.map(([listName, syms]) => (
+                <CommandGroup key={listName} heading={listName}>
+                  {syms.map((sym) => (
+                    <CommandItem key={sym} value={sym} onSelect={() => toggle(sym)}>
+                      <CheckIcon className={cn('size-3.5', !value.includes(sym) && 'opacity-0')} />
+                      {sym}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              ))}
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+      {value.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {value.map((sym) => (
+            <Badge key={sym} variant="secondary" className="gap-1 pr-1">
+              {sym}
+              <button
+                type="button"
+                aria-label={`Remove ${sym}`}
+                onClick={() => onChange(value.filter((s) => s !== sym))}
+                className="rounded-sm hover:bg-muted-foreground/20"
+              >
+                <XIcon className="size-3" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function RunForm({
   onDone,
   onSweep,
@@ -209,7 +301,16 @@ function RunForm({
   })
   const [name, setName] = useState<string | null>(null)
   const [mode, setMode] = useState<Mode>('oat')
-  const [symbols, setSymbols] = useState('RELIANCE, INFY')
+  const [symbols, setSymbols] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(SYMBOLS_KEY) ?? '[]')
+    } catch {
+      return []
+    }
+  })
+  useEffect(() => {
+    localStorage.setItem(SYMBOLS_KEY, JSON.stringify(symbols))
+  }, [symbols])
   const [barInterval, setBarInterval] = useState('5m')
   const [values, setValues] = useState<Record<string, string>>({})
   const [bases, setBases] = useState<Record<string, string>>({})
@@ -239,7 +340,7 @@ function RunForm({
   const limit = mode === 'single' ? 200 : 20000
   const common = () => ({
     strategy: strategy!.name,
-    symbols: symbols.split(/[\s,]+/).filter(Boolean),
+    symbols,
     interval: barInterval,
     cost_bps: Number(cost) || 0,
     label: label.trim() || null,
@@ -320,11 +421,7 @@ function RunForm({
           </Select>
         </Field>
         <Field label="Symbols">
-          <Input
-            value={symbols}
-            onChange={(e) => setSymbols(e.target.value)}
-            className="h-7 w-52 uppercase"
-          />
+          <SymbolPicker value={symbols} onChange={setSymbols} />
         </Field>
         <Field label="Bars">
           <Select value={barInterval} onValueChange={(v) => setBarInterval(v as string)}>
@@ -382,19 +479,22 @@ function RunForm({
         ))}
         <Button
           size="sm"
-          disabled={invalid.length > 0 || count < 1 || count > limit || run.isPending}
+          disabled={invalid.length > 0 || count < 1 || count > limit || !symbols.length || run.isPending}
           onClick={() => run.mutate()}
         >
           {run.isPending ? <Spinner className="size-3.5" /> : <PlayIcon />}
-          {mode === 'single'
-            ? `Run ${count > 1 ? `${count} backtests` : 'backtest'}`
-            : count
-              ? `Run ${fmt(count, 0)} ${mode === 'oat' ? 'one at a time' : 'grid'}`
-              : 'Give a param a range'}
+          {!symbols.length
+            ? 'Select symbols'
+            : mode === 'single'
+              ? `Run ${count > 1 ? `${count} backtests` : 'backtest'}`
+              : count
+                ? `Run ${fmt(count, 0)} ${mode === 'oat' ? 'one at a time' : 'grid'}`
+                : 'Give a param a range'}
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        {MODE_HELP[mode]} Orders fill at the next bar's open; positions square off at 15:15.
+        {MODE_HELP[mode]} Orders fill at the next bar's open; positions square off at 15:15. A symbol picked
+        for the first time takes a few extra seconds while its bars are fetched and cached.
       </p>
     </div>
   )

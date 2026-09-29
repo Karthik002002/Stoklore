@@ -42,6 +42,13 @@ import pandas
 from app.core import moneycontrol_local, scraper
 
 HF_GLOB = "hf://datasets/xxparthparekhxx/indian-stock-market-minute-data/minute/*.parquet"
+# The same dataset's daily split: one ~118MB file, every stock from 2000 (or its listing) to 2026-01,
+# on the same price basis as the minutes. It is what 1D bars use before the minutes begin.
+HF_DAY = "hf://datasets/xxparthparekhxx/indian-stock-market-minute-data/day/*.parquet"
+
+# A remote extract takes seconds, and DuckDB draws a progress bar for anything that slow - thousands
+# of lines of it in the server log. Off for the module's default connection.
+duckdb.execute("SET enable_progress_bar = false")
 
 CACHE_DIR = Path(os.environ.get("MINUTE_DATA_DIR", "local_data/minute"))
 
@@ -89,9 +96,10 @@ TOPUP_EVERY = 6 * 3600
 # back about a year, past the dataset's last day, so one request closes the whole gap.
 MC_COUNTBACK = 100_000
 IST = timezone(timedelta(hours=5, minutes=30))
-# The dataset's first session. A stock whose minutes start here is in the dataset, and its 1D bars
-# are never extended further back from the daily feed: that feed sits on a different corporate-action
-# basis for some stocks (RELIANCE's 2022 prices differ by the Jio Financial demerger adjustment).
+# The minute split's first session. A stock whose minutes start here is in the dataset; its earlier 1D
+# history comes from the dataset's own daily split, never from moneycontrol's daily feed, which sits
+# on a different corporate-action basis for some stocks (RELIANCE's 2022 prices differ by the Jio
+# Financial demerger adjustment; the dataset's two splits agree to ~0.1%).
 DATASET_START = "2022-01-03"
 # A block of days filled from the daily feed must agree with the minutes on price across its seam:
 # median close difference over the nearest shared days, either side.
@@ -125,6 +133,10 @@ def _daily_path(symbol):
     return CACHE_DIR / f"{symbol.upper()}.daily.parquet"
 
 
+def _dataset_day_path(symbol):
+    return CACHE_DIR / f"{symbol.upper()}.dataset-day.parquet"
+
+
 def is_cached(symbol):
     return _cache_path(symbol).exists()
 
@@ -152,6 +164,29 @@ def _extract(symbol):
     )
     # Rename only once the extract fully succeeded - a crash mid-COPY would otherwise leave a
     # truncated file that looks like a complete (or empty = "uncovered") cache entry forever.
+    tmp.replace(path)
+    return path
+
+
+def _extract_day(symbol):
+    """The symbol's rows from the dataset's daily split, once, into a local parquet (~4s). The
+    dataset doesn't change, so neither does this file; an uncovered symbol (NSE SME listings) writes
+    an empty one, the cached "not in the daily split" answer. Delete it to refetch."""
+    path = _dataset_day_path(symbol)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".partial")
+    duckdb.execute(
+        f"""
+        COPY (
+            SELECT (timestamp AT TIME ZONE 'Asia/Kolkata')::DATE AS date, open::DOUBLE AS open,
+                   high::DOUBLE AS high, low::DOUBLE AS low, close::DOUBLE AS close, volume::BIGINT AS volume
+            FROM '{HF_DAY}'
+            WHERE symbol = ?
+            ORDER BY date
+        ) TO '{tmp}' (FORMAT parquet)
+        """,
+        [symbol.upper()],
+    )
     tmp.replace(path)
     return path
 
@@ -235,12 +270,17 @@ def _refresh_daily(symbol):
     tmp.replace(path)
 
 
-def _read_daily(symbol):
-    path = _daily_path(symbol)
+def _read_daily(symbol, path=None):
+    """Daily bars from a sidecar parquet - moneycontrol's record by default, or `path` (the
+    dataset's daily split) - as bar dicts stamped at the 09:15 open."""
+    path = path or _daily_path(symbol)
     if not path.exists():
         return []
+    # one bar a date: the dataset's daily split repeats 2015-12-31 (same row in two year shards),
+    # and a repeated time breaks every chart that draws it
     rows = duckdb.execute(
-        f"SELECT strftime(date, '%Y-%m-%d'), open, high, low, close, volume FROM read_parquet('{path}') ORDER BY date"
+        f"""SELECT DISTINCT ON (date) strftime(date, '%Y-%m-%d'), open, high, low, close, volume
+            FROM read_parquet('{path}') ORDER BY date"""
     ).fetchall()
     return [
         {"date": d, "time": _day_time(d), "open": round(o, 2), "high": round(h, 2), "low": round(l, 2),
@@ -250,6 +290,8 @@ def _read_daily(symbol):
 
 
 def fill_days(minute, feed, dataset_start=DATASET_START):
+    # dataset_start=None lifts the before-the-minutes rule: for a feed on the minutes' own basis
+    # (the dataset's daily split) extending back is the point.
     """1D bars from the minutes, with each day they lack taken from the official daily `feed`, and
     each day spoiled by a bad print (BAD_PRINT) replaced by the feed's bar.
     Returns (bars, filled, repaired). A block of feed-only days is added only when:
@@ -291,7 +333,7 @@ def fill_days(minute, feed, dataset_start=DATASET_START):
         blocks.append(block)
     out, filled = list(minute), 0
     for blk in blocks:
-        if blk[0]["date"] < first and first <= dataset_start:
+        if dataset_start and blk[0]["date"] < first and first <= dataset_start:
             continue
         i = bisect.bisect_left(shared_days, blk[0]["date"])
         near = [diff for _, diff in shared[max(0, i - SEAM_WINDOW) : i + SEAM_WINDOW]]
@@ -354,11 +396,18 @@ _daily_cache = {}
 
 
 def _full_days(symbol, path):
-    daily = _daily_path(symbol)
-    key = (path.stat().st_mtime, daily.stat().st_mtime if daily.exists() else 0)
+    """The whole 1D series: the minutes' own days, then the dataset's daily split for every day
+    they lack (all of a stock's history before 2022 - same source, same basis), then moneycontrol's
+    daily record for what neither has (SME stocks, days after the dataset ends)."""
+    daily, dataset_day = _daily_path(symbol), _dataset_day_path(symbol)
+    mtime = lambda f: f.stat().st_mtime if f.exists() else 0  # noqa: E731
+    key = (path.stat().st_mtime, mtime(daily), mtime(dataset_day))
     hit = _daily_cache.get(symbol)
     if not hit or hit[0] != key:
-        days, filled, repaired = fill_days(_resample(path, "1D", None), _read_daily(symbol))
+        days, _, _ = fill_days(
+            _resample(path, "1D", None), _read_daily(symbol, dataset_day), dataset_start=None
+        )
+        days, filled, repaired = fill_days(days, _read_daily(symbol))  # "patched" = moneycontrol's share only
         events = split_events(days)
         hit = _daily_cache[symbol] = (key, days, events, filled + repaired, unexplained_jumps(days, events))
     return hit[1:]
@@ -483,6 +532,9 @@ def get_minute_bars(symbol, interval, limit=MAX_BARS, start=None, end=None):
             _top_up(symbol, path)
         if not _daily_path(symbol).exists():  # caches from before the daily record was kept
             _refresh_daily(symbol)
+        # Only daily bars reach back before 2022, so only they pay for the one-time daily extract.
+        if interval == "1D" and not _dataset_day_path(symbol).exists():
+            _extract_day(symbol)
 
     # the whole 1D series (filled, repaired) and its corporate actions; built on the full history,
     # since a seam's or a split's neighbours may lie outside the range asked for
@@ -491,7 +543,7 @@ def get_minute_bars(symbol, interval, limit=MAX_BARS, start=None, end=None):
     if interval == "1D":
         days = [b for b in back_adjust(full, events) if (not start or b["date"] >= start) and (not end or b["date"] <= end)]
         if days:
-            source = "dataset + daily record" if patched else "dataset"
+            source = "dataset + daily record" if patched else "dataset"  # daily split counts as dataset
             return {"bars": days[-limit:] if limit else days, "source": source, **adjusted}
 
     bars = _resample(path, interval, limit, start, end)
@@ -596,7 +648,21 @@ if __name__ == "__main__":
     got, n, _ = fill_days([day("2025-01-08", 105), day("2025-01-09", 105)], feed)
     assert n == 0 and len(got) == 2, "a fake 5% jump at the seam is refused"
     assert fill_days([], feed) == (feed, 9, 0), "no minutes at all: the feed is the series"
+    got, n, _ = fill_days([day("2025-01-05", 100), day("2025-01-06", 100)], feed, dataset_start=None)
+    assert n == 7 and got[0]["date"] == "2025-01-01", "a same-basis daily split extends a dataset stock back"
     assert fill_days(mins, []) == (mins, 0, 0), "no feed: nothing to fill"
+    # a date repeated in a sidecar reads back once
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        dup = Path(tmp) / "dup.parquet"
+        duckdb.execute(
+            f"""COPY (SELECT * FROM (VALUES (DATE '2015-12-31', 1.0, 2.0, 0.5, 1.5, 10),
+                                            (DATE '2015-12-31', 1.0, 2.0, 0.5, 1.5, 10),
+                                            (DATE '2016-01-01', 1.5, 2.0, 1.0, 1.8, 10))
+                     t(date, open, high, low, close, volume)) TO '{dup}' (FORMAT parquet)"""
+        )
+        assert [b["date"] for b in _read_daily("X", dup)] == ["2015-12-31", "2016-01-01"]
     # a bad print: close agrees, open 36% off -> the official bar; same basis, small noise -> kept
     tick = {**day("2025-01-09", 100), "open": 64.0, "time": 7}
     got, _, fixed = fill_days([day("2025-01-08", 100.3), tick], feed)

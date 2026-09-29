@@ -438,8 +438,20 @@ type AutotuneLike = {
   axes: Record<string, number[]>
   defaults: Record<string, number>
   stats: Record<string, number | boolean | null>
-  oos: { summary: Summary }
+  oos: { summary: Summary; trades?: RunTrade[] }
   baseline: { summary: Summary }
+  cells?: {
+    params: Record<string, number>
+    net: number
+    trades: number
+    win_rate: number
+    profit_factor: number
+    expectancy: number
+    windows: number
+    positive_windows: number
+    picked: number
+    is_net: number
+  }[]
   windows: {
     train: [string, string]
     test: [string, string]
@@ -450,11 +462,17 @@ type AutotuneLike = {
     is: Summary | null
     oos: Summary | null
     baseline: Summary
+    start?: number
+    end?: number
+    rank?: number | null
+    of?: number
+    best?: { params: Record<string, number>; net: number } | null
   }[]
 }
 
 /** A walk-forward report as a workbook: settings + verdict numbers, tuned vs fixed side by side,
- *  and one row per window. The windows sheet is what the CSV export writes. */
+ *  one row per window, and - on reports that kept them - every cell's out-of-sample result and every
+ *  executed trade. The windows sheet is what the CSV export writes. */
 export function autotuneSheets(r: AutotuneLike): Sheet[] {
   const swept = Object.keys(r.axes)
   const stat = (k: string) => {
@@ -513,6 +531,10 @@ export function autotuneSheets(r: AutotuneLike): Sheet[] {
         'Out-of-sample net',
         'Out-of-sample trades',
         'Fixed defaults net',
+        'Pick rank',
+        'Cells',
+        'Best cell (hindsight)',
+        'Best cell net',
       ],
       rows: r.windows.map((w) => [
         ...w.train,
@@ -525,8 +547,76 @@ export function autotuneSheets(r: AutotuneLike): Sheet[] {
         w.oos?.net ?? null,
         w.oos?.trades ?? null,
         w.baseline.net ?? null,
+        w.rank ?? null,
+        w.of ?? null,
+        w.best ? paramsLabel(w.best.params, swept) : null,
+        w.best?.net ?? null,
       ]),
     },
+    ...(r.cells?.length
+      ? [
+          {
+            sheet: 'Combinations',
+            headers: [
+              ...swept,
+              'Net (every window)',
+              'Trades',
+              'Win rate %',
+              'Profit factor',
+              'Expectancy',
+              'Windows positive',
+              'Windows',
+              'Times picked',
+              'Mean in-sample net',
+            ],
+            rows: r.cells.map((c) => [
+              ...swept.map((k) => c.params[k]),
+              c.net,
+              c.trades,
+              c.win_rate,
+              c.profit_factor,
+              c.expectancy,
+              c.positive_windows,
+              c.windows,
+              c.picked,
+              c.is_net,
+            ]),
+          },
+        ]
+      : []),
+    ...(r.oos.trades?.length
+      ? [
+          {
+            sheet: 'Trades',
+            headers: [
+              'Window',
+              'Params',
+              'Side',
+              'Qty',
+              'Entry (IST)',
+              'Entry px',
+              'Exit (IST)',
+              'Exit px',
+              'Gross P&L',
+            ],
+            rows: r.oos.trades.map((t) => {
+              const i = windowOfTrade(t, r.windows)
+              const w = r.windows[i]
+              return [
+                w ? `${w.test[0]} → ${w.test[1]}` : null,
+                w?.chosen ? paramsLabel(w.chosen, swept) : null,
+                t[3] > 0 ? 'Long' : 'Short',
+                Math.abs(t[3]),
+                istTime(t[1]),
+                t[4],
+                istTime(t[2]),
+                t[5],
+                t[6],
+              ]
+            }),
+          },
+        ]
+      : []),
   ]
 }
 
@@ -679,4 +769,56 @@ export function historyError(r: HistoryLike, today: string): string | null {
     if (r.start && r.start > today) return 'The range starts after today'
   }
   return null
+}
+
+// --- walk-forward detail: which parameter sets did what, and the trades behind the average -------
+
+/** "fast=11 slow=30": a param set in the order of the swept axes. */
+export const paramsLabel = (params: Record<string, number>, axes: string[]) =>
+  axes.map((k) => `${k}=${params[k]}`).join(' ')
+
+type WindowLike = {
+  chosen: Record<string, number> | null
+  test: [string, string]
+  start?: number
+  end?: number
+  oos: Summary | null
+}
+
+/** The tuner's picks, grouped: each distinct param set it traded, over how many windows, and what
+ *  those windows made out-of-sample. Best first. */
+export function pickedSets(windows: WindowLike[], axes: string[]) {
+  const by = new Map<
+    string,
+    { params: Record<string, number>; windows: number; positive: number; net: number; trades: number }
+  >()
+  for (const w of windows) {
+    if (!w.chosen) continue
+    const key = paramsLabel(w.chosen, axes)
+    const g = by.get(key) ?? {
+      params: Object.fromEntries(axes.map((k) => [k, w.chosen![k]])),
+      windows: 0,
+      positive: 0,
+      net: 0,
+      trades: 0,
+    }
+    g.windows += 1
+    g.net += w.oos?.net ?? 0
+    g.trades += w.oos?.trades ?? 0
+    g.positive += (w.oos?.net ?? 0) > 0 ? 1 : 0
+    by.set(key, g)
+  }
+  return [...by.values()].sort((a, b) => b.net - a.net)
+}
+
+/** Which test window a trade was taken in: by bar time where the report has window times, else by
+ *  the entry's IST date. -1 when none contains it. */
+export function windowOfTrade(trade: RunTrade, windows: WindowLike[]) {
+  const entry = trade[1]
+  const day = istTime(entry).slice(0, 10)
+  return windows.findIndex((w) =>
+    w.start != null && w.end != null
+      ? entry >= w.start && entry <= w.end
+      : day >= w.test[0] && day <= w.test[1],
+  )
 }

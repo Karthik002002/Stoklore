@@ -153,10 +153,70 @@ def stitch(segments):
         trades += rep["trades"]
         level += rep["summary"]["net"]
         costs += rep["summary"]["costs"]
-    # summarised on the full curve (drawdown needs every point), stored thinned for the chart
+    # summarised on the full curve (drawdown needs every point), stored thinned for the chart; the
+    # trades are kept whole - they're what the report's executions chart and trade list show
     step = len(equity) // 2000 + 1
     thin = equity[::step] + ([equity[-1]] if equity and (len(equity) - 1) % step else [])
-    return {"summary": summarize(level, costs, trades, equity, daily), "equity": thin, "daily": daily}
+    return {"summary": summarize(level, costs, trades, equity, daily), "equity": thin, "daily": daily, "trades": trades}
+
+
+def cell_key(params, axes):
+    """A grid cell's identity: its value on each swept axis, in axis order."""
+    return tuple(params[k] for k in axes)
+
+
+def tally_cells(acc, is_runs, oos_runs, axes, chosen):
+    """Adds one window to the per-cell tally `acc` (cell key -> running sums): every cell's
+    out-of-sample result on that window (`oos_runs`, the grid swept on the unseen test bars), its
+    in-sample net (`is_runs`), and whether it was the pick. Returns the window's own verdict on the
+    pick: its rank among the cells by out-of-sample net (1 = best), the cell count, and the best
+    cell - what the tuner would have picked with hindsight."""
+    is_net = {cell_key(r["params"], axes): r["summary"].get("net", 0) for r in is_runs}
+    ranked = sorted(oos_runs, key=lambda r: r["summary"].get("net", 0), reverse=True)
+    for r in oos_runs:
+        k, sm = cell_key(r["params"], axes), r["summary"]
+        n = sm.get("trades", 0)
+        wins = round(sm.get("win_rate", 0) * n / 100)
+        a = acc.setdefault(k, {"params": {ax: v for ax, v in zip(axes, k)}, "net": 0.0, "trades": 0, "wins": 0,
+                               "gw": 0.0, "gl": 0.0, "windows": 0, "positive": 0, "picked": 0, "is_net": 0.0})
+        a["net"] += sm.get("net", 0)
+        a["trades"] += n
+        a["wins"] += wins
+        a["gw"] += sm.get("avg_win", 0) * wins
+        a["gl"] += sm.get("avg_loss", 0) * (n - wins)
+        a["windows"] += 1
+        a["positive"] += sm.get("net", 0) > 0
+        a["is_net"] += is_net.get(k, 0)
+        a["picked"] += chosen is not None and cell_key(chosen, axes) == k
+    best = ranked[0] if ranked else None
+    verdict = {"of": len(ranked), "best": {"params": {ax: best["params"][ax] for ax in axes},
+                                          "net": best["summary"].get("net", 0)} if best else None}
+    if chosen is not None:
+        mine = next((r["summary"].get("net", 0) for r in oos_runs if cell_key(r["params"], axes) == cell_key(chosen, axes)), None)
+        verdict["rank"] = 1 + sum(r["summary"].get("net", 0) > mine for r in oos_runs) if mine is not None else None
+    return verdict
+
+
+def cell_table(acc):
+    """The tally as a table, best out-of-sample net first: every combination as if it had been
+    traded, unchanged, in every test window. Hindsight - no walk could have known which one - but it
+    says which part of the grid actually held up, and how the tuner's picks compare."""
+    rows = []
+    for a in acc.values():
+        n, w = a["trades"], a["wins"]
+        rows.append({
+            "params": a["params"],
+            "net": a["net"],
+            "trades": n,
+            "win_rate": 100 * w / n if n else 0,
+            "profit_factor": a["gw"] / -a["gl"] if a["gl"] < 0 else (99 if a["gw"] > 0 else 0),
+            "expectancy": a["net"] / n if n else 0,
+            "windows": a["windows"],
+            "positive_windows": a["positive"],
+            "picked": a["picked"],
+            "is_net": a["is_net"] / a["windows"] if a["windows"] else 0,
+        })
+    return sorted(rows, key=lambda r: r["net"], reverse=True)
 
 
 def deflated_sharpe(daily, trials=1, trial_var=0.0):
@@ -216,6 +276,7 @@ def walk_forward(engine, bars, *, symbol, interval, strategy, params, defaults, 
         raise ValueError("give at least one param a range or list to tune")
 
     rows, tuned_segs, base_segs, promise = [], [], [], []
+    acc = {}  # cell -> running out-of-sample tally across windows (see tally_cells)
     trial_sr = []  # per-day Sharpes of every eligible cell, per window - the trials DSR deflates by
     incumbent = None
     promised = 0.0
@@ -247,6 +308,10 @@ def walk_forward(engine, bars, *, symbol, interval, strategy, params, defaults, 
                 # an engine built before --trade-from takes it for a param and trades the warm-up
                 if rep and rep["equity"] and rep["equity"][0][0] < start:
                     raise RuntimeError("the engine ignored --trade-from - run `make` in the engine folder")
+            # every cell on the same unseen bars, in one sweep: which combination would have done
+            # best here, and where the pick ranked - one more engine call per window
+            grid_oos = engine(strategy, csv_path, *swept_args, *_kv(fixed), f"cost_bps={cost_bps:g}", "--sweep=grid", trade_from)
+            verdict = tally_cells(acc, runs, grid_oos["runs"], list(axes), chosen)
 
             tuned_segs.append({**seg, "report": oos})
             base_segs.append({**seg, "report": base})
@@ -263,6 +328,9 @@ def walk_forward(engine, bars, *, symbol, interval, strategy, params, defaults, 
                 "is": runs[i]["summary"] if chosen else None,
                 "oos": oos["summary"] if oos else None,
                 "baseline": base["summary"],
+                "start": start,
+                "end": end,
+                **verdict,
             })
             incumbent = chosen or incumbent
 
@@ -284,6 +352,7 @@ def walk_forward(engine, bars, *, symbol, interval, strategy, params, defaults, 
         "oos": tuned,
         "baseline": fixed_run,
         "promised": promise,
+        "cells": cell_table(acc),
         "stats": stats(rows, tuned, fixed_run, trial_sr, axes, test),
     }
 

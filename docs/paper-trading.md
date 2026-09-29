@@ -42,7 +42,11 @@ waiting out the poll interval.
 - **Clicking a row** opens `/paper/:symbol` — that symbol's candles with
   the entry, every stop-loss rung and every target drawn on as price lines, so
   "where is this actually sitting" doesn't mean opening the stock page and
-  re-plotting the levels by hand.
+  re-plotting the levels by hand. Laid out like a charting package: the chart
+  takes the whole screen beside the nav rail, under a thin bar with the symbol
+  and the 1MO/6MO/YTD/1Y ranges, and the position's numbers (current, value,
+  unrealised, stop, target, R:R) float in the top-left under the OHLCV legend.
+  Click its header to collapse it to one line - side, size @ entry, P&L.
 - **Modify** edits the ladder in place — add, retune, or remove levels on a
   live position.
 - **Close** exits the whole position at the current quote, immediately. A

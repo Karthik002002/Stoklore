@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { ArrowLeftIcon } from 'lucide-react'
+import { ArrowLeftIcon, ChevronDownIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import { Spinner } from '@/components/ui/spinner'
 import { fmt, inr } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
@@ -35,7 +36,8 @@ const asOrder = (p: PaperPosition): ReplayOrder => ({
   targets: p.targets ?? [],
 })
 
-function Metric({
+/** One line of the position panel: label left, value right, like a charting package's data window. */
+function Row({
   label,
   value,
   sub,
@@ -47,16 +49,12 @@ function Metric({
   tone?: 'up' | 'down'
 }) {
   return (
-    <div>
-      <p className="text-[11px] tracking-wide text-muted-foreground uppercase">{label}</p>
-      <p
-        className={`text-sm font-semibold tabular-nums ${
-          tone === 'up' ? 'text-up' : tone === 'down' ? 'text-down' : ''
-        }`}
-      >
+    <div className="flex items-baseline justify-between gap-4">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className={cn('tabular-nums', tone === 'up' && 'text-up', tone === 'down' && 'text-down')}>
         {value}
-      </p>
-      {sub && <p className="text-[11px] text-muted-foreground tabular-nums">{sub}</p>}
+        {sub && <span className="ml-1.5 text-muted-foreground">{sub}</span>}
+      </dd>
     </div>
   )
 }
@@ -67,6 +65,8 @@ export default function PaperPositionChart() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [range, setRange] = useState('6mo')
+  // The position panel sits on the candles; collapsed, it's one line - the summary is still there.
+  const [panelOpen, setPanelOpen] = useState(true)
   // Read-only view of the Bar Replay chart config: whatever indicators and candle colours are set
   // up over there render here too. Configured in one place (Bar Replay's own controls), not two -
   // this page has no chart settings of its own.
@@ -179,33 +179,106 @@ export default function PaperPositionChart() {
       : null
   const signed = (v: number | null) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${fmt(v, 2)}%`)
 
-  return (
-    <div className="flex h-[calc(100vh-5rem)] flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            nativeButton={false}
-            aria-label="Back to holdings"
-            render={<Link to="/paper" search={{ view: 'holdings', account }} />}
-          >
-            <ArrowLeftIcon className="size-4" />
-          </Button>
-          <h1 className="text-lg font-semibold">{symbol}</h1>
-          {position && (
-            <span className="text-xs text-muted-foreground capitalize">
-              {position.direction} · {position.quantity} qty
-            </span>
+  const tone = (v: number | null | undefined) =>
+    (v == null ? undefined : v >= 0 ? 'up' : 'down') as 'up' | 'down' | undefined
+
+  // On the chart, not above it: the candles get the whole page, the way a charting package lays out
+  // a symbol, and the numbers sit in the corner under the OHLCV legend. Collapsed it keeps the one
+  // line that matters - side, size, entry and the running P&L.
+  const panel = position ? (
+    <div className="w-72 rounded-md border bg-background/85 text-xs shadow-lg backdrop-blur-sm">
+      <button
+        type="button"
+        onClick={() => setPanelOpen((o) => !o)}
+        aria-expanded={panelOpen}
+        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left"
+      >
+        <span
+          className={cn(
+            'rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide uppercase',
+            position.direction === 'long' ? 'bg-up/15 text-up' : 'bg-down/15 text-down',
           )}
-        </div>
-        <div className="flex items-center gap-1">
+        >
+          {position.direction}
+        </span>
+        <span className="tabular-nums">
+          {position.quantity} @ {inr(position.entry_price)}
+        </span>
+        <span
+          className={cn(
+            'ml-auto font-medium tabular-nums',
+            position.pnl != null && (position.pnl >= 0 ? 'text-up' : 'text-down'),
+          )}
+        >
+          {position.pnl == null ? '—' : inr(position.pnl)}
+        </span>
+        <ChevronDownIcon
+          className={cn('size-3.5 text-muted-foreground transition-transform', !panelOpen && '-rotate-90')}
+        />
+      </button>
+      {panelOpen && (
+        <dl className="space-y-1 border-t px-2.5 py-2">
+          <Row
+            label="Current"
+            value={position.current_price == null ? '—' : inr(position.current_price)}
+            sub={position.pnl_pct == null ? undefined : signed(position.pnl_pct)}
+            tone={tone(position.pnl_pct)}
+          />
+          <Row label="Value" value={inr(position.value ?? position.entry_price * position.quantity)} />
+          <Row
+            label="Unrealised"
+            value={position.pnl == null ? '—' : inr(position.pnl)}
+            tone={tone(position.pnl)}
+          />
+          <Row
+            label="Stop loss"
+            value={position.stop_losses?.length ? inr(position.stop_losses[0].price) : '—'}
+            sub={
+              position.stop_losses?.length ? signed(pctFrom(position.stop_losses[0].price)) : 'unprotected'
+            }
+          />
+          <Row
+            label="Target"
+            value={position.targets?.length ? inr(position.targets[0].price) : '—'}
+            sub={position.targets?.length ? signed(pctFrom(position.targets[0].price)) : 'none set'}
+          />
+          <Row label="R:R" value={rr == null ? '—' : `${fmt(rr, 2)}R`} />
+        </dl>
+      )}
+    </div>
+  ) : isPending ? null : (
+    <p className="rounded-md border bg-background/85 px-2.5 py-1.5 text-xs text-muted-foreground shadow-lg backdrop-blur-sm">
+      No open position in {symbol} on this account - price only.
+    </p>
+  )
+
+  return (
+    // The whole viewport beside the nav rail, like Bar Replay: a thin symbol bar on top and the chart
+    // under it, nothing else competing for height.
+    <div className="fixed inset-y-0 right-0 left-14 z-40 flex flex-col bg-background">
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b px-2">
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          nativeButton={false}
+          aria-label="Back to holdings"
+          render={<Link to="/paper" search={{ view: 'holdings', account }} />}
+        >
+          <ArrowLeftIcon className="size-4" />
+        </Button>
+        <h1 className="text-sm font-semibold">{symbol}</h1>
+        {position && (
+          <span className="text-xs text-muted-foreground capitalize">
+            {position.direction} · {position.quantity} qty · paper
+          </span>
+        )}
+        <div className="ml-auto flex items-center gap-0.5 border-l pl-2">
           {RANGES.map((r) => (
             <Button
               key={r}
               size="sm"
               variant={range === r ? 'secondary' : 'ghost'}
-              className="h-7 font-mono text-[11px] uppercase"
+              className="h-7 px-2 font-mono text-[11px] uppercase"
               onClick={() => setRange(r)}
             >
               {r}
@@ -214,42 +287,11 @@ export default function PaperPositionChart() {
         </div>
       </div>
 
-      {position && (
-        <div className="grid grid-cols-2 gap-3 rounded-xl border bg-card p-3 sm:grid-cols-4 lg:grid-cols-7">
-          <Metric label="Entry" value={inr(position.entry_price)} />
-          <Metric
-            label="Current"
-            value={position.current_price == null ? '—' : inr(position.current_price)}
-            sub={position.pnl_pct == null ? undefined : signed(position.pnl_pct)}
-            tone={position.pnl_pct == null ? undefined : position.pnl_pct >= 0 ? 'up' : 'down'}
-          />
-          <Metric label="Value" value={inr(position.value ?? position.entry_price * position.quantity)} />
-          <Metric
-            label="Unrealised"
-            value={position.pnl == null ? '—' : inr(position.pnl)}
-            tone={position.pnl == null ? undefined : position.pnl >= 0 ? 'up' : 'down'}
-          />
-          <Metric
-            label="Stop loss"
-            value={position.stop_losses?.length ? inr(position.stop_losses[0].price) : '—'}
-            sub={
-              position.stop_losses?.length ? signed(pctFrom(position.stop_losses[0].price)) : 'unprotected'
-            }
-          />
-          <Metric
-            label="Target"
-            value={position.targets?.length ? inr(position.targets[0].price) : '—'}
-            sub={position.targets?.length ? signed(pctFrom(position.targets[0].price)) : 'none set'}
-          />
-          <Metric label="R:R" value={rr == null ? '—' : `${fmt(rr, 2)}R`} />
-        </div>
-      )}
-
       {/* ReplayChart is absolutely positioned inside its parent, so it needs a sized relative box -
           exactly how BarReplay hosts it. Everything it draws here (entry line, SL/target ladders,
           the pills and their actions) is the same code path the replay chart runs; only the
           handlers differ, and they write to the paper API rather than a local store. */}
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border bg-card">
+      <div className="relative min-h-0 flex-1">
         {chartPending || isPending ? (
           <p className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
             <Spinner className="size-4" /> Loading {symbol}…
@@ -265,6 +307,7 @@ export default function PaperPositionChart() {
             orders={mine.map(asOrder)}
             resetKey={`${symbol}-${range}`}
             settings={chartSettings}
+            topLeft={panel}
             onAdjustOrder={adjustOrder}
             onRemoveLevel={removeLevel}
             onAdjustLegQty={adjustLegQty}
@@ -275,12 +318,6 @@ export default function PaperPositionChart() {
           />
         )}
       </div>
-
-      {!position && !isPending && (
-        <p className="text-xs text-muted-foreground">
-          No open position in {symbol} on this account — the chart is showing price only.
-        </p>
-      )}
     </div>
   )
 }

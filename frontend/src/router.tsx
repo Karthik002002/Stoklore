@@ -408,16 +408,36 @@ const livePositionRoute = createRoute({
   component: LivePositionChart,
 })
 
-// The C++ trading engine's backtests, sweeps and paper/live sessions (app/routers/engine.py). `run`
-// is the open run's detail, `batch` the batch the heatmap shows and `sweep` the open parameter sweep,
-// so all survive a reload.
+// The C++ trading engine's backtests, sweeps and paper/live sessions (app/routers/engine.py). `tab` is
+// Backtests (the default when absent) or Auto-tune; `run` is the open run's detail, `batch` the
+// batch the heatmap shows, `sweep` the open parameter sweep and `autotune` the open walk-forward
+// report and `tunebatch` the open multi-stock run, so all survive a reload. Either of those with no
+// tab opens on the Auto-tune tab.
+export type EngineTab = 'backtest' | 'autotune'
 const engineRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/engine',
-  validateSearch: (search): { run?: string; batch?: string; sweep?: string } => ({
+  validateSearch: (
+    search,
+  ): {
+    tab?: EngineTab
+    run?: string
+    batch?: string
+    sweep?: string
+    autotune?: string
+    tunebatch?: string
+  } => ({
+    tab:
+      search.tab === 'autotune' || search.tab === 'backtest'
+        ? search.tab
+        : search.autotune || search.tunebatch
+          ? 'autotune'
+          : undefined,
     run: typeof search.run === 'string' && search.run ? search.run : undefined,
     batch: typeof search.batch === 'string' && search.batch ? search.batch : undefined,
     sweep: typeof search.sweep === 'string' && search.sweep ? search.sweep : undefined,
+    autotune: typeof search.autotune === 'string' && search.autotune ? search.autotune : undefined,
+    tunebatch: typeof search.tunebatch === 'string' && search.tunebatch ? search.tunebatch : undefined,
   }),
   component: Engine,
 })

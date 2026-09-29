@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter
 import threading
 
@@ -116,9 +118,13 @@ def max_history(symbol: str):
 # that cache in well under a second. Declared `def`, so FastAPI runs it in the threadpool and the
 # one slow call doesn't block the event loop.
 @router.get("/api/prices/{symbol}/intraday")
-def intraday_history(symbol: str, interval: str = "15m"):
+def intraday_history(symbol: str, interval: str = "15m", start: date | None = None, end: date | None = None):
+    """`start`/`end` (inclusive dates) cut the series first, so the newest-bars cap applies inside
+    them - the engine's executions chart asks for a run's own period, which may be years back."""
     try:
-        return minute_data.get_minute_bars(symbol, interval)
+        return minute_data.get_minute_bars(
+            symbol, interval, start=start.isoformat() if start else None, end=end.isoformat() if end else None
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:

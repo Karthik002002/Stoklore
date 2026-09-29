@@ -8,7 +8,7 @@ from typing import Literal
 
 from datetime import date
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.core import price_sources
 
@@ -470,6 +470,26 @@ class AlertUpdateRequest(BaseModel):
     active: bool | None = None
 
 
+class BarRange(BaseModel):
+    """Which stretch of history a run uses: everything, the last `years`, or `start`..`end`
+    (inclusive, either end may be open). Each stock uses what it has inside it - see
+    minute_data.range_bounds."""
+    mode: Literal["all", "years", "dates"] = "all"
+    years: float | None = Field(None, gt=0, le=30)
+    start: date | None = None
+    end: date | None = None
+
+    @model_validator(mode="after")
+    def _complete(self):
+        if self.mode == "years" and not self.years:
+            raise ValueError("say how many years")
+        if self.mode == "dates" and not (self.start or self.end):
+            raise ValueError("give a start date, an end date, or both")
+        if self.mode == "dates" and self.start and self.end and self.start > self.end:
+            raise ValueError("the range starts after it ends")
+        return self
+
+
 class EngineBacktestRequest(BaseModel):
     strategy: str
     symbols: list[str]
@@ -478,6 +498,7 @@ class EngineBacktestRequest(BaseModel):
     params: dict[str, list[float]] = {}
     cost_bps: float = Field(3, ge=0, le=100)
     label: str | None = None
+    range: BarRange = BarRange()
 
 
 class EngineSweepRequest(BaseModel):
@@ -492,6 +513,22 @@ class EngineSweepRequest(BaseModel):
     base: dict[str, float] = {}
     cost_bps: float = Field(3, ge=0, le=100)
     label: str | None = None
+    range: BarRange = BarRange()
+
+
+class EngineAutotuneRequest(BaseModel):
+    """Walk-forward tuning of one strategy, on each stock separately (app/core/autotune.py)."""
+    strategy: str
+    symbols: list[str] = Field(min_length=1, max_length=30)
+    interval: str = "5m"
+    # as typed, like a sweep: several values ("5:20:1", "5,9,13") are tuned, one value is fixed
+    params: dict[str, str] = {}
+    train: int = Field(60, ge=5, le=500)  # sessions each pick is tuned on
+    test: int = Field(5, ge=1, le=60)  # sessions each pick then trades, unseen, before re-tuning
+    range: BarRange = BarRange(mode="years", years=1)  # the stretch of each stock's history to walk
+    min_trades: int = Field(30, ge=1, le=10000)  # a cell with fewer train trades is never picked
+    margin: float = Field(0.15, ge=0, le=5)  # how much better a new pick must score to replace the current one
+    cost_bps: float = Field(3, ge=0, le=100)
 
 
 class EngineSettingsRequest(BaseModel):

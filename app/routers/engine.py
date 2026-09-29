@@ -7,9 +7,13 @@ Runs are the engine's own JSON files, not table rows: `backtest --json` writes o
 live engine rewrites `<paper|live>-<date>.json` every minute, both in one shape. Nothing here
 touches the journal database except the settings below.
 
+Bars are written for each run into a temporary folder, cut to the run's history range - two runs on
+the same stock with different ranges must never share one CSV.
+
     <engine folder>/runs/<id>.json        backtests started from this page
     <engine folder>/runs/live/<id>.json   paper/live session reports, rsynced from the VPS
     <engine folder>/runs/sweeps/<id>.json parameter sweeps: one summary per parameter set, no trades
+    <engine folder>/runs/autotune/<strategy>/<SYMBOL>/<id>.json  walk-forward tuning reports
 
 Where things live is per-install, so none of it is hardcoded: each location is a setting saved
 from Settings > Algo engine, falling back to an env var, then to the default below. The name is
@@ -21,6 +25,7 @@ import os
 import re
 import secrets
 import subprocess
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -28,9 +33,10 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 
+from app.core import autotune
 from app.core import db
 from app.core import minute_data
-from app.schemas import EngineBacktestRequest, EngineSettingsRequest, EngineSweepRequest
+from app.schemas import EngineAutotuneRequest, EngineBacktestRequest, EngineSettingsRequest, EngineSweepRequest
 
 router = APIRouter(tags=["engine"])
 
@@ -79,15 +85,65 @@ def _engine(root, *args):
     return json.loads(res.stdout)
 
 
-def _bars_csv(root, symbol, interval):
+def _hold(interval):
+    """Engine flags for how long a position may live on these bars. Daily bars are positional by
+    definition: under the intraday rules (square off at 15:15, close anything left at the next
+    day's open) every 1D trade would be closed one bar after it opened."""
+    return ["--overnight"] if interval == "1D" else []
+
+
+def _history(rng):
+    """The request's history choice -> (start, end) ISO dates, and the record a report keeps of it."""
     try:
-        bars = minute_data.get_minute_bars(symbol, interval)["bars"]
-    except Exception as e:
-        raise HTTPException(502, f"{symbol}: {e}") from e
-    if not bars:
-        raise HTTPException(404, f"No {interval} bars for {symbol}")
-    path = root / "data" / f"{symbol}_{interval}.csv"
-    path.parent.mkdir(exist_ok=True)
+        start, end = minute_data.range_bounds(rng.mode, rng.years, rng.start, rng.end)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+    return start, end, {"mode": rng.mode, "years": rng.years, "start": start, "end": end}
+
+
+def _coverage(symbol, got, start, end):
+    """What one stock actually had inside the range - its own history decides, not the range: its
+    span and sessions, sessions the official daily record has that its bars lack (a hole in the
+    minute history), splits/bonuses back-adjusted, and big jumps left alone for a human to check."""
+    bars = got["bars"]
+    days = {b["date"] for b in bars}
+    out = {"from": bars[0]["date"], "to": bars[-1]["date"], "sessions": len(days)}
+    missing, first, last = minute_data.missing_sessions(symbol, days, start, end)
+    if missing:
+        out["missing"] = {"sessions": missing, "from": first, "to": last}
+    in_range = lambda d: (not start or d >= start) and (not end or d <= end)  # noqa: E731
+    for key in ("adjusted", "jumps"):
+        hits = [x for x in got.get(key, []) if in_range(x["date"])]
+        if hits:
+            out[key] = hits
+    return out
+
+
+def _stock_bars(symbols, interval, start, end):
+    """Each symbol's bars inside the range -> ({symbol: bars}, {symbol: coverage}, skipped). A stock with nothing there
+    (listed later, delisted earlier, never covered) is skipped with the reason, not fatal. One at a
+    time: minute_data reads through DuckDB's shared default connection, which isn't thread-safe."""
+    got, coverage, skipped = {}, {}, []
+    for s in symbols:
+        try:
+            res = minute_data.get_minute_bars(s, interval, limit=None, start=start, end=end)
+        except Exception as e:  # noqa: BLE001 - one stock's data problem must not sink the others
+            skipped.append({"symbol": s, "reason": f"bars unavailable: {e}"})
+            continue
+        if res["bars"]:
+            got[s] = res["bars"]
+            coverage[s] = _coverage(s, res, start, end)
+        else:
+            skipped.append({"symbol": s, "reason": "no bars in this range"})
+    return got, coverage, skipped
+
+
+def _nothing_left(skipped):
+    return "Nothing to run - " + "; ".join(f"{x['symbol']}: {x['reason']}" for x in skipped)
+
+
+def _bars_csv(folder, symbol, interval, bars):
+    path = Path(folder) / f"{symbol}_{interval}.csv"  # the engine names the symbol from the file
     with open(path, "w") as f:
         f.write("time,open,high,low,close,volume\n")
         f.writelines(f"{b['time']},{b['open']},{b['high']},{b['low']},{b['close']},{b['volume']}\n" for b in bars)
@@ -153,25 +209,32 @@ def engine_backtest(req: EngineBacktestRequest):
     if len(combos) > MAX_RUNS:
         raise HTTPException(422, f"{len(combos)} combinations - keep a sweep under {MAX_RUNS}")
 
-    files = [_bars_csv(root, s, req.interval) for s in symbols]
+    start, end, history = _history(req.range)
+    got, coverage, skipped = _stock_bars(symbols, req.interval, start, end)
+    if not got:
+        raise HTTPException(422, _nothing_left(skipped))
     batch = time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(2)
     created = datetime.now(timezone.utc).isoformat()
     varied = sorted(k for k, v in grid.items() if len(set(v)) > 1)
     runs_dir.mkdir(parents=True, exist_ok=True)
 
-    def run(i, combo):
-        kv = [f"{k}={v:g}" for k, v in combo.items()]
-        result = _engine(root, req.strategy, *files, *kv, f"cost_bps={req.cost_bps:g}", "--json")
-        result.update(id=f"bt-{batch}-{i}", source="backtest", created=created, batch=batch,
-                      label=(req.label or "").strip() or None, symbols=symbols, interval=req.interval,
-                      varied=varied)
-        path = runs_dir / f"{result['id']}.json"
-        path.write_text(json.dumps(result))
-        return _row(path)
+    with tempfile.TemporaryDirectory() as tmp:
+        files = [_bars_csv(tmp, s, req.interval, b) for s, b in got.items()]
+        del got
 
-    with ThreadPoolExecutor(os.cpu_count() or 4) as pool:
-        rows = list(pool.map(run, range(len(combos)), combos))
-    return {"batch": batch, "runs": rows}
+        def run(i, combo):
+            kv = [f"{k}={v:g}" for k, v in combo.items()]
+            result = _engine(root, req.strategy, *files, *kv, f"cost_bps={req.cost_bps:g}", "--json", *_hold(req.interval))
+            result.update(id=f"bt-{batch}-{i}", source="backtest", created=created, batch=batch,
+                          label=(req.label or "").strip() or None, symbols=list(coverage), interval=req.interval,
+                          varied=varied, history=history, coverage=coverage, skipped=skipped)
+            path = runs_dir / f"{result['id']}.json"
+            path.write_text(json.dumps(result))
+            return _row(path)
+
+        with ThreadPoolExecutor(os.cpu_count() or 4) as pool:
+            rows = list(pool.map(run, range(len(combos)), combos))
+    return {"batch": batch, "runs": rows, "skipped": skipped}
 
 
 @router.get("/api/engine/runs")
@@ -251,15 +314,24 @@ def engine_sweep(req: EngineSweepRequest):
         raise HTTPException(422, "Bad parameter name")
     if not all(VALUES.match(v) for v in params.values()):
         raise HTTPException(422, "Param values must be numbers, lists (5,9,13) or ranges (5:20:5)")
-    files = [_bars_csv(root, s, req.interval) for s in symbols]
+    start, end, history = _history(req.range)
+    got, coverage, skipped = _stock_bars(symbols, req.interval, start, end)
+    if not got:
+        raise HTTPException(422, _nothing_left(skipped))
     args = [f"{k}={v}" for k, v in params.items()] + [f"base.{k}={v:g}" for k, v in req.base.items()]
-    try:
-        result = _engine(root, req.strategy, *files, *args, f"cost_bps={req.cost_bps:g}", f"--sweep={req.mode}")
-    except HTTPException as e:
-        raise HTTPException(422 if e.status_code == 500 else e.status_code, e.detail) from e
+    with tempfile.TemporaryDirectory() as tmp:
+        files = [_bars_csv(tmp, s, req.interval, b) for s, b in got.items()]
+        del got
+        try:
+            result = _engine(
+                root, req.strategy, *files, *args, f"cost_bps={req.cost_bps:g}", f"--sweep={req.mode}", *_hold(req.interval)
+            )
+        except HTTPException as e:
+            raise HTTPException(422 if e.status_code == 500 else e.status_code, e.detail) from e
     result.update(id=f"sw-{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}",
                   created=datetime.now(timezone.utc).isoformat(), label=(req.label or "").strip() or None,
-                  symbols=symbols, interval=req.interval, cost_bps=req.cost_bps)
+                  symbols=list(coverage), interval=req.interval, cost_bps=req.cost_bps,
+                  history=history, coverage=coverage, skipped=skipped)
     folder = _sweeps_dir(root)
     folder.mkdir(parents=True, exist_ok=True)
     (folder / f"{result['id']}.json").write_text(json.dumps(result))
@@ -282,6 +354,130 @@ def engine_sweep_detail(sweep_id: str):
 @router.delete("/api/engine/sweeps/{sweep_id}")
 def engine_delete_sweep(sweep_id: str):
     path = _sweep_path(sweep_id)
+    path.unlink()
+    _rows.pop(path, None)
+    return {"ok": True}
+
+
+# --- walk-forward tuning (docs/autotune-blueprint.md, Phase 1) ------------------------------------
+# Report-only: nothing here deploys anything. One report per run, as a file like everything else.
+
+AUTOTUNE_HEAVY = ("windows", "oos", "baseline", "promised")  # left out of the list
+AUTOTUNE_WORKERS = 4  # walks at once; each engine sweep already uses every core
+
+
+def _autotune_dir(root):
+    return root / "runs" / "autotune"
+
+
+def _autotune_path(report_id):
+    if SAFE_ID.match(report_id):
+        for p in _autotune_dir(_root()).glob(f"*/*/{report_id}.json"):
+            return p
+    raise HTTPException(404, f"No walk-forward '{report_id}'")
+
+
+def _autotune_row(path):
+    mtime = path.stat().st_mtime
+    hit = _rows.get(path)
+    if not hit or hit[0] != mtime:
+        d = json.loads(path.read_text())
+        row = {k: v for k, v in d.items() if k not in AUTOTUNE_HEAVY}
+        row.update(oos=d["oos"]["summary"], baseline=d["baseline"]["summary"])
+        hit = _rows[path] = (mtime, row)
+    return hit[1]
+
+
+@router.post("/api/engine/autotune")
+def engine_autotune(req: EngineAutotuneRequest):
+    """One walk-forward per stock, tuned separately - parameters are per stock, never pooled - and
+    saved as one batch. Blocks until all are done: a year of 5m sessions in one-week steps is ~40
+    windows and a few seconds per stock, plus ~11s the first time a stock's bars are fetched.
+    A stock that fails (no bars, too little history) is reported and the rest still run."""
+    root = _root()
+    symbols = _check(root, req.strategy, req.symbols, req.interval)
+    params = {k: v.strip() for k, v in req.params.items() if v.strip()}
+    if not all(PARAM.match(k) for k in params):
+        raise HTTPException(422, "Bad parameter name")
+    if not all(VALUES.match(v) for v in params.values()):
+        raise HTTPException(422, "Param values must be numbers, lists (5,9,13) or ranges (5:20:5)")
+    defaults = next(s["params"] for s in _engine(root, "--list") if s["name"] == req.strategy)
+    batch = time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(2)
+    created = datetime.now(timezone.utc).isoformat()
+
+    # Bars are loaded one stock at a time (see _stock_bars); only the walks - engine subprocesses,
+    # no DuckDB - run in parallel.
+    start, end, history = _history(req.range)
+    got, coverage, skipped = _stock_bars(symbols, req.interval, start, end)
+    errors = [{"symbol": x["symbol"], "error": x["reason"]} for x in skipped]
+    loaded, need = [], req.train + req.test
+    for symbol, bars in got.items():
+        days = autotune.sessions_of(bars)
+        if len(days) < need:  # a stock listed late, or a short range: say what it had, and what would fit
+            fit = len(days) - 3 * req.test  # a train that leaves room for three test windows
+            hint = f"; a train of {fit} or less would walk it in 3+ windows" if fit >= 20 else ""
+            errors.append({"symbol": symbol, "error": f"only {len(days)} sessions in this range ({days[0]} → {days[-1]}) - "
+                                                     f"a walk needs train + test = {need}{hint}"})
+        else:
+            loaded.append((symbol, bars))
+    del got
+
+    def walk(i, symbol, bars):
+        try:
+            report = autotune.walk_forward(
+                lambda *a: _engine(root, *a, *_hold(req.interval)), bars, symbol=symbol, interval=req.interval, strategy=req.strategy,
+                params=params, defaults=defaults, train=req.train, test=req.test, min_trades=req.min_trades,
+                margin=req.margin, cost_bps=req.cost_bps,
+            )
+        except (ValueError, RuntimeError, HTTPException) as e:
+            return {"symbol": symbol, "error": str(getattr(e, "detail", e))}
+        report.update(id=f"wf-{batch}-{i}", batch=batch, created=created, history=history, coverage=coverage[symbol])
+        folder = _autotune_dir(root) / req.strategy / symbol
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f"{report['id']}.json"
+        path.write_text(json.dumps(report))
+        return _autotune_row(path)
+
+    with ThreadPoolExecutor(min(AUTOTUNE_WORKERS, max(len(loaded), 1))) as pool:
+        results = list(pool.map(walk, range(len(loaded)), *zip(*loaded))) if loaded else []
+    reports = [r for r in results if "error" not in r]
+    errors += [r for r in results if "error" in r]
+    if not reports:
+        # the same bad grid fails every stock the same way - say it once
+        causes = list(dict.fromkeys(e["error"] for e in errors))
+        raise HTTPException(422, causes[0] if len(causes) == 1 else "; ".join(f"{e['symbol']}: {e['error']}" for e in errors))
+    return {"batch": batch, "reports": reports, "errors": errors}
+
+
+@router.get("/api/engine/autotune")
+def engine_autotune_list():
+    root = _root(required=False)
+    if not root:
+        return []
+    return sorted((_autotune_row(p) for p in _autotune_dir(root).glob("*/*/*.json")), key=lambda r: r["created"], reverse=True)
+
+
+@router.get("/api/engine/autotune/{report_id}")
+def engine_autotune_detail(report_id: str):
+    return json.loads(_autotune_path(report_id).read_text())
+
+
+@router.delete("/api/engine/autotune/batches/{batch}")
+def engine_autotune_delete_batch(batch: str):
+    """Every stock's report from one multi-stock run. Matches this route's own `wf-<batch>-<n>`
+    files only."""
+    if not SAFE_ID.match(batch):
+        raise HTTPException(404, "No such batch")
+    paths = list(_autotune_dir(_root()).glob(f"*/*/wf-{batch}-*.json"))
+    for p in paths:
+        p.unlink()
+        _rows.pop(p, None)
+    return {"deleted": len(paths)}
+
+
+@router.delete("/api/engine/autotune/{report_id}")
+def engine_autotune_delete(report_id: str):
+    path = _autotune_path(report_id)
     path.unlink()
     _rows.pop(path, None)
     return {"ok": True}

@@ -10,8 +10,13 @@
 - **⌘/Ctrl+B opens the watchlist canvas from anywhere in the app** — each
   watchlist is a column, with the list on top and only the stocks in it listed
   underneath, like a tree. Stocks in no list sit in a **Not in any list** column
-  at the side. **Drag any stock onto a list to add it; select a stock under a list
-  and press Delete to remove it from that list.**
+  at the side. **Drag any stock onto a list to add it; click the × on a stock under a list
+  (it shows on hover), or select it and press Delete, to remove it from that list.**
+  Delete is read by the canvas itself, so it works right after the dialog opens with focus
+  in *Add stock…* - it's only ignored while you're typing in one of the two boxes.
+  A stock in **Not in any list** has a bin button instead (on hover), which deletes the stock
+  itself - every scraped report and analysis stored for it - after a confirmation, the same as
+  the Stocks page. The Delete key never does that: it only ever takes a stock off a list.
   Both writes hit the watchlist immediately — there is no Save.
 - A stock can sit in **any number of lists**, which is the whole reason this is
   a graph and not a picker: two edges off one symbol is the state a

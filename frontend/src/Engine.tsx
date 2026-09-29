@@ -38,37 +38,65 @@ import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
+import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
+  autotuneBatchSheet,
+  autotuneSheets,
   comboCount,
+  coverageNotes,
   drawdown,
   fanPaths,
   focusRange,
   histogram,
+  historyError,
+  historyText,
+  holdText,
   istTime,
   markerRange,
   noTrades,
   oatSeries,
+  portfolioCurve,
   runSheets,
   runsSheet,
   sweepSheets,
   parseValues,
+  pinnedRange,
   spread,
   sweepCount,
   sweepGrid,
   tradeMarkers,
+  tuneVerdict,
 } from '@/lib/engine'
 import type { RunTrade } from '@/lib/engine'
 import { fmt, formatDateTime, inr } from '@/lib/format'
 import type { SheetData } from '@/lib/exportFile'
+import type { EngineTab } from './router'
 import { downloadCsv, downloadXlsx } from '@/lib/exportFile'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { cn } from '@/lib/utils'
-import type { EngineRun, EngineRunRow, EngineSettings, EngineSweepRow, EngineSweepRun } from '@/services/api'
+import type {
+  BarRange,
+  EngineAutotuneReport,
+  EngineAutotuneRequest,
+  EngineAutotuneRow,
+  EngineCoverage,
+  EngineHistory,
+  EngineRun,
+  EngineRunRow,
+  EngineSettings,
+  EngineSkipped,
+  EngineSweepRow,
+  EngineSweepRun,
+} from '@/services/api'
 import {
+  deleteEngineAutotune,
+  deleteEngineAutotuneBatch,
   deleteEngineBatch,
   deleteEngineRun,
   deleteEngineSweep,
+  getEngineAutotune,
+  getEngineAutotunes,
   getEngineRun,
   getEngineRuns,
   getEngineSettings,
@@ -77,8 +105,10 @@ import {
   getEngineSweeps,
   getIntradayBars,
   getWatchlist,
+  runEngineAutotune,
   runEngineBacktest,
   runEngineSweep,
+  searchStocksMaster,
   syncEngineLive,
 } from '@/services/api'
 
@@ -86,7 +116,11 @@ import {
 // Stoklore's own bars, and read backtest, paper and live runs side by side. Every run is the
 // engine's report JSON (app/routers/engine.py), so all three sources render through the same views.
 
-const INTERVALS = ['1m', '5m', '15m', '1H', '4H']
+const INTERVALS = ['1m', '5m', '15m', '1H', '4H', '1D']
+/** Cost per side a run starts from. 1D positions are held overnight, so they pay delivery charges -
+ *  STT is 0.1% on each side for delivery vs 0.025% on the sell side intraday - about 12 bps a side
+ *  with stamp duty and exchange fees, against ~3 for intraday. */
+const defaultCost = (interval: string) => (interval === '1D' ? 12 : 3)
 const SOURCES = ['all', 'backtest', 'paper', 'live'] as const
 type Source = (typeof SOURCES)[number]
 type Metric = 'net' | 'sharpe' | 'max_dd' | 'win_rate'
@@ -102,8 +136,10 @@ const COLORS = { text: '#9ca3af', grid: 'rgba(148, 163, 184, 0.15)', up: '#22c55
 //: How many markers (two per trade) the executions chart frames when it opens - see ExecutionsChart.
 const OPENING_MARKERS = 40
 
-// The last symbol selection, so reopening the page doesn't start from scratch every time.
+// The last symbol selections, so reopening the page doesn't start from scratch every time. The two
+// forms keep their own: a quick backtest basket and a tuning universe are rarely the same list.
 const SYMBOLS_KEY = 'engine.symbols'
+const TUNE_SYMBOLS_KEY = 'engine.autotuneSymbols'
 
 const pnlClass = (v: number) => (v > 0 ? 'text-success' : v < 0 ? 'text-destructive' : '')
 
@@ -218,73 +254,251 @@ const MODE_HELP: Record<Mode, React.ReactNode> = {
   ),
 }
 
-/** Multi-select of the user's watchlist symbols, grouped by list. Any watchlist symbol can be run
- *  whether or not its bars are cached yet - `_bars_csv` (app/routers/engine.py) pulls and caches an
- *  uncached symbol on the first backtest that needs it, so picking a fresh one just costs that run
- *  a few extra seconds instead of failing. Selection persists to localStorage (see SYMBOLS_KEY),
- *  not just this session's state. */
+/** A symbol selection remembered per browser under `key`. Storage can be blocked (private window,
+ *  cleared site data); the picker then simply starts empty. */
+function useStoredSymbols(key: string) {
+  const [symbols, setSymbols] = useState<string[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(key) ?? '[]')
+      return Array.isArray(saved) ? saved.filter((s) => typeof s === 'string') : []
+    } catch {
+      return []
+    }
+  })
+  useEffect(() => {
+    try {
+      localStorage.setItem(key, JSON.stringify(symbols))
+    } catch {
+      // not remembered this time - nothing else depends on it
+    }
+  }, [key, symbols])
+  return [symbols, setSymbols] as const
+}
+
+/** Multi-select of symbols: the watchlist first, grouped by list, then - once something is typed -
+ *  every listed NSE stock that matches (the stocks master, whether or not it was ever scraped), so a
+ *  stock outside the watchlist is one search away. Any symbol can be run whether or not its bars are
+ *  cached yet: the backend pulls and caches an uncached one on the first run that needs it, which
+ *  costs that run a few extra seconds instead of failing. */
 function SymbolPicker({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
   const { data: watchlist } = useQuery({ queryKey: ['watchlist'], queryFn: getWatchlist })
   const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const query = search.trim()
+  const { data: found } = useQuery({
+    queryKey: ['stockSearch', query],
+    queryFn: () => searchStocksMaster(query),
+    enabled: open && query.length > 0,
+  })
   const groups = useMemo(() => {
     const byList = new Map<string, string[]>()
     for (const { symbol, list_name } of watchlist ?? [])
       byList.set(list_name, [...(byList.get(list_name) ?? []), symbol])
     return [...byList.entries()].sort(([a], [b]) => a.localeCompare(b))
   }, [watchlist])
+  const listed = new Set((watchlist ?? []).map((w) => w.symbol))
+  const others = (found?.stocks ?? []).filter((m) => !listed.has(m.symbol))
   const toggle = (sym: string) =>
     onChange(value.includes(sym) ? value.filter((s) => s !== sym) : [...value, sym])
+  const check = (sym: string) => <CheckIcon className={cn('size-3.5', !value.includes(sym) && 'opacity-0')} />
 
   return (
-    <div className="flex flex-col gap-1">
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger
-          render={<Button variant="outline" size="sm" className="h-7 w-52 justify-between font-normal" />}
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={<Button variant="outline" size="sm" className="h-7 w-44 justify-between font-normal" />}
+      >
+        <span className={cn('truncate', !value.length && 'text-muted-foreground')}>
+          {value.length === 0 ? 'Select symbols' : value.length === 1 ? value[0] : `${value.length} stocks`}
+        </span>
+        <ChevronsUpDownIcon className="size-3.5 shrink-0 opacity-50" />
+      </PopoverTrigger>
+      <PopoverContent className="w-72 p-0" align="start">
+        <Command>
+          <CommandInput
+            value={search}
+            onValueChange={setSearch}
+            placeholder="Watchlist, or search any stock…"
+          />
+          <CommandList className="max-h-80">
+            <CommandEmpty>
+              {query
+                ? 'No matches.'
+                : watchlist?.length
+                  ? 'No matches.'
+                  : 'No watchlist symbols yet - type to search every NSE stock.'}
+            </CommandEmpty>
+            {groups.map(([listName, syms]) => (
+              <CommandGroup key={listName} heading={listName}>
+                {syms.map((sym) => (
+                  <CommandItem key={sym} value={sym} onSelect={() => toggle(sym)}>
+                    {check(sym)}
+                    {sym}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ))}
+            {others.length > 0 && (
+              <CommandGroup heading="All NSE stocks">
+                {others.map((m) => (
+                  // the name is in the value too, so a match on the company name isn't filtered out
+                  <CommandItem
+                    key={m.symbol}
+                    value={`${m.symbol} ${m.name ?? ''}`}
+                    onSelect={() => toggle(m.symbol)}
+                  >
+                    {check(m.symbol)}
+                    <span className="font-medium">{m.symbol}</span>
+                    <span className="truncate text-xs text-muted-foreground">{m.name}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )}
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/** The picked symbols as removable chips, on a line of their own under a form's first row - inside
+ *  that row they grow with the list and push every other field out of line. Outlined = not in a
+ *  watchlist. */
+function SymbolChips({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
+  const { data: watchlist } = useQuery({ queryKey: ['watchlist'], queryFn: getWatchlist })
+  if (!value.length) return null
+  const listed = new Set((watchlist ?? []).map((w) => w.symbol))
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-dashed px-2 py-1.5">
+      <span className="mr-1 text-xs text-muted-foreground">
+        {value.length} stock{value.length === 1 ? '' : 's'}
+      </span>
+      {value.map((sym) => (
+        <Badge
+          key={sym}
+          variant={listed.has(sym) ? 'secondary' : 'outline'}
+          className="gap-1 pr-1"
+          title={listed.has(sym) ? undefined : 'Not in a watchlist'}
         >
-          <span className={cn('truncate', !value.length && 'text-muted-foreground')}>
-            {value.length ? value.join(', ') : 'Select symbols'}
-          </span>
-          <ChevronsUpDownIcon className="size-3.5 shrink-0 opacity-50" />
-        </PopoverTrigger>
-        <PopoverContent className="w-64 p-0" align="start">
-          <Command>
-            <CommandInput placeholder="Filter watchlist…" />
-            <CommandList className="max-h-72">
-              <CommandEmpty>
-                {watchlist?.length ? 'No matches.' : 'No watchlist symbols yet - add some first.'}
-              </CommandEmpty>
-              {groups.map(([listName, syms]) => (
-                <CommandGroup key={listName} heading={listName}>
-                  {syms.map((sym) => (
-                    <CommandItem key={sym} value={sym} onSelect={() => toggle(sym)}>
-                      <CheckIcon className={cn('size-3.5', !value.includes(sym) && 'opacity-0')} />
-                      {sym}
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              ))}
-            </CommandList>
-          </Command>
-        </PopoverContent>
-      </Popover>
-      {value.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {value.map((sym) => (
-            <Badge key={sym} variant="secondary" className="gap-1 pr-1">
-              {sym}
-              <button
-                type="button"
-                aria-label={`Remove ${sym}`}
-                onClick={() => onChange(value.filter((s) => s !== sym))}
-                className="rounded-sm hover:bg-muted-foreground/20"
-              >
-                <XIcon className="size-3" />
-              </button>
-            </Badge>
-          ))}
-        </div>
+          {sym}
+          <button
+            type="button"
+            aria-label={`Remove ${sym}`}
+            onClick={() => onChange(value.filter((s) => s !== sym))}
+            className="rounded-sm hover:bg-muted-foreground/20"
+          >
+            <XIcon className="size-3" />
+          </button>
+        </Badge>
+      ))}
+      {value.length > 1 && (
+        <button
+          type="button"
+          onClick={() => onChange([])}
+          className="ml-auto px-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          Clear all
+        </button>
       )}
     </div>
+  )
+}
+
+const HISTORY_MODES = { all: 'All available', years: 'Last N years', dates: 'Date range' } as const
+/** Today in IST as "YYYY-MM-DD" - the market's date, whatever timezone the browser is in. */
+const todayIST = () => new Date(Date.now() + 19_800_000).toISOString().slice(0, 10)
+
+/** Which stretch of history a run uses. Every stock has its own: one listed last year just brings
+ *  less to a "last 5 years" run, and one with nothing in the range is skipped - the run's report
+ *  says what each had. */
+function HistoryPicker({ value, onChange }: { value: BarRange; onChange: (v: BarRange) => void }) {
+  const today = todayIST()
+  const setMode = (mode: BarRange['mode']) =>
+    onChange(
+      mode === 'years'
+        ? { mode, years: value.years ?? 1 }
+        : mode === 'dates'
+          ? { mode, start: value.start ?? null, end: value.end ?? null }
+          : { mode: 'all' },
+    )
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <Select value={value.mode} onValueChange={(v) => setMode(v as BarRange['mode'])}>
+        <SelectTrigger size="sm" className="w-36">
+          <SelectValue>{(v: BarRange['mode']) => HISTORY_MODES[v]}</SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {(Object.keys(HISTORY_MODES) as BarRange['mode'][]).map((m) => (
+            <SelectItem key={m} value={m}>
+              {HISTORY_MODES[m]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {value.mode === 'years' && (
+        <>
+          <Input
+            type="number"
+            min={0.5}
+            max={30}
+            step={0.5}
+            value={value.years ?? ''}
+            onChange={(e) =>
+              onChange({ mode: 'years', years: e.target.value === '' ? null : Number(e.target.value) })
+            }
+            aria-label="Years of history"
+            className="h-7 w-16"
+          />
+          <span className="text-xs text-muted-foreground">years</span>
+        </>
+      )}
+      {value.mode === 'dates' && (
+        <>
+          <Input
+            type="date"
+            max={value.end || today}
+            value={value.start ?? ''}
+            onChange={(e) => onChange({ ...value, start: e.target.value || null })}
+            aria-label="History from"
+            className="h-7 w-36"
+          />
+          <span className="text-xs text-muted-foreground">→</span>
+          <Input
+            type="date"
+            min={value.start || undefined}
+            max={today}
+            value={value.end ?? ''}
+            onChange={(e) => onChange({ ...value, end: e.target.value || null })}
+            aria-label="History to"
+            className="h-7 w-36"
+          />
+        </>
+      )}
+    </div>
+  )
+}
+
+/** A run's history in one line: what it was given, which stocks didn't fill it, which were left out. */
+function HistoryLine({
+  history,
+  coverage,
+  skipped,
+}: {
+  history?: EngineHistory | number | null
+  coverage?: EngineCoverage
+  skipped?: EngineSkipped
+}) {
+  const notes = typeof history === 'number' ? [] : coverageNotes(history, coverage)
+  return (
+    <p className="text-xs text-muted-foreground">
+      History: <span className="text-foreground">{historyText(history)}</span>
+      {notes.length > 0 && <span> · {notes.join(' · ')}</span>}
+      {skipped?.length ? (
+        <span className="text-destructive">
+          {' '}
+          · skipped {skipped.map((x) => `${x.symbol} (${x.reason})`).join(', ')}
+        </span>
+      ) : null}
+    </p>
   )
 }
 
@@ -301,21 +515,15 @@ function RunForm({
   })
   const [name, setName] = useState<string | null>(null)
   const [mode, setMode] = useState<Mode>('oat')
-  const [symbols, setSymbols] = useState<string[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(SYMBOLS_KEY) ?? '[]')
-    } catch {
-      return []
-    }
-  })
-  useEffect(() => {
-    localStorage.setItem(SYMBOLS_KEY, JSON.stringify(symbols))
-  }, [symbols])
+  const [symbols, setSymbols] = useStoredSymbols(SYMBOLS_KEY)
   const [barInterval, setBarInterval] = useState('5m')
   const [values, setValues] = useState<Record<string, string>>({})
   const [bases, setBases] = useState<Record<string, string>>({})
-  const [cost, setCost] = useState('3')
+  const [cost, setCost] = useState<string | null>(null) // null: the interval's default
+  const costText = cost ?? String(defaultCost(barInterval))
   const [label, setLabel] = useState('')
+  const [history, setHistory] = useState<BarRange>({ mode: 'all' })
+  const historyProblem = historyError(history, todayIST())
 
   const strategy = strategies?.find((s) => s.name === name) ?? strategies?.[0]
   const text = (k: string) => values[k] ?? String(strategy?.params[k] ?? '')
@@ -342,8 +550,9 @@ function RunForm({
     strategy: strategy!.name,
     symbols,
     interval: barInterval,
-    cost_bps: Number(cost) || 0,
+    cost_bps: Number(costText) || 0,
     label: label.trim() || null,
+    range: history,
   })
 
   const run = useMutation({
@@ -354,6 +563,7 @@ function RunForm({
           params: Object.fromEntries(parsed.filter(([, v]) => v?.length)) as Record<string, number[]>,
         })
         toast.success(`${res.runs.length} backtest${res.runs.length === 1 ? '' : 's'} done`)
+        for (const x of res.skipped) toast.warning(`${x.symbol} skipped - ${x.reason}`)
         onDone(
           res.batch,
           res.runs.map((r) => r.id),
@@ -374,6 +584,7 @@ function RunForm({
             : {},
       })
       toast.success(`${res.runs.length} runs swept`)
+      for (const x of res.skipped ?? []) toast.warning(`${x.symbol} skipped - ${x.reason}`)
       onSweep(res.id)
     },
     onError: (e) => toast.error(e.message),
@@ -437,9 +648,12 @@ function RunForm({
             </SelectContent>
           </Select>
         </Field>
+        <Field label="History">
+          <HistoryPicker value={history} onChange={setHistory} />
+        </Field>
         <Field label="Cost (bps/side)">
           <Input
-            value={cost}
+            value={costText}
             onChange={(e) => setCost(e.target.value)}
             inputMode="decimal"
             className="h-7 w-20"
@@ -454,6 +668,7 @@ function RunForm({
           />
         </Field>
       </div>
+      <SymbolChips value={symbols} onChange={setSymbols} />
       <div className="flex flex-wrap items-end gap-3">
         {parsed.map(([k, v]) => (
           <div key={k} className="flex flex-col gap-1">
@@ -479,22 +694,34 @@ function RunForm({
         ))}
         <Button
           size="sm"
-          disabled={invalid.length > 0 || count < 1 || count > limit || !symbols.length || run.isPending}
+          disabled={
+            invalid.length > 0 ||
+            count < 1 ||
+            count > limit ||
+            !symbols.length ||
+            !!historyProblem ||
+            run.isPending
+          }
           onClick={() => run.mutate()}
         >
           {run.isPending ? <Spinner className="size-3.5" /> : <PlayIcon />}
           {!symbols.length
             ? 'Select symbols'
-            : mode === 'single'
-              ? `Run ${count > 1 ? `${count} backtests` : 'backtest'}`
-              : count
-                ? `Run ${fmt(count, 0)} ${mode === 'oat' ? 'one at a time' : 'grid'}`
-                : 'Give a param a range'}
+            : historyProblem
+              ? historyProblem
+              : mode === 'single'
+                ? `Run ${count > 1 ? `${count} backtests` : 'backtest'}`
+                : count
+                  ? `Run ${fmt(count, 0)} ${mode === 'oat' ? 'one at a time' : 'grid'}`
+                  : 'Give a param a range'}
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        {MODE_HELP[mode]} Orders fill at the next bar's open; positions square off at 15:15. A symbol picked
-        for the first time takes a few extra seconds while its bars are fetched and cached.
+        {MODE_HELP[mode]} Orders fill at the next bar's open;{' '}
+        {barInterval === '1D'
+          ? "on 1D bars positions are held across days until the strategy exits (costs default to delivery's ~12 bps)."
+          : 'positions square off at 15:15.'}{' '}
+        A symbol picked for the first time takes a few extra seconds while its bars are fetched and cached.
       </p>
     </div>
   )
@@ -553,14 +780,17 @@ function DailyBars({ daily }: { daily: [number, number][] }) {
  *  at: you can see what the strategy saw. */
 function ExecutionsChart({ run, focus }: { run: EngineRun; focus: RunTrade | null }) {
   const [symbol, setSymbol] = useState(run.symbols[0] ?? '')
+  // the run's own dates: a backtest on an old range would otherwise get today's newest bars, and
+  // its arrows would land on candles that were never loaded
+  const period = { start: istTime(run.summary.from).slice(0, 10), end: istTime(run.summary.to).slice(0, 10) }
   const ref = useRef<HTMLDivElement>(null)
   const {
     data: bars,
     isLoading,
     error,
   } = useQuery({
-    queryKey: ['intradayBars', symbol, run.interval],
-    queryFn: () => getIntradayBars(symbol, run.interval),
+    queryKey: ['intradayBars', symbol, run.interval, period.start, period.end],
+    queryFn: () => getIntradayBars(symbol, run.interval, period),
     enabled: !!symbol,
     staleTime: 5 * 60_000,
   })
@@ -582,7 +812,7 @@ function ExecutionsChart({ run, focus }: { run: EngineRun; focus: RunTrade | nul
       grid: { vertLines: { visible: false }, horzLines: { color: COLORS.grid } },
       // Bar times are already IST-shifted (see minute_data.py) and the chart renders UTC, so the
       // axis reads as market-local time.
-      timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
+      timeScale: { borderVisible: false, timeVisible: run.interval !== '1D', secondsVisible: false },
       rightPriceScale: { borderVisible: false },
       localization: { priceFormatter: (p: number) => fmt(p) },
     })
@@ -742,6 +972,9 @@ function RunDetail({ id, onClose }: { id: string; onClose: () => void }) {
             {istTime(s.from)} → {istTime(s.to)} IST
           </span>
         </div>
+        {run.source === 'backtest' && (
+          <HistoryLine history={run.history} coverage={run.coverage} skipped={run.skipped} />
+        )}
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-8">
           <Stat label="Net P&L" value={inr(s.net)} className={pnlClass(s.net)} />
           <Stat label="Gross P&L" value={inr(s.gross)} className={pnlClass(s.gross)} />
@@ -1105,7 +1338,7 @@ const SWEEP_METRICS: Record<
   win_rate: { label: 'Win rate', short: 'Win %', better: 1, format: (v) => `${fmt(v, 1)}%` },
   trades: { label: 'Trades', short: 'Trades', better: 0, format: (v) => fmt(v, 0) },
   trades_per_day: { label: 'Trades / day', short: '/day', better: 0, format: (v) => fmt(v, 1) },
-  avg_hold_min: { label: 'Avg hold (min)', short: 'Hold', better: 0, format: (v) => `${fmt(v, 0)}m` },
+  avg_hold_min: { label: 'Avg hold', short: 'Hold', better: 0, format: holdText },
 }
 const RANKABLE = (Object.keys(SWEEP_METRICS) as SweepMetric[]).filter((k) => SWEEP_METRICS[k].better)
 const metricOf = (r: EngineSweepRun, m: SweepMetric) => r.summary[m] ?? 0
@@ -1408,6 +1641,8 @@ function SweepView({
         params: Object.fromEntries(Object.entries(params).map(([k, v]) => [k, [v]])),
         cost_bps: cost_bps ?? sweep!.cost_bps,
         label: sweep!.label ?? `${sweep!.strategy} sweep`,
+        // the same bars the sweep ran on, not today's history - or the numbers won't match the cell
+        range: pinnedRange(sweep!.history, sweep!.coverage),
       })
     },
     onSuccess: (res) => {
@@ -1537,6 +1772,7 @@ function SweepView({
           </span>
           <span>created {formatDateTime(sweep.created)}</span>
         </div>
+        <HistoryLine history={sweep.history} coverage={sweep.coverage} skipped={sweep.skipped} />
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           <Stat
@@ -1954,8 +2190,766 @@ function RunsTable({
   )
 }
 
+// --- walk-forward auto-tune (docs/autotune-blueprint.md, Phase 1) ---------------------------------
+// Report-only: tunes on past sessions, trades the pick on the next ones it never saw, and shows how
+// that compares with just trading the strategy's defaults. Nothing here deploys anything.
+
+const TUNE_NUMBERS = [
+  ['train', 'Train sessions', 60],
+  ['test', 'Test sessions', 5],
+  ['min_trades', 'Min trades', 30],
+  ['margin', 'Switch margin', 0.15],
+  ['cost_bps', 'Cost (bps/side)', 3],
+] as const
+// A 1D session is one bar: a 60-bar train window can't hold 30 trades, so a daily walk starts from a
+// year of train, a month of test, all the history there is, and delivery costs.
+const DAILY_TUNE: Partial<Record<(typeof TUNE_NUMBERS)[number][0], number>> = {
+  train: 250,
+  test: 20,
+  min_trades: 10,
+  cost_bps: defaultCost('1D'),
+}
+const MAX_TUNE_CELLS = 5000 // app/core/autotune.py MAX_CELLS
+
+/** A test window's first bar, on the same IST-read-as-UTC clock as every engine time. */
+const sessionTime = (date: string) => (Date.parse(`${date}T09:15:00Z`) / 1000) as UTCTimestamp
+
+/** A titled group inside a form, so a long form reads as a few decisions instead of one wall. */
+function FormSection({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-2">
+      <p className="text-xs font-medium">
+        {title}
+        {hint && <span className="font-normal text-muted-foreground"> · {hint}</span>}
+      </p>
+      {children}
+    </section>
+  )
+}
+
+const MAX_TUNE_SYMBOLS = 30 // EngineAutotuneRequest.symbols max_length
+
+function AutotuneForm({ onDone }: { onDone: (batch: string, ids: string[]) => void }) {
+  const { data: strategies, error } = useQuery({
+    queryKey: ['engineStrategies'],
+    queryFn: getEngineStrategies,
+  })
+  const [name, setName] = useState<string | null>(null)
+  const [symbols, setSymbols] = useStoredSymbols(TUNE_SYMBOLS_KEY)
+  const [barInterval, setBarInterval] = useState('5m')
+  const [values, setValues] = useState<Record<string, string>>({})
+  const [nums, setNums] = useState<Record<string, string>>({})
+  // untouched, it follows the bars: a year of intraday sessions, all of a daily history
+  const [historyChoice, setHistory] = useState<BarRange | null>(null)
+  const history: BarRange =
+    historyChoice ?? (barInterval === '1D' ? { mode: 'all' } : { mode: 'years', years: 1 })
+  const historyProblem = historyError(history, todayIST())
+
+  const strategy = strategies?.find((s) => s.name === name) ?? strategies?.[0]
+  const text = (k: string) => values[k] ?? String(strategy?.params[k] ?? '')
+  const parsed = Object.keys(strategy?.params ?? {}).map((k) => [k, parseValues(text(k))] as const)
+  const invalid = parsed.filter(([, v]) => v === null).map(([k]) => k)
+  const tuned = parsed.filter(([, v]) => (v?.length ?? 0) > 1)
+  const cells = comboCount(tuned.map(([, v]) => v ?? []))
+  // an untouched field follows the interval's default; one you typed in stays
+  const valueOf = (k: (typeof TUNE_NUMBERS)[number][0], d: number) =>
+    nums[k] ?? String((barInterval === '1D' ? DAILY_TUNE[k] : undefined) ?? d)
+  const numbers = TUNE_NUMBERS.map(([k, , d]) => [k, Number(valueOf(k, d))] as const)
+  const badNumber = numbers.some(([, v]) => !Number.isFinite(v))
+
+  const run = useMutation({
+    mutationFn: () =>
+      runEngineAutotune({
+        strategy: strategy!.name,
+        symbols,
+        interval: barInterval,
+        range: history,
+        params: Object.fromEntries(parsed.map(([k]) => [k, text(k)])),
+        ...Object.fromEntries(numbers),
+      } as EngineAutotuneRequest),
+    onSuccess: (r) => {
+      toast.success(`${r.reports.length} stock${r.reports.length === 1 ? '' : 's'} walked forward`)
+      // the rest still ran - say which ones didn't, and why
+      for (const e of r.errors) toast.error(`${e.symbol}: ${e.error}`)
+      onDone(
+        r.batch,
+        r.reports.map((x) => x.id),
+      )
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
+  if (error) return <p className="text-sm text-destructive">{error.message}</p>
+  if (!strategy) return <Spinner className="size-4" />
+
+  const numberField = ([k, label, d]: (typeof TUNE_NUMBERS)[number], className = 'h-7 w-full') => (
+    <Field key={k} label={label}>
+      <Input
+        value={valueOf(k, d)}
+        onChange={(e) => setNums({ ...nums, [k]: e.target.value })}
+        inputMode="decimal"
+        aria-invalid={!Number.isFinite(Number(valueOf(k, d)))}
+        className={className}
+      />
+    </Field>
+  )
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end gap-3">
+        <Field label="Strategy">
+          <Select
+            value={strategy.name}
+            onValueChange={(v) => {
+              setName(v as string)
+              setValues({})
+            }}
+          >
+            <SelectTrigger size="sm" className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {strategies!.map((s) => (
+                <SelectItem key={s.name} value={s.name}>
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field label="Symbols">
+          <SymbolPicker value={symbols} onChange={setSymbols} />
+        </Field>
+        <Field label="Bars">
+          <Select value={barInterval} onValueChange={(v) => setBarInterval(v as string)}>
+            <SelectTrigger size="sm" className="w-20">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {INTERVALS.map((i) => (
+                <SelectItem key={i} value={i}>
+                  {i}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        {numberField(TUNE_NUMBERS.find(([k]) => k === 'cost_bps')!, 'h-7 w-24')}
+      </div>
+      <SymbolChips value={symbols} onChange={setSymbols} />
+
+      <FormSection title="Walk" hint="how much history, and how it's cut into windows">
+        <Field label="History">
+          <HistoryPicker value={history} onChange={setHistory} />
+        </Field>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {TUNE_NUMBERS.filter(([k]) => k !== 'cost_bps').map((f) => numberField(f))}
+        </div>
+      </FormSection>
+
+      <FormSection title="Parameters" hint="a range 5:20:1 or list 5,9,13 is tuned · one value is fixed">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          {parsed.map(([k, v]) => (
+            <Field key={k} label={`${k}${(v?.length ?? 0) > 1 ? ` · ${v!.length} values` : ''}`}>
+              <Input
+                value={text(k)}
+                onChange={(e) => setValues({ ...values, [k]: e.target.value })}
+                aria-invalid={invalid.includes(k)}
+                placeholder="5:20:1"
+                className={cn('h-7 w-full font-mono text-xs', (v?.length ?? 0) > 1 && 'border-primary/60')}
+              />
+            </Field>
+          ))}
+        </div>
+      </FormSection>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
+        <details className="max-w-3xl text-xs text-muted-foreground">
+          <summary className="cursor-pointer select-none hover:text-foreground">How the walk works</summary>
+          <p className="mt-2">
+            Each stock is walked on its own and gets its own parameters - never one set pooled across them.
+            Every window tunes a grid over the params given a range on its <em>train</em> sessions, then
+            trades the pick on the next <em>test</em> sessions - which it never saw - next to the strategy's
+            fixed defaults. A cell is only picked with at least <em>min trades</em> in-sample and a positive
+            score across its neighbours; otherwise the window is sat out. The pick changes only when a new
+            cell scores better by the <em>switch margin</em>. Bars come up to today: the minute dataset ends
+            in January 2026 and the rest is fetched from moneycontrol. Report only - nothing is deployed.
+          </p>
+        </details>
+        <Button
+          size="sm"
+          className="ml-auto"
+          disabled={
+            !symbols.length ||
+            symbols.length > MAX_TUNE_SYMBOLS ||
+            invalid.length > 0 ||
+            !tuned.length ||
+            cells > MAX_TUNE_CELLS ||
+            badNumber ||
+            !!historyProblem ||
+            run.isPending
+          }
+          onClick={() => run.mutate()}
+        >
+          {run.isPending ? <Spinner className="size-3.5" /> : <PlayIcon />}
+          {!symbols.length
+            ? 'Select symbols'
+            : historyProblem
+              ? historyProblem
+              : symbols.length > MAX_TUNE_SYMBOLS
+                ? `${symbols.length} stocks - keep it to ${MAX_TUNE_SYMBOLS}`
+                : !tuned.length
+                  ? 'Give a param a range'
+                  : cells > MAX_TUNE_CELLS
+                    ? `${fmt(cells, 0)} cells - keep it under ${fmt(MAX_TUNE_CELLS, 0)}`
+                    : `Walk forward ${symbols.length > 1 ? `${symbols.length} stocks` : symbols[0]} · ${fmt(cells, 0)} cells per window`}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function AutotuneView({ id, onClose }: { id: string; onClose: () => void }) {
+  const queryClient = useQueryClient()
+  const { data: r, error } = useQuery({
+    queryKey: ['engineAutotune', id],
+    queryFn: () => getEngineAutotune(id),
+  })
+  const remove = useMutation({
+    mutationFn: () => deleteEngineAutotune(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['engineAutotunes'] })
+      onClose()
+    },
+    onError: (e) => toast.error(e.message),
+  })
+  const swept = useMemo(() => Object.keys(r?.axes ?? {}), [r])
+  const curves = useMemo<Dataset[]>(() => {
+    if (!r) return []
+    const pts = (curve: [number, number][]) => curve.map(([t, v]) => ({ time: t as UTCTimestamp, value: v }))
+    const start = r.oos.equity[0]?.[0]
+    const promised: [number, number][] =
+      start != null && r.promised.length && start < r.promised[0][0]
+        ? [[start, 0], ...r.promised]
+        : r.promised
+    return [
+      { key: 'Tuned (out-of-sample)', color: seriesColor(0), points: pts(r.oos.equity) },
+      { key: 'Fixed defaults (out-of-sample)', color: seriesColor(3), points: pts(r.baseline.equity) },
+      { key: 'In-sample promise', color: seriesColor(1), points: pts(promised) },
+    ]
+  }, [r])
+  const paths = useMemo<Dataset[]>(
+    () =>
+      r
+        ? swept.map((k, i) => ({
+            key: k,
+            color: seriesColor(i),
+            points: r.windows
+              .filter((w) => w.chosen)
+              .map((w) => ({ time: sessionTime(w.test[0]), value: w.chosen![k] })),
+          }))
+        : [],
+    [r, swept],
+  )
+
+  const actions = (
+    <>
+      {r && <ExportMenu name={r.id} sheets={() => autotuneSheets(r)} csvSheet={2} />}
+      <Button size="sm" variant="ghost" disabled={remove.isPending} onClick={() => remove.mutate()}>
+        <Trash2Icon /> Delete
+      </Button>
+      <Button size="icon-sm" variant="ghost" aria-label="Close" onClick={onClose}>
+        <XIcon />
+      </Button>
+    </>
+  )
+  if (error || !r)
+    return (
+      <Panel title="Walk-forward" actions={actions}>
+        {error ? <p className="text-sm text-destructive">{error.message}</p> : <Spinner className="size-4" />}
+      </Panel>
+    )
+
+  const st = r.stats
+  const tuned = r.oos.summary
+  const base = r.baseline.summary
+  // what happened, in numbers - not advice
+  const verdict = !st.traded_windows
+    ? 'No cell made money in-sample in any window, so the tuner never traded. This grid has nothing to tune.'
+    : tuned.net <= 0
+      ? `Tuned parameters lost ${inr(-tuned.net)} out-of-sample${st.beats_baseline ? ` - less than fixed defaults (${inr(base.net)}), largely by sitting out ${st.sat_out} of ${st.windows} windows` : ''}. No out-of-sample edge.`
+      : st.beats_baseline
+        ? `Tuned parameters made ${inr(tuned.net)} out-of-sample, against ${inr(base.net)} for fixed defaults. Read it with the efficiency, deflated Sharpe and stability below before trusting it.`
+        : `Tuned parameters made ${inr(tuned.net)} out-of-sample, but fixed defaults made more (${inr(base.net)}) - tuning added nothing here.`
+
+  return (
+    <Panel
+      title={`Walk-forward · ${r.strategy} · ${r.symbol} ${r.interval} · ${st.windows} windows`}
+      actions={actions}
+    >
+      <div className="space-y-5">
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+          <span>
+            {r.sessions[0]} → {r.sessions[1]} · train {r.train} / test {r.test} sessions · min {r.min_trades}{' '}
+            trades · switch margin {fmt(r.margin * 100, 0)}% · cost {r.cost_bps} bps
+          </span>
+          <span>
+            Tuned:{' '}
+            <span className="font-mono text-foreground">
+              {swept.map((k) => `${k} ${r.axes[k][0]}…${r.axes[k].at(-1)} (${r.axes[k].length})`).join(', ')}
+            </span>
+          </span>
+          <span>
+            Fixed defaults:{' '}
+            <span className="font-mono text-foreground">
+              {swept.map((k) => `${k}=${r.defaults[k]}`).join(' ')}
+            </span>
+          </span>
+          <span>created {formatDateTime(r.created)}</span>
+        </div>
+        <HistoryLine history={r.history} coverage={r.coverage && { [r.symbol]: r.coverage }} />
+
+        <p
+          className={cn(
+            'text-sm',
+            tuned.net > 0 && st.beats_baseline ? 'text-success' : 'text-muted-foreground',
+          )}
+        >
+          {verdict}
+        </p>
+
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          <Stat label="Tuned net · out-of-sample" value={inr(tuned.net)} className={pnlClass(tuned.net)} />
+          <Stat
+            label="Fixed defaults net · out-of-sample"
+            value={inr(base.net)}
+            className={pnlClass(base.net)}
+          />
+          <Stat label="Trades · tuned vs fixed" value={`${fmt(tuned.trades, 0)} vs ${fmt(base.trades, 0)}`} />
+          <Stat
+            label="Profit factor · tuned vs fixed"
+            value={`${fmt(tuned.profit_factor)} vs ${fmt(base.profit_factor)}`}
+          />
+          <Stat label="Max drawdown · tuned vs fixed" value={`${inr(tuned.max_dd)} vs ${inr(base.max_dd)}`} />
+          <Stat
+            label="Walk-forward efficiency · want ≥ 0.5"
+            value={st.wfe == null ? '—' : fmt(st.wfe)}
+            className={st.wfe == null ? undefined : st.wfe >= 0.5 ? 'text-success' : 'text-destructive'}
+          />
+          <Stat
+            label={`Deflated Sharpe · ${st.trials} tries/window · want ≥ 90%`}
+            value={st.dsr == null ? '—' : `${fmt(st.dsr * 100, 0)}%`}
+            className={st.dsr == null ? undefined : st.dsr >= 0.9 ? 'text-success' : 'text-destructive'}
+          />
+          <Stat label="Windows traded" value={`${st.traded_windows} / ${st.windows}`} />
+          <Stat
+            label="Param stability · want ≥ 70%"
+            value={st.stability == null ? '—' : `${fmt(st.stability * 100, 0)}%`}
+            className={
+              st.stability == null ? undefined : st.stability >= 0.7 ? 'text-success' : 'text-destructive'
+            }
+          />
+          <Stat label="Pick switches" value={fmt(st.switches, 0)} />
+        </div>
+
+        <div>
+          <p className="mb-1 text-xs text-muted-foreground">
+            Out-of-sample equity, stitched window to window. The gap between the tuned line and the in-sample
+            promise is how much of the in-sample result was fit to noise.
+          </p>
+          <div className="h-72">
+            <SeriesChart datasets={curves} fill format={inr} />
+          </div>
+        </div>
+
+        {paths.some((p) => p.points.length > 1) && (
+          <div>
+            <p className="mb-1 text-xs text-muted-foreground">
+              Parameter path - the pick at each window's start. A line that jumps around the grid means there
+              is no stable optimum to tune toward.
+            </p>
+            <div className="grid gap-4 lg:grid-cols-2">
+              {paths.map((p) => (
+                <div key={p.key} className="h-40">
+                  <SeriesChart datasets={[p]} fill />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div>
+          <p className="mb-1 text-xs text-muted-foreground">Windows</p>
+          <div className="max-h-[28rem] overflow-auto rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Test sessions</TableHead>
+                  {swept.map((k) => (
+                    <TableHead key={k} className="font-mono">
+                      {k}
+                    </TableHead>
+                  ))}
+                  <TableHead className="text-right">Eligible cells</TableHead>
+                  <TableHead className="text-right">In-sample net</TableHead>
+                  <TableHead className="text-right">Out-of-sample net</TableHead>
+                  <TableHead className="text-right">Trades</TableHead>
+                  <TableHead className="text-right">Fixed defaults net</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {r.windows.map((w) => (
+                  <TableRow key={w.test[0]} className={cn(!w.chosen && 'text-muted-foreground/60')}>
+                    <TableCell className="tabular-nums">
+                      {w.test[0]} → {w.test[1]}
+                      {w.switched && (
+                        <Badge variant="outline" className="ml-2">
+                          switched
+                        </Badge>
+                      )}
+                    </TableCell>
+                    {w.chosen ? (
+                      swept.map((k) => (
+                        <TableCell key={k} className="font-mono text-xs">
+                          {w.chosen![k]}
+                        </TableCell>
+                      ))
+                    ) : (
+                      <TableCell colSpan={swept.length} className="text-xs italic">
+                        sat out
+                      </TableCell>
+                    )}
+                    <TableCell className="text-right tabular-nums">
+                      {w.eligible} / {w.cells}
+                    </TableCell>
+                    <TableCell className={cn('text-right tabular-nums', w.is && pnlClass(w.is.net))}>
+                      {w.is ? inr(w.is.net) : '—'}
+                    </TableCell>
+                    <TableCell className={cn('text-right tabular-nums', w.oos && pnlClass(w.oos.net))}>
+                      {w.oos ? inr(w.oos.net) : '—'}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{w.oos ? w.oos.trades : '—'}</TableCell>
+                    <TableCell className={cn('text-right tabular-nums', pnlClass(w.baseline.net))}>
+                      {inr(w.baseline.net)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      </div>
+    </Panel>
+  )
+}
+
+const VERDICT_BADGE = {
+  held: { label: 'held up', className: 'text-success' },
+  failed: { label: 'no edge', className: 'text-destructive' },
+  idle: { label: 'never traded', className: 'text-muted-foreground' },
+} as const
+
+/** A multi-stock run: every stock's own walk-forward side by side, and the batch traded as one book.
+ *  Each stock was tuned on its own; this only adds their results up. */
+function AutotuneBatchView({
+  batch,
+  rows,
+  onOpen,
+  onClose,
+}: {
+  batch: string
+  rows: EngineAutotuneRow[]
+  onOpen: (id: string) => void
+  onClose: () => void
+}) {
+  const queryClient = useQueryClient()
+  const remove = useMutation({
+    mutationFn: () => deleteEngineAutotuneBatch(batch),
+    onSuccess: (r) => {
+      toast.success(`Deleted ${r.deleted} reports`)
+      queryClient.invalidateQueries({ queryKey: ['engineAutotunes'] })
+      onClose()
+    },
+    onError: (e) => toast.error(e.message),
+  })
+  // the portfolio curve needs each stock's daily P&L, which the list rows leave out
+  const combine = useCallback((results: UseQueryResult<EngineAutotuneReport>[]) => {
+    const loaded = results.flatMap((r) => (r.data ? [r.data] : []))
+    const pts = (curve: [number, number][]) => curve.map(([t, v]) => ({ time: t as UTCTimestamp, value: v }))
+    return {
+      loading: results.some((r) => r.isPending),
+      datasets: loaded.length
+        ? [
+            {
+              key: 'Tuned (out-of-sample)',
+              color: seriesColor(0),
+              points: pts(portfolioCurve(loaded.map((d) => d.oos.daily))),
+            },
+            {
+              key: 'Fixed defaults (out-of-sample)',
+              color: seriesColor(3),
+              points: pts(portfolioCurve(loaded.map((d) => d.baseline.daily))),
+            },
+          ]
+        : [],
+    }
+  }, [])
+  const { datasets, loading } = useQueries({
+    queries: rows.map((r) => ({
+      queryKey: ['engineAutotune', r.id],
+      queryFn: () => getEngineAutotune(r.id),
+    })),
+    combine,
+  })
+
+  const sorted = [...rows].sort((a, b) => b.oos.net - a.oos.net)
+  const actions = (
+    <>
+      <ExportMenu name={`autotune-${batch}`} sheets={() => [autotuneBatchSheet(sorted)]} />
+      <Button size="sm" variant="ghost" disabled={remove.isPending} onClick={() => remove.mutate()}>
+        <Trash2Icon /> Delete all
+      </Button>
+      <Button size="icon-sm" variant="ghost" aria-label="Close" onClick={onClose}>
+        <XIcon />
+      </Button>
+    </>
+  )
+  if (!rows.length)
+    return (
+      <Panel title="Walk-forward batch" actions={actions}>
+        <Spinner className="size-4" />
+      </Panel>
+    )
+
+  const first = rows[0]
+  const verdicts = sorted.map(tuneVerdict)
+  const held = verdicts.filter((v) => v === 'held').length
+  const idle = verdicts.filter((v) => v === 'idle').length
+  const tunedNet = rows.reduce((n, r) => n + r.oos.net, 0)
+  const fixedNet = rows.reduce((n, r) => n + r.baseline.net, 0)
+  const wfes = rows.flatMap((r) => (r.stats.wfe == null ? [] : [r.stats.wfe])).sort((a, b) => a - b)
+
+  return (
+    <Panel
+      title={`Walk-forward batch · ${first.strategy} · ${rows.length} stocks · ${first.interval}`}
+      actions={actions}
+    >
+      <div className="space-y-5">
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+          <span>
+            {first.sessions[0]} → {first.sessions[1]} · train {first.train} / test {first.test} sessions · min{' '}
+            {first.min_trades} trades · switch margin {fmt(first.margin * 100, 0)}% · cost {first.cost_bps}{' '}
+            bps
+          </span>
+          <span>
+            Tuned:{' '}
+            <span className="font-mono text-foreground">
+              {Object.entries(first.axes)
+                .map(([k, v]) => `${k} ${v[0]}…${v.at(-1)} (${v.length})`)
+                .join(', ')}
+            </span>
+          </span>
+          <span>created {formatDateTime(first.created)}</span>
+        </div>
+        <HistoryLine
+          history={first.history}
+          coverage={Object.fromEntries(rows.flatMap((r) => (r.coverage ? [[r.symbol, r.coverage]] : [])))}
+        />
+
+        <p className={cn('text-sm', held ? 'text-success' : 'text-muted-foreground')}>
+          {held} of {rows.length} stocks held up out-of-sample (made money and beat fixed defaults)
+          {idle ? `; ${idle} never found a cell that made money in-sample and never traded` : ''}. Each stock
+          was tuned on its own - open one for its windows and parameter path.
+        </p>
+
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+          <Stat label="Stocks where tuning held up" value={`${held} / ${rows.length}`} />
+          <Stat label="Tuned net · all stocks" value={inr(tunedNet)} className={pnlClass(tunedNet)} />
+          <Stat
+            label="Fixed defaults net · all stocks"
+            value={inr(fixedNet)}
+            className={pnlClass(fixedNet)}
+          />
+          <Stat label="Never traded" value={`${idle} / ${rows.length}`} />
+          <Stat
+            label="Median walk-forward efficiency"
+            value={wfes.length ? fmt(wfes[Math.floor(wfes.length / 2)]) : '—'}
+          />
+        </div>
+
+        <div>
+          <p className="mb-1 text-xs text-muted-foreground">
+            The batch as one book: every stock's out-of-sample P&L summed day by day.
+          </p>
+          {loading && !datasets.length ? (
+            <Spinner className="size-4" />
+          ) : (
+            <div className="h-72">
+              <SeriesChart datasets={datasets} fill format={inr} />
+            </div>
+          )}
+        </div>
+
+        <div className="max-h-[28rem] overflow-auto rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead>Stock</TableHead>
+                <TableHead>Verdict</TableHead>
+                <TableHead className="text-right">Traded</TableHead>
+                <TableHead className="text-right">Tuned net</TableHead>
+                <TableHead className="text-right">Fixed net</TableHead>
+                <TableHead className="text-right">Trades</TableHead>
+                <TableHead className="text-right">PF tuned / fixed</TableHead>
+                <TableHead className="text-right">WFE</TableHead>
+                <TableHead className="text-right">Defl. Sharpe</TableHead>
+                <TableHead className="text-right">Stability</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sorted.map((r, i) => {
+                const v = VERDICT_BADGE[verdicts[i]]
+                return (
+                  <TableRow key={r.id} className="cursor-pointer" onClick={() => onOpen(r.id)}>
+                    <TableCell className="font-medium">{r.symbol}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={v.className}>
+                        {v.label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.stats.traded_windows} / {r.stats.windows}
+                    </TableCell>
+                    <TableCell className={cn('text-right tabular-nums', pnlClass(r.oos.net))}>
+                      {inr(r.oos.net)}
+                    </TableCell>
+                    <TableCell className={cn('text-right tabular-nums', pnlClass(r.baseline.net))}>
+                      {inr(r.baseline.net)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{r.oos.trades}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.oos.trades ? fmt(r.oos.profit_factor) : '—'} / {fmt(r.baseline.profit_factor)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.stats.wfe == null ? '—' : fmt(r.stats.wfe)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.stats.dsr == null ? '—' : `${fmt(r.stats.dsr * 100, 0)}%`}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.stats.stability == null ? '—' : `${fmt(r.stats.stability * 100, 0)}%`}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+              <TableRow className="font-medium hover:bg-transparent">
+                <TableCell colSpan={3}>All stocks</TableCell>
+                <TableCell className={cn('text-right tabular-nums', pnlClass(tunedNet))}>
+                  {inr(tunedNet)}
+                </TableCell>
+                <TableCell className={cn('text-right tabular-nums', pnlClass(fixedNet))}>
+                  {inr(fixedNet)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {fmt(
+                    rows.reduce((n, r) => n + r.oos.trades, 0),
+                    0,
+                  )}
+                </TableCell>
+                <TableCell colSpan={4} />
+              </TableRow>
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+    </Panel>
+  )
+}
+
+function AutotuneList({
+  rows,
+  active,
+  onOpen,
+  onOpenBatch,
+}: {
+  rows: EngineAutotuneRow[]
+  active?: string
+  onOpen: (id: string) => void
+  onOpenBatch: (batch: string) => void
+}) {
+  const perBatch = new Map<string, number>()
+  for (const r of rows) if (r.batch) perBatch.set(r.batch, (perBatch.get(r.batch) ?? 0) + 1)
+  if (!rows.length)
+    return <p className="text-sm text-muted-foreground">No walk-forward reports yet - start one above.</p>
+  return (
+    <div className="max-h-80 overflow-auto">
+      <Table>
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead>Stock</TableHead>
+            <TableHead>Tuned</TableHead>
+            <TableHead>Sessions</TableHead>
+            <TableHead className="text-right">Traded</TableHead>
+            <TableHead className="text-right">Tuned net</TableHead>
+            <TableHead className="text-right">Fixed net</TableHead>
+            <TableHead className="text-right">WFE</TableHead>
+            <TableHead className="text-right">Defl. Sharpe</TableHead>
+            <TableHead>Run</TableHead>
+            <TableHead>When</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((r) => (
+            <TableRow
+              key={r.id}
+              className={cn('cursor-pointer', active === r.id && 'bg-muted')}
+              onClick={() => onOpen(r.id)}
+            >
+              <TableCell>
+                <span className="font-medium">{r.symbol}</span>{' '}
+                <span className="text-muted-foreground">
+                  {r.strategy} · {r.interval}
+                </span>
+              </TableCell>
+              <TableCell className="font-mono text-xs text-muted-foreground">
+                {Object.keys(r.axes).join(', ')}
+              </TableCell>
+              <TableCell className="text-muted-foreground tabular-nums">
+                {r.sessions[0]} → {r.sessions[1]}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {r.stats.traded_windows} / {r.stats.windows}
+              </TableCell>
+              <TableCell className={cn('text-right tabular-nums', pnlClass(r.oos.net))}>
+                {inr(r.oos.net)}
+              </TableCell>
+              <TableCell className={cn('text-right tabular-nums', pnlClass(r.baseline.net))}>
+                {inr(r.baseline.net)}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {r.stats.wfe == null ? '—' : fmt(r.stats.wfe)}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {r.stats.dsr == null ? '—' : `${fmt(r.stats.dsr * 100, 0)}%`}
+              </TableCell>
+              <TableCell onClick={(e) => e.stopPropagation()}>
+                {r.batch && (perBatch.get(r.batch) ?? 0) > 1 && (
+                  <Button size="xs" variant="outline" onClick={() => onOpenBatch(r.batch!)}>
+                    {perBatch.get(r.batch)} stocks
+                  </Button>
+                )}
+              </TableCell>
+              <TableCell className="text-muted-foreground">{formatDateTime(r.created)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  )
+}
+
 export default function Engine() {
-  const { run, batch, sweep } = useSearch({ from: '/engine' })
+  const { tab, run, batch, sweep, autotune, tunebatch } = useSearch({ from: '/engine' })
   const navigate = useNavigate({ from: '/engine' })
   const queryClient = useQueryClient()
   const { data: runs = [] } = useQuery({
@@ -1964,6 +2958,7 @@ export default function Engine() {
     refetchInterval: 60_000,
   })
   const { data: sweeps = [] } = useQuery({ queryKey: ['engineSweeps'], queryFn: getEngineSweeps })
+  const { data: tunes = [] } = useQuery({ queryKey: ['engineAutotunes'], queryFn: getEngineAutotunes })
   const { data: settings } = useQuery({ queryKey: ['engineSettings'], queryFn: getEngineSettings })
   usePageTitle(settings?.name ?? 'Algo engine')
   const [source, setSource] = useState<Source>('all')
@@ -1976,111 +2971,167 @@ export default function Engine() {
   const open = (id?: string, nextBatch = activeBatch) =>
     navigate({ search: (prev) => ({ ...prev, run: id, batch: nextBatch }) })
   const openSweep = (id?: string) => navigate({ search: (prev) => ({ ...prev, sweep: id }) })
+  const openTune = (id?: string) => navigate({ search: (prev) => ({ ...prev, autotune: id }) })
+  const openTuneBatch = (b?: string) => navigate({ search: (prev) => ({ ...prev, tunebatch: b }) })
+  const setTab = (next: string) => navigate({ search: (prev) => ({ ...prev, tab: next as EngineTab }) })
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <h1 className="font-medium">{settings?.name}</h1>
-      <Panel
-        title="New backtest"
-        actions={
-          <>
-            <SyncLive settings={settings} />
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              aria-label="Engine settings"
-              render={<Link to="/settings" search={{ tab: 'engine' }} />}
-            >
-              <SettingsIcon />
-            </Button>
-          </>
-        }
-      >
-        {!settings ? (
-          <Spinner className="size-4" />
-        ) : !settings.engine_dir ? (
-          <div className="space-y-2 text-sm">
-            <p>
-              Point Stoklore at your checkout of the C++ trading engine: clone it anywhere, run{' '}
-              <code>make</code> in it, then set its folder in Settings.
-            </p>
-            <Button size="sm" render={<Link to="/settings" search={{ tab: 'engine' }} />}>
-              <SettingsIcon /> Set engine folder
-            </Button>
-          </div>
-        ) : !settings.built ? (
-          <p className="text-sm">
-            The engine in <code>{settings.engine_dir}</code> isn't built yet - run <code>make</code> there,
-            then reload.
-          </p>
-        ) : (
-          <RunForm
-            onDone={(b, newIds) => {
-              queryClient.invalidateQueries({ queryKey: ['engineRuns'] })
-              setPicked(newIds.slice(0, 12))
-              open(newIds.length === 1 ? newIds[0] : undefined, b)
-            }}
-            onSweep={(id) => {
-              queryClient.invalidateQueries({ queryKey: ['engineSweeps'] })
-              openSweep(id)
-            }}
-          />
-        )}
-      </Panel>
+      <Tabs value={tab ?? 'backtest'} onValueChange={setTab}>
+        <TabsList>
+          <TabsTab value="backtest">Backtests</TabsTab>
+          <TabsTab value="autotune">
+            Auto-tune
+            {tunes.length > 0 && (
+              <Badge variant="secondary" className="ml-1.5">
+                {tunes.length}
+              </Badge>
+            )}
+          </TabsTab>
+          <TabsIndicator />
+        </TabsList>
 
-      {sweep && (
-        <SweepView
-          key={sweep}
-          id={sweep}
-          onClose={() => openSweep(undefined)}
-          onOpenRun={(id, b) => open(id, b)}
-        />
-      )}
+        <TabsPanel value="backtest" className="space-y-6 pt-4">
+          <Panel
+            title="New backtest"
+            actions={
+              <>
+                <SyncLive settings={settings} />
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="Engine settings"
+                  render={<Link to="/settings" search={{ tab: 'engine' }} />}
+                >
+                  <SettingsIcon />
+                </Button>
+              </>
+            }
+          >
+            {!settings ? (
+              <Spinner className="size-4" />
+            ) : !settings.engine_dir ? (
+              <div className="space-y-2 text-sm">
+                <p>
+                  Point Stoklore at your checkout of the C++ trading engine: clone it anywhere, run{' '}
+                  <code>make</code> in it, then set its folder in Settings.
+                </p>
+                <Button size="sm" render={<Link to="/settings" search={{ tab: 'engine' }} />}>
+                  <SettingsIcon /> Set engine folder
+                </Button>
+              </div>
+            ) : !settings.built ? (
+              <p className="text-sm">
+                The engine in <code>{settings.engine_dir}</code> isn't built yet - run <code>make</code>{' '}
+                there, then reload.
+              </p>
+            ) : (
+              <RunForm
+                onDone={(b, newIds) => {
+                  queryClient.invalidateQueries({ queryKey: ['engineRuns'] })
+                  setPicked(newIds.slice(0, 12))
+                  open(newIds.length === 1 ? newIds[0] : undefined, b)
+                }}
+                onSweep={(id) => {
+                  queryClient.invalidateQueries({ queryKey: ['engineSweeps'] })
+                  openSweep(id)
+                }}
+              />
+            )}
+          </Panel>
 
-      {run && <RunDetail key={run} id={run} onClose={() => open(undefined)} />}
+          {sweep && (
+            <SweepView
+              key={sweep}
+              id={sweep}
+              onClose={() => openSweep(undefined)}
+              onOpenRun={(id, b) => open(id, b)}
+            />
+          )}
 
-      {selected.length > 0 && <CompareChart ids={selected} onClear={() => setPicked([])} />}
+          {run && <RunDetail key={run} id={run} onClose={() => open(undefined)} />}
 
-      {activeBatch && (
-        <SweepHeatmap
-          key={activeBatch}
-          runs={runs.filter((r) => r.batch === activeBatch)}
-          onOpen={(id) => open(id)}
-          onCompare={setPicked}
-          onDeleted={() => open(undefined, undefined)}
-        />
-      )}
+          {selected.length > 0 && <CompareChart ids={selected} onClear={() => setPicked([])} />}
 
-      <Panel title={`Sweeps (${sweeps.length})`}>
-        <SweepsList sweeps={sweeps} active={sweep} onOpen={openSweep} />
-      </Panel>
+          {activeBatch && (
+            <SweepHeatmap
+              key={activeBatch}
+              runs={runs.filter((r) => r.batch === activeBatch)}
+              onOpen={(id) => open(id)}
+              onCompare={setPicked}
+              onDeleted={() => open(undefined, undefined)}
+            />
+          )}
 
-      <Panel
-        title={`Runs (${shown.length})`}
-        actions={[
-          <ExportMenu key="export" name={`runs-${source}`} sheets={() => [runsSheet(shown)]} />,
-          ...SOURCES.map((s) => (
-            <Button
-              key={s}
-              size="sm"
-              variant={source === s ? 'secondary' : 'ghost'}
-              onClick={() => setSource(s)}
-            >
-              {s === 'all' ? 'All' : s[0].toUpperCase() + s.slice(1)}
-            </Button>
-          )),
-        ]}
-      >
-        <RunsTable
-          runs={shown}
-          selected={selected}
-          active={run}
-          onToggle={(id) =>
-            setPicked(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id])
-          }
-          onOpen={(r) => open(r.id, r.batch ?? activeBatch)}
-        />
-      </Panel>
+          <Panel title={`Sweeps (${sweeps.length})`}>
+            <SweepsList sweeps={sweeps} active={sweep} onOpen={openSweep} />
+          </Panel>
+
+          <Panel
+            title={`Runs (${shown.length})`}
+            actions={[
+              <ExportMenu key="export" name={`runs-${source}`} sheets={() => [runsSheet(shown)]} />,
+              ...SOURCES.map((s) => (
+                <Button
+                  key={s}
+                  size="sm"
+                  variant={source === s ? 'secondary' : 'ghost'}
+                  onClick={() => setSource(s)}
+                >
+                  {s === 'all' ? 'All' : s[0].toUpperCase() + s.slice(1)}
+                </Button>
+              )),
+            ]}
+          >
+            <RunsTable
+              runs={shown}
+              selected={selected}
+              active={run}
+              onToggle={(id) =>
+                setPicked(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id])
+              }
+              onOpen={(r) => open(r.id, r.batch ?? activeBatch)}
+            />
+          </Panel>
+        </TabsPanel>
+
+        <TabsPanel value="autotune" className="space-y-6 pt-4">
+          <Panel title="New walk-forward">
+            {settings?.built ? (
+              <AutotuneForm
+                onDone={(b, ids) => {
+                  queryClient.invalidateQueries({ queryKey: ['engineAutotunes'] })
+                  // one stock opens its report; several open the batch, one click from each report
+                  navigate({
+                    search: (prev) =>
+                      ids.length === 1
+                        ? { ...prev, autotune: ids[0], tunebatch: undefined }
+                        : { ...prev, tunebatch: b, autotune: undefined },
+                  })
+                }}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Set up and build the engine first - the Backtests tab says how.
+              </p>
+            )}
+          </Panel>
+          {tunebatch && (
+            <AutotuneBatchView
+              key={tunebatch}
+              batch={tunebatch}
+              rows={tunes.filter((r) => r.batch === tunebatch)}
+              onOpen={openTune}
+              onClose={() => openTuneBatch(undefined)}
+            />
+          )}
+          {autotune && <AutotuneView key={autotune} id={autotune} onClose={() => openTune(undefined)} />}
+          <Panel title={`Reports (${tunes.length})`}>
+            <AutotuneList rows={tunes} active={autotune} onOpen={openTune} onOpenBatch={openTuneBatch} />
+          </Panel>
+        </TabsPanel>
+      </Tabs>
     </div>
   )
 }

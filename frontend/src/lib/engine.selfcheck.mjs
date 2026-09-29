@@ -1,10 +1,13 @@
 // node src/lib/engine.selfcheck.mjs
 import assert from 'node:assert/strict'
 import {
+  autotuneBatchSheet,
+  autotuneSheets,
   fanPaths,
   histogram,
   noTrades,
   oatSeries,
+  portfolioCurve,
   runSheets,
   runsSheet,
   sweepSheets,
@@ -12,13 +15,19 @@ import {
   spread,
   sweepCount,
   comboCount,
+  coverageNotes,
   drawdown,
   focusRange,
+  historyError,
+  historyText,
+  holdText,
   intervalSeconds,
   markerRange,
   parseValues,
+  pinnedRange,
   sweepGrid,
   tradeMarkers,
+  tuneVerdict,
 } from './engine.ts'
 
 assert.deepEqual(parseValues('9'), [9])
@@ -102,6 +111,9 @@ assert.ok(tiny.to - tiny.from >= 120, JSON.stringify(tiny))
 assert.equal(intervalSeconds('5m'), 300)
 assert.equal(intervalSeconds('1H'), 3600)
 assert.equal(intervalSeconds('4H'), 14400)
+assert.equal(intervalSeconds('1D'), 86400, 'a day, not a minute')
+assert.equal(intervalSeconds('15m'), 900)
+assert.deepEqual([holdText(45.4), holdText(210), holdText(40107.5)], ['45m', '3.5h', '27.9d'])
 // A short scalp still gets bar-padding on both sides, not just its own two points.
 const scalp = focusRange(1000, 1300, '5m', 10)
 assert.deepEqual(scalp, { from: 1000 - 3000, to: 1300 + 3000 })
@@ -263,5 +275,199 @@ assert.deepEqual(
   ['0', '50', '100'],
 )
 assert.equal(fanPaths([[1]]).paths[0], '', 'one point is not a curve')
+
+// --- walk-forward export -----------------------------------------------------------------------
+const wf = {
+  id: 'wf-1',
+  strategy: 'ema_cross',
+  symbol: 'INFY',
+  interval: '5m',
+  sessions: ['2025-09-24', '2026-09-28'],
+  train: 60,
+  test: 5,
+  min_trades: 30,
+  margin: 0.15,
+  cost_bps: 3,
+  axes: { fast: [5, 9], slow: [21, 34] },
+  defaults: { fast: 9, slow: 21, qty: 1, cost_bps: 3 },
+  stats: { windows: 2, traded_windows: 1, sat_out: 1, wfe: null, beats_baseline: true, dsr: 0.4 },
+  oos: { summary: { net: 10, trades: 4, profit_factor: 1.5 } },
+  baseline: { summary: { net: -5, trades: 9, profit_factor: 0.8 } },
+  windows: [
+    {
+      train: ['a', 'b'],
+      test: ['c', 'd'],
+      chosen: { fast: 9, slow: 34, qty: 1 },
+      switched: false,
+      cells: 4,
+      eligible: 3,
+      is: { net: 50 },
+      oos: { net: 10, trades: 4 },
+      baseline: { net: -2 },
+    },
+    {
+      train: ['e', 'f'],
+      test: ['g', 'h'],
+      chosen: null,
+      switched: false,
+      cells: 4,
+      eligible: 0,
+      is: null,
+      oos: null,
+      baseline: { net: -3 },
+    },
+  ],
+}
+const ws = autotuneSheets(wf)
+assert.deepEqual(
+  ws.map((x) => x.sheet),
+  ['Walk-forward', 'Tuned vs fixed', 'Windows'],
+)
+assert.deepEqual(
+  ws[2].headers.slice(4, 6),
+  ['fast', 'slow'],
+  'one column per tuned param, not the fixed ones',
+)
+assert.deepEqual(ws[2].rows[0].slice(4, 7), [9, 34, 'no'])
+assert.deepEqual(ws[2].rows[1].slice(4, 7), [null, null, 'sat out'], 'a sat-out window says so')
+assert.equal(ws[2].headers.length, ws[2].rows[0].length)
+assert.deepEqual(
+  ws[1].rows.map((r) => r[0]),
+  ['Net P&L', 'Trades', 'Profit factor'],
+  'only metrics the report has',
+)
+assert.ok(
+  ws[0].rows.some((r) => r[0] === 'Walk-forward efficiency' && r[1] === null),
+  'null stays null, not 0',
+)
+assert.ok(ws[0].rows.some((r) => r[0] === 'Beats fixed defaults' && r[1] === 'yes'))
+
+// --- multi-stock batches -----------------------------------------------------------------------
+const row = (net, base, traded, beats) => ({
+  symbol: 'X',
+  stats: { traded_windows: traded, windows: 10, beats_baseline: beats, wfe: null, dsr: 0.5 },
+  oos: { net, trades: 3 },
+  baseline: { net: base },
+})
+assert.equal(tuneVerdict(row(10, -5, 4, true)), 'held')
+assert.equal(tuneVerdict(row(-10, -50, 4, true)), 'failed', 'losing less than the defaults is not an edge')
+assert.equal(tuneVerdict(row(10, 20, 4, false)), 'failed', 'profitable but worse than the defaults')
+assert.equal(tuneVerdict(row(0, -5, 0, true)), 'idle', 'never traded')
+assert.deepEqual(
+  portfolioCurve([
+    [
+      [1, 5],
+      [2, -1],
+    ],
+    [
+      [2, 3],
+      [3, 2],
+    ],
+  ]),
+  [
+    [1, 5],
+    [2, 7],
+    [3, 9],
+  ],
+  'summed by day, then cumulated, in day order',
+)
+assert.deepEqual(portfolioCurve([]), [])
+const bs = autotuneBatchSheet([row(10, -5, 4, true)])
+assert.equal(bs.headers.length, bs.rows[0].length)
+assert.deepEqual(bs.rows[0].slice(0, 6), ['X', 'held', 4, 10, 10, -5])
+assert.equal(bs.rows[0][10], null, 'a missing WFE stays empty, not 0')
+
+// --- history ranges ------------------------------------------------------------------------------
+assert.equal(historyText(undefined), 'Newest 30,000 bars', 'runs from before ranges')
+assert.equal(historyText(250), 'Last 250 sessions', 'walk-forwards from before ranges')
+assert.equal(historyText({ mode: 'all', start: null, end: null }), 'All available')
+assert.equal(
+  historyText({ mode: 'years', years: 3, start: '2023-09-29', end: null }),
+  'Last 3 years (from 2023-09-29)',
+)
+assert.equal(historyText({ mode: 'years', years: 1, start: '2025-09-29' }), 'Last 1 year (from 2025-09-29)')
+assert.equal(
+  historyText({ mode: 'dates', start: '2024-01-01', end: '2024-12-31' }),
+  '2024-01-01 → 2024-12-31',
+)
+assert.equal(historyText({ mode: 'dates', start: null, end: '2024-06-30' }), 'Up to 2024-06-30')
+
+const cov = {
+  INFY: { from: '2023-09-29', to: '2026-09-28', sessions: 743 },
+  QPOWER: { from: '2025-02-24', to: '2026-09-28', sessions: 225 },
+}
+assert.deepEqual(coverageNotes({ mode: 'years', years: 3, start: '2023-09-29', end: null }, cov), [
+  'QPOWER only from 2025-02-24',
+])
+assert.deepEqual(
+  coverageNotes({ mode: 'all', start: null, end: null }, cov),
+  ['QPOWER only from 2025-02-24'],
+  'all: vs the earliest stock',
+)
+assert.deepEqual(
+  coverageNotes({ mode: 'dates', start: '2023-09-25', end: '2026-10-01' }, { INFY: cov.INFY }),
+  [],
+  'a weekend or holiday at either edge is not worth a note',
+)
+assert.deepEqual(
+  coverageNotes({ mode: 'dates', start: '2023-01-01', end: '2027-06-30' }, { INFY: cov.INFY }),
+  ['INFY only from 2023-09-29', 'INFY only up to 2026-09-28'],
+)
+assert.deepEqual(coverageNotes(undefined, undefined), [])
+assert.deepEqual(
+  coverageNotes(
+    { mode: 'all', start: null, end: null },
+    {
+      DHARIWAL: {
+        from: '2024-08-08',
+        to: '2026-09-28',
+        sessions: 486,
+        adjusted: [{ date: '2026-02-06', ratio: 0.2 }],
+        jumps: [{ date: '2026-02-27', move: 0.526 }],
+      },
+      QPOWER: {
+        from: '2024-08-09',
+        to: '2026-09-28',
+        sessions: 225,
+        missing: { sessions: 168, from: '2026-01-22', to: '2026-09-25' },
+      },
+    },
+  ),
+  [
+    'DHARIWAL split/bonus on 2026-02-06 - earlier prices ×0.2',
+    'DHARIWAL moved -47% overnight on 2026-02-27 - not a known split ratio, check it',
+    'QPOWER missing 168 sessions (2026-01-22 → 2026-09-25)',
+  ],
+)
+
+assert.deepEqual(
+  pinnedRange({ mode: 'all', start: null, end: null }, cov),
+  { mode: 'dates', start: null, end: '2026-09-28' },
+  'all: pinned to the last bar it had',
+)
+assert.deepEqual(pinnedRange({ mode: 'years', years: 3, start: '2023-09-29', end: null }, cov), {
+  mode: 'dates',
+  start: '2023-09-29',
+  end: '2026-09-28',
+})
+assert.deepEqual(pinnedRange({ mode: 'dates', start: '2024-01-01', end: '2024-12-31' }, cov), {
+  mode: 'dates',
+  start: '2024-01-01',
+  end: '2024-12-31',
+})
+assert.deepEqual(pinnedRange(undefined, undefined), { mode: 'all' }, 'an old run with nothing to pin to')
+
+const today = '2026-09-29'
+assert.equal(historyError({ mode: 'all' }, today), null)
+assert.equal(historyError({ mode: 'years', years: 0 }, today), 'Say how many years')
+assert.equal(historyError({ mode: 'years', years: 31 }, today), 'At most 30 years')
+assert.equal(historyError({ mode: 'years', years: 0.5 }, today), null)
+assert.equal(historyError({ mode: 'dates', start: '', end: '' }, today), 'Pick a start or an end date')
+assert.equal(
+  historyError({ mode: 'dates', start: '2025-01-02', end: '2025-01-01' }, today),
+  'The range starts after it ends',
+)
+assert.equal(historyError({ mode: 'dates', start: '2027-01-01' }, today), 'The range starts after today')
+assert.equal(historyError({ mode: 'dates', end: '2024-01-01' }, today), null, 'an open start is fine')
 
 console.log('engine selfcheck passed')

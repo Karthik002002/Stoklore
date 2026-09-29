@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Background,
@@ -12,9 +12,10 @@ import {
 } from '@xyflow/react'
 import type { Connection, Edge, Node, NodeProps, ReactFlowInstance } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { BookmarkIcon, PlusIcon } from 'lucide-react'
+import { BookmarkIcon, PlusIcon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import DeleteStockButton from '@/DeleteStockButton'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
@@ -25,8 +26,9 @@ import { addStock, getStocks, getWatchlist, getWatchlistNames } from '@/services
 import type { TrackedStock, WatchlistEntry } from '@/services/api'
 
 // The stock -> watchlist mapping as a canvas: symbols down the left, lists down the right, one
-// edge per membership. Drag from a symbol to a list to file it; select an edge and press Delete to
-// unfile it. A stock can sit in any number of lists, which is exactly what a graph draws well and
+// edge per membership. Drag from a symbol to a list to file it; click the × on a stock under a list,
+// or select it (or its edge) and press Delete, to unfile it. A stock in no list can be deleted
+// outright from its trash button (with a confirm - that removes its reports too). A stock can sit in any number of lists, which is exactly what a graph draws well and
 // a checkbox menu buried in a row hides.
 //
 // Opened by Mod+B from ANY page (mounted once in App, opened by a window event - the same trick
@@ -57,15 +59,46 @@ const NO_LISTS: string[] = []
 type StockNodeData = { symbol: string; stock?: TrackedStock; list?: string }
 type ListNodeData = { name: string; count: number }
 
+// What a stock node's buttons do - node components get no props but `data`, and a function stored in
+// node data would have to be rebuilt into every node on every change. `remove` takes a stock off one
+// list; `deleted` refreshes after a stock itself was deleted (reports and all).
+const StockActions = createContext<{ remove: (symbol: string, list: string) => void; deleted: () => void }>({
+  remove: () => {},
+  deleted: () => {},
+})
+
 const pctClass = (v: number | null | undefined) =>
   v == null ? 'text-muted-foreground' : v > 0 ? 'text-green-500' : v < 0 ? 'text-red-500' : ''
 
 function StockNode({ data, selected }: NodeProps<Node<StockNodeData>>) {
-  const { symbol, stock } = data
+  const { symbol, stock, list } = data
+  const { remove, deleted } = useContext(StockActions)
   return (
     <div
-      className={`w-44 rounded-lg border bg-card px-3 py-1.5 shadow-sm ${selected ? 'ring-2 ring-primary' : ''}`}
+      className={`group relative w-44 rounded-lg border bg-card px-3 py-1.5 shadow-sm ${selected ? 'ring-2 ring-primary' : ''}`}
     >
+      {list && (
+        // nodrag/nopan: a press here is a click, not the start of a drag or a pan
+        <button
+          type="button"
+          aria-label={`Remove ${symbol} from ${list}`}
+          title={`Remove from ${list}`}
+          onClick={(e) => {
+            e.stopPropagation()
+            remove(symbol, list)
+          }}
+          className="nodrag nopan absolute top-1 right-1 rounded p-0.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-muted hover:text-foreground focus-visible:opacity-100"
+        >
+          <XIcon className="size-3.5" />
+        </button>
+      )}
+      {!list && (
+        // In no list, there's nothing to take it off - the only removal left is untracking it, which
+        // deletes its reports too; the button asks first, and the Delete key never does this.
+        <div className="nodrag nopan absolute top-0.5 right-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          <DeleteStockButton symbol={symbol} onDeleted={deleted} stopPropagation className="size-6" />
+        </div>
+      )}
       <p className="font-mono text-sm font-medium">{symbol}</p>
       {stock ? (
         <p className="text-xs text-muted-foreground">
@@ -362,19 +395,42 @@ export default function WatchlistManager() {
     map.mutate({ symbol: (from.data as StockNodeData).symbol, name: c.target.slice(2) })
   }
 
-  // Deleting a stock under a list (or its edge) removes it from that list only. Both arrive together
-  // when a node goes - its edge is deleted with it - so memberships are de-duplicated.
-  const onDelete = ({ nodes: gone, edges: cut }: { nodes: Node[]; edges: Edge[] }) => {
+  const unmapOne = unmap.mutate // stable across renders, unlike the mutation object
+  const stockActions = useMemo(
+    () => ({ remove: (symbol: string, name: string) => unmapOne({ symbol, name }), deleted: refresh }),
+    [unmapOne, refresh],
+  )
+
+  // Delete/Backspace removes the selected stocks under a list (or their edges) from that list only.
+  // Handled here rather than by React Flow's deleteKeyCode: that listens on the whole document and
+  // drops any key whose target is an input - and inside this dialog, focus opens in "Add stock…",
+  // so the press never counted. A stock and its edge usually go together, so pairs are de-duplicated.
+  const canvas = useRef<HTMLDivElement>(null)
+  const onCanvasKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return
+    if ((e.target as HTMLElement).closest('input, textarea, [contenteditable="true"]')) return // typing
     const pairs = new Map<string, { symbol: string; name: string }>()
-    for (const n of gone) {
+    for (const n of nodes) {
       const d = n.data as StockNodeData
-      if (n.type === 'stock' && d.list) pairs.set(`${d.list}/${d.symbol}`, { symbol: d.symbol, name: d.list })
+      if (n.selected && n.type === 'stock' && d.list)
+        pairs.set(`${d.list}/${d.symbol}`, { symbol: d.symbol, name: d.list })
     }
-    for (const e of cut) {
-      const d = e.data as { symbol: string; list: string } | undefined
-      if (d) pairs.set(`${d.list}/${d.symbol}`, { symbol: d.symbol, name: d.list })
+    for (const edge of edges) {
+      const d = edge.data as { symbol: string; list: string } | undefined
+      if (edge.selected && d) pairs.set(`${d.list}/${d.symbol}`, { symbol: d.symbol, name: d.list })
     }
+    if (!pairs.size) return
+    e.preventDefault()
     for (const pair of pairs.values()) unmap.mutate(pair)
+  }
+  // Clicking the canvas takes focus out of the two text boxes, so the next Delete reaches the canvas.
+  const focusCanvas = () => {
+    if (
+      canvas.current &&
+      canvas.current.contains(document.activeElement) &&
+      document.activeElement?.closest('input')
+    )
+      canvas.current.focus({ preventScroll: true })
   }
 
   return (
@@ -385,79 +441,84 @@ export default function WatchlistManager() {
             <BookmarkIcon className="size-4" />
             Watchlists
             <span className="text-sm font-normal text-muted-foreground">
-              — drag a stock onto a list to add it; select a stock under a list and press Delete to remove it
+              — drag a stock onto a list to add it; × on a stock under a list removes it from that list; the
+              bin on a stock in no list deletes it
             </span>
             <span className="ml-auto text-xs font-normal text-muted-foreground">{shortcut}</span>
           </DialogTitle>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1">
+        <div ref={canvas} tabIndex={-1} onKeyDown={onCanvasKeyDown} className="min-h-0 flex-1 outline-none">
           {isLoading ? (
             <div className="flex h-full items-center justify-center">
               <Spinner className="size-5" />
             </div>
           ) : (
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              nodeTypes={NODE_TYPES}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onDelete={onDelete}
-              onInit={(instance) => {
-                flow.current = instance
-              }}
-              deleteKeyCode={['Backspace', 'Delete']}
-              colorMode={theme === 'dark' ? 'dark' : 'light'}
-              fitView
-              proOptions={{ hideAttribution: true }}
-            >
-              <Background />
-              <Controls showInteractive={false} />
-              <Panel position="top-left" className="flex gap-2">
-                <form
-                  className="flex gap-1"
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    if (newStock.trim()) add.mutate()
-                  }}
-                >
-                  <Input
-                    value={newStock}
-                    onChange={(e) => setNewStock(e.target.value)}
-                    placeholder="Add stock…"
-                    className="h-8 w-36 bg-background font-mono text-xs uppercase placeholder:normal-case"
-                  />
-                  <Button type="submit" size="icon-sm" className="size-8" disabled={add.isPending}>
-                    {add.isPending ? <Spinner className="size-3.5" /> : <PlusIcon className="size-3.5" />}
-                  </Button>
-                </form>
-                <form
-                  className="flex gap-1"
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    if (newList.trim()) createList.mutate(newList.trim())
-                  }}
-                >
-                  <Input
-                    value={newList}
-                    onChange={(e) => setNewList(e.target.value)}
-                    placeholder="New watchlist…"
-                    className="h-8 w-36 bg-background text-xs"
-                  />
-                  <Button
-                    type="submit"
-                    size="icon-sm"
-                    variant="outline"
-                    className="size-8"
-                    disabled={createList.isPending}
+            <StockActions.Provider value={stockActions}>
+              <ReactFlow
+                nodes={nodes}
+                edges={edges}
+                nodeTypes={NODE_TYPES}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onConnect={onConnect}
+                onNodeClick={focusCanvas}
+                onEdgeClick={focusCanvas}
+                onPaneClick={focusCanvas}
+                onInit={(instance) => {
+                  flow.current = instance
+                }}
+                deleteKeyCode={null}
+                colorMode={theme === 'dark' ? 'dark' : 'light'}
+                fitView
+                proOptions={{ hideAttribution: true }}
+              >
+                <Background />
+                <Controls showInteractive={false} />
+                <Panel position="top-left" className="flex gap-2">
+                  <form
+                    className="flex gap-1"
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      if (newStock.trim()) add.mutate()
+                    }}
                   >
-                    <PlusIcon className="size-3.5" />
-                  </Button>
-                </form>
-              </Panel>
-            </ReactFlow>
+                    <Input
+                      value={newStock}
+                      onChange={(e) => setNewStock(e.target.value)}
+                      placeholder="Add stock…"
+                      className="h-8 w-36 bg-background font-mono text-xs uppercase placeholder:normal-case"
+                    />
+                    <Button type="submit" size="icon-sm" className="size-8" disabled={add.isPending}>
+                      {add.isPending ? <Spinner className="size-3.5" /> : <PlusIcon className="size-3.5" />}
+                    </Button>
+                  </form>
+                  <form
+                    className="flex gap-1"
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      if (newList.trim()) createList.mutate(newList.trim())
+                    }}
+                  >
+                    <Input
+                      value={newList}
+                      onChange={(e) => setNewList(e.target.value)}
+                      placeholder="New watchlist…"
+                      className="h-8 w-36 bg-background text-xs"
+                    />
+                    <Button
+                      type="submit"
+                      size="icon-sm"
+                      variant="outline"
+                      className="size-8"
+                      disabled={createList.isPending}
+                    >
+                      <PlusIcon className="size-3.5" />
+                    </Button>
+                  </form>
+                </Panel>
+              </ReactFlow>
+            </StockActions.Provider>
           )}
         </div>
       </DialogContent>

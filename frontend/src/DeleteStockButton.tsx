@@ -29,7 +29,11 @@ export default function DeleteStockButton({
 
   const confirmDelete = async (e: React.MouseEvent) => {
     if (stopPropagation) e.stopPropagation()
-    await fetch(`/api/stocks/${symbol}`, { method: 'DELETE' })
+    const res = await fetch(`/api/stocks/${symbol}`, { method: 'DELETE' })
+    if (!res.ok) {
+      toast.error(`Couldn't delete ${symbol} (${res.status})`)
+      return
+    }
     toast.success(`${symbol} and its reports deleted`)
     onDeleted()
   }

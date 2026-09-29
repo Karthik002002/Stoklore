@@ -234,6 +234,39 @@ of two sources (below) plus a chart that only reveals them up to a cursor.
   file in well under a second. A symbol the dataset doesn't cover falls back
   to `scraper.get_intraday_bars` (yfinance), which is far shallower
   (~60 days) but keeps replay working instead of showing nothing.
+  - **Up to today, not just January 2026.** The dataset stops at 2026-01, so
+    the cache is topped up with every newer 1m bar from moneycontrol's chart
+    feed (about a year of 1m history, so one request covers the gap and today;
+    its prices match the dataset where they overlap), or yfinance's 7-day 1m
+    window if moneycontrol has nothing for the symbol. Regular-session bars
+    (09:15–15:29) only, finished minutes only, appended to the same parquet at
+    most every 6 hours per symbol (`TOPUP_EVERY`). A feed outage just leaves
+    the cache where it was.
+  - **The official daily record** (moneycontrol daily, else yfinance) is kept
+    beside each symbol's minutes (`<SYMBOL>.daily.parquet`, refreshed with the
+    top-up), because some minute histories have holes no feed fills: an NSE
+    SME stock the dataset doesn't carry has only moneycontrol's last year of
+    1m (DHARIWAL listed 2024-08-08, 1m from 2025-09-29), and some stocks'
+    moneycontrol 1m starts only days back, leaving months between the
+    dataset's end and it (QPOWER: 2026-01-22 → 2026-09-25). It's used to:
+    - **fill 1D bars** for days the minutes lack - never before 2022-01-03 for
+      a stock that's in the dataset (the daily feed is on a different
+      corporate-action basis for some: RELIANCE's 2022 prices differ by the
+      Jio Financial demerger adjustment), and never across a seam where the
+      two disagree on price (median close gap over the nearest 10 shared days
+      above 2%);
+    - **repair 1D bars spoiled by a bad print**: same close as the record but
+      an open/high/low more than 5% off (DHARIWAL's minutes opened 2025-11-12
+      at ₹160; officially ₹255);
+    - **count missing sessions**, which engine runs report.
+  - **Unadjusted splits and bonuses** are back-adjusted at every interval: an
+    overnight jump of 25%+ within 3% of a split (1:2, 1:4, 1:5, 1:10), bonus
+    (1:1, 1:2, 2:1, 3:1, 3:2, 4:1) or consolidation ratio - NSE price bands
+    keep a real open from gapping that far. Earlier prices are scaled by the
+    ratio, volume the other way (DHARIWAL's 1:5 on 2026-02-06, GENESYS's 1:2
+    bonus on 2026-08-06; neither feed had adjusted them). A 25%+ jump that
+    matches no ratio is left alone and reported, since adjusting on a guess is
+    worse than not.
   - `4H`/`1H`/etc. buckets are anchored to NSE's 09:15 IST open, not
     midnight, so a session's candles land on 09:15/10:15/…/15:15 rather than
     an odd partial bucket at the open.

@@ -9,6 +9,7 @@ import {
   CandlestickChartIcon,
   ChartNoAxesCombinedIcon,
   ClapperboardIcon,
+  CpuIcon,
   FlaskConicalIcon,
   LayoutDashboardIcon,
   MoonIcon,
@@ -33,6 +34,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { useTheme } from '@/lib/theme'
 import {
   BACKTEST_TABS,
+  ENGINE_TABS,
   HOME_TABS,
   PAGES,
   PAPER_TABS,
@@ -268,6 +270,14 @@ export default function CommandPalette() {
                 {PAPER_TABS.map((t) => (
                   <CommandItem key={t.view} value={t.label} onSelect={() => goTo('/paper', { view: t.view })}>
                     <CandlestickChartIcon className="size-4" />
+                    {t.label}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+              <CommandGroup heading="Algo engine">
+                {ENGINE_TABS.map((t) => (
+                  <CommandItem key={t.tab} value={t.label} onSelect={() => goTo('/engine', { tab: t.tab })}>
+                    <CpuIcon className="size-4" />
                     {t.label}
                   </CommandItem>
                 ))}

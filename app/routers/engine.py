@@ -27,11 +27,12 @@ import secrets
 import subprocess
 import tempfile
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 
 from app.core import autotune
 from app.core import db
@@ -392,9 +393,11 @@ def _autotune_row(path):
 @router.post("/api/engine/autotune")
 def engine_autotune(req: EngineAutotuneRequest):
     """One walk-forward per stock, tuned separately - parameters are per stock, never pooled - and
-    saved as one batch. Blocks until all are done: a year of 5m sessions in one-week steps is ~40
-    windows and a few seconds per stock, plus ~11s the first time a stock's bars are fetched.
-    A stock that fails (no bars, too little history) is reported and the rest still run."""
+    saved as one batch. Streams NDJSON as it goes - `start` {batch, symbols}, then a `report` (the
+    list row) or an `error` {symbol, error} per stock as each finishes, then `done` - since a year
+    of 5m sessions in one-week steps is ~40 windows and a few seconds per stock, plus ~11s the
+    first time a stock's bars are fetched. A stock that fails (no bars, too little history) is
+    reported and the rest still run. Bad requests are still refused up front with a 4xx."""
     root = _root()
     symbols = _check(root, req.strategy, req.symbols, req.interval)
     params = {k: v.strip() for k, v in req.params.items() if v.strip()}
@@ -406,22 +409,8 @@ def engine_autotune(req: EngineAutotuneRequest):
     batch = time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(2)
     created = datetime.now(timezone.utc).isoformat()
 
-    # Bars are loaded one stock at a time (see _stock_bars); only the walks - engine subprocesses,
-    # no DuckDB - run in parallel.
     start, end, history = _history(req.range)
-    got, coverage, skipped = _stock_bars(symbols, req.interval, start, end)
-    errors = [{"symbol": x["symbol"], "error": x["reason"]} for x in skipped]
-    loaded, need = [], req.train + req.test
-    for symbol, bars in got.items():
-        days = autotune.sessions_of(bars)
-        if len(days) < need:  # a stock listed late, or a short range: say what it had, and what would fit
-            fit = len(days) - 3 * req.test  # a train that leaves room for three test windows
-            hint = f"; a train of {fit} or less would walk it in 3+ windows" if fit >= 20 else ""
-            errors.append({"symbol": symbol, "error": f"only {len(days)} sessions in this range ({days[0]} → {days[-1]}) - "
-                                                     f"a walk needs train + test = {need}{hint}"})
-        else:
-            loaded.append((symbol, bars))
-    del got
+    need, coverage = req.train + req.test, {}
 
     def walk(i, symbol, bars):
         try:
@@ -439,15 +428,35 @@ def engine_autotune(req: EngineAutotuneRequest):
         path.write_text(json.dumps(report))
         return _autotune_row(path)
 
-    with ThreadPoolExecutor(min(AUTOTUNE_WORKERS, max(len(loaded), 1))) as pool:
-        results = list(pool.map(walk, range(len(loaded)), *zip(*loaded))) if loaded else []
-    reports = [r for r in results if "error" not in r]
-    errors += [r for r in results if "error" in r]
-    if not reports:
-        # the same bad grid fails every stock the same way - say it once
-        causes = list(dict.fromkeys(e["error"] for e in errors))
-        raise HTTPException(422, causes[0] if len(causes) == 1 else "; ".join(f"{e['symbol']}: {e['error']}" for e in errors))
-    return {"batch": batch, "reports": reports, "errors": errors}
+    def events():
+        # Bars are loaded one stock at a time (see _stock_bars); only the walks - engine subprocesses,
+        # no DuckDB - run in parallel.
+        yield {"type": "start", "batch": batch, "symbols": len(symbols)}
+        got, cov, skipped = _stock_bars(symbols, req.interval, start, end)
+        coverage.update(cov)
+        for x in skipped:
+            yield {"type": "error", "symbol": x["symbol"], "error": x["reason"]}
+        loaded = []
+        for symbol, bars in got.items():
+            days = autotune.sessions_of(bars)
+            if len(days) < need:  # a stock listed late, or a short range: say what it had, and what would fit
+                fit = len(days) - 3 * req.test  # a train that leaves room for three test windows
+                hint = f"; a train of {fit} or less would walk it in 3+ windows" if fit >= 20 else ""
+                yield {"type": "error", "symbol": symbol, "error": f"only {len(days)} sessions in this range ({days[0]} → {days[-1]}) - "
+                                                                   f"a walk needs train + test = {need}{hint}"}
+            else:
+                loaded.append((symbol, bars))
+        del got
+        if loaded:
+            with ThreadPoolExecutor(min(AUTOTUNE_WORKERS, len(loaded))) as pool:
+                futures = [pool.submit(walk, i, s, b) for i, (s, b) in enumerate(loaded)]
+                del loaded
+                for f in as_completed(futures):
+                    r = f.result()
+                    yield {"type": "error", **r} if "error" in r else {"type": "report", "report": r}
+        yield {"type": "done", "batch": batch}
+
+    return StreamingResponse((json.dumps(e) + "\n" for e in events()), media_type="application/x-ndjson")
 
 
 @router.get("/api/engine/autotune")

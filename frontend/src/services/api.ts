@@ -2208,12 +2208,37 @@ export type EngineAutotuneReport = Omit<EngineAutotuneRow, 'oos' | 'baseline' | 
 }
 
 /** One walk-forward per stock; `errors` are the stocks that couldn't be walked (the rest still ran). */
-export const runEngineAutotune = (req: EngineAutotuneRequest) =>
-  fetch('/api/engine/autotune', {
+export type EngineAutotuneEvent =
+  | { type: 'start'; batch: string; symbols: number }
+  | { type: 'report'; report: EngineAutotuneRow }
+  | { type: 'error'; symbol: string; error: string }
+  | { type: 'done'; batch: string }
+
+/** Streams the walk (NDJSON, one event a line) into `onEvent` as each stock finishes; resolves on
+ *  `done`. A refused request throws like any other call; a stream cut short throws too. */
+export async function runEngineAutotune(req: EngineAutotuneRequest, onEvent: (e: EngineAutotuneEvent) => void) {
+  const res = await fetch('/api/engine/autotune', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
-  }).then(json<{ batch: string; reports: EngineAutotuneRow[]; errors: { symbol: string; error: string }[] }>)
+  })
+  if (!res.ok || !res.body) return json(res)
+  const reader = res.body.pipeThrough(new TextDecoderStream()).getReader()
+  let buffer = ''
+  for (;;) {
+    const { value, done } = await reader.read()
+    if (done) throw new Error('The walk stopped before it finished - check the backend log')
+    buffer += value
+    const lines = buffer.split('\n')
+    buffer = lines.pop()!
+    for (const line of lines) {
+      if (!line) continue
+      const e = JSON.parse(line) as EngineAutotuneEvent
+      onEvent(e)
+      if (e.type === 'done') return
+    }
+  }
+}
 
 export const getEngineAutotunes = () => fetch('/api/engine/autotune').then(json<EngineAutotuneRow[]>)
 

@@ -7,6 +7,7 @@ import type { UTCTimestamp } from 'lightweight-charts'
 import {
   CheckIcon,
   ChevronsUpDownIcon,
+  BracesIcon,
   DownloadIcon,
   PlayIcon,
   RefreshCwIcon,
@@ -38,6 +39,7 @@ import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
+import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
@@ -61,6 +63,8 @@ import {
   runsSheet,
   sweepSheets,
   paramsLabel,
+  listedOn,
+  parseSymbolJson,
   parseValues,
   pickedSets,
   pinnedRange,
@@ -313,58 +317,132 @@ function SymbolPicker({ value, onChange }: { value: string[]; onChange: (v: stri
   const check = (sym: string) => <CheckIcon className={cn('size-3.5', !value.includes(sym) && 'opacity-0')} />
 
   return (
+    <div className="flex gap-1">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger
+          render={<Button variant="outline" size="sm" className="h-7 w-44 justify-between font-normal" />}
+        >
+          <span className={cn('truncate', !value.length && 'text-muted-foreground')}>
+            {value.length === 0 ? 'Select symbols' : value.length === 1 ? value[0] : `${value.length} stocks`}
+          </span>
+          <ChevronsUpDownIcon className="size-3.5 shrink-0 opacity-50" />
+        </PopoverTrigger>
+        <PopoverContent className="w-72 p-0" align="start">
+          <Command>
+            <CommandInput
+              value={search}
+              onValueChange={setSearch}
+              placeholder="Watchlist, or search any stock…"
+            />
+            <CommandList className="max-h-80">
+              <CommandEmpty>
+                {query
+                  ? 'No matches.'
+                  : watchlist?.length
+                    ? 'No matches.'
+                    : 'No watchlist symbols yet - type to search every NSE stock.'}
+              </CommandEmpty>
+              {groups.map(([listName, syms]) => (
+                <CommandGroup key={listName} heading={listName}>
+                  {syms.map((sym) => (
+                    <CommandItem key={sym} value={sym} onSelect={() => toggle(sym)}>
+                      {check(sym)}
+                      {sym}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              ))}
+              {others.length > 0 && (
+                <CommandGroup heading="All NSE stocks">
+                  {others.map((m) => (
+                    // the name is in the value too, so a match on the company name isn't filtered out
+                    <CommandItem
+                      key={m.symbol}
+                      value={`${m.symbol} ${m.name ?? ''}`}
+                      onSelect={() => toggle(m.symbol)}
+                    >
+                      {check(m.symbol)}
+                      <span className="font-medium">{m.symbol}</span>
+                      <span className="truncate text-xs text-muted-foreground">{m.name}</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+            </CommandList>
+          </Command>
+        </PopoverContent>
+      </Popover>
+      <SymbolJsonImport onChange={onChange} />
+    </div>
+  )
+}
+
+const SYMBOL_JSON_EXAMPLE = '[\n  { "symbol": "COFORGE", "index": "NSE" },\n  { "symbol": "RAIN", "index": "NSE" }\n]'
+
+/** Paste `[{"symbol": "INFY", "index": "NSE"}, ...]` to replace the selection in one go. Nothing
+ *  changes until it all checks out: the JSON's shape first, then every stock against the stocks
+ *  master - it has to exist and trade on the index given. Only the symbols are kept: the backend
+ *  looks each one's exchange up in the master itself. */
+function SymbolJsonImport({ onChange }: { onChange: (v: string[]) => void }) {
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState('')
+  const [errors, setErrors] = useState<string[]>([])
+  const check = useMutation({
+    mutationFn: async () => {
+      const { entries, errors } = parseSymbolJson(text)
+      if (errors.length) return errors
+      const rows = await Promise.all(
+        entries.map((e) => searchStocksMaster(e.symbol).then((r) => r.stocks.find((s) => s.symbol === e.symbol))),
+      )
+      const bad = entries.flatMap((e, i) => {
+        const row = rows[i]
+        if (!row) return [`${e.symbol}: not in the stocks master`]
+        return listedOn(row, e.index) ? [] : [`${e.symbol}: not listed on ${e.index}`]
+      })
+      if (!bad.length) {
+        onChange(entries.map((e) => e.symbol))
+        toast.success(`${entries.length} stock${entries.length === 1 ? '' : 's'} selected from JSON`)
+        setOpen(false)
+        setText('')
+      }
+      return bad
+    },
+    onSuccess: setErrors,
+    onError: (e) => setErrors([e.message]),
+  })
+
+  return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
-        render={<Button variant="outline" size="sm" className="h-7 w-44 justify-between font-normal" />}
+        render={<Button variant="outline" size="icon" className="size-7" title="Paste symbols as JSON" />}
       >
-        <span className={cn('truncate', !value.length && 'text-muted-foreground')}>
-          {value.length === 0 ? 'Select symbols' : value.length === 1 ? value[0] : `${value.length} stocks`}
-        </span>
-        <ChevronsUpDownIcon className="size-3.5 shrink-0 opacity-50" />
+        <BracesIcon className="size-3.5" />
       </PopoverTrigger>
-      <PopoverContent className="w-72 p-0" align="start">
-        <Command>
-          <CommandInput
-            value={search}
-            onValueChange={setSearch}
-            placeholder="Watchlist, or search any stock…"
-          />
-          <CommandList className="max-h-80">
-            <CommandEmpty>
-              {query
-                ? 'No matches.'
-                : watchlist?.length
-                  ? 'No matches.'
-                  : 'No watchlist symbols yet - type to search every NSE stock.'}
-            </CommandEmpty>
-            {groups.map(([listName, syms]) => (
-              <CommandGroup key={listName} heading={listName}>
-                {syms.map((sym) => (
-                  <CommandItem key={sym} value={sym} onSelect={() => toggle(sym)}>
-                    {check(sym)}
-                    {sym}
-                  </CommandItem>
-                ))}
-              </CommandGroup>
+      <PopoverContent className="w-80 space-y-2" align="start">
+        <p className="text-xs text-muted-foreground">
+          Paste a JSON array - it replaces the selection. <code>index</code> is NSE or BSE.
+        </p>
+        <Textarea
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value)
+            setErrors([])
+          }}
+          placeholder={SYMBOL_JSON_EXAMPLE}
+          aria-invalid={errors.length > 0}
+          className="h-40 font-mono text-xs"
+        />
+        {errors.length > 0 && (
+          <ul className="max-h-32 space-y-0.5 overflow-y-auto text-xs text-destructive">
+            {errors.map((e) => (
+              <li key={e}>{e}</li>
             ))}
-            {others.length > 0 && (
-              <CommandGroup heading="All NSE stocks">
-                {others.map((m) => (
-                  // the name is in the value too, so a match on the company name isn't filtered out
-                  <CommandItem
-                    key={m.symbol}
-                    value={`${m.symbol} ${m.name ?? ''}`}
-                    onSelect={() => toggle(m.symbol)}
-                  >
-                    {check(m.symbol)}
-                    <span className="font-medium">{m.symbol}</span>
-                    <span className="truncate text-xs text-muted-foreground">{m.name}</span>
-                  </CommandItem>
-                ))}
-              </CommandGroup>
-            )}
-          </CommandList>
-        </Command>
+          </ul>
+        )}
+        <Button size="sm" className="w-full" disabled={!text.trim() || check.isPending} onClick={() => check.mutate()}>
+          {check.isPending && <Spinner className="size-3.5" />}
+          Validate &amp; select
+        </Button>
       </PopoverContent>
     </Popover>
   )
@@ -2239,7 +2317,13 @@ function FormSection({ title, hint, children }: { title: string; hint?: string; 
 
 const MAX_TUNE_SYMBOLS = 30 // EngineAutotuneRequest.symbols max_length
 
-function AutotuneForm({ onDone }: { onDone: (batch: string, ids: string[]) => void }) {
+function AutotuneForm({
+  onReport,
+  onDone,
+}: {
+  onReport: (batch: string, many: boolean) => void
+  onDone: (batch: string, ids: string[]) => void
+}) {
   const { data: strategies, error } = useQuery({
     queryKey: ['engineStrategies'],
     queryFn: getEngineStrategies,
@@ -2271,24 +2355,45 @@ function AutotuneForm({ onDone }: { onDone: (batch: string, ids: string[]) => vo
   const numbers = TUNE_NUMBERS.map(([k, , d]) => [k, Number(valueOf(k, d))] as const)
   const badNumber = numbers.some(([, v]) => !Number.isFinite(v))
 
+  // stocks finished so far, of how many - the button counts them while the walk streams in
+  const [progress, setProgress] = useState<[number, number]>([0, 0])
   const run = useMutation({
-    mutationFn: () =>
-      runEngineAutotune({
-        strategy: strategy!.name,
-        symbols,
-        interval: barInterval,
-        range: history,
-        params: Object.fromEntries(parsed.map(([k]) => [k, text(k)])),
-        ...Object.fromEntries(numbers),
-      } as EngineAutotuneRequest),
-    onSuccess: (r) => {
-      toast.success(`${r.reports.length} stock${r.reports.length === 1 ? '' : 's'} walked forward`)
-      // the rest still ran - say which ones didn't, and why
-      for (const e of r.errors) toast.error(`${e.symbol}: ${e.error}`)
-      onDone(
-        r.batch,
-        r.reports.map((x) => x.id),
+    mutationFn: async () => {
+      const ids: string[] = []
+      const failed = new Map<string, string[]>() // cause -> symbols: one bad grid fails every stock alike
+      let batch = ''
+      let finished = 0
+      await runEngineAutotune(
+        {
+          strategy: strategy!.name,
+          symbols,
+          interval: barInterval,
+          range: history,
+          params: Object.fromEntries(parsed.map(([k]) => [k, text(k)])),
+          ...Object.fromEntries(numbers),
+        } as EngineAutotuneRequest,
+        (e) => {
+          if (e.type === 'start') {
+            batch = e.batch
+            setProgress([0, e.symbols])
+          } else if (e.type === 'report') {
+            ids.push(e.report.id)
+            onReport(batch, symbols.length > 1)
+          } else if (e.type === 'error') {
+            // the rest still run - say which ones didn't, and why, once per cause
+            const hit = [...(failed.get(e.error) ?? []), e.symbol]
+            failed.set(e.error, hit)
+            toast.error(e.error, { id: `tune-${e.error}`, description: hit.join(', ') })
+          }
+          if (e.type === 'report' || e.type === 'error') setProgress(([, n]) => [++finished, n])
+        },
       )
+      return { batch, ids }
+    },
+    onSuccess: ({ batch, ids }) => {
+      if (!ids.length) return // every stock failed, and the toasts said why
+      toast.success(`${ids.length} stock${ids.length === 1 ? '' : 's'} walked forward`)
+      onDone(batch, ids)
     },
     onError: (e) => toast.error(e.message),
   })
@@ -2406,7 +2511,9 @@ function AutotuneForm({ onDone }: { onDone: (batch: string, ids: string[]) => vo
           onClick={() => run.mutate()}
         >
           {run.isPending ? <Spinner className="size-3.5" /> : <PlayIcon />}
-          {!symbols.length
+          {run.isPending
+            ? `${progress[0]} of ${progress[1]} walked`
+            : !symbols.length
             ? 'Select symbols'
             : historyProblem
               ? historyProblem
@@ -3460,6 +3567,11 @@ export default function Engine() {
           <Panel title="New walk-forward">
             {settings?.built ? (
               <AutotuneForm
+                onReport={(b, many) => {
+                  // each stock lands in the list - and the open batch view - as soon as it's walked
+                  queryClient.invalidateQueries({ queryKey: ['engineAutotunes'] })
+                  if (many) navigate({ search: (prev) => ({ ...prev, tunebatch: b, autotune: undefined }) })
+                }}
                 onDone={(b, ids) => {
                   queryClient.invalidateQueries({ queryKey: ['engineAutotunes'] })
                   // one stock opens its report; several open the batch, one click from each report

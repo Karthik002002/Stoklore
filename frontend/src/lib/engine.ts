@@ -111,9 +111,18 @@ export function markerRange(markers: TradeMarker[], marginRatio = 0.05) {
   return { from: from - margin, to: to + margin }
 }
 
-/** Bar interval ("1m", "5m", "15m", "1H", "4H") in seconds. */
+/** Bar interval ("1m", "5m", "15m", "1H", "4H", "1D") in seconds. */
 export const intervalSeconds = (interval: string) =>
-  parseInt(interval, 10) * (interval.endsWith('H') ? 3600 : 60)
+  parseInt(interval, 10) * (interval.endsWith('D') ? 86400 : interval.endsWith('H') ? 3600 : 60)
+
+/** Minutes held, in the unit that reads: 45m, 3.5h, 12.4d. Intraday holds are minutes; daily bars
+ *  hold for weeks, and "40,108m" says nothing. Calendar time, nights and weekends included. */
+export const holdText = (min: number) =>
+  min < 60
+    ? `${Math.round(min)}m`
+    : min < 1440
+      ? `${+(min / 60).toFixed(1)}h`
+      : `${+(min / 1440).toFixed(1)}d`
 
 /** Time window to zoom the executions chart on one clicked trade: entry to exit, padded with a few
  *  bars either side so the candles it broke out of / into stay visible - the trade's own two points
@@ -413,4 +422,261 @@ export function sweepSheets(sweep: SweepLike): Sheet[] {
     })
   }
   return sheets
+}
+
+type AutotuneLike = {
+  id: string
+  strategy: string
+  symbol: string
+  interval: string
+  sessions: [string, string]
+  train: number
+  test: number
+  min_trades: number
+  margin: number
+  cost_bps: number
+  axes: Record<string, number[]>
+  defaults: Record<string, number>
+  stats: Record<string, number | boolean | null>
+  oos: { summary: Summary }
+  baseline: { summary: Summary }
+  windows: {
+    train: [string, string]
+    test: [string, string]
+    chosen: Record<string, number> | null
+    switched: boolean
+    cells: number
+    eligible: number
+    is: Summary | null
+    oos: Summary | null
+    baseline: Summary
+  }[]
+}
+
+/** A walk-forward report as a workbook: settings + verdict numbers, tuned vs fixed side by side,
+ *  and one row per window. The windows sheet is what the CSV export writes. */
+export function autotuneSheets(r: AutotuneLike): Sheet[] {
+  const swept = Object.keys(r.axes)
+  const stat = (k: string) => {
+    const v = r.stats[k]
+    return typeof v === 'boolean' ? (v ? 'yes' : 'no') : (v ?? null)
+  }
+  return [
+    {
+      sheet: 'Walk-forward',
+      headers: ['Field', 'Value'],
+      rows: [
+        ['Report', r.id],
+        ['Strategy', r.strategy],
+        ['Symbol', r.symbol],
+        ['Bars', r.interval],
+        ['Sessions', `${r.sessions[0]} to ${r.sessions[1]}`],
+        ['Train sessions', r.train],
+        ['Test sessions', r.test],
+        ['Min trades', r.min_trades],
+        ['Switch margin', r.margin],
+        ['Cost (bps/side)', r.cost_bps],
+        ...swept.map((k): Cell[] => [`tuned: ${k}`, r.axes[k].join(', ')]),
+        ...Object.entries(r.defaults).map(([k, v]): Cell[] => [`fixed defaults: ${k}`, v]),
+        ['Windows', stat('windows')],
+        ['Windows traded', stat('traded_windows')],
+        ['Windows sat out', stat('sat_out')],
+        ['Switches', stat('switches')],
+        ['Walk-forward efficiency', stat('wfe')],
+        ['Param stability', stat('stability')],
+        ['Deflated Sharpe (probability)', stat('dsr')],
+        ['Trials per window', stat('trials')],
+        ['Beats fixed defaults', stat('beats_baseline')],
+      ],
+    },
+    {
+      sheet: 'Tuned vs fixed',
+      headers: ['Metric', 'Tuned (out-of-sample)', 'Fixed defaults (out-of-sample)'],
+      rows: SUMMARY_COLUMNS.filter(([k]) => k in r.oos.summary).map(([k, label]) => [
+        label,
+        r.oos.summary[k] ?? null,
+        r.baseline.summary[k] ?? null,
+      ]),
+    },
+    {
+      sheet: 'Windows',
+      headers: [
+        'Train from',
+        'Train to',
+        'Test from',
+        'Test to',
+        ...swept,
+        'Switched',
+        'Eligible cells',
+        'Cells',
+        'In-sample net',
+        'Out-of-sample net',
+        'Out-of-sample trades',
+        'Fixed defaults net',
+      ],
+      rows: r.windows.map((w) => [
+        ...w.train,
+        ...w.test,
+        ...swept.map((k) => w.chosen?.[k] ?? null),
+        w.chosen ? (w.switched ? 'yes' : 'no') : 'sat out',
+        w.eligible,
+        w.cells,
+        w.is?.net ?? null,
+        w.oos?.net ?? null,
+        w.oos?.trades ?? null,
+        w.baseline.net ?? null,
+      ]),
+    },
+  ]
+}
+
+// --- multi-stock walk-forward: one batch, each stock tuned on its own ----------------------------
+
+type TuneRowLike = {
+  symbol: string
+  stats: { traded_windows: number; windows: number; beats_baseline: boolean } & Record<string, unknown>
+  oos: Summary
+  baseline: Summary
+}
+
+/** What one stock's walk-forward showed. `held`: made money out-of-sample AND beat the fixed
+ *  defaults. `idle`: no cell ever made money in-sample, so it never traded. `failed`: anything else -
+ *  including "beat the defaults" by losing less. */
+export function tuneVerdict(r: TuneRowLike): 'held' | 'failed' | 'idle' {
+  if (!r.stats.traded_windows) return 'idle'
+  return (r.oos.net ?? 0) > 0 && r.stats.beats_baseline ? 'held' : 'failed'
+}
+
+/** Several stocks' daily out-of-sample P&L summed by day, cumulated: the batch traded as one book.
+ *  A day only one stock traded counts that stock alone; it isn't averaged against idle ones. */
+export function portfolioCurve(dailies: [number, number][][]): [number, number][] {
+  const byDay = new Map<number, number>()
+  for (const daily of dailies) for (const [t, v] of daily) byDay.set(t, (byDay.get(t) ?? 0) + v)
+  let cum = 0
+  return [...byDay.entries()].sort(([a], [b]) => a - b).map(([t, v]) => [t, (cum += v)])
+}
+
+/** A batch as one sheet: a row per stock, tuned beside fixed, with the verdict. */
+export function autotuneBatchSheet(rows: TuneRowLike[]): Sheet {
+  const num = (v: unknown) => (typeof v === 'number' ? v : null)
+  return {
+    sheet: 'Stocks',
+    headers: [
+      'Symbol',
+      'Verdict',
+      'Windows traded',
+      'Windows',
+      'Tuned net',
+      'Fixed defaults net',
+      'Tuned trades',
+      'Tuned profit factor',
+      'Fixed profit factor',
+      'Tuned max drawdown',
+      'Walk-forward efficiency',
+      'Deflated Sharpe',
+      'Param stability',
+    ],
+    rows: rows.map((r) => [
+      r.symbol,
+      tuneVerdict(r),
+      r.stats.traded_windows,
+      r.stats.windows,
+      r.oos.net ?? null,
+      r.baseline.net ?? null,
+      r.oos.trades ?? null,
+      r.oos.profit_factor ?? null,
+      r.baseline.profit_factor ?? null,
+      r.oos.max_dd ?? null,
+      num(r.stats.wfe),
+      num(r.stats.dsr),
+      num(r.stats.stability),
+    ]),
+  }
+}
+
+// --- history ranges: what a run was given, and what each stock actually had ----------------------
+
+type HistoryLike = { mode: string; years?: number | null; start?: string | null; end?: string | null }
+type CoverageLike = Record<
+  string,
+  {
+    from: string
+    to: string
+    sessions: number
+    missing?: { sessions: number; from: string; to: string }
+    adjusted?: { date: string; ratio: number }[]
+    jumps?: { date: string; move: number }[]
+  }
+>
+
+const dayGap = (a: string, b: string) => (Date.parse(b) - Date.parse(a)) / 86_400_000
+/** Holidays and weekends at a range's edge aren't worth mentioning; a stock missing more is. */
+const EDGE_SLACK_DAYS = 7
+
+/** A run's history in words. Runs from before ranges used the newest 30k bars; walk-forwards
+ *  from before them kept a session count. */
+export function historyText(h?: HistoryLike | number | null): string {
+  if (h == null) return 'Newest 30,000 bars'
+  if (typeof h === 'number') return `Last ${h} sessions`
+  if (h.mode === 'years') {
+    const n = h.years ?? 0
+    return `Last ${n} year${n === 1 ? '' : 's'}${h.start ? ` (from ${h.start})` : ''}`
+  }
+  if (h.mode === 'dates') {
+    if (h.start && h.end) return `${h.start} → ${h.end}`
+    return h.start ? `From ${h.start}` : `Up to ${h.end}`
+  }
+  return 'All available'
+}
+
+/** Stocks whose own history didn't fill the range: listed after it starts, or data ending before
+ *  it does. On "all available", the ones starting well after the earliest - their share of the
+ *  result is shorter than it looks. Then each stock's data notes: sessions its bars lack, splits and
+ *  bonuses that were back-adjusted, and big jumps left alone for a human to check. */
+export function coverageNotes(h: HistoryLike | null | undefined, coverage?: CoverageLike): string[] {
+  if (!coverage) return []
+  const entries = Object.entries(coverage)
+  const from = h?.start ?? entries.map(([, c]) => c.from).sort()[0]
+  const notes: string[] = []
+  for (const [sym, c] of entries) {
+    if (from && dayGap(from, c.from) > EDGE_SLACK_DAYS) notes.push(`${sym} only from ${c.from}`)
+    if (h?.end && dayGap(c.to, h.end) > EDGE_SLACK_DAYS) notes.push(`${sym} only up to ${c.to}`)
+    if (c.missing)
+      notes.push(`${sym} missing ${c.missing.sessions} sessions (${c.missing.from} → ${c.missing.to})`)
+    for (const a of c.adjusted ?? [])
+      notes.push(`${sym} split/bonus on ${a.date} - earlier prices ×${+a.ratio.toFixed(4)}`)
+    for (const j of c.jumps ?? [])
+      notes.push(
+        `${sym} moved ${Math.round((j.move - 1) * 100)}% overnight on ${j.date} - not a known split ratio, check it`,
+      )
+  }
+  return notes
+}
+
+/** The range that reproduces a finished run's bars exactly: its resolved start, and an end pinned
+ *  to the last bar it had - "all available" or "last n years" would take in days added since. */
+export function pinnedRange(h?: HistoryLike | null, coverage?: CoverageLike) {
+  const last = coverage
+    ? Object.values(coverage)
+        .map((c) => c.to)
+        .sort()
+        .at(-1)
+    : undefined
+  const start = h?.start ?? null
+  const end = h?.end ?? last ?? null
+  return start || end ? { mode: 'dates' as const, start, end } : { mode: 'all' as const }
+}
+
+/** Why a history choice can't be sent, or null. `today` as "YYYY-MM-DD". */
+export function historyError(r: HistoryLike, today: string): string | null {
+  if (r.mode === 'years') {
+    if (!(Number(r.years) > 0)) return 'Say how many years'
+    if (Number(r.years) > 30) return 'At most 30 years'
+  }
+  if (r.mode === 'dates') {
+    if (!r.start && !r.end) return 'Pick a start or an end date'
+    if (r.start && r.end && r.start > r.end) return 'The range starts after it ends'
+    if (r.start && r.start > today) return 'The range starts after today'
+  }
+  return null
 }

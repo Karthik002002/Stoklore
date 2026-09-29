@@ -731,7 +731,8 @@ Bar Replay.
 > public HuggingFace dataset of **2,535 NSE symbols' minute bars, 2022–2026**
 > (~715M rows), streamed on demand with DuckDB — no multi-GB download, just
 > a per-symbol extract (~11s, once) cached locally, with a yfinance fallback
-> for anything the dataset doesn't carry. See [How it works](docs/bar-replay.md#how-it-works)
+> for anything the dataset doesn't carry. The dataset ends in January 2026; newer
+> bars up to today are topped up from moneycontrol (yfinance as the fallback). See [How it works](docs/bar-replay.md#how-it-works)
 > for the details.
 
 - **Playback** — step forward/back, play/pause at 0.5×–4×, jump to a date, or
@@ -910,7 +911,9 @@ trades on the VPS, and its paper/live sessions land on this page beside the back
 
 - **Backtests and parameter sweeps** — every param takes a value (`9`), a list (`5,9,13`) or a
   range (`5:20:5`); every combination runs, up to 200. Orders fill at the next bar's open with a
-  flat cost in bps per side, and positions square off at 15:15
+  flat cost in bps per side, and positions square off at 15:15. Bars from 1m to **1D**: on daily
+  bars positions are held across days (positional) and costs default to delivery's ~12 bps a side. Pick the **history** to run on - all available, the last N years, or a date range; each stock
+  uses what it has inside it, a stock with nothing there is skipped, and the run says which
 - **Sweep heatmap** — pick two axes and each cell shows its best run over the rest, so a parameter
   that only works in one corner is visible as one. Each cell carries its trade count, the best is
   ringed, and parameter sets that took **no trades** are drawn dashed and grey rather than as a red
@@ -926,6 +929,13 @@ trades on the VPS, and its paper/live sessions land on this page beside the back
 - **Executions on candles** — the run's own bars with every fill marked: ▲ buy, ▼ sell, and each
   exit arrow green when that trade made money. The candles come from the same source the backtest
   ran on, so an arrow sits on the exact bar that filled rather than on a resampled approximation
+- **Auto-tune (walk-forward)** — instead of choosing parameters off a sweep, tune them on one
+  stock's past sessions, trade the pick on the next sessions it never saw, and roll forward. The
+  report puts the stitched out-of-sample curve next to the strategy's fixed defaults and the
+  in-sample promise, with walk-forward efficiency, deflated Sharpe and parameter stability. It
+  only trades a parameter area that made money in-sample, sits the window out otherwise, and
+  deploys nothing. Run it on several stocks at once (watchlist first, or any NSE stock by search):
+  each is tuned on its own, and a batch view shows which ones held up and the batch as one book
 - **Compare** — tick runs in the table to overlay their equity or drawdown curves
 - **Paper and live runs** pulled off the VPS with `rsync` over ssh, rendered through the same views
 
@@ -954,8 +964,9 @@ Full details: [docs/engine.md](docs/engine.md).
   a new route or tab has to be added there in the same change, or it simply can't be found
 - **Watchlist canvas (Cmd/Ctrl+B)** — the stock-to-watchlist mapping as a React Flow graph, on one
   shortcut from any page: each watchlist on top with only its stocks listed under it, and stocks
-  in no list in a column at the side. Drag a stock onto a list to add it, select a stock under a list
-  and Delete to remove it, add stocks and lists from the canvas itself. A stock in several lists shows
+  in no list in a column at the side. Drag a stock onto a list to add it, click the × on a stock under a
+  list (or select it and press Delete) to remove it, delete a stock that's in no list from its bin
+  button (asks first - its reports go with it), add stocks and lists from the canvas itself. A stock in several lists shows
   under each of them. See
   [Dashboard & Watchlists](docs/dashboard.md)
 - **Every keyboard shortcut is rebindable** — Settings › Shortcuts lists all of
@@ -1031,7 +1042,7 @@ Full details: [docs/engine.md](docs/engine.md).
 | Analysis   | `app/core/llm.py` — Ollama / OmniRoute / LiteLLM (chat + tool calling), `nomic-embed-text` for embeddings; `app/core/sentiment.py` — local FinRoBERTa classifier |
 | Events     | `app/core/events.py` — watchlist-scoped news/price/volume/corporate-action scan |
 | Indicators | `frontend/src/lib/indicators.ts` — 36 indicators (moving averages, trend, momentum, volatility, volume, microstructure, statistical, structure, candle shape), pure and self-checked ([docs](docs/indicators.md)) |
-| Prices     | `app/core/prices.py` — incremental daily OHLCV sync (1y + full-history tiers) + EMA crossover math; `app/core/minute_data.py` — intraday bars (1m–4H) for Bar Replay, streamed on demand from a HuggingFace minute dataset via DuckDB, yfinance fallback |
+| Prices     | `app/core/prices.py` — incremental daily OHLCV sync (1y + full-history tiers) + EMA crossover math; `app/core/minute_data.py` — intraday bars (1m–4H) for Bar Replay, plus 1D for the engine, streamed on demand from a HuggingFace minute dataset via DuckDB, yfinance fallback |
 | Brokers    | `app/core/broker.py` (Dhan v2) + `app/core/kite.py` (Kite Connect v3) — read-only holdings/margin, normalized to one shape |
 | Backtests  | Manual: `app/core/backtest.py` — long-only EMA-crossover backtest over stored `price_history` (not yet wired into the UI). Auto: user-written Pine Script run client-side via `pinets` (PineTS) against `price_history`/`price_history_max`, saved as templates in `auto_backtest_scripts` |
 | Paper      | `app/core/paper.py` — background poller (20s, market hours only) that marks open `paper_positions` against live quotes and fires laddered simulated exits into the manual journal; `app/core/trade_context.py` — one-time entry-context + MAE/MFE snapshot stored on every trade |

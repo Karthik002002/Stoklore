@@ -42,6 +42,30 @@ export type ActivityDay = Schemas['ActivityDay']
 export type BulkMaxCollectRequest = Schemas['BulkMaxCollectRequest']
 export type EngineBacktestRequest = Schemas['EngineBacktestRequest']
 export type EngineSweepRequest = Schemas['EngineSweepRequest']
+export type EngineAutotuneRequest = Schemas['EngineAutotuneRequest']
+/** A run's history choice as sent: everything, the last `years`, or `start`..`end` (inclusive). */
+export type BarRange = Schemas['BarRange']
+/** The history a run was given, resolved to dates (null = open-ended), as its report keeps it. */
+export type EngineHistory = {
+  mode: 'all' | 'years' | 'dates'
+  years: number | null
+  start: string | null
+  end: string | null
+}
+/** What one stock actually had inside that range - its own listing and data decide, not the range:
+ *  sessions the official daily record has that its bars lack, splits/bonuses back-adjusted (price
+ *  ratio), and big overnight jumps that match no known ratio, left as they are to be checked. */
+export type StockCoverage = {
+  from: string
+  to: string
+  sessions: number
+  missing?: { sessions: number; from: string; to: string }
+  adjusted?: { date: string; ratio: number }[]
+  jumps?: { date: string; move: number }[]
+}
+export type EngineCoverage = Record<string, StockCoverage>
+/** Stocks a run left out, and why (nothing in the range, or no data at all). */
+export type EngineSkipped = { symbol: string; reason: string }[]
 export type EngineSettingsRequest = Schemas['EngineSettingsRequest']
 
 // --- Response shapes this app actually reads ---------------------------------------------------
@@ -475,8 +499,15 @@ export const getMaxHistoryStatus = (symbol: string) =>
 // Bar Replay's intraday timeframes (15m/1H/4H) - returns {bars, source}. The first call for a
 // symbol is slow (the backend extracts it from the remote minute dataset into a local cache),
 // every later one is fast. See minute_data.py.
-export const getIntradayBars = (symbol: string, interval: string) =>
-  fetch(`/api/prices/${symbol}/intraday?interval=${encodeURIComponent(interval)}`).then(json<ChartResponse>)
+/** `start`/`end` (inclusive "YYYY-MM-DD") cut the series before the newest-bars cap applies. */
+export const getIntradayBars = (symbol: string, interval: string, range?: { start?: string; end?: string }) =>
+  fetch(
+    `/api/prices/${symbol}/intraday?${new URLSearchParams({
+      interval,
+      ...(range?.start && { start: range.start }),
+      ...(range?.end && { end: range.end }),
+    })}`,
+  ).then(json<ChartResponse>)
 
 // `source` picks which price_sources plugin (backend) actually fetches the data - see
 // GET /api/prices/sources for the live list instead of hardcoding names here.
@@ -1965,6 +1996,10 @@ export type EngineRunRow = {
   label?: string | null
   /** paper/live only */
   halted?: boolean
+  /** backtests made with a history range (older ones used the newest 30k bars) */
+  history?: EngineHistory
+  coverage?: EngineCoverage
+  skipped?: EngineSkipped
 }
 
 /** [symbol, entry time, exit time, signed qty, entry px, exit px, gross pnl] */
@@ -1997,7 +2032,7 @@ export const runEngineBacktest = (req: EngineBacktestRequest) =>
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
-  }).then(json<{ batch: string; runs: EngineRunRow[] }>)
+  }).then(json<{ batch: string; runs: EngineRunRow[]; skipped: EngineSkipped }>)
 
 export const deleteEngineRun = (id: string) =>
   fetch(`/api/engine/runs/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(json)
@@ -2043,6 +2078,9 @@ export type EngineSweepRow = {
   axes: Record<string, number[]>
   count: number
   best: { params: Record<string, number>; summary: EngineSummary } | null
+  history?: EngineHistory
+  coverage?: EngineCoverage
+  skipped?: EngineSkipped
 }
 
 export type EngineSweep = Omit<EngineSweepRow, 'count' | 'best'> & { runs: EngineSweepRun[] }
@@ -2061,3 +2099,97 @@ export const getEngineSweep = (id: string) =>
 
 export const deleteEngineSweep = (id: string) =>
   fetch(`/api/engine/sweeps/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(json)
+
+/** Summary of stitched out-of-sample windows (app/core/autotune.py `summarize`): the engine's own
+ *  fields, computed over several windows joined. */
+export type EngineAutotuneSummary = Pick<
+  EngineSummary,
+  'net' | 'gross' | 'costs' | 'trades' | 'win_rate' | 'avg_win' | 'avg_loss' | 'max_dd' | 'sharpe' | 'days'
+> &
+  Required<Pick<EngineSummary, 'profit_factor' | 'expectancy' | 'ret_dd'>>
+
+/** One walk-forward window: what was picked on its train sessions and how that did on its test ones. */
+export type EngineAutotuneWindow = {
+  train: [string, string]
+  test: [string, string]
+  /** every param of the pick, or null: no cell scored above zero, so the window was sat out */
+  chosen: Record<string, number> | null
+  switched: boolean
+  cells: number
+  eligible: number
+  is: EngineSummary | null
+  oos: EngineSummary | null
+  baseline: EngineSummary
+}
+
+export type EngineAutotuneStats = {
+  windows: number
+  traded_windows: number
+  sat_out: number
+  switches: number
+  /** OOS net per session / in-sample net per session; null when in-sample never made money */
+  wfe: number | null
+  beats_baseline: boolean
+  /** share of consecutive picks within one grid step of each other */
+  stability: number | null
+  /** deflated Sharpe: probability the OOS Sharpe is real after `trials` tries per window */
+  dsr: number | null
+  trials: number
+}
+
+export type EngineAutotuneRow = {
+  id: string
+  /** the multi-stock run this report came from - every stock of one run shares it */
+  batch?: string
+  created: string
+  strategy: string
+  symbol: string
+  interval: string
+  params: Record<string, string>
+  /** the baseline's params: strategy defaults + the fixed values + cost */
+  defaults: Record<string, number>
+  axes: Record<string, number[]>
+  train: number
+  test: number
+  /** the range walked; a number (sessions) on reports made before ranges */
+  history: EngineHistory | number
+  coverage?: StockCoverage
+  min_trades: number
+  margin: number
+  cost_bps: number
+  sessions: [string, string]
+  stats: EngineAutotuneStats
+  oos: EngineAutotuneSummary
+  baseline: EngineAutotuneSummary
+}
+
+type Stitched = { summary: EngineAutotuneSummary; equity: [number, number][]; daily: [number, number][] }
+
+export type EngineAutotuneReport = Omit<EngineAutotuneRow, 'oos' | 'baseline'> & {
+  windows: EngineAutotuneWindow[]
+  oos: Stitched
+  baseline: Stitched
+  /** cumulative in-sample net per session of each pick, carried over its test sessions: the promise */
+  promised: [number, number][]
+}
+
+/** One walk-forward per stock; `errors` are the stocks that couldn't be walked (the rest still ran). */
+export const runEngineAutotune = (req: EngineAutotuneRequest) =>
+  fetch('/api/engine/autotune', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  }).then(json<{ batch: string; reports: EngineAutotuneRow[]; errors: { symbol: string; error: string }[] }>)
+
+export const getEngineAutotunes = () => fetch('/api/engine/autotune').then(json<EngineAutotuneRow[]>)
+
+export const getEngineAutotune = (id: string) =>
+  fetch(`/api/engine/autotune/${encodeURIComponent(id)}`).then(json<EngineAutotuneReport>)
+
+export const deleteEngineAutotuneBatch = (batch: string) =>
+  fetch(`/api/engine/autotune/batches/${encodeURIComponent(batch)}`, { method: 'DELETE' }).then(
+    json<{ deleted: number }>,
+  )
+
+export const deleteEngineAutotune = (id: string) =>
+  fetch(`/api/engine/autotune/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(json)

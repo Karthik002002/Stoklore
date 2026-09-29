@@ -528,7 +528,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Intraday History */
+        /**
+         * Intraday History
+         * @description `start`/`end` (inclusive dates) cut the series first, so the newest-bars cap applies inside
+         *     them - the engine's executions chart asks for a run's own period, which may be years back.
+         */
         get: operations["intraday_history_api_prices__symbol__intraday_get"];
         put?: never;
         post?: never;
@@ -867,6 +871,69 @@ export interface paths {
         post?: never;
         /** Engine Delete Sweep */
         delete: operations["engine_delete_sweep_api_engine_sweeps__sweep_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/engine/autotune": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Engine Autotune List */
+        get: operations["engine_autotune_list_api_engine_autotune_get"];
+        put?: never;
+        /**
+         * Engine Autotune
+         * @description One walk-forward per stock, tuned separately - parameters are per stock, never pooled - and
+         *     saved as one batch. Blocks until all are done: a year of 5m sessions in one-week steps is ~40
+         *     windows and a few seconds per stock, plus ~11s the first time a stock's bars are fetched.
+         *     A stock that fails (no bars, too little history) is reported and the rest still run.
+         */
+        post: operations["engine_autotune_api_engine_autotune_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/engine/autotune/{report_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Engine Autotune Detail */
+        get: operations["engine_autotune_detail_api_engine_autotune__report_id__get"];
+        put?: never;
+        post?: never;
+        /** Engine Autotune Delete */
+        delete: operations["engine_autotune_delete_api_engine_autotune__report_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/engine/autotune/batches/{batch}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Engine Autotune Delete Batch
+         * @description Every stock's report from one multi-stock run. Matches this route's own `wf-<batch>-<n>`
+         *     files only.
+         */
+        delete: operations["engine_autotune_delete_batch_api_engine_autotune_batches__batch__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3472,6 +3539,26 @@ export interface components {
             /** Account Id */
             account_id?: number | null;
         };
+        /**
+         * BarRange
+         * @description Which stretch of history a run uses: everything, the last `years`, or `start`..`end`
+         *     (inclusive, either end may be open). Each stock uses what it has inside it - see
+         *     minute_data.range_bounds.
+         */
+        BarRange: {
+            /**
+             * Mode
+             * @default all
+             * @enum {string}
+             */
+            mode: "all" | "years" | "dates";
+            /** Years */
+            years?: number | null;
+            /** Start */
+            start?: string | null;
+            /** End */
+            end?: string | null;
+        };
         /** Body_analyze_bulk_trade_image_api_manual_trades_bulk_analyze_post */
         Body_analyze_bulk_trade_image_api_manual_trades_bulk_analyze_post: {
             /** File */
@@ -3649,6 +3736,60 @@ export interface components {
             /** Access Token */
             access_token: string;
         };
+        /**
+         * EngineAutotuneRequest
+         * @description Walk-forward tuning of one strategy, on each stock separately (app/core/autotune.py).
+         */
+        EngineAutotuneRequest: {
+            /** Strategy */
+            strategy: string;
+            /** Symbols */
+            symbols: string[];
+            /**
+             * Interval
+             * @default 5m
+             */
+            interval: string;
+            /**
+             * Params
+             * @default {}
+             */
+            params: {
+                [key: string]: string;
+            };
+            /**
+             * Train
+             * @default 60
+             */
+            train: number;
+            /**
+             * Test
+             * @default 5
+             */
+            test: number;
+            /**
+             * @default {
+             *       "mode": "years",
+             *       "years": 1
+             *     }
+             */
+            range: components["schemas"]["BarRange"];
+            /**
+             * Min Trades
+             * @default 30
+             */
+            min_trades: number;
+            /**
+             * Margin
+             * @default 0.15
+             */
+            margin: number;
+            /**
+             * Cost Bps
+             * @default 3
+             */
+            cost_bps: number;
+        };
         /** EngineBacktestRequest */
         EngineBacktestRequest: {
             /** Strategy */
@@ -3674,6 +3815,12 @@ export interface components {
             cost_bps: number;
             /** Label */
             label?: string | null;
+            /**
+             * @default {
+             *       "mode": "all"
+             *     }
+             */
+            range: components["schemas"]["BarRange"];
         };
         /** EngineSettingsRequest */
         EngineSettingsRequest: {
@@ -3736,6 +3883,12 @@ export interface components {
             cost_bps: number;
             /** Label */
             label?: string | null;
+            /**
+             * @default {
+             *       "mode": "all"
+             *     }
+             */
+            range: components["schemas"]["BarRange"];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -5064,6 +5217,8 @@ export interface operations {
         parameters: {
             query?: {
                 interval?: string;
+                start?: string | null;
+                end?: string | null;
             };
             header?: never;
             path: {
@@ -5779,6 +5934,152 @@ export interface operations {
             header?: never;
             path: {
                 sweep_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    engine_autotune_list_api_engine_autotune_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    engine_autotune_api_engine_autotune_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EngineAutotuneRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    engine_autotune_detail_api_engine_autotune__report_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    engine_autotune_delete_api_engine_autotune__report_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    engine_autotune_delete_batch_api_engine_autotune_batches__batch__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                batch: string;
             };
             cookie?: never;
         };

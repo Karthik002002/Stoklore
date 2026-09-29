@@ -64,6 +64,12 @@ export const PAPER_TABS = [
   { label: 'Paper Trading > Trades', view: 'trades' },
 ]
 
+// Mirrors Engine.tsx's tabs (`tab` in router.tsx's engineRoute).
+export const ENGINE_TABS = [
+  { label: 'Algo engine > Backtests', tab: 'backtest' },
+  { label: 'Algo engine > Auto-tune', tab: 'autotune' },
+]
+
 export const SIMULATION_MODES = [
   { label: 'Trade Simulation > Single account', mode: 'single' },
   { label: 'Trade Simulation > Multiple accounts', mode: 'multiple' },
@@ -113,6 +119,7 @@ export const NAV_TARGETS: NavTarget[] = [
   ...WORKFLOW_PAGES.map((t) => ({ label: t.label, to: t.to })),
   ...HOME_TABS.map((t) => ({ label: t.label, to: '/' as LinkProps['to'], search: { tab: t.tab } })),
   ...PAPER_TABS.map((t) => ({ label: t.label, to: '/paper' as LinkProps['to'], search: { view: t.view } })),
+  ...ENGINE_TABS.map((t) => ({ label: t.label, to: '/engine' as LinkProps['to'], search: { tab: t.tab } })),
   ...SIMULATION_MODES.map((m) => ({
     label: m.label,
     to: '/simulation' as LinkProps['to'],

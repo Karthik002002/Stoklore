@@ -25,6 +25,7 @@ why it exists, see the main [README](../README.md) — these docs are the
 - [Paper Trading](paper-trading.md)
 - [Live Trading (Dhan)](live-trading.md)
 - [Engine (C++ algo trading)](engine.md) — backtest sweeps and paper/live runs of an external C++ engine
+- [Auto-tune blueprint](autotune-blueprint.md) — design for walk-forward self-tuning of engine params per stock (not built)
 - [Agent](agent.md)
 - [Workflows](workflows.md) — triggers, notifications, per-workflow pages
 - [Dashboards](dashboards.md) — panels over workflow data, arranged on a grid

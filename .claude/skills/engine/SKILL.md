@@ -63,6 +63,10 @@ Auto-tuning parameters per stock (walk-forward, gates, lifecycle, VPS deploy) ha
 Phase 1 is built: `app/core/autotune.py` (pure functions + the walk, engine injected, asserted by
 `.venv/bin/python tests/autotune.selfcheck.py`), routes under `/api/engine/autotune`, and the
 Auto-tune tab in `Engine.tsx` (`tab` search param in router.tsx; `ENGINE_TABS` in navTargets.ts).
+Each window also sweeps the grid on its test bars (`--sweep=grid --trade-from`) -> `tally_cells` /
+`cell_table` give every cell's out-of-sample result (`report.cells`, hindsight) and the pick's `rank`/
+`of`/`best` per window; `stitch` keeps every executed trade (`oos.trades`, `baseline.trades`). The UI
+drills down with `pickedSets`, `windowOfTrade` and the backtest `ExecutionsChart` fed a synthesized run.
 Multi-stock: `POST /api/engine/autotune` takes `symbols`, walks each separately (bars loaded
 sequentially - DuckDB's default connection isn't thread-safe - walks in parallel) and saves them as
 `wf-<batch>-<n>`; `AutotuneBatchView` compares them. `SymbolPicker` (both forms) lists the watchlist
@@ -71,7 +75,9 @@ the strategy, only later entries count). Bars reach today because `minute_data` 
 (ends 2026-01) up from moneycontrol, yfinance as fallback - `get_minute_bars(..., limit=None)` for
 server-side callers that need the whole history.
 
-**1D bars** are `minute_data` BUCKETS["1D"] (resampled from 1m, stamped 09:15 - strategies flatten
+**1D bars** reach back to each stock's first day in the dataset (2000+): the minutes' days, then the
+dataset's own `day/` split (`<SYM>.dataset-day.parquet`, extracted on the first 1D request), then
+moneycontrol's daily record for the rest (`_full_days`). They're `minute_data` BUCKETS["1D"] (resampled from 1m, stamped 09:15 - strategies flatten
 from 15:00, so a close-stamped daily bar would flatten every bar). `_hold(interval)` in engine.py adds
 `--overnight` for 1D at every engine call (backtest, sweep, autotune): daily is positional. The live
 engine stays intraday.

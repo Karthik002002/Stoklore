@@ -54,8 +54,12 @@ Any field left empty falls back to an environment variable, which is handy for h
     pinned to its last bar), so the numbers match the cell even after new days have come in.
     The executions chart loads candles for the run's own period, so an old range still shows its
     arrows on real candles. Runs from before ranges read *Newest 30,000 bars*, which is what they used.
-  - **1D (daily bars)** are built from the same 1m bars (09:15-stamped, one per session, 2022 to
-    today), so a daily backtest runs on exactly the prices its intraday siblings do. Daily is
+  - **1D (daily bars)** cover each stock's whole history in the dataset - RELIANCE from 2000-01-03,
+    INFY from 2003 - not just 2022 onward: from 2022 they're built from the same 1m bars
+    (09:15-stamped, one per session), so a daily run agrees with its intraday siblings there, and
+    before that they come from the dataset's own daily split, same source and price basis (the two
+    agree to ~0.1% where they overlap). The first 1D request for a stock pulls its daily rows once
+    (seconds, occasionally a minute when HuggingFace is slow); after that they're cached. Daily is
     **positional**: a position is held across days until the strategy exits, where every intraday
     interval squares off at 15:15 (the engine gets `--overnight`; without it each daily trade would be
     closed one bar after it opened). Cost defaults to **12 bps a side** on 1D against 3 intraday:
@@ -67,7 +71,8 @@ Any field left empty falls back to an environment variable, which is handy for h
     needs an uncached symbol pulls and caches its bars automatically (a few extra seconds for that
     run, same as any other first use of a symbol - see [Limits](#limits)), so there's nothing
     separate to "prepare" before running. The selection is remembered per browser (`localStorage`),
-    so the page reopens with the same symbols next time. The Auto-tune tab remembers its own list.
+    so the page reopens with the same symbols next time. The Auto-tune tab remembers its own list,
+    and the rest of its form too (strategy, bars, history, walk numbers, param ranges).
 - **Sweep heatmap:** net P&L, Sharpe, max drawdown, or win rate for each param combination,
   coloured best to worst within the sweep, with each cell's trade count under its value and the best
   cell ringed. Click a cell to open that run. With more than two varied params, pick the two axes,
@@ -195,15 +200,33 @@ The report shows:
 - **Equity chart**: tuned and fixed out-of-sample, plus the *in-sample promise* (each pick's
   in-sample net per session, carried over its test window). The gap between tuned and promise
   is the overfit.
+- **What the tuner picked**: each parameter set it traded, over how many windows, how many of those
+  made money, and what they made out-of-sample.
+- **Every combination, traded unchanged in every window** (hindsight): each window also sweeps the
+  whole grid on its unseen test bars (one more engine call), so every combination has an
+  out-of-sample net, trades, profit factor, win rate and windows won, plus how often the tuner
+  picked it and its mean in-sample net. Sort by any of them; picked rows are highlighted. No walk
+  could have known the winner in advance - the point is to see whether the picks came from the part
+  of the grid that held up (a 1D INFY walk: best combination fast=11 slow=30, ₹801 over 111
+  windows, never picked; the tuner mostly picked fast=5 slow=20, ₹177).
+- **Executed trades**: every out-of-sample trade on the stock's candles (the same executions chart
+  as a backtest), tuned or fixed defaults, and as a table with the window it was taken in and the
+  parameters in force. Click a window row to see just its trades, zoomed to it with its train
+  period as context; click a trade to zoom to it.
 - **Parameter path** and one row per window: the pick, how many cells were eligible, in-sample
-  vs out-of-sample net, and the fixed-defaults net.
+  vs out-of-sample net, the fixed-defaults net, the **pick's rank** among every combination on that
+  window's unseen bars (`3/20`; green in the top third, red in the bottom), and the **best
+  combination** there with hindsight.
+
+Reports keep all of this from now on; ones run before it show a note to re-run them.
 
 **Several stocks** are walked one by one with the same settings, and **each gets its own parameters**:
 nothing is pooled or averaged across stocks while tuning. They're saved as one batch, which opens in
 a batch view with:
 
 - a row per stock: its verdict, windows traded, tuned vs fixed net, profit factor, WFE, deflated
-  Sharpe, stability, plus an all-stocks total. Click a row for that stock's full report. The verdict
+  Sharpe, stability, its best combination with hindsight (and whether the tuner ever picked it),
+  plus an all-stocks total. Click a row for that stock's full report. The verdict
   is **held up** (made money out-of-sample *and* beat fixed defaults), **no edge** (anything else,
   including losing less than the defaults) or **never traded**;
 - the batch as one book: every stock's out-of-sample P&L summed day by day, tuned vs fixed;
@@ -226,7 +249,7 @@ Every view has an **Export** button with two options. **Excel** gives one workbo
 |---|---|---|
 | Run detail (backtest, paper or live) | Summary (params + every metric), Trades, Daily (with cumulative), By symbol, Equity (with drawdown) | Trades |
 | Sweep (one at a time or grid) | Sweep (mode, base/fixed/swept values), Runs (every param + every metric), Impact (one at a time only: each param's best value and spread) | Runs |
-| Auto-tune report | Walk-forward (settings, tuned ranges, fixed defaults, every verdict number), Tuned vs fixed (every metric side by side), Windows (one row per window) | Windows |
+| Auto-tune report | Walk-forward (settings, tuned ranges, fixed defaults, every verdict number), Tuned vs fixed (every metric side by side), Windows (one row per window, with pick rank and the hindsight-best combination), Combinations (every cell out-of-sample across all windows), Trades (every executed trade with its window and params) | Windows |
 | Auto-tune batch | Stocks: one row per stock with its verdict, tuned vs fixed net and profit factor, WFE, deflated Sharpe, stability | Stocks |
 | Runs list | Runs: every run currently shown by the source filter, with every metric | Runs |
 

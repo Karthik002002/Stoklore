@@ -23,11 +23,14 @@ import {
   holdText,
   intervalSeconds,
   markerRange,
+  paramsLabel,
   parseValues,
+  pickedSets,
   pinnedRange,
   sweepGrid,
   tradeMarkers,
   tuneVerdict,
+  windowOfTrade,
 } from './engine.ts'
 
 assert.deepEqual(parseValues('9'), [9])
@@ -341,6 +344,50 @@ assert.ok(
   'null stays null, not 0',
 )
 assert.ok(ws[0].rows.some((r) => r[0] === 'Beats fixed defaults' && r[1] === 'yes'))
+const full = autotuneSheets({
+  ...wf,
+  cells: [
+    {
+      params: { fast: 9, slow: 34 },
+      net: 30,
+      trades: 5,
+      win_rate: 60,
+      profit_factor: 2,
+      expectancy: 6,
+      windows: 2,
+      positive_windows: 1,
+      picked: 1,
+      is_net: 25,
+    },
+  ],
+  oos: { ...wf.oos, trades: [['INFY', Date.parse('2026-01-02T10:00:00Z') / 1000, 0, -3, 10, 9, 3]] },
+  windows: [
+    {
+      ...wf.windows[0],
+      test: ['2026-01-01', '2026-01-05'],
+      rank: 2,
+      of: 4,
+      best: { params: { fast: 5, slow: 21 }, net: 12 },
+    },
+    wf.windows[1],
+  ],
+})
+assert.deepEqual(
+  full.map((x) => x.sheet),
+  ['Walk-forward', 'Tuned vs fixed', 'Windows', 'Combinations', 'Trades'],
+)
+assert.deepEqual(
+  full[2].rows[0].slice(-4),
+  [2, 4, 'fast=5 slow=21', 12],
+  'rank and the hindsight-best cell per window',
+)
+assert.deepEqual(full[3].rows[0].slice(0, 3), [9, 34, 30])
+assert.deepEqual(
+  full[4].rows[0].slice(0, 4),
+  ['2026-01-01 → 2026-01-05', 'fast=9 slow=34', 'Short', 3],
+  'each trade with its window and params',
+)
+assert.equal(ws.length, 3, 'reports from before cells/trades were kept export as before')
 
 // --- multi-stock batches -----------------------------------------------------------------------
 const row = (net, base, traded, beats) => ({
@@ -469,5 +516,52 @@ assert.equal(
 )
 assert.equal(historyError({ mode: 'dates', start: '2027-01-01' }, today), 'The range starts after today')
 assert.equal(historyError({ mode: 'dates', end: '2024-01-01' }, today), null, 'an open start is fine')
+
+// --- walk-forward detail -------------------------------------------------------------------------
+assert.equal(
+  paramsLabel({ slow: 30, fast: 11, qty: 1 }, ['fast', 'slow']),
+  'fast=11 slow=30',
+  'axis order, swept only',
+)
+const wins = [
+  {
+    chosen: { fast: 5, qty: 1 },
+    test: ['2026-01-01', '2026-01-05'],
+    start: 100,
+    end: 200,
+    oos: { net: 10, trades: 2 },
+  },
+  { chosen: null, test: ['2026-01-06', '2026-01-10'], start: 300, end: 400, oos: null },
+  {
+    chosen: { fast: 5, qty: 1 },
+    test: ['2026-01-11', '2026-01-15'],
+    start: 500,
+    end: 600,
+    oos: { net: -4, trades: 1 },
+  },
+  {
+    chosen: { fast: 9, qty: 1 },
+    test: ['2026-01-16', '2026-01-20'],
+    start: 700,
+    end: 800,
+    oos: { net: 20, trades: 3 },
+  },
+]
+assert.deepEqual(
+  pickedSets(wins, ['fast']),
+  [
+    { params: { fast: 9 }, windows: 1, positive: 1, net: 20, trades: 3 },
+    { params: { fast: 5 }, windows: 2, positive: 1, net: 6, trades: 3 },
+  ],
+  'grouped by the swept params, sat-out windows skipped, best first',
+)
+assert.equal(windowOfTrade(['X', 550, 590, 1, 1, 1, 1], wins), 2)
+assert.equal(windowOfTrade(['X', 650, 690, 1, 1, 1, 1], wins), -1, 'between windows')
+const byDate = [{ chosen: null, test: ['2026-01-01', '2026-01-05'], oos: null }]
+assert.equal(
+  windowOfTrade(['X', Date.parse('2026-01-02T10:00:00Z') / 1000, 0, 1, 1, 1, 1], byDate),
+  0,
+  'older reports: by date',
+)
 
 console.log('engine selfcheck passed')

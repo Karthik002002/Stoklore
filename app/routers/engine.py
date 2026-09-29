@@ -362,7 +362,7 @@ def engine_delete_sweep(sweep_id: str):
 # --- walk-forward tuning (docs/autotune-blueprint.md, Phase 1) ------------------------------------
 # Report-only: nothing here deploys anything. One report per run, as a file like everything else.
 
-AUTOTUNE_HEAVY = ("windows", "oos", "baseline", "promised")  # left out of the list
+AUTOTUNE_HEAVY = ("windows", "oos", "baseline", "promised", "cells")  # left out of the list
 AUTOTUNE_WORKERS = 4  # walks at once; each engine sweep already uses every core
 
 
@@ -383,7 +383,8 @@ def _autotune_row(path):
     if not hit or hit[0] != mtime:
         d = json.loads(path.read_text())
         row = {k: v for k, v in d.items() if k not in AUTOTUNE_HEAVY}
-        row.update(oos=d["oos"]["summary"], baseline=d["baseline"]["summary"])
+        row.update(oos=d["oos"]["summary"], baseline=d["baseline"]["summary"],
+                   best_cell=d["cells"][0] if d.get("cells") else None)
         hit = _rows[path] = (mtime, row)
     return hit[1]
 

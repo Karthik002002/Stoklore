@@ -60,13 +60,16 @@ import {
   runSheets,
   runsSheet,
   sweepSheets,
+  paramsLabel,
   parseValues,
+  pickedSets,
   pinnedRange,
   spread,
   sweepCount,
   sweepGrid,
   tradeMarkers,
   tuneVerdict,
+  windowOfTrade,
 } from '@/lib/engine'
 import type { RunTrade } from '@/lib/engine'
 import { fmt, formatDateTime, inr } from '@/lib/format'
@@ -79,6 +82,7 @@ import type {
   BarRange,
   EngineAutotuneReport,
   EngineAutotuneRequest,
+  EngineAutotuneCell,
   EngineAutotuneRow,
   EngineCoverage,
   EngineHistory,
@@ -140,6 +144,7 @@ const OPENING_MARKERS = 40
 // forms keep their own: a quick backtest basket and a tuning universe are rarely the same list.
 const SYMBOLS_KEY = 'engine.symbols'
 const TUNE_SYMBOLS_KEY = 'engine.autotuneSymbols'
+const TUNE_FORM_KEY = 'engine.autotuneForm'
 
 const pnlClass = (v: number) => (v > 0 ? 'text-success' : v < 0 ? 'text-destructive' : '')
 
@@ -254,26 +259,31 @@ const MODE_HELP: Record<Mode, React.ReactNode> = {
   ),
 }
 
-/** A symbol selection remembered per browser under `key`. Storage can be blocked (private window,
- *  cleared site data); the picker then simply starts empty. */
-function useStoredSymbols(key: string) {
-  const [symbols, setSymbols] = useState<string[]>(() => {
+/** State remembered per browser under `key`. Storage can be blocked (private window, cleared site
+ *  data) or hold something stale; `valid` rejects the latter and the field starts from `initial`. */
+function useStored<T>(key: string, initial: T, valid: (v: unknown) => boolean) {
+  const [value, setValue] = useState<T>(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem(key) ?? '[]')
-      return Array.isArray(saved) ? saved.filter((s) => typeof s === 'string') : []
+      const saved = JSON.parse(localStorage.getItem(key) ?? 'null')
+      return saved !== null && valid(saved) ? saved : initial
     } catch {
-      return []
+      return initial
     }
   })
   useEffect(() => {
     try {
-      localStorage.setItem(key, JSON.stringify(symbols))
+      localStorage.setItem(key, JSON.stringify(value))
     } catch {
       // not remembered this time - nothing else depends on it
     }
-  }, [key, symbols])
-  return [symbols, setSymbols] as const
+  }, [key, value])
+  return [value, setValue] as const
 }
+
+const isRecord = (v: unknown) => typeof v === 'object' && v !== null && !Array.isArray(v)
+
+const useStoredSymbols = (key: string) =>
+  useStored<string[]>(key, [], (v) => Array.isArray(v) && v.every((s) => typeof s === 'string'))
 
 /** Multi-select of symbols: the watchlist first, grouped by list, then - once something is typed -
  *  every listed NSE stock that matches (the stocks master, whether or not it was ever scraped), so a
@@ -2234,13 +2244,17 @@ function AutotuneForm({ onDone }: { onDone: (batch: string, ids: string[]) => vo
     queryKey: ['engineStrategies'],
     queryFn: getEngineStrategies,
   })
-  const [name, setName] = useState<string | null>(null)
+  // the whole form is remembered, so a tuning setup survives a reload; a strategy that's gone falls
+  // back to the first one, and its params' text only ever reads the current strategy's keys
+  const [name, setName] = useStored<string | null>(`${TUNE_FORM_KEY}.strategy`, null, (v) => typeof v === 'string')
   const [symbols, setSymbols] = useStoredSymbols(TUNE_SYMBOLS_KEY)
-  const [barInterval, setBarInterval] = useState('5m')
-  const [values, setValues] = useState<Record<string, string>>({})
-  const [nums, setNums] = useState<Record<string, string>>({})
+  const [barInterval, setBarInterval] = useStored(`${TUNE_FORM_KEY}.interval`, '5m', (v) =>
+    INTERVALS.includes(v as string),
+  )
+  const [values, setValues] = useStored<Record<string, string>>(`${TUNE_FORM_KEY}.params`, {}, isRecord)
+  const [nums, setNums] = useStored<Record<string, string>>(`${TUNE_FORM_KEY}.numbers`, {}, isRecord)
   // untouched, it follows the bars: a year of intraday sessions, all of a daily history
-  const [historyChoice, setHistory] = useState<BarRange | null>(null)
+  const [historyChoice, setHistory] = useStored<BarRange | null>(`${TUNE_FORM_KEY}.history`, null, isRecord)
   const history: BarRange =
     historyChoice ?? (barInterval === '1D' ? { mode: 'all' } : { mode: 'years', years: 1 })
   const historyProblem = historyError(history, todayIST())
@@ -2409,6 +2423,97 @@ function AutotuneForm({ onDone }: { onDone: (batch: string, ids: string[]) => vo
   )
 }
 
+type CellSort = 'net' | 'profit_factor' | 'win_rate' | 'picked'
+const CELL_SORTS: Record<CellSort, string> = {
+  net: 'Net',
+  profit_factor: 'PF',
+  win_rate: 'Win %',
+  picked: 'Picked',
+}
+
+/** Every grid cell as if traded, unchanged, in every test window - which part of the grid actually
+ *  held up out-of-sample, against what the tuner picked. Hindsight: no walk could have known the
+ *  winner in advance, which is the point of comparing it with the picks. */
+function CellTable({
+  cells,
+  axes,
+  sort,
+  onSort,
+}: {
+  cells: EngineAutotuneCell[]
+  axes: string[]
+  sort: CellSort
+  onSort: (s: CellSort) => void
+}) {
+  const bestNet = cells[0]?.net
+  const rows = [...cells].sort((a, b) => b[sort] - a[sort]).slice(0, 200)
+  return (
+    <div>
+      <p className="mb-1 text-xs text-muted-foreground">
+        Every combination, traded unchanged in every window (hindsight) · {cells.length} combinations
+        {cells.length > rows.length ? `, top ${rows.length} shown` : ''} · highlighted = the tuner picked it
+      </p>
+      <div className="max-h-80 overflow-auto rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              {axes.map((k) => (
+                <TableHead key={k} className="font-mono">
+                  {k}
+                </TableHead>
+              ))}
+              {(Object.keys(CELL_SORTS) as CellSort[]).map((k) => (
+                <TableHead key={k} className="text-right">
+                  <button type="button" className="hover:text-foreground" onClick={() => onSort(k)}>
+                    {CELL_SORTS[k]}
+                    {sort === k ? ' ↓' : ''}
+                  </button>
+                </TableHead>
+              ))}
+              <TableHead className="text-right">Trades</TableHead>
+              <TableHead className="text-right">Windows won</TableHead>
+              <TableHead className="text-right">In-sample / window</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((c) => (
+              <TableRow key={paramsLabel(c.params, axes)} className={cn(c.picked > 0 && 'bg-primary/5')}>
+                {axes.map((k) => (
+                  <TableCell key={k} className="font-mono text-xs">
+                    {c.params[k]}
+                  </TableCell>
+                ))}
+                <TableCell className={cn('text-right tabular-nums', pnlClass(c.net))}>
+                  {inr(c.net)}
+                  {c.net === bestNet && c.trades > 0 && (
+                    <Badge variant="outline" className="ml-1.5 text-success">
+                      best
+                    </Badge>
+                  )}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {c.trades ? fmt(c.profit_factor) : '—'}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {c.trades ? `${fmt(c.win_rate, 0)}%` : '—'}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">{c.picked ? `×${c.picked}` : '—'}</TableCell>
+                <TableCell className="text-right tabular-nums">{c.trades}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {c.positive_windows}/{c.windows}
+                </TableCell>
+                <TableCell className={cn('text-right tabular-nums', pnlClass(c.is_net))}>
+                  {inr(c.is_net)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  )
+}
+
 function AutotuneView({ id, onClose }: { id: string; onClose: () => void }) {
   const queryClient = useQueryClient()
   const { data: r, error } = useQuery({
@@ -2424,6 +2529,41 @@ function AutotuneView({ id, onClose }: { id: string; onClose: () => void }) {
     onError: (e) => toast.error(e.message),
   })
   const swept = useMemo(() => Object.keys(r?.axes ?? {}), [r])
+  // Drill-down: a window row filters the trades and zooms the chart onto it; a trade row zooms to
+  // that trade. Tuned and fixed-default executions are both kept, one shown at a time.
+  const [selected, setSelected] = useState<number | null>(null)
+  const [focusTrade, setFocusTrade] = useState<RunTrade | null>(null)
+  const [side, setSide] = useState<'tuned' | 'fixed'>('tuned')
+  const [cellSort, setCellSort] = useState<CellSort>('net')
+  const trades = useMemo(() => (side === 'tuned' ? r?.oos.trades : r?.baseline.trades) ?? [], [r, side])
+  const tradeWindow = useMemo(() => (r ? trades.map((t) => windowOfTrade(t, r.windows)) : []), [r, trades])
+  const shownTrades = useMemo(
+    () => (selected == null ? trades : trades.filter((_, i) => tradeWindow[i] === selected)),
+    [trades, tradeWindow, selected],
+  )
+  // The executions chart takes a run; this is the walk's out-of-sample trades dressed as one. With a
+  // window selected, its bars run from that window's train start (context) to its test end - the
+  // chart gets the newest 30k bars of what it asks for, which on 1m wouldn't reach an old window.
+  const execRun = useMemo(() => {
+    if (!r) return null
+    const w = selected == null ? null : r.windows[selected]
+    const from = w ? sessionTime(w.train[0]) : (r.windows[0]?.start ?? sessionTime(r.sessions[0]))
+    const to = w ? (w.end ?? sessionTime(w.test[1])) : (r.windows.at(-1)?.end ?? sessionTime(r.sessions[1]))
+    return {
+      id: r.id,
+      symbols: [r.symbol],
+      interval: r.interval,
+      trades: shownTrades,
+      summary: { from, to },
+    } as unknown as EngineRun
+  }, [r, selected, shownTrades])
+  const focus = useMemo<RunTrade | null>(() => {
+    if (focusTrade) return focusTrade
+    const w = selected == null || !r ? null : r.windows[selected]
+    return w && r
+      ? [r.symbol, w.start ?? sessionTime(w.test[0]), w.end ?? sessionTime(w.test[1]), 0, 0, 0, 0]
+      : null
+  }, [focusTrade, selected, r])
   const curves = useMemo<Dataset[]>(() => {
     if (!r) return []
     const pts = (curve: [number, number][]) => curve.map(([t, v]) => ({ time: t as UTCTimestamp, value: v }))
@@ -2562,6 +2702,170 @@ function AutotuneView({ id, onClose }: { id: string; onClose: () => void }) {
           </div>
         </div>
 
+        <div className="grid gap-4 xl:grid-cols-5">
+          <div className="xl:col-span-2">
+            <p className="mb-1 text-xs text-muted-foreground">
+              What the tuner picked - each parameter set it traded, and what those windows made out-of-sample
+            </p>
+            <div className="max-h-80 overflow-auto rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead>Params</TableHead>
+                    <TableHead className="text-right">Windows</TableHead>
+                    <TableHead className="text-right">Won</TableHead>
+                    <TableHead className="text-right">Trades</TableHead>
+                    <TableHead className="text-right">Net</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pickedSets(r.windows, swept).map((g) => (
+                    <TableRow key={paramsLabel(g.params, swept)}>
+                      <TableCell className="font-mono text-xs">{paramsLabel(g.params, swept)}</TableCell>
+                      <TableCell className="text-right tabular-nums">{g.windows}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {g.positive}/{g.windows}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{g.trades}</TableCell>
+                      <TableCell className={cn('text-right tabular-nums', pnlClass(g.net))}>
+                        {inr(g.net)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {!st.traded_windows && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-xs text-muted-foreground italic">
+                        Nothing picked - every window was sat out.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+          <div className="xl:col-span-3">
+            {r.cells?.length ? (
+              <CellTable cells={r.cells} axes={swept} sort={cellSort} onSort={setCellSort} />
+            ) : (
+              <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">
+                Every combination's out-of-sample result is kept on walk-forwards run from now on - re-run
+                this one to see which parameter sets held up across all its windows.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-1 flex flex-wrap items-center gap-2">
+            <p className="text-xs text-muted-foreground">
+              Executed trades, out-of-sample
+              {selected != null &&
+                ` - window ${r.windows[selected].test[0]} → ${r.windows[selected].test[1]}`}
+              {' · click a trade to zoom to it'}
+            </p>
+            {selected != null && (
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => {
+                  setSelected(null)
+                  setFocusTrade(null)
+                }}
+              >
+                All windows <XIcon />
+              </Button>
+            )}
+            <div className="ml-auto flex gap-1">
+              {(['tuned', 'fixed'] as const).map((k) => (
+                <Button
+                  key={k}
+                  size="xs"
+                  variant={side === k ? 'secondary' : 'ghost'}
+                  onClick={() => {
+                    setSide(k)
+                    setFocusTrade(null)
+                  }}
+                >
+                  {k === 'tuned'
+                    ? `Tuned (${r.oos.trades?.length ?? 0})`
+                    : `Fixed defaults (${r.baseline.trades?.length ?? 0})`}
+                </Button>
+              ))}
+            </div>
+          </div>
+          {r.oos.trades ? (
+            <div className="space-y-2">
+              {execRun && <ExecutionsChart key={`${side}-${selected}`} run={execRun} focus={focus} />}
+              <div className="max-h-80 overflow-auto rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead>Window</TableHead>
+                      {side === 'tuned' && <TableHead>Params</TableHead>}
+                      <TableHead>Side</TableHead>
+                      <TableHead className="text-right">Qty</TableHead>
+                      <TableHead>Entry</TableHead>
+                      <TableHead className="text-right">Entry px</TableHead>
+                      <TableHead>Exit</TableHead>
+                      <TableHead className="text-right">Exit px</TableHead>
+                      <TableHead className="text-right">Gross P&L</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {shownTrades.slice(-1000).map((t, i) => {
+                      const w = r.windows[windowOfTrade(t, r.windows)]
+                      const active = focusTrade?.[1] === t[1] && focusTrade?.[2] === t[2]
+                      return (
+                        <TableRow
+                          key={`${t[1]}-${i}`}
+                          className={cn('cursor-pointer', active && 'bg-muted')}
+                          onClick={() => setFocusTrade(t)}
+                        >
+                          <TableCell className="text-xs text-muted-foreground tabular-nums">
+                            {w ? `${w.test[0]} → ${w.test[1]}` : '—'}
+                          </TableCell>
+                          {side === 'tuned' && (
+                            <TableCell className="font-mono text-xs">
+                              {w?.chosen ? paramsLabel(w.chosen, swept) : '—'}
+                            </TableCell>
+                          )}
+                          <TableCell>{t[3] > 0 ? 'Long' : 'Short'}</TableCell>
+                          <TableCell className="text-right tabular-nums">{Math.abs(t[3])}</TableCell>
+                          <TableCell className="tabular-nums">{istTime(t[1])}</TableCell>
+                          <TableCell className="text-right tabular-nums">{fmt(t[4])}</TableCell>
+                          <TableCell className="tabular-nums">{istTime(t[2])}</TableCell>
+                          <TableCell className="text-right tabular-nums">{fmt(t[5])}</TableCell>
+                          <TableCell className={cn('text-right tabular-nums', pnlClass(t[6]))}>
+                            {inr(t[6])}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                    {!shownTrades.length && (
+                      <TableRow>
+                        <TableCell colSpan={9} className="text-xs text-muted-foreground italic">
+                          No trades {selected != null ? 'in this window' : ''}.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+              {shownTrades.length > 1000 && (
+                <p className="text-[11px] text-muted-foreground">
+                  Showing the latest 1,000 of {shownTrades.length} - pick a window to see its own. Export has
+                  them all.
+                </p>
+              )}
+            </div>
+          ) : (
+            <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">
+              Executed trades are kept on walk-forwards run from now on - re-run this one to see them on the
+              chart.
+            </p>
+          )}
+        </div>
+
         {paths.some((p) => p.points.length > 1) && (
           <div>
             <p className="mb-1 text-xs text-muted-foreground">
@@ -2579,7 +2883,10 @@ function AutotuneView({ id, onClose }: { id: string; onClose: () => void }) {
         )}
 
         <div>
-          <p className="mb-1 text-xs text-muted-foreground">Windows</p>
+          <p className="mb-1 text-xs text-muted-foreground">
+            Windows · click one to see its trades on the chart · <em>pick rank</em> is where the tuner's
+            choice finished among every combination on that window's unseen bars
+          </p>
           <div className="max-h-[28rem] overflow-auto rounded-lg border">
             <Table>
               <TableHeader>
@@ -2595,11 +2902,24 @@ function AutotuneView({ id, onClose }: { id: string; onClose: () => void }) {
                   <TableHead className="text-right">Out-of-sample net</TableHead>
                   <TableHead className="text-right">Trades</TableHead>
                   <TableHead className="text-right">Fixed defaults net</TableHead>
+                  <TableHead className="text-right">Pick rank</TableHead>
+                  <TableHead>Best combination (hindsight)</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {r.windows.map((w) => (
-                  <TableRow key={w.test[0]} className={cn(!w.chosen && 'text-muted-foreground/60')}>
+                {r.windows.map((w, wi) => (
+                  <TableRow
+                    key={w.test[0]}
+                    className={cn(
+                      'cursor-pointer',
+                      !w.chosen && 'text-muted-foreground/60',
+                      selected === wi && 'bg-muted',
+                    )}
+                    onClick={() => {
+                      setSelected(selected === wi ? null : wi)
+                      setFocusTrade(null)
+                    }}
+                  >
                     <TableCell className="tabular-nums">
                       {w.test[0]} → {w.test[1]}
                       {w.switched && (
@@ -2631,6 +2951,30 @@ function AutotuneView({ id, onClose }: { id: string; onClose: () => void }) {
                     <TableCell className="text-right tabular-nums">{w.oos ? w.oos.trades : '—'}</TableCell>
                     <TableCell className={cn('text-right tabular-nums', pnlClass(w.baseline.net))}>
                       {inr(w.baseline.net)}
+                    </TableCell>
+                    <TableCell
+                      className={cn(
+                        'text-right tabular-nums',
+                        w.rank != null && w.of
+                          ? w.rank <= Math.ceil(w.of / 3)
+                            ? 'text-success'
+                            : w.rank > Math.floor((2 * w.of) / 3)
+                              ? 'text-destructive'
+                              : ''
+                          : '',
+                      )}
+                    >
+                      {w.rank != null && w.of ? `${w.rank}/${w.of}` : '—'}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {w.best ? (
+                        <>
+                          {paramsLabel(w.best.params, swept)}{' '}
+                          <span className={pnlClass(w.best.net)}>{inr(w.best.net)}</span>
+                        </>
+                      ) : (
+                        '—'
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -2804,6 +3148,7 @@ function AutotuneBatchView({
                 <TableHead className="text-right">WFE</TableHead>
                 <TableHead className="text-right">Defl. Sharpe</TableHead>
                 <TableHead className="text-right">Stability</TableHead>
+                <TableHead>Best combination (hindsight)</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -2839,6 +3184,21 @@ function AutotuneBatchView({
                     <TableCell className="text-right tabular-nums">
                       {r.stats.stability == null ? '—' : `${fmt(r.stats.stability * 100, 0)}%`}
                     </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {r.best_cell ? (
+                        <>
+                          {paramsLabel(r.best_cell.params, Object.keys(r.axes))}{' '}
+                          <span className={pnlClass(r.best_cell.net)}>{inr(r.best_cell.net)}</span>
+                          {r.best_cell.picked ? (
+                            ''
+                          ) : (
+                            <span className="text-muted-foreground"> · never picked</span>
+                          )}
+                        </>
+                      ) : (
+                        '—'
+                      )}
+                    </TableCell>
                   </TableRow>
                 )
               })}
@@ -2856,7 +3216,7 @@ function AutotuneBatchView({
                     0,
                   )}
                 </TableCell>
-                <TableCell colSpan={4} />
+                <TableCell colSpan={5} />
               </TableRow>
             </TableBody>
           </Table>

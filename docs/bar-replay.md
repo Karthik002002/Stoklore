@@ -249,12 +249,16 @@ of two sources (below) plus a chart that only reveals them up to a cursor.
     1m (DHARIWAL listed 2024-08-08, 1m from 2025-09-29), and some stocks'
     moneycontrol 1m starts only days back, leaving months between the
     dataset's end and it (QPOWER: 2026-01-22 → 2026-09-25). It's used to:
-    - **fill 1D bars** for days the minutes lack - never before 2022-01-03 for
-      a stock that's in the dataset (the daily feed is on a different
-      corporate-action basis for some: RELIANCE's 2022 prices differ by the
-      Jio Financial demerger adjustment), and never across a seam where the
-      two disagree on price (median close gap over the nearest 10 shared days
-      above 2%);
+    - **fill 1D bars** for days neither the minutes nor the dataset's own
+      **daily split** have. That split (`day/` in the same HuggingFace
+      dataset, 2000 → 2026-01, cached once per symbol as
+      `<SYMBOL>.dataset-day.parquet`) is what gives 1D a stock's history before
+      2022, on the minutes' price basis. moneycontrol's record only fills what's
+      left - SME stocks the dataset doesn't carry, days after it ends - never
+      before a dataset stock's first day (its corporate-action basis differs
+      for some: RELIANCE's prices differ by the Jio Financial demerger
+      adjustment), and never across a seam where it disagrees on price (median
+      close gap over the nearest 10 shared days above 2%);
     - **repair 1D bars spoiled by a bad print**: same close as the record but
       an open/high/low more than 5% off (DHARIWAL's minutes opened 2025-11-12
       at ₹160; officially ₹255);

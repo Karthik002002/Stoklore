@@ -2120,6 +2120,30 @@ export type EngineAutotuneWindow = {
   is: EngineSummary | null
   oos: EngineSummary | null
   baseline: EngineSummary
+  /** the test window's first/last bar (IST-shifted epoch) - reports from before these lack them */
+  start?: number
+  end?: number
+  /** where the pick finished among every cell on this window's unseen bars (1 = best), of how many */
+  rank?: number | null
+  of?: number
+  /** the cell that did best on this window - what the tuner would have picked with hindsight */
+  best?: { params: Record<string, number>; net: number } | null
+}
+
+/** One grid cell as if traded, unchanged, in every test window (hindsight - no walk could have
+ *  known it), with how often the tuner actually picked it. Swept params only. */
+export type EngineAutotuneCell = {
+  params: Record<string, number>
+  net: number
+  trades: number
+  win_rate: number
+  profit_factor: number
+  expectancy: number
+  windows: number
+  positive_windows: number
+  picked: number
+  /** mean in-sample net per window */
+  is_net: number
 }
 
 export type EngineAutotuneStats = {
@@ -2161,12 +2185,22 @@ export type EngineAutotuneRow = {
   stats: EngineAutotuneStats
   oos: EngineAutotuneSummary
   baseline: EngineAutotuneSummary
+  /** the best cell with hindsight (reports from before cells were kept have none) */
+  best_cell?: EngineAutotuneCell | null
 }
 
-type Stitched = { summary: EngineAutotuneSummary; equity: [number, number][]; daily: [number, number][] }
+type Stitched = {
+  summary: EngineAutotuneSummary
+  equity: [number, number][]
+  daily: [number, number][]
+  /** every executed trade, out-of-sample, oldest first */
+  trades?: EngineTrade[]
+}
 
-export type EngineAutotuneReport = Omit<EngineAutotuneRow, 'oos' | 'baseline'> & {
+export type EngineAutotuneReport = Omit<EngineAutotuneRow, 'oos' | 'baseline' | 'best_cell'> & {
   windows: EngineAutotuneWindow[]
+  /** every cell, best out-of-sample net first */
+  cells?: EngineAutotuneCell[]
   oos: Stitched
   baseline: Stitched
   /** cumulative in-sample net per session of each pick, carried over its test sessions: the promise */

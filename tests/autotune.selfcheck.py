@@ -93,6 +93,24 @@ assert (sm["net"], sm["costs"], sm["gross"], sm["trades"]) == (3, 2, 5, 2)
 assert sm["max_dd"] == 2 and sm["expectancy"] == 1.5
 assert sm["win_rate"] == 50 and sm["profit_factor"] == 5.5 / 1.5, "engine's definitions: on gross P&L"
 
+# --- every cell out-of-sample: the tally, the pick's rank, the hindsight table ---------------------
+ax = {"x": [1.0, 2.0, 3.0]}
+cellrun = lambda x, net, n=4, wr=50, aw=5, al=-2: {"params": {"x": x, "qty": 1.0}, "summary": {  # noqa: E731
+    "net": net, "trades": n, "win_rate": wr, "avg_win": aw, "avg_loss": al}}
+acc = {}
+v = at.tally_cells(acc, [cellrun(1.0, 9), cellrun(2.0, 3), cellrun(3.0, 1)],
+                   [cellrun(1.0, -4), cellrun(2.0, 6), cellrun(3.0, 2)], ["x"], {"x": 1.0, "qty": 1.0})
+assert v == {"of": 3, "best": {"params": {"x": 2.0}, "net": 6}, "rank": 3}, "the pick (x=1) came last on unseen bars"
+v = at.tally_cells(acc, [cellrun(1.0, 9)], [cellrun(1.0, 5), cellrun(2.0, 5), cellrun(3.0, 0, n=0)], ["x"], None)
+assert "rank" not in v, "a sat-out window has no pick to rank"
+table = at.cell_table(acc)
+assert [r["params"]["x"] for r in table] == [2.0, 3.0, 1.0], "best out-of-sample net first"
+x2 = table[0]
+assert (x2["net"], x2["trades"], x2["windows"], x2["positive_windows"], x2["picked"]) == (11, 8, 2, 2, 0)
+assert x2["win_rate"] == 50 and x2["profit_factor"] == (5 * 4) / (2 * 4), "summed from each window's wins/losses"
+assert table[2]["picked"] == 1 and table[2]["is_net"] == 9, "x=1 was picked once; its mean in-sample net"
+assert table[1]["trades"] == 4 and table[1]["windows"] == 2, "a dead window still counts as a window"
+
 # --- deflated Sharpe ----------------------------------------------------------------------------
 up = [[i, 1.0 + (i % 3)] for i in range(60)]
 flat_noise = [[i, (-1) ** i] for i in range(60)]
@@ -158,6 +176,12 @@ assert r["stats"]["switches"] == 0, "same grid every window: no reason to switch
 assert r["defaults"] == {"fast": 5.0, "qty": 2.0, "cost_bps": 3}, "baseline = defaults + the user's fixed values"
 assert r["stats"]["beats_baseline"] and r["oos"]["summary"]["net"] == 20 and r["baseline"]["summary"]["net"] == -20
 assert r["oos"]["summary"]["days"] == 20, "only test sessions count, never the warm-up"
+assert len(r["oos"]["trades"]) == 20 and len(r["baseline"]["trades"]) == 20, "every executed trade is kept"
+assert all(w["start"] <= t[1] for w in r["windows"] for t in r["oos"]["trades"] if w["test"][0] <= f"2026-01-{t[1] // 86400 + 1:02d}" <= w["test"][1])
+assert all(w["of"] == 5 and w["rank"] == 1 for w in r["windows"]), "the pick tied the best cells on every window"
+assert [c["params"]["fast"] >= 9 for c in r["cells"]] == [True, True, True, False, False], "winning cells ranked first"
+assert sum(c["picked"] for c in r["cells"]) == r["stats"]["traded_windows"], "each traded window picked one cell"
+assert all(set(c["params"]) == {"fast"} for c in r["cells"]), "cells carry only the swept params"
 json_calls = [c for c in calls if "--json" in c]
 assert all(any(a.startswith("--trade-from=") for a in c) for c in json_calls), "every OOS run is cut at the test start"
 assert any("qty=2" in c for c in calls if "--sweep=grid" in c), "fixed params reach the sweep"

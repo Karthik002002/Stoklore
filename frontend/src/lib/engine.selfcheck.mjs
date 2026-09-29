@@ -25,6 +25,8 @@ import {
   markerRange,
   paramsLabel,
   parseValues,
+  listedOn,
+  parseSymbolJson,
   pickedSets,
   pinnedRange,
   sweepGrid,
@@ -43,6 +45,27 @@ assert.equal(parseValues('a'), null)
 assert.equal(parseValues('5:1:1'), null)
 assert.equal(parseValues('1:5:0'), null)
 assert.equal(comboCount([[1, 2, 3], [4, 5], []]), 6)
+
+// --- pasted symbol JSON ---
+{
+  const ok = parseSymbolJson('[{"symbol":" coforge ","index":"nse"},{"symbol":"RAIN","index":"BSE","note":"x"}]')
+  assert.deepEqual(ok, { entries: [{ symbol: 'COFORGE', index: 'NSE' }, { symbol: 'RAIN', index: 'BSE' }], errors: [] })
+  assert.match(parseSymbolJson('[{symbol:1}]').errors[0], /^Not valid JSON/)
+  assert.equal(parseSymbolJson('[]').errors.length, 1, 'empty array refused')
+  assert.equal(parseSymbolJson('{"symbol":"INFY"}').errors.length, 1, "an object, not an array")
+  const bad = parseSymbolJson('[{"symbol":"INFY","index":"NSE"},"x",{"symbol":"infy","index":"NSE"},{"symbol":"A B","index":"NYSE"}]')
+  assert.deepEqual(bad.errors, [
+    '#2: not an object',
+    '#3: INFY is listed twice',
+    '#4: "symbol" must be a ticker like "INFY"',
+    '#4 A B: "index" must be "NSE" or "BSE"',
+  ])
+  assert.deepEqual(bad.entries.map((e) => e.symbol), ['INFY'], 'only clean rows are kept')
+  const dual = { exchange: 'NSE', bse_code: '532541' }
+  assert.ok(listedOn(dual, 'NSE') && listedOn(dual, 'BSE'), 'dual-listed')
+  assert.ok(!listedOn({ exchange: 'NSE', bse_code: null }, 'BSE'), 'NSE-only is not on BSE')
+  assert.ok(listedOn({ exchange: 'BSE', bse_code: '500001' }, 'BSE') && !listedOn({ exchange: 'BSE', bse_code: '500001' }, 'NSE'))
+}
 
 const runs = [
   { id: 'a', params: { fast: 5, slow: 21 } },

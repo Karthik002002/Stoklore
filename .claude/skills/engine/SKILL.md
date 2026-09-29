@@ -69,7 +69,9 @@ Each window also sweeps the grid on its test bars (`--sweep=grid --trade-from`) 
 drills down with `pickedSets`, `windowOfTrade` and the backtest `ExecutionsChart` fed a synthesized run.
 Multi-stock: `POST /api/engine/autotune` takes `symbols`, walks each separately (bars loaded
 sequentially - DuckDB's default connection isn't thread-safe - walks in parallel) and saves them as
-`wf-<batch>-<n>`; `AutotuneBatchView` compares them. `SymbolPicker` (both forms) lists the watchlist
+`wf-<batch>-<n>`; `AutotuneBatchView` compares them. The POST streams NDJSON (`start`, then a
+`report` row or `error` per stock as it finishes, then `done`; bad requests still 4xx up front) -
+`runEngineAutotune(req, onEvent)` reads it and the form refreshes the list per report. `SymbolPicker` (both forms) lists the watchlist
 first, then the stocks master on search; `useStoredSymbols` remembers each form's list. It needs the engine's `--trade-from=<ts>` flag (warm-up bars feed
 the strategy, only later entries count). Bars reach today because `minute_data` tops the dataset
 (ends 2026-01) up from moneycontrol, yfinance as fallback - `get_minute_bars(..., limit=None)` for

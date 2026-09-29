@@ -20,7 +20,44 @@ export function parseValues(text: string): number[] | null {
   return [...new Set(out)]
 }
 
-export const comboCount = (lists: number[][]) => lists.reduce((n, l) => n * Math.max(l.length, 1), 1)
+export type SymbolEntry = { symbol: string; index: 'NSE' | 'BSE' }
+
+/** A pasted symbol list, `[{"symbol": "INFY", "index": "NSE"}, ...]`: the entries, or every problem
+ *  found (by 1-based position), so a bad paste is fixed in one go. Case-insensitive; other keys are
+ *  ignored. Symbols follow the backend's SAFE_ID. */
+export function parseSymbolJson(text: string): { entries: SymbolEntry[]; errors: string[] } {
+  let data: unknown
+  try {
+    data = JSON.parse(text)
+  } catch (e) {
+    return { entries: [], errors: [`Not valid JSON - ${(e as Error).message}`] }
+  }
+  if (!Array.isArray(data) || !data.length)
+    return { entries: [], errors: ['Expected a non-empty array like [{"symbol": "INFY", "index": "NSE"}]'] }
+  const entries: SymbolEntry[] = []
+  const errors: string[] = []
+  data.forEach((item, i) => {
+    const at = `#${i + 1}`
+    if (typeof item !== 'object' || item === null || Array.isArray(item))
+      return errors.push(`${at}: not an object`)
+    const { symbol, index } = item as Record<string, unknown>
+    const sym = typeof symbol === 'string' ? symbol.trim().toUpperCase() : ''
+    const idx = typeof index === 'string' ? index.trim().toUpperCase() : ''
+    const bad = errors.length
+    if (!/^[A-Z0-9_&-][A-Z0-9_.&-]*$/.test(sym)) errors.push(`${at}: "symbol" must be a ticker like "INFY"`)
+    else if (entries.some((e) => e.symbol === sym)) errors.push(`${at}: ${sym} is listed twice`)
+    if (idx !== 'NSE' && idx !== 'BSE') errors.push(`${at}${sym ? ` ${sym}` : ''}: "index" must be "NSE" or "BSE"`)
+    if (errors.length === bad) entries.push({ symbol: sym, index: idx as SymbolEntry['index'] })
+  })
+  return { entries, errors }
+}
+
+/** Whether a stocks-master row trades on `index`: NSE rows are NSE-listed, and a BSE scrip code
+ *  (an NSE row's `bse_code`, or a BSE-only row) means BSE-listed too. */
+export const listedOn = (row: { exchange: string | null; bse_code: string | null }, index: SymbolEntry['index']) =>
+  index === 'NSE' ? (row.exchange ?? 'NSE') === 'NSE' : row.exchange === 'BSE' || !!row.bse_code
+
+export const comboCount =(lists: number[][]) => lists.reduce((n, l) => n * Math.max(l.length, 1), 1)
 
 /** Runs of a sweep bucketed by two param values (col is optional for a one-param sweep).
  *  With more than two varied params a cell holds several runs; the page shows the best. */

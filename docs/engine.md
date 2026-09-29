@@ -73,6 +73,12 @@ Any field left empty falls back to an environment variable, which is handy for h
     separate to "prepare" before running. The selection is remembered per browser (`localStorage`),
     so the page reopens with the same symbols next time. The Auto-tune tab remembers its own list,
     and the rest of its form too (strategy, bars, history, walk numbers, param ranges).
+    The **{ }** button next to it takes a pasted list as JSON and replaces the selection:
+    `[{"symbol": "COFORGE", "index": "NSE"}, {"symbol": "RAIN", "index": "BSE"}]`. Every problem
+    is listed at once before anything changes: invalid JSON, a missing or malformed `symbol`, an
+    `index` other than NSE/BSE, a repeated stock, a stock not in the stocks master, or one that
+    doesn't trade on the index given (a dual-listed stock passes either). Only the symbols go to
+    the run, because the backend reads each stock's exchange from the master.
 - **Sweep heatmap:** net P&L, Sharpe, max drawdown, or win rate for each param combination,
   coloured best to worst within the sweep, with each cell's trade count under its value and the best
   cell ringed. Click a cell to open that run. With more than two varied params, pick the two axes,
@@ -232,6 +238,8 @@ a batch view with:
 - the batch as one book: every stock's out-of-sample P&L summed day by day, tuned vs fixed;
 - Export (one sheet, a row per stock) and **Delete all**.
 
+Results stream in as each stock finishes: the button counts *n of m walked*, and the batch view opens
+on the first finished stock and fills in row by row, with no wait for the slowest one.
 A stock that can't be walked (no bars, too little history) is reported and the rest still run. In the
 Reports list, a batch's rows carry an **n stocks** button that reopens its batch view (`?tunebatch=`).
 

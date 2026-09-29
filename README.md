@@ -935,7 +935,11 @@ trades on the VPS, and its paper/live sessions land on this page beside the back
   in-sample promise, with walk-forward efficiency, deflated Sharpe and parameter stability. It
   only trades a parameter area that made money in-sample, sits the window out otherwise, and
   deploys nothing. Run it on several stocks at once (watchlist first, or any NSE stock by search):
-  each is tuned on its own, and a batch view shows which ones held up and the batch as one book
+  each is tuned on its own, and a batch view shows which ones held up and the batch as one book.
+  Results stream in stock by stock as each walk finishes
+- **Symbols as JSON** — paste `[{"symbol": "COFORGE", "index": "NSE"}, …]` into either form's
+  symbol picker. It's validated (shape, NSE/BSE, duplicates, and each stock against the stocks
+  master) before it replaces the selection
 - **Compare** — tick runs in the table to overlay their equity or drawdown curves
 - **Paper and live runs** pulled off the VPS with `rsync` over ssh, rendered through the same views
 

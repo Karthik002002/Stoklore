@@ -114,6 +114,9 @@ type ReplayChartProps = {
    *  was taken, an exit on the bar it was closed. A price line says WHERE something happened but
    *  never WHEN, which for a finished trade is half the story. */
   markers?: ChartMarker[]
+  /** Extra content for the top-left stack, under the OHLCV legend - a host page's own overlay
+   *  (the paper position panel). Clickable, unlike the rest of the stack. */
+  topLeft?: ReactNode
   /** Draw the orders, but let nothing be changed through the chart: no dragging a level, no
    *  editing a leg's quantity, no right-click menu, and pills with no action buttons. What a
    *  FINISHED trade wants - it is a record, and every control on it would be a lie. */
@@ -387,6 +390,7 @@ const ReplayChart = forwardRef(function ReplayChart(
     onMoveToBreakeven,
     onCancelPending,
     markers = [],
+    topLeft,
     readOnly = false,
     drawings = [],
     onDrawingsChange,
@@ -1405,6 +1409,7 @@ const ReplayChart = forwardRef(function ReplayChart(
         {legendBar && (
           <OhlcvLegend bar={legendBar} prev={bars[legendIndex - 1] ?? null} blind={!!settings.blind} />
         )}
+        {topLeft && <div className="pointer-events-auto">{topLeft}</div>}
         {tool && (
           <div className="rounded border bg-background/90 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm">
             {DRAW_TOOLS[tool].label} — {DRAW_TOOLS[tool].hint.toLowerCase()} · Esc to cancel

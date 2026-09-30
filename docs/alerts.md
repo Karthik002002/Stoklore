@@ -72,6 +72,30 @@ comparison the next sweep will make.
 Pause, edit and delete are per row. Pausing is the same operation as editing (`active: false`), so
 a paused alert keeps everything it was watching for.
 
+The **Position** column shows what you hold in that stock: every open or pending paper position
+and any live one, each linking to its chart. The last-check column also says how far the level is
+from that price (**level +2.70%** means the price has to rise 2.7% to reach it).
+
+## On the chart
+
+The paper and live position charts and a finished paper trade's chart show every armed or paused
+level alert on that stock as an amber line, dotted grey when paused, with a pill reading the
+condition and level:
+
+- **Right-click → Alert here** arms one at that price, rounded to the 5-paise tick:
+  - **Crossing**, **Crossing up**, **Crossing down**: a single level;
+  - **Range break-in** (price *enters* the band) or **Range breakout** (price *leaves* it): a
+    channel armed as a band from 1% below to 1% above the click. Drag either edge to set the range.
+
+  Each fires once. Change its trigger or expiry, or fine-tune the numbers, from this page.
+- **Drag the line** to move the level. A channel alert has two lines, and each drags on its own.
+  A stop or target line sitting on the same price wins the drag.
+- **✕ on the pill** deletes it.
+
+These are the same rows as this page, so a change in either place shows in the other. *Moving*
+alerts aren't drawn, because their number is the size of a move, not a level. Bar Replay's chart
+doesn't show alerts: it replays old bars, and an alert watches the live price.
+
 ## What happened
 
 Fired alerts and everything the broker did, in one list. Two kinds share one table and one feed

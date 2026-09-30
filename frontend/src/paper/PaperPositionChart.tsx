@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Spinner } from '@/components/ui/spinner'
 import { fmt, inr } from '@/lib/format'
+import { useChartAlerts } from '@/lib/useChartAlerts'
 import { usePageTitle } from '@/lib/usePageTitle'
 import type { ReplayBar, ReplayOrder } from '@/features/bar-replay/store'
 import type { PaperModifyRequest, PaperPosition } from '@/services/api'
@@ -73,6 +74,8 @@ export default function PaperPositionChart() {
   const indicators = useBarReplayStore((st) => st.indicators)
   const chartSettings = useBarReplayStore((st) => st.settings)
   usePageTitle(`${symbol} · Paper position`)
+  // price alerts on this stock, drawn and editable on the chart (same rows as the Alerts page)
+  const chartAlerts = useChartAlerts(symbol)
 
   const { data: positions = [], isPending } = useQuery({
     queryKey: ['paperPositions', account ?? null],
@@ -302,6 +305,7 @@ export default function PaperPositionChart() {
           </p>
         ) : (
           <ReplayChart
+            {...chartAlerts}
             bars={bars}
             indicators={indicators}
             orders={mine.map(asOrder)}

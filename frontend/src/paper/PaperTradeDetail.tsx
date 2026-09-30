@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { fmt, formatDateTime, inr } from '@/lib/format'
+import { useChartAlerts } from '@/lib/useChartAlerts'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { expectedR, RESULT_META, tradePnl, tradeReturnPct, tradeRR } from '@/lib/manualTrades'
 import { accountFor, accountsById, tradeCosts, tradeNetPnl } from '@/lib/tradeCosts'
@@ -152,6 +153,8 @@ export default function PaperTradeDetail() {
 
   const trade = trades.find((t) => String(t.id) === tradeId) ?? null
   usePageTitle(trade ? `${trade.symbol} · paper trade` : 'Paper trade')
+  // the trade is a record, but an alert on its stock is about the market from now on
+  const chartAlerts = useChartAlerts(trade?.symbol)
 
   // Asked for by symbol and window, so the same fetch is shared with any other trade in the same
   // stock rather than being keyed to this one trade.
@@ -314,6 +317,7 @@ export default function PaperTradeDetail() {
           </div>
         ) : (
           <ReplayChart
+            {...chartAlerts}
             bars={visible}
             indicators={indicators}
             orders={[asOrder(trade)]}

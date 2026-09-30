@@ -71,7 +71,32 @@ Multi-stock: `POST /api/engine/autotune` takes `symbols`, walks each separately 
 sequentially - DuckDB's default connection isn't thread-safe - walks in parallel) and saves them as
 `wf-<batch>-<n>`; `AutotuneBatchView` compares them. The POST streams NDJSON (`start`, then a
 `report` row or `error` per stock as it finishes, then `done`; bad requests still 4xx up front) -
-`runEngineAutotune(req, onEvent)` reads it and the form refreshes the list per report. `SymbolPicker` (both forms) lists the watchlist
+`runEngineAutotune(req, onEvent)` reads it and the form refreshes the list per report. Loading is pipelined: a
+loader thread fetches bars one stock at a time and submits each walk the moment its bars are in; results
+reach the stream through a queue. **Sizing** (`Sizing` in schemas.py -> `_sizing()` -> engine
+`sizing=0|1|2 capital=` params, hft `src/core.hpp` `Sizing`): fixed / scale qty / all-in, on backtest,
+sweep and autotune. Autotune sizes only the OOS + baseline runs and carries each account across
+windows with the engine's `carry=` param; tuning sweeps stay fixed-size. Fixed sends no args, so an
+unsized run's report is byte-identical to before.
+
+**Walk-forward page** `/engine/autotune/$reportId` (`EngineAutotunePage.tsx`): `WalkForward` (what
+used to be the inline AutotuneView, plus `CellTable`) and, for each side, `runAnalytics` over the
+stitched `oos` / `baseline` shaped as a run (`sideRun`); it reuses the run page's exported sections
+(ReturnsHeatmap, BucketBars, Histogram, TradeLog, Section). The Auto-tune tab no longer opens reports
+inline - `openTune` navigates there, and an old `?autotune=` link redirects.
+**Run page** `/engine/runs/$runId` (`EngineRunPage.tsx`, route in router.tsx): everything derives
+from the run file via `runAnalytics` / `drawdownPeriods` / `excursions` / `tradeCost` in
+`lib/engine.ts` (asserted in the self-check). Shared pieces (Panel, Stat, ExportMenu, ExecutionsChart,
+DailyBars, HistoryLine, runName, PREFILL_KEY) live in `engineUi.tsx` so Engine.tsx, the run page and
+`EngineJobs.tsx` don't import each other. New backtests also save `job`, `engine` {cmd, build, ms},
+`sizing` and `request` into the run file; `PATCH /api/engine/runs/{id}` saves `note`/`tags` into it.
+**Jobs**: `engine_jobs` table (db.py accessors, claim is `FOR UPDATE SKIP LOCKED`), worker threads
+in `app/services/engine_jobs.py` calling `run_backtest` / `run_sweep` / `autotune_events` in
+engine.py (the endpoints are thin wrappers over those), routes `/api/engine/jobs*`, `JobsPanel` +
+`useQueueJob` in EngineJobs.tsx, `tab=jobs`. Worker count is the `engine_workers` setting (1-8,
+live). **Bar cache TTL**: `minute_cache` table - `get_minute_bars` slides the 14-day expiry,
+`minute_data.sweep_expired()` deletes expired symbols' parquet files, `_full_days` reloads the 1D
+series from Postgres after a restart. `SymbolPicker` (both forms) lists the watchlist
 first, then the stocks master on search; `useStoredSymbols` remembers each form's list. It needs the engine's `--trade-from=<ts>` flag (warm-up bars feed
 the strategy, only later entries count). Bars reach today because `minute_data` tops the dataset
 (ends 2026-01) up from moneycontrol, yfinance as fallback - `get_minute_bars(..., limit=None)` for

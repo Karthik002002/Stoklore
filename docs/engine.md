@@ -65,6 +65,19 @@ Any field left empty falls back to an environment variable, which is handy for h
     closed one bar after it opened). Cost defaults to **12 bps a side** on 1D against 3 intraday:
     delivery pays STT on both sides. Holding times read in days. The live engine is still
     intraday-only, so a 1D result is research, not something to deploy as-is.
+  - **Compound** (checkbox, on both the Backtests and Auto-tune forms): off, every trade is the
+    strategy's `qty` in shares, the same size win or lose. On, the account's P&L so far goes into the
+    next trade's size, starting from **Capital (₹)**:
+    - **Scale qty** multiplies `qty` by the account's growth: `qty=100` trades 110 shares after +10%,
+      95 after -5%. The strategy's own sizing still sets the shape (zscore_mr's risk cap).
+    - **All-in** buys as many shares as the account pays for on every entry; `qty` only gives the
+      direction. A backtest over several symbols is one account, so all-in on two positions at once
+      is twice the account.
+    A size is fixed when the position opens and held until it closes. On Auto-tune, only the traded
+    out-of-sample windows are sized, tuned and fixed-defaults each on its own account carried from
+    one window into the next. The tuning sweeps stay fixed-size, so a pick rests on the strategy's
+    edge and not on how big the account was when a cell traded. The engine does it (`sizing`,
+    `capital`, `carry` params), so an older engine build needs `make` first.
   - **Symbols** is a multi-select, not free text: your watchlist first, grouped by list, then any
     listed NSE stock by typing its symbol or company name (stocks outside a watchlist show as outlined
     chips). Any symbol can be picked whether or not its bars have been fetched yet: the first backtest that
@@ -239,7 +252,9 @@ a batch view with:
 - Export (one sheet, a row per stock) and **Delete all**.
 
 Results stream in as each stock finishes: the button counts *n of m walked*, and the batch view opens
-on the first finished stock and fills in row by row, with no wait for the slowest one.
+on the first finished stock and fills in row by row, with no wait for the slowest one. Loading and
+walking overlap: bars are fetched one stock at a time, and each stock starts walking as soon as its
+own bars are in (up to 4 walks at once) while the next stock is still loading.
 A stock that can't be walked (no bars, too little history) is reported and the rest still run. In the
 Reports list, a batch's rows carry an **n stocks** button that reopens its batch view (`?tunebatch=`).
 
@@ -248,6 +263,88 @@ A year of 5m sessions in one-week steps is about 40 windows and takes a few seco
 saved as `<engine folder>/runs/autotune/<strategy>/<SYMBOL>/wf-*.json`. **The engine must have
 `--trade-from`** (`make` in the engine folder); an older build is caught and refused rather than
 allowed to count the warm-up as out-of-sample.
+
+## The run page
+
+**Full page** on an open run (or a finished job's *Open run*) goes to `/engine/runs/<run id>`: the
+run id is the whole address, so it can be bookmarked or shared. It shows everything the run's own
+report supports:
+
+- **Performance**: every engine metric plus return %, CAGR, Sortino, Calmar, Ulcer index, payoff
+  ratio, SQN, Kelly, largest win/loss, win/loss streaks, exposure (time with any position open),
+  trades per month, average and median hold, and cost drag. % figures are on the Compound capital
+  for a sized run. A fixed-qty run has no capital, so they're on the most notional it ever had open
+  at once, which is the money it actually needed.
+- **Equity, drawdown and consistency**: equity, an under-water chart (% below the peak), daily
+  P&L and a rolling 63-session Sharpe.
+- **Monthly returns** heatmap with yearly totals, and the **worst drawdowns** with peak, trough,
+  recovery date, depth, length and recovery time.
+- **Per symbol**: trades, net, share of the total, win rate, profit factor, average hold, each
+  symbol's own P&L curve, and the executions chart.
+- **When it makes its money**: net P&L and win rate by entry hour, weekday and month.
+- **Trades**: the net P&L histogram and every trade, filterable by symbol, side and result, and
+  sortable. Each row has hold time, gross, cost, net, return and **MAE / MFE** (worst and best open
+  P&L while held, from the run's own bars; runs of up to 10 symbols). Clicking a row zooms the
+  chart onto it.
+- **Costs & sizing**: gross vs net, cost per trade, the Compound capital and ending account, and
+  the shares per trade over time.
+- **Data provenance**: each stock's coverage, missing sessions, back-adjusted splits and jumps.
+- **How it was made**: the run id, whether *Run now* or a background job started it, the engine
+  build (git commit of the engine checkout, `+dirty` with uncommitted changes), the engine's time
+  and the exact command line, plus every param and the full request. Runs from before this page
+  didn't record the engine fields.
+- **Notes & tags**: saved into the run's own file.
+- **Actions**: *Re-run* (same strategy, params, symbols, sizing and the very same bars),
+  *Re-run & edit* (opens the Backtests form filled in), Export, PDF (the browser's print),
+  Delete, and a **compare** that overlays any other run's equity and key numbers.
+
+Trade stats on the page are net of the cost the engine charged (`cost_bps` a side on each fill),
+so they add up to the run's net. The engine's own win rate and averages are gross.
+
+## The walk-forward page
+
+The Auto-tune tab's **Reports** list shows every report with its id. Clicking a row (or the id)
+opens that report's own page at `/engine/autotune/<report id>`. So do a one-stock walk when it
+finishes, a row of a batch view, and a finished job's *Open report*. It has:
+
+- **The walk**: the verdict, headline stats (WFE, deflated Sharpe, stability, switches), the tuned,
+  fixed-defaults and in-sample-promise curves, what the tuner picked, every grid cell
+  out-of-sample, the executions chart with every trade (click a window to filter to it), the
+  parameter path, and the windows table. This is what used to open inline under the list.
+- **Tuned vs fixed defaults**: every run-page metric for both out-of-sample results side by side,
+  with the difference and the better one highlighted: return, CAGR, drawdown ₹ and %, Sharpe,
+  Sortino, Calmar, Ulcer, profit factor, win rate, payoff, SQN, Kelly, exposure, holds, streaks,
+  largest win/loss and cost drag.
+- **Window by window**: net per test window for both sides against the in-sample promise, and
+  the pick's percentile among all cells on the unseen bars plus the share of the grid eligible to
+  pick. Also how often tuned beat fixed, made money, and picked from the top third.
+- **Drawdown and consistency**: both sides' under-water and rolling 63-session Sharpe.
+- For **tuned or fixed defaults** (a switch): the monthly returns heatmap, worst drawdowns, daily
+  P&L, shares per trade, P&L by hour/weekday/month, the net P&L histogram, and the full trade log
+  with MAE/MFE.
+- **Data provenance** and **How it was made**: the report id, whether *Run now* or a job made it,
+  the walk settings, params as typed, fixed defaults, sizing, and the request to walk it again.
+- **Walk again** queues the same walk on the same sessions as a background job. Also Export, PDF
+  and Delete.
+
+## Background jobs
+
+Every form has **Run now** (as before: the page waits and shows the result) and **Run in
+background**, which queues exactly the same request and returns straight away. The **Jobs** tab
+lists every job with its status, live progress (stocks walked, for Auto-tune), priority, times,
+and a link to what it made. From there you can:
+
+- **Cancel**: a queued job never starts. A running Auto-tune stops before its next stock, keeping
+  the stocks already walked. A backtest or sweep is one engine call and just finishes.
+- **Retry**: queues the same request again as a new job.
+- **Remove**: removes a finished job. The runs it made stay.
+- Set a queued job's **priority**: higher runs first, then oldest first.
+- Set **Run at once** (1-8): how many jobs run side by side. It takes effect immediately. Each
+  Auto-tune job still walks 4 stocks at a time on its own.
+
+Jobs are rows in Postgres (`engine_jobs`), so a queued job survives a server restart. A job that
+was *running* when the server stopped is marked **interrupted**, ready to retry. A job's row only
+points at its output; the runs themselves are files, as always.
 
 ## Exporting (Excel / CSV)
 
@@ -277,7 +374,10 @@ Stoklore's database:
 <engine folder>/runs/autotune/<strategy>/<SYMBOL>/wf-*.json  walk-forward reports
 ```
 
-Deleting a run, sweep or walk-forward report deletes its file. The only database rows are the settings above.
+Deleting a run, sweep or walk-forward report deletes its file. The database holds only the
+settings above, the background queue (`engine_jobs`: the request, status and where the output
+went) and the bar cache's bookkeeping (`minute_cache`, see
+[bar-replay.md](bar-replay.md#how-it-works)).
 
 ## Limits
 

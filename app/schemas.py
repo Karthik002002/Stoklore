@@ -490,6 +490,14 @@ class BarRange(BaseModel):
         return self
 
 
+class Sizing(BaseModel):
+    """Backtest position sizing - the engine's sizing/capital params (hft src/core.hpp `Sizing`).
+    fixed: `qty` shares every trade. scale: `qty` grows and shrinks with capital + P&L so far.
+    all_in: each entry buys as much as capital + P&L so far pays for. The last two compound."""
+    mode: Literal["fixed", "scale", "all_in"] = "fixed"
+    capital: float = Field(100000, gt=0, le=1e12)
+
+
 class EngineBacktestRequest(BaseModel):
     strategy: str
     symbols: list[str]
@@ -497,6 +505,7 @@ class EngineBacktestRequest(BaseModel):
     # every value list is one axis of the sweep; the run count is the product of their lengths
     params: dict[str, list[float]] = {}
     cost_bps: float = Field(3, ge=0, le=100)
+    sizing: Sizing = Sizing()
     label: str | None = None
     range: BarRange = BarRange()
 
@@ -512,6 +521,7 @@ class EngineSweepRequest(BaseModel):
     # oat only: base value for a swept param (default: the strategy's default)
     base: dict[str, float] = {}
     cost_bps: float = Field(3, ge=0, le=100)
+    sizing: Sizing = Sizing()
     label: str | None = None
     range: BarRange = BarRange()
 
@@ -529,6 +539,30 @@ class EngineAutotuneRequest(BaseModel):
     min_trades: int = Field(30, ge=1, le=10000)  # a cell with fewer train trades is never picked
     margin: float = Field(0.15, ge=0, le=5)  # how much better a new pick must score to replace the current one
     cost_bps: float = Field(3, ge=0, le=100)
+    sizing: Sizing = Sizing()
+
+
+class EngineRunNotesRequest(BaseModel):
+    """A note and tags kept inside a run's own file (runs are files, not rows)."""
+    note: str | None = Field(None, max_length=5000)
+    tags: list[str] = Field([], max_length=20)
+
+
+class EngineJobRequest(BaseModel):
+    """A run for the background queue: `request` is exactly what the run-now endpoint of `kind`
+    takes, checked against that shape before it's queued."""
+    kind: Literal["backtest", "sweep", "autotune"]
+    request: dict
+    label: str | None = Field(None, max_length=200)
+    priority: int = Field(0, ge=-100, le=100)
+
+
+class EngineJobPriority(BaseModel):
+    priority: int = Field(ge=-100, le=100)
+
+
+class EngineJobConfig(BaseModel):
+    workers: int = Field(ge=1, le=8)  # jobs at once; each auto-tune job still walks 4 stocks at a time
 
 
 class EngineSettingsRequest(BaseModel):

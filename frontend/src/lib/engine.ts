@@ -859,3 +859,282 @@ export function windowOfTrade(trade: RunTrade, windows: WindowLike[]) {
       : day >= w.test[0] && day <= w.test[1],
   )
 }
+
+// --- run detail page (EngineRunPage.tsx): everything derived from one run's own report -----------
+
+/** A trade's cost the way the engine charged it: `cost_bps` a side on each fill's notional. */
+export const tradeCost = (t: RunTrade, costBps: number) => (Math.abs(t[3]) * (t[4] + t[5]) * costBps) / 1e4
+
+export type RunDrawdown = {
+  start: number // the peak it fell from
+  trough: number
+  end: number | null // back at the peak; null = still under water at the run's end
+  depth: number // ₹ below the peak
+  pct: number // % of the account at the peak
+  days: number // peak to recovery (or to the end), calendar days
+  recovery: number | null // trough to recovery, calendar days
+}
+
+export type RunBucket = { key: number; label: string; trades: number; net: number; winRate: number }
+
+export type RunSymbol = {
+  symbol: string
+  trades: number
+  net: number
+  winRate: number
+  profitFactor: number | null
+  share: number // % of the run's total net
+  avgHoldMin: number
+  curve: [number, number][] // cumulative net by exit time
+}
+
+const DAY = 86400
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0)
+const sd = (xs: number[]) => {
+  const m = mean(xs)
+  return Math.sqrt(mean(xs.map((x) => (x - m) ** 2)))
+}
+
+function buckets(trades: RunTrade[], nets: number[], keyOf: (t: RunTrade) => number, label: (k: number) => string) {
+  const by = new Map<number, { n: number; net: number; wins: number }>()
+  trades.forEach((t, i) => {
+    const b = by.get(keyOf(t)) ?? { n: 0, net: 0, wins: 0 }
+    b.n++
+    b.net += nets[i]
+    if (nets[i] > 0) b.wins++
+    by.set(keyOf(t), b)
+  })
+  return [...by.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([key, b]): RunBucket => ({ key, label: label(key), trades: b.n, net: b.net, winRate: (100 * b.wins) / b.n }))
+}
+
+/** The biggest peak-to-recovery drawdowns of a daily P&L series on an account of `capital`. */
+export function drawdownPeriods(daily: [number, number][], capital: number, top = 5): RunDrawdown[] {
+  const out: RunDrawdown[] = []
+  let cum = 0
+  let peak = 0
+  let peakT = daily[0]?.[0] ?? 0
+  let cur: RunDrawdown | null = null
+  for (const [t, pnl] of daily) {
+    cum += pnl
+    if (cum >= peak) {
+      if (cur) {
+        cur.end = t
+        cur.days = Math.round((t - cur.start) / DAY)
+        cur.recovery = Math.round((t - cur.trough) / DAY)
+        out.push(cur)
+        cur = null
+      }
+      peak = cum
+      peakT = t
+      continue
+    }
+    const depth = peak - cum
+    if (!cur) cur = { start: peakT, trough: t, end: null, depth: 0, pct: 0, days: 0, recovery: null }
+    if (depth > cur.depth) {
+      cur.depth = depth
+      cur.trough = t
+      cur.pct = capital + peak > 0 ? (100 * depth) / (capital + peak) : 0
+    }
+  }
+  if (cur) {
+    cur.days = Math.round(((daily.at(-1)?.[0] ?? cur.start) - cur.start) / DAY)
+    out.push(cur)
+  }
+  return out.sort((a, b) => b.depth - a.depth).slice(0, top)
+}
+
+/** Each trade's worst (MAE) and best (MFE) open P&L in ₹ while it was held, from the run's own bars:
+ *  every bar from entry up to (not including) the exit bar, plus the exit fill. Sign follows qty, so
+ *  a long's MAE comes from lows and a short's from highs. null where no bar covers the trade. */
+export function excursions(
+  trades: RunTrade[],
+  bars: { time: number; high: number; low: number }[],
+): ({ mae: number; mfe: number } | null)[] {
+  const times = bars.map((b) => b.time)
+  return trades.map(([, tin, tout, qty, pin, pout]) => {
+    let lo = pout
+    let hi = pout
+    let seen = false
+    // first bar at/after entry, by binary search - a run can hold thousands of trades on 1m bars
+    let i = 0
+    let j = times.length
+    while (i < j) {
+      const m = (i + j) >> 1
+      if (times[m] < tin) i = m + 1
+      else j = m
+    }
+    for (; i < bars.length && bars[i].time < tout; i++) {
+      lo = Math.min(lo, bars[i].low)
+      hi = Math.max(hi, bars[i].high)
+      seen = true
+    }
+    if (!seen) return null
+    const worst = qty > 0 ? lo : hi
+    const best = qty > 0 ? hi : lo
+    return { mae: Math.min(0, (worst - pin) * qty), mfe: Math.max(0, (best - pin) * qty) }
+  })
+}
+
+/** Everything the run page shows beyond the engine's own summary. Trade stats are net of the cost
+ *  the engine charged (cost_bps a side), so they add up to the run's net. `capital` is the Compound
+ *  capital when the run was sized, else the most notional the run ever had open at once - the money
+ *  a fixed-qty run actually needed - so % figures always have a base. */
+export function runAnalytics(run: {
+  summary: { net: number; gross: number; costs: number; max_dd: number; from: number; to: number }
+  daily: [number, number][]
+  trades: RunTrade[]
+  params: Record<string, number>
+  sizing?: { mode: string; capital: number } | null
+}) {
+  const costBps = run.params.cost_bps ?? 3
+  const trades = [...run.trades].sort((a, b) => a[2] - b[2]) // by exit: the order P&L was realised in
+  const nets = trades.map((t) => t[6] - tradeCost(t, costBps))
+  const sized = !!run.sizing && run.sizing.mode !== 'fixed'
+
+  // peak concurrent notional: +at entry, -at exit, exits first on a tie
+  const moves = trades.flatMap((t) => [
+    [t[1], Math.abs(t[3] * t[4])],
+    [t[2], -Math.abs(t[3] * t[4])],
+  ]) as [number, number][]
+  moves.sort((a, b) => a[0] - b[0] || a[1] - b[1])
+  let open = 0
+  let peakNotional = 0
+  for (const [, d] of moves) peakNotional = Math.max(peakNotional, (open += d))
+  const capital = sized ? run.sizing!.capital : peakNotional
+
+  const { net, gross, costs, from, to } = run.summary
+  const years = (to - from) / (365.25 * DAY)
+  const growth = capital > 0 ? 1 + net / capital : 0
+  const cagr = capital > 0 && years >= 0.1 && growth > 0 ? (growth ** (1 / years) - 1) * 100 : null
+
+  const rets = capital > 0 ? run.daily.map(([, p]) => p / capital) : []
+  const downside = Math.sqrt(mean(rets.map((r) => Math.min(r, 0) ** 2)))
+  const sortino = downside > 0 ? (mean(rets) / downside) * Math.sqrt(252) : 0
+
+  let cum = 0
+  let peak = 0
+  const underwater: [number, number][] = run.daily.map(([t, p]) => {
+    cum += p
+    peak = Math.max(peak, cum)
+    return [t, capital + peak > 0 ? (-100 * (peak - cum)) / (capital + peak) : 0]
+  })
+  const maxDdPct = -underwater.reduce((a, [, v]) => Math.min(a, v), 0)
+  const ulcer = Math.sqrt(mean(underwater.map(([, v]) => v * v)))
+  const calmar = cagr !== null && maxDdPct > 0 ? cagr / maxDdPct : null
+
+  const WINDOW = 63 // a quarter of sessions
+  const rollingSharpe: [number, number][] = []
+  for (let i = WINDOW; i <= run.daily.length; i++) {
+    const w = run.daily.slice(i - WINDOW, i).map(([, p]) => p)
+    const s = sd(w)
+    rollingSharpe.push([run.daily[i - 1][0], s > 0 ? (mean(w) / s) * Math.sqrt(252) : 0])
+  }
+
+  const wins = nets.filter((x) => x > 0)
+  const losses = nets.filter((x) => x <= 0)
+  const avgWin = mean(wins)
+  const avgLoss = mean(losses)
+  const payoff = wins.length && losses.length && avgLoss < 0 ? avgWin / -avgLoss : null
+  const winP = nets.length ? wins.length / nets.length : 0
+  const kelly = payoff ? (winP - (1 - winP) / payoff) * 100 : null
+  const sqn = nets.length > 1 && sd(nets) > 0 ? (Math.sqrt(Math.min(nets.length, 100)) * mean(nets)) / sd(nets) : null
+
+  let streak = 0
+  let winStreak = 0
+  let lossStreak = 0
+  for (const x of nets) {
+    streak = x > 0 ? Math.max(streak, 0) + 1 : Math.min(streak, 0) - 1
+    winStreak = Math.max(winStreak, streak)
+    lossStreak = Math.max(lossStreak, -streak)
+  }
+
+  // time in the market: the union of every trade's [entry, exit), over the run's span
+  const spans = trades.map((t) => [t[1], t[2]]).sort((a, b) => a[0] - b[0])
+  let covered = 0
+  let end = -Infinity
+  for (const [a, b] of spans) {
+    if (b <= end) continue
+    covered += b - Math.max(a, end)
+    end = b
+  }
+  const holds = trades.map((t) => (t[2] - t[1]) / 60).sort((a, b) => a - b)
+
+  const monthly = new Map<string, number>()
+  const yearly = new Map<number, number>()
+  for (const [t, p] of run.daily) {
+    const d = new Date(t * 1000)
+    const k = `${d.getUTCFullYear()}-${d.getUTCMonth()}`
+    monthly.set(k, (monthly.get(k) ?? 0) + p)
+    yearly.set(d.getUTCFullYear(), (yearly.get(d.getUTCFullYear()) ?? 0) + p)
+  }
+
+  const symbols = [...new Set(trades.map((t) => t[0]))]
+  const bySymbol: RunSymbol[] = symbols
+    .map((symbol) => {
+      const idx = trades.flatMap((t, i) => (t[0] === symbol ? [i] : []))
+      const n = idx.map((i) => nets[i])
+      const w = n.filter((x) => x > 0).reduce((a, b) => a + b, 0)
+      const l = -n.filter((x) => x < 0).reduce((a, b) => a + b, 0)
+      const total = n.reduce((a, b) => a + b, 0)
+      let c = 0
+      return {
+        symbol,
+        trades: n.length,
+        net: total,
+        winRate: (100 * n.filter((x) => x > 0).length) / n.length,
+        profitFactor: l > 0 ? w / l : null,
+        share: net ? (100 * total) / net : 0,
+        avgHoldMin: mean(idx.map((i) => (trades[i][2] - trades[i][1]) / 60)),
+        curve: idx.map((i): [number, number] => [trades[i][2], (c += nets[i])]),
+      }
+    })
+    .sort((a, b) => b.net - a.net)
+
+  const hourOf = (t: RunTrade) => new Date(t[1] * 1000).getUTCHours()
+  return {
+    capital,
+    capitalBasis: sized ? ('compound' as const) : ('peak exposure' as const),
+    returnPct: capital > 0 ? (100 * net) / capital : null,
+    cagr,
+    sortino,
+    calmar,
+    ulcer,
+    maxDdPct,
+    payoff,
+    sqn,
+    kelly,
+    largestWin: nets.reduce((a, b) => Math.max(a, b), 0),
+    largestLoss: nets.reduce((a, b) => Math.min(a, b), 0),
+    avgWin,
+    avgLoss,
+    winStreak,
+    lossStreak,
+    exposurePct: to > from ? Math.min(100, (100 * covered) / (to - from)) : 0,
+    tradesPerMonth: to > from ? trades.length / ((to - from) / (30.44 * DAY)) : 0,
+    medianHoldMin: holds.length ? holds[Math.floor(holds.length / 2)] : 0,
+    costDragPct: gross > 0 ? (100 * costs) / gross : null,
+    drawdowns: drawdownPeriods(run.daily, capital),
+    underwater,
+    rollingSharpe,
+    monthly: [...monthly.entries()].map(([k, pnl]) => {
+      const [y, m] = k.split('-').map(Number)
+      return { year: y, month: m, pnl, pct: capital > 0 ? (100 * pnl) / capital : null }
+    }),
+    yearly: [...yearly.entries()].map(([year, pnl]) => ({ year, pnl, pct: capital > 0 ? (100 * pnl) / capital : null })),
+    bySymbol,
+    byHour: buckets(trades, nets, hourOf, (h) => `${String(h).padStart(2, '0')}:00`),
+    byWeekday: buckets(trades, nets, (t) => new Date(t[1] * 1000).getUTCDay(), (d) => WEEKDAYS[d]),
+    byMonth: buckets(trades, nets, (t) => new Date(t[1] * 1000).getUTCMonth(), (m) => MONTHS[m]),
+    sizes: trades.map((t): [number, number] => [t[1], Math.abs(t[3])]),
+    trades,
+    nets,
+  }
+}
+export type RunAnalytics = ReturnType<typeof runAnalytics>
+
+/** A session date's first bar (09:15), on the same IST-read-as-UTC clock as every engine time. */
+export const sessionTime = (date: string) => Date.parse(`${date}T09:15:00Z`) / 1000

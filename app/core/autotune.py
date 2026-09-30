@@ -258,10 +258,16 @@ def _kv(params):
     return [f"{k}={v:g}" for k, v in params.items()]
 
 
-def walk_forward(engine, bars, *, symbol, interval, strategy, params, defaults, train, test, min_trades, margin, cost_bps):
+def walk_forward(engine, bars, *, symbol, interval, strategy, params, defaults, train, test, min_trades, margin, cost_bps,
+                 sizing=()):
     """The whole walk. `params` is as typed ({name: "9" | "5,9,13" | "5:20:5"}): several values are
     swept, one value is fixed. `defaults` are the strategy's own (from `backtest --list`); fixed
-    values override them for the baseline too, so the baseline differs only in not being tuned."""
+    values override them for the baseline too, so the baseline differs only in not being tuned.
+    `sizing` is the engine's compounding args (["sizing=1", "capital=..."], empty = fixed qty). Only
+    the traded windows use it - tuned and baseline alike, each carrying its own account from one
+    window into the next (`carry` = its P&L so far), so the stitched curve compounds end to end.
+    Tuning sweeps and the hindsight grid stay fixed-size: a pick is made on the strategy's edge, not
+    on how big the account happened to be when a cell traded."""
     days = sessions_of(bars)
     spans = windows(len(days), train, test)
     if not spans:
@@ -280,6 +286,7 @@ def walk_forward(engine, bars, *, symbol, interval, strategy, params, defaults, 
     trial_sr = []  # per-day Sharpes of every eligible cell, per window - the trials DSR deflates by
     incumbent = None
     promised = 0.0
+    tuned_pnl = base_pnl = 0.0  # each account's P&L so far, carried into the next window's capital
     with tempfile.TemporaryDirectory() as tmp:
         csv_path = str(Path(tmp) / f"{symbol}_{interval}.csv")  # the engine names the symbol from the file
         for train_from, test_from, test_to in spans:
@@ -302,8 +309,13 @@ def walk_forward(engine, bars, *, symbol, interval, strategy, params, defaults, 
 
             _write_csv(csv_path, span_bars)
             trade_from = f"--trade-from={start}"
-            oos = engine(strategy, csv_path, *_kv(chosen), "--json", trade_from) if chosen else None
-            base = engine(strategy, csv_path, *_kv(baseline), "--json", trade_from)
+            def sized(pnl):  # the sizing args, carrying this account's P&L from the earlier windows
+                return [*sizing, f"carry={pnl:.10g}"] if sizing else []
+
+            oos = engine(strategy, csv_path, *_kv(chosen), *sized(tuned_pnl), "--json", trade_from) if chosen else None
+            base = engine(strategy, csv_path, *_kv(baseline), *sized(base_pnl), "--json", trade_from)
+            tuned_pnl += oos["summary"]["net"] if oos else 0
+            base_pnl += base["summary"]["net"]
             for rep in (oos, base):
                 # an engine built before --trade-from takes it for a param and trades the warm-up
                 if rep and rep["equity"] and rep["equity"][0][0] < start:
@@ -347,6 +359,7 @@ def walk_forward(engine, bars, *, symbol, interval, strategy, params, defaults, 
         "min_trades": min_trades,
         "margin": margin,
         "cost_bps": cost_bps,
+        "sizing": list(sizing) or None,
         "sessions": [days[spans[0][0]], days[spans[-1][2] - 1]],
         "windows": rows,
         "oos": tuned,

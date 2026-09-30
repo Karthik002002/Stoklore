@@ -936,7 +936,22 @@ trades on the VPS, and its paper/live sessions land on this page beside the back
   only trades a parameter area that made money in-sample, sits the window out otherwise, and
   deploys nothing. Run it on several stocks at once (watchlist first, or any NSE stock by search):
   each is tuned on its own, and a batch view shows which ones held up and the batch as one book.
-  Results stream in stock by stock as each walk finishes
+  Results stream in stock by stock as each walk finishes, and a stock starts walking as soon as its
+  own bars are loaded instead of waiting for the whole list
+- **Run page** — `/engine/runs/<run id>`: every metric (CAGR, Sortino, Calmar, SQN, Kelly, Ulcer,
+  exposure, streaks…), under-water and rolling-Sharpe charts, a monthly returns heatmap, worst
+  drawdowns, per-symbol curves, P&L by hour/weekday/month, the full trade log with MAE/MFE,
+  costs & sizing, data provenance, the exact engine command and build, notes & tags, re-run
+  (as-is or edited) and compare
+- **Walk-forward page** — `/engine/autotune/<report id>`: the whole walk, every metric tuned vs
+  fixed defaults side by side, window-by-window charts, drawdowns, monthly returns, time-of-day and
+  the full trade log with MAE/MFE. The Reports list links each report id there
+- **Background jobs** — *Run in background* on every form queues the run in Postgres. The Jobs
+  tab shows live progress with cancel, retry, priority and how many run at once. Queued jobs survive
+  a restart
+- **Compounding** — a *Compound* checkbox on the Backtests and Auto-tune forms feeds each trade's P&L
+  into the next trade's size from a starting capital: *Scale qty* (qty grows with the account) or
+  *All-in* (every entry buys what the account pays for). Off, every trade is the same fixed qty
 - **Symbols as JSON** — paste `[{"symbol": "COFORGE", "index": "NSE"}, …]` into either form's
   symbol picker. It's validated (shape, NSE/BSE, duplicates, and each stock against the stocks
   master) before it replaces the selection

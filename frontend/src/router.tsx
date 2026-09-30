@@ -16,6 +16,8 @@ import App from './App'
 import AutoBacktestDetail from './AutoBacktestDetail'
 import Backtesting from './Backtesting'
 import Engine from './Engine'
+import EngineAutotunePage from './EngineAutotunePage'
+import EngineRunPage from './EngineRunPage'
 import BarReplay from './features/bar-replay'
 import EventsFeed from './EventsFeed'
 import Holdings from './Holdings'
@@ -412,8 +414,8 @@ const livePositionRoute = createRoute({
 // Backtests (the default when absent) or Auto-tune; `run` is the open run's detail, `batch` the
 // batch the heatmap shows, `sweep` the open parameter sweep and `autotune` the open walk-forward
 // report and `tunebatch` the open multi-stock run, so all survive a reload. Either of those with no
-// tab opens on the Auto-tune tab.
-export type EngineTab = 'backtest' | 'autotune'
+// tab opens on the Auto-tune tab. `jobs` is the background queue.
+export type EngineTab = 'backtest' | 'autotune' | 'jobs'
 const engineRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/engine',
@@ -428,7 +430,7 @@ const engineRoute = createRoute({
     tunebatch?: string
   } => ({
     tab:
-      search.tab === 'autotune' || search.tab === 'backtest'
+      search.tab === 'autotune' || search.tab === 'backtest' || search.tab === 'jobs'
         ? search.tab
         : search.autotune || search.tunebatch
           ? 'autotune'
@@ -440,6 +442,21 @@ const engineRoute = createRoute({
     tunebatch: typeof search.tunebatch === 'string' && search.tunebatch ? search.tunebatch : undefined,
   }),
   component: Engine,
+})
+
+// One run, in full: every metric, trade, symbol and time-of-day breakdown the engine's report
+// supports, plus how it was made (EngineRunPage.tsx). The run id is the whole key.
+// One walk-forward report in full (EngineAutotunePage.tsx); the Auto-tune tab's list links here.
+const engineAutotuneRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/engine/autotune/$reportId',
+  component: EngineAutotunePage,
+})
+
+const engineRunRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/engine/runs/$runId',
+  component: EngineRunPage,
 })
 
 const simulationRoute = createRoute({
@@ -561,6 +578,8 @@ const routeTree = rootRoute.addChildren([
   livePositionRoute,
   simulationRoute,
   engineRoute,
+  engineRunRoute,
+  engineAutotuneRoute,
   autoBacktestDetailRoute,
   barReplayRoute,
   dashboardsRoute,

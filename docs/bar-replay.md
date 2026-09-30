@@ -242,6 +242,14 @@ of two sources (below) plus a chart that only reveals them up to a cursor.
     (09:15–15:29) only, finished minutes only, appended to the same parquet at
     most every 6 hours per symbol (`TOPUP_EVERY`). A feed outage just leaves
     the cache where it was.
+  - **Two-week sliding expiry.** Every use of a symbol (a chart, a replay, a
+    backtest) pushes its expiry to 14 days from now (`CACHE_TTL_DAYS`), in
+    Postgres (`minute_cache`). A sweep at startup and every 6 hours deletes the
+    files of any symbol nobody has used for two weeks, so a stock you run
+    often never expires and one you tried once doesn't sit on disk forever.
+    Files cached before the expiry existed start their two weeks at the first
+    sweep. The same row keeps each symbol's built 1D series (filled, repaired,
+    split-adjusted), so a server restart reloads it instead of rebuilding it.
   - **The official daily record** (moneycontrol daily, else yfinance) is kept
     beside each symbol's minutes (`<SYMBOL>.daily.parquet`, refreshed with the
     top-up), because some minute histories have holes no feed fills: an NSE

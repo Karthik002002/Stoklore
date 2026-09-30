@@ -39,7 +39,7 @@ from pathlib import Path
 import duckdb
 import pandas
 
-from app.core import moneycontrol_local, scraper
+from app.core import db, moneycontrol_local, scraper
 
 HF_GLOB = "hf://datasets/xxparthparekhxx/indian-stock-market-minute-data/minute/*.parquet"
 # The same dataset's daily split: one ~118MB file, every stock from 2000 (or its listing) to 2026-01,
@@ -92,6 +92,9 @@ MAX_BARS = 30_000
 # How stale a cached symbol may get before its newest bars are fetched again. Past the close nothing
 # changes; during a session this bounds how old "today" can be on a chart or in a backtest.
 TOPUP_EVERY = 6 * 3600
+# A cached stock nobody has used for this long has its files deleted (db.minute_cache). Every use
+# slides it forward again, so a stock you run often never expires.
+CACHE_TTL_DAYS = 14
 # moneycontrol answers with the newest `countback` bars whatever `from` says; 100k 1m bars reaches
 # back about a year, past the dataset's last day, so one request closes the whole gap.
 MC_COUNTBACK = 100_000
@@ -391,7 +394,8 @@ def back_adjust(bars, events):
 
 
 # symbol -> ((minute cache mtime, daily mtime), full 1D series, events): the 1D series is rebuilt only
-# when either file changes, not on every intraday request that needs its events
+# when either file changes, not on every intraday request that needs its events. Postgres keeps a
+# copy (db.minute_cache.daily) so a restart reloads it instead of rebuilding it.
 _daily_cache = {}
 
 
@@ -404,13 +408,55 @@ def _full_days(symbol, path):
     key = (path.stat().st_mtime, mtime(daily), mtime(dataset_day))
     hit = _daily_cache.get(symbol)
     if not hit or hit[0] != key:
-        days, _, _ = fill_days(
-            _resample(path, "1D", None), _read_daily(symbol, dataset_day), dataset_start=None
-        )
-        days, filled, repaired = fill_days(days, _read_daily(symbol))  # "patched" = moneycontrol's share only
-        events = split_events(days)
-        hit = _daily_cache[symbol] = (key, days, events, filled + repaired, unexplained_jumps(days, events))
+        stored = db.get_minute_daily(symbol)
+        if stored and stored[0] == repr(key):
+            hit = _daily_cache[symbol] = (key, *stored[1])
+        else:
+            days, _, _ = fill_days(
+                _resample(path, "1D", None), _read_daily(symbol, dataset_day), dataset_start=None
+            )
+            days, filled, repaired = fill_days(days, _read_daily(symbol))  # "patched" = moneycontrol's share only
+            events = split_events(days)
+            hit = _daily_cache[symbol] = (key, days, events, filled + repaired, unexplained_jumps(days, events))
+            db.set_minute_daily(symbol, repr(key), list(hit[1:]), CACHE_TTL_DAYS)
     return hit[1:]
+
+
+def _cache_files(symbol):
+    return [_cache_path(symbol), _daily_path(symbol), _dataset_day_path(symbol)]
+
+
+def sweep_expired():
+    """Deletes the files of every cached stock unused for CACHE_TTL_DAYS, then its row. Stocks
+    cached before the TTL existed get a row first, so their clock starts now rather than never.
+    Under the extract lock, so a request mid-read never loses its file. -> symbols removed."""
+    cached = {f.name.split(".")[0] for f in CACHE_DIR.glob("*.parquet")} if CACHE_DIR.exists() else set()
+    if cached:
+        db.register_minute_cache(sorted(cached), CACHE_TTL_DAYS)
+    gone = []
+    with _extract_lock:
+        for symbol in db.expired_minute_cache():
+            for f in _cache_files(symbol):
+                f.unlink(missing_ok=True)
+            db.delete_minute_cache(symbol)
+            _daily_cache.pop(symbol, None)
+            gone.append(symbol)
+    return gone
+
+
+def _sweep_loop():
+    while True:
+        try:
+            gone = sweep_expired()
+            if gone:
+                print(f"minute cache: expired {len(gone)} unused for {CACHE_TTL_DAYS} days: {', '.join(gone)}")
+        except Exception as e:  # noqa: BLE001 - a DB hiccup must not kill the loop
+            print(f"minute cache sweep failed: {e}")
+        time.sleep(6 * 3600)
+
+
+def start_ttl_sweeper():
+    threading.Thread(target=_sweep_loop, daemon=True).start()
 
 
 def missing_sessions(symbol, days, start=None, end=None):
@@ -522,6 +568,7 @@ def get_minute_bars(symbol, interval, limit=MAX_BARS, start=None, end=None):
     if interval not in BUCKETS:
         raise ValueError(f"interval must be one of {list(BUCKETS)}")
     symbol = symbol.upper()
+    db.touch_minute_cache([symbol], CACHE_TTL_DAYS)  # every use pushes the expiry 2 weeks out
 
     with _extract_lock:
         path = _cache_path(symbol)

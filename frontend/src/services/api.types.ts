@@ -797,7 +797,11 @@ export interface paths {
         delete: operations["engine_delete_run_api_engine_runs__run_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Engine Run Notes
+         * @description Saves a note and tags into the run's own file. A live report is rewritten by the next sync.
+         */
+        patch: operations["engine_run_notes_api_engine_runs__run_id__patch"];
         trace?: never;
     };
     "/api/engine/batches/{batch}": {
@@ -889,9 +893,11 @@ export interface paths {
         /**
          * Engine Autotune
          * @description One walk-forward per stock, tuned separately - parameters are per stock, never pooled - and
-         *     saved as one batch. Blocks until all are done: a year of 5m sessions in one-week steps is ~40
-         *     windows and a few seconds per stock, plus ~11s the first time a stock's bars are fetched.
-         *     A stock that fails (no bars, too little history) is reported and the rest still run.
+         *     saved as one batch. Streams NDJSON as it goes - `start` {batch, symbols}, then a `report` (the
+         *     list row) or an `error` {symbol, error} per stock as each finishes, then `done` - since a year
+         *     of 5m sessions in one-week steps is ~40 windows and a few seconds per stock, plus ~11s the
+         *     first time a stock's bars are fetched. A stock that fails (no bars, too little history) is
+         *     reported and the rest still run. Bad requests are still refused up front with a 4xx.
          */
         post: operations["engine_autotune_api_engine_autotune_post"];
         delete?: never;
@@ -974,6 +980,98 @@ export interface paths {
          * @description Pulls the VPS's paper/live session reports over ssh (the same key the engine's deploy uses).
          */
         post: operations["engine_live_sync_api_engine_live_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/engine/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Engine Jobs */
+        get: operations["engine_jobs_api_engine_jobs_get"];
+        put?: never;
+        /** Engine Job Create */
+        post: operations["engine_job_create_api_engine_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/engine/jobs/config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Engine Jobs Config */
+        get: operations["engine_jobs_config_api_engine_jobs_config_get"];
+        /** Engine Jobs Set Config */
+        put: operations["engine_jobs_set_config_api_engine_jobs_config_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/engine/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Engine Job */
+        get: operations["engine_job_api_engine_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        /** Engine Job Delete */
+        delete: operations["engine_job_delete_api_engine_jobs__job_id__delete"];
+        options?: never;
+        head?: never;
+        /** Engine Job Priority */
+        patch: operations["engine_job_priority_api_engine_jobs__job_id__patch"];
+        trace?: never;
+    };
+    "/api/engine/jobs/{job_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Engine Job Cancel */
+        post: operations["engine_job_cancel_api_engine_jobs__job_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/engine/jobs/{job_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Engine Job Retry
+         * @description A new job with the same request - the old one stays as the record of what happened.
+         */
+        post: operations["engine_job_retry_api_engine_jobs__job_id__retry_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3789,6 +3887,13 @@ export interface components {
              * @default 3
              */
             cost_bps: number;
+            /**
+             * @default {
+             *       "mode": "fixed",
+             *       "capital": 100000
+             *     }
+             */
+            sizing: components["schemas"]["Sizing"];
         };
         /** EngineBacktestRequest */
         EngineBacktestRequest: {
@@ -3813,6 +3918,13 @@ export interface components {
              * @default 3
              */
             cost_bps: number;
+            /**
+             * @default {
+             *       "mode": "fixed",
+             *       "capital": 100000
+             *     }
+             */
+            sizing: components["schemas"]["Sizing"];
             /** Label */
             label?: string | null;
             /**
@@ -3821,6 +3933,52 @@ export interface components {
              *     }
              */
             range: components["schemas"]["BarRange"];
+        };
+        /** EngineJobConfig */
+        EngineJobConfig: {
+            /** Workers */
+            workers: number;
+        };
+        /** EngineJobPriority */
+        EngineJobPriority: {
+            /** Priority */
+            priority: number;
+        };
+        /**
+         * EngineJobRequest
+         * @description A run for the background queue: `request` is exactly what the run-now endpoint of `kind`
+         *     takes, checked against that shape before it's queued.
+         */
+        EngineJobRequest: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "backtest" | "sweep" | "autotune";
+            /** Request */
+            request: {
+                [key: string]: unknown;
+            };
+            /** Label */
+            label?: string | null;
+            /**
+             * Priority
+             * @default 0
+             */
+            priority: number;
+        };
+        /**
+         * EngineRunNotesRequest
+         * @description A note and tags kept inside a run's own file (runs are files, not rows).
+         */
+        EngineRunNotesRequest: {
+            /** Note */
+            note?: string | null;
+            /**
+             * Tags
+             * @default []
+             */
+            tags: string[];
         };
         /** EngineSettingsRequest */
         EngineSettingsRequest: {
@@ -3881,6 +4039,13 @@ export interface components {
              * @default 3
              */
             cost_bps: number;
+            /**
+             * @default {
+             *       "mode": "fixed",
+             *       "capital": 100000
+             *     }
+             */
+            sizing: components["schemas"]["Sizing"];
             /** Label */
             label?: string | null;
             /**
@@ -4225,6 +4390,25 @@ export interface components {
             current_password?: string | null;
             /** Current Pin */
             current_pin?: string | null;
+        };
+        /**
+         * Sizing
+         * @description Backtest position sizing - the engine's sizing/capital params (hft src/core.hpp `Sizing`).
+         *     fixed: `qty` shares every trade. scale: `qty` grows and shrinks with capital + P&L so far.
+         *     all_in: each entry buys as much as capital + P&L so far pays for. The last two compound.
+         */
+        Sizing: {
+            /**
+             * Mode
+             * @default fixed
+             * @enum {string}
+             */
+            mode: "fixed" | "scale" | "all_in";
+            /**
+             * Capital
+             * @default 100000
+             */
+            capital: number;
         };
         /** TelegramConfigRequest */
         TelegramConfigRequest: {
@@ -5813,6 +5997,41 @@ export interface operations {
             };
         };
     };
+    engine_run_notes_api_engine_runs__run_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EngineRunNotesRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     engine_delete_batch_api_engine_batches__batch__delete: {
         parameters: {
             query?: never;
@@ -6174,6 +6393,271 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    engine_jobs_api_engine_jobs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    engine_job_create_api_engine_jobs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EngineJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    engine_jobs_config_api_engine_jobs_config_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    engine_jobs_set_config_api_engine_jobs_config_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EngineJobConfig"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    engine_job_api_engine_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    engine_job_delete_api_engine_jobs__job_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    engine_job_priority_api_engine_jobs__job_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EngineJobPriority"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    engine_job_cancel_api_engine_jobs__job_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    engine_job_retry_api_engine_jobs__job_id__retry_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

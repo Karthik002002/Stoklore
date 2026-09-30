@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { UseQueryResult } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { CandlestickSeries, HistogramSeries, createChart, createSeriesMarkers } from 'lightweight-charts'
 import type { UTCTimestamp } from 'lightweight-charts'
 import {
   CheckIcon,
   ChevronsUpDownIcon,
   BracesIcon,
-  DownloadIcon,
+  ListPlusIcon,
+  Maximize2Icon,
   PlayIcon,
   RefreshCwIcon,
   SettingsIcon,
@@ -20,12 +20,6 @@ import SeriesChart from '@/components/charts/SeriesChart'
 import { seriesColor } from '@/components/charts/colors'
 import type { Dataset } from '@/components/charts/colors'
 import { Badge } from '@/components/ui/badge'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Button } from '@/components/ui/button'
 import {
   Command,
@@ -44,18 +38,13 @@ import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
   autotuneBatchSheet,
-  autotuneSheets,
   comboCount,
-  coverageNotes,
   drawdown,
   fanPaths,
-  focusRange,
   histogram,
   historyError,
-  historyText,
   holdText,
   istTime,
-  markerRange,
   noTrades,
   oatSeries,
   portfolioCurve,
@@ -66,39 +55,46 @@ import {
   listedOn,
   parseSymbolJson,
   parseValues,
-  pickedSets,
   pinnedRange,
   spread,
   sweepCount,
   sweepGrid,
-  tradeMarkers,
   tuneVerdict,
-  windowOfTrade,
 } from '@/lib/engine'
 import type { RunTrade } from '@/lib/engine'
 import { fmt, formatDateTime, inr } from '@/lib/format'
-import type { SheetData } from '@/lib/exportFile'
 import type { EngineTab } from './router'
-import { downloadCsv, downloadXlsx } from '@/lib/exportFile'
 import { usePageTitle } from '@/lib/usePageTitle'
+import {
+  COLORS,
+  DailyBars,
+  ExecutionsChart,
+  ExportMenu,
+  Field,
+  HistoryLine,
+  PREFILL_KEY,
+  Panel,
+  paramText,
+  Stat,
+  pnlClass,
+  runName,
+} from './engineUi'
+import { JobsPanel, useQueueJob } from './EngineJobs'
 import { cn } from '@/lib/utils'
 import type {
   BarRange,
   EngineAutotuneReport,
   EngineAutotuneRequest,
-  EngineAutotuneCell,
+  EngineBacktestRequest,
+  EngineSizing,
   EngineAutotuneRow,
-  EngineCoverage,
-  EngineHistory,
   EngineRun,
   EngineRunRow,
   EngineSettings,
-  EngineSkipped,
   EngineSweepRow,
   EngineSweepRun,
 } from '@/services/api'
 import {
-  deleteEngineAutotune,
   deleteEngineAutotuneBatch,
   deleteEngineBatch,
   deleteEngineRun,
@@ -110,8 +106,8 @@ import {
   getEngineSettings,
   getEngineStrategies,
   getEngineSweep,
+  getEngineJobs,
   getEngineSweeps,
-  getIntradayBars,
   getWatchlist,
   runEngineAutotune,
   runEngineBacktest,
@@ -139,105 +135,11 @@ const METRICS: Record<Metric, { label: string; better: 1 | -1; format: (v: numbe
   win_rate: { label: 'Win rate', better: 1, format: (v) => `${fmt(v, 1)}%` },
 }
 type SortKey = 'created' | Metric | 'trades'
-const COLORS = { text: '#9ca3af', grid: 'rgba(148, 163, 184, 0.15)', up: '#22c55e', down: '#ef4444' }
-
-//: How many markers (two per trade) the executions chart frames when it opens - see ExecutionsChart.
-const OPENING_MARKERS = 40
-
 // The last symbol selections, so reopening the page doesn't start from scratch every time. The two
 // forms keep their own: a quick backtest basket and a tuning universe are rarely the same list.
 const SYMBOLS_KEY = 'engine.symbols'
 const TUNE_SYMBOLS_KEY = 'engine.autotuneSymbols'
 const TUNE_FORM_KEY = 'engine.autotuneForm'
-
-const pnlClass = (v: number) => (v > 0 ? 'text-success' : v < 0 ? 'text-destructive' : '')
-
-/** The params that tell runs apart: the ones the sweep varied, or all but cost for a single run. */
-const paramText = (r: EngineRunRow) =>
-  Object.entries(r.params)
-    .filter(([k]) => (r.varied?.length ? r.varied.includes(k) : k !== 'cost_bps'))
-    .map(([k, v]) => `${k}=${v}`)
-    .join(' ')
-
-const runName = (r: EngineRunRow) =>
-  r.source === 'backtest'
-    ? `${r.label ?? r.strategy} ${paramText(r)}`
-    : `${r.strategy} ${r.source} ${r.id.slice(-10)}` // live ids end in the date: <strategy>-<source>-YYYY-MM-DD
-
-function Panel({
-  title,
-  actions,
-  children,
-}: {
-  title: string
-  actions?: React.ReactNode
-  children: React.ReactNode
-}) {
-  return (
-    <section className="space-y-2">
-      <div className="flex min-h-8 flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-medium text-muted-foreground">{title}</h2>
-        {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
-      </div>
-      <div className="rounded-xl border bg-card p-4">{children}</div>
-    </section>
-  )
-}
-
-/** Excel gets every sheet; CSV holds one table, so it gets `csvSheet` (the main one). Sheets are
- *  built on click, not on every render - a sweep can have thousands of rows. */
-function ExportMenu({
-  name,
-  sheets,
-  csvSheet = 0,
-}: {
-  name: string
-  sheets: () => SheetData[]
-  csvSheet?: number
-}) {
-  const file = name.replace(/[^\w.-]+/g, '_')
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger render={<Button size="sm" variant="outline" />}>
-        <DownloadIcon /> Export
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={() => downloadXlsx(sheets(), file)}>
-          Excel (.xlsx) - all sheets
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => {
-            const all = sheets()
-            downloadCsv(
-              all[csvSheet],
-              `${file}-${(all[csvSheet].sheet ?? 'data').toLowerCase().replace(/\W+/g, '_')}`,
-            )
-          }}
-        >
-          CSV
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="flex flex-col gap-1">
-      <span className="text-xs text-muted-foreground">{label}</span>
-      {children}
-    </label>
-  )
-}
-
-function Stat({ label, value, className }: { label: string; value: React.ReactNode; className?: string }) {
-  return (
-    <div className="rounded-lg border p-3">
-      <p className={cn('text-lg font-semibold tabular-nums', className)}>{value}</p>
-      <p className="mt-0.5 text-xs text-muted-foreground">{label}</p>
-    </div>
-  )
-}
 
 type Mode = 'single' | 'oat' | 'grid'
 const MODES: Record<Mode, string> = { single: 'Backtest', oat: 'One at a time', grid: 'Grid' }
@@ -261,6 +163,68 @@ const MODE_HELP: Record<Mode, React.ReactNode> = {
       value is fixed.
     </>
   ),
+}
+
+// Compounding (engine `sizing`, see hft src/core.hpp Sizing): off trades each strategy's `qty` as
+// shares every time; on, the account's P&L so far feeds the next trade's size.
+type SizingChoice = { compound: boolean; mode: 'scale' | 'all_in'; capital: string }
+const NO_COMPOUND: SizingChoice = { compound: false, mode: 'scale', capital: '100000' }
+const SIZING_MODES = {
+  scale: 'Scale qty',
+  all_in: 'All-in',
+} as const
+const sizingOf = (s: SizingChoice): EngineSizing =>
+  s.compound ? { mode: s.mode, capital: Number(s.capital) } : { mode: 'fixed', capital: 100000 }
+const sizingBad = (s: SizingChoice) => s.compound && !(Number(s.capital) > 0)
+
+function SizingFields({ value, onChange }: { value: SizingChoice; onChange: (v: SizingChoice) => void }) {
+  return (
+    <>
+      <label
+        className="flex h-7 items-center gap-1.5 self-end text-xs"
+        title="Feed every trade's P&L into the next trade's size, instead of the same qty every time"
+      >
+        <input
+          type="checkbox"
+          checked={value.compound}
+          onChange={(e) => onChange({ ...value, compound: e.target.checked })}
+          className="size-3.5 accent-primary"
+        />
+        Compound
+      </label>
+      {value.compound && (
+        <>
+          <Field label="Sizing">
+            <Select value={value.mode} onValueChange={(v) => onChange({ ...value, mode: v as SizingChoice['mode'] })}>
+              <SelectTrigger
+                size="sm"
+                className="w-28"
+                title="Scale qty: the strategy's qty grows with the account (+10% -> 1.1x). All-in: every entry buys as much as the account pays for."
+              >
+                <SelectValue>{(v: SizingChoice['mode']) => SIZING_MODES[v]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(SIZING_MODES) as SizingChoice['mode'][]).map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {SIZING_MODES[m]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Capital (₹)">
+            <Input
+              value={value.capital}
+              onChange={(e) => onChange({ ...value, capital: e.target.value })}
+              inputMode="decimal"
+              aria-invalid={sizingBad(value)}
+              className="h-7 w-28"
+            />
+          </Field>
+        </>
+      )}
+    </>
+  )
 }
 
 /** State remembered per browser under `key`. Storage can be blocked (private window, cleared site
@@ -566,30 +530,6 @@ function HistoryPicker({ value, onChange }: { value: BarRange; onChange: (v: Bar
 }
 
 /** A run's history in one line: what it was given, which stocks didn't fill it, which were left out. */
-function HistoryLine({
-  history,
-  coverage,
-  skipped,
-}: {
-  history?: EngineHistory | number | null
-  coverage?: EngineCoverage
-  skipped?: EngineSkipped
-}) {
-  const notes = typeof history === 'number' ? [] : coverageNotes(history, coverage)
-  return (
-    <p className="text-xs text-muted-foreground">
-      History: <span className="text-foreground">{historyText(history)}</span>
-      {notes.length > 0 && <span> · {notes.join(' · ')}</span>}
-      {skipped?.length ? (
-        <span className="text-destructive">
-          {' '}
-          · skipped {skipped.map((x) => `${x.symbol} (${x.reason})`).join(', ')}
-        </span>
-      ) : null}
-    </p>
-  )
-}
-
 function RunForm({
   onDone,
   onSweep,
@@ -601,16 +541,42 @@ function RunForm({
     queryKey: ['engineStrategies'],
     queryFn: getEngineStrategies,
   })
-  const [name, setName] = useState<string | null>(null)
-  const [mode, setMode] = useState<Mode>('oat')
+  // "Re-run & edit" on the run page: the form opens filled in with that run's request. Read here,
+  // removed in the effect below - an initializer that removed it would lose it to StrictMode's
+  // second call.
+  const [prefill] = useState<EngineBacktestRequest | null>(() => {
+    try {
+      return JSON.parse(sessionStorage.getItem(PREFILL_KEY) ?? 'null')
+    } catch {
+      return null
+    }
+  })
+  const [name, setName] = useState<string | null>(prefill?.strategy ?? null)
+  const [mode, setMode] = useState<Mode>(prefill ? 'single' : 'oat')
   const [symbols, setSymbols] = useStoredSymbols(SYMBOLS_KEY)
-  const [barInterval, setBarInterval] = useState('5m')
-  const [values, setValues] = useState<Record<string, string>>({})
+  useEffect(() => {
+    try {
+      sessionStorage.removeItem(PREFILL_KEY)
+    } catch {
+      // storage blocked: there was nothing to read either
+    }
+    if (prefill) setSymbols(prefill.symbols)
+  }, [prefill, setSymbols])
+  const [barInterval, setBarInterval] = useState(prefill?.interval ?? '5m')
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    prefill ? Object.fromEntries(Object.entries(prefill.params).map(([k, v]) => [k, v.join(',')])) : {},
+  )
   const [bases, setBases] = useState<Record<string, string>>({})
-  const [cost, setCost] = useState<string | null>(null) // null: the interval's default
+  // null: the interval's default
+  const [cost, setCost] = useState<string | null>(prefill ? String(prefill.cost_bps) : null)
   const costText = cost ?? String(defaultCost(barInterval))
-  const [label, setLabel] = useState('')
-  const [history, setHistory] = useState<BarRange>({ mode: 'all' })
+  const [sizing, setSizing] = useState<SizingChoice>(() =>
+    prefill?.sizing && prefill.sizing.mode !== 'fixed'
+      ? { compound: true, mode: prefill.sizing.mode, capital: String(prefill.sizing.capital) }
+      : NO_COMPOUND,
+  )
+  const [label, setLabel] = useState(prefill?.label ?? '')
+  const [history, setHistory] = useState<BarRange>(prefill?.range ?? { mode: 'all' })
   const historyProblem = historyError(history, todayIST())
 
   const strategy = strategies?.find((s) => s.name === name) ?? strategies?.[0]
@@ -639,17 +605,33 @@ function RunForm({
     symbols,
     interval: barInterval,
     cost_bps: Number(costText) || 0,
+    sizing: sizingOf(sizing),
     label: label.trim() || null,
     range: history,
   })
 
+  const backtestRequest = () => ({
+    ...common(),
+    params: Object.fromEntries(parsed.filter(([, v]) => v?.length)) as Record<string, number[]>,
+  })
+  const sweepRequest = () => ({
+    ...common(),
+    mode: mode as 'oat' | 'grid',
+    params: Object.fromEntries(parsed.map(([k]) => [k, text(k)])),
+    base:
+      mode === 'oat'
+        ? Object.fromEntries(
+            Object.entries(bases)
+              .filter(([, b]) => b.trim())
+              .map(([k, b]) => [k, Number(b)]),
+          )
+        : {},
+  })
+  const queue = useQueueJob()
   const run = useMutation({
     mutationFn: async () => {
       if (mode === 'single') {
-        const res = await runEngineBacktest({
-          ...common(),
-          params: Object.fromEntries(parsed.filter(([, v]) => v?.length)) as Record<string, number[]>,
-        })
+        const res = await runEngineBacktest(backtestRequest())
         toast.success(`${res.runs.length} backtest${res.runs.length === 1 ? '' : 's'} done`)
         for (const x of res.skipped) toast.warning(`${x.symbol} skipped - ${x.reason}`)
         onDone(
@@ -658,19 +640,7 @@ function RunForm({
         )
         return
       }
-      const res = await runEngineSweep({
-        ...common(),
-        mode,
-        params: Object.fromEntries(parsed.map(([k]) => [k, text(k)])),
-        base:
-          mode === 'oat'
-            ? Object.fromEntries(
-                Object.entries(bases)
-                  .filter(([, b]) => b.trim())
-                  .map(([k, b]) => [k, Number(b)]),
-              )
-            : {},
-      })
+      const res = await runEngineSweep(sweepRequest())
       toast.success(`${res.runs.length} runs swept`)
       for (const x of res.skipped ?? []) toast.warning(`${x.symbol} skipped - ${x.reason}`)
       onSweep(res.id)
@@ -747,6 +717,7 @@ function RunForm({
             className="h-7 w-20"
           />
         </Field>
+        <SizingFields value={sizing} onChange={setSizing} />
         <Field label="Label">
           <Input
             value={label}
@@ -788,6 +759,7 @@ function RunForm({
             count > limit ||
             !symbols.length ||
             !!historyProblem ||
+            sizingBad(sizing) ||
             run.isPending
           }
           onClick={() => run.mutate()}
@@ -802,6 +774,28 @@ function RunForm({
                 : count
                   ? `Run ${fmt(count, 0)} ${mode === 'oat' ? 'one at a time' : 'grid'}`
                   : 'Give a param a range'}
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          title="Queue it and keep working - the Jobs tab shows it, and it survives a server restart"
+          disabled={
+            invalid.length > 0 ||
+            count < 1 ||
+            count > limit ||
+            !symbols.length ||
+            !!historyProblem ||
+            sizingBad(sizing) ||
+            queue.isPending
+          }
+          onClick={() =>
+            mode === 'single'
+              ? queue.mutate({ kind: 'backtest', request: backtestRequest() })
+              : queue.mutate({ kind: 'sweep', request: sweepRequest() })
+          }
+        >
+          {queue.isPending ? <Spinner className="size-3.5" /> : <ListPlusIcon />}
+          Run in background
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
@@ -832,149 +826,6 @@ function SyncLive({ settings }: { settings?: EngineSettings }) {
       {sync.isPending ? <Spinner className="size-3.5" /> : <RefreshCwIcon />}
       Sync live
     </Button>
-  )
-}
-
-function DailyBars({ daily }: { daily: [number, number][] }) {
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!ref.current || !daily.length) return
-    const chart = createChart(ref.current, {
-      autoSize: true,
-      layout: { background: { color: 'transparent' }, textColor: COLORS.text, attributionLogo: false },
-      grid: { vertLines: { visible: false }, horzLines: { color: COLORS.grid } },
-      timeScale: { borderVisible: false },
-      rightPriceScale: { borderVisible: false },
-      localization: { priceFormatter: (p: number) => inr(p) },
-    })
-    chart.addSeries(HistogramSeries, { priceLineVisible: false }).setData(
-      daily.map(([t, v]) => ({
-        time: t as UTCTimestamp,
-        value: v,
-        color: v >= 0 ? COLORS.up : COLORS.down,
-      })),
-    )
-    chart.timeScale().fitContent()
-    return () => chart.remove()
-  }, [daily])
-  return <div ref={ref} className="h-44" />
-}
-
-/** The run's own bars, with its executions marked on them.
- *
- *  The candles come from the same source the engine backtested against (`minute_data`, at the run's
- *  own interval), so an arrow sits on the exact bar that filled - no resampling in between to argue
- *  with. Entry prices in the trade list are that bar's open, which is what makes this worth looking
- *  at: you can see what the strategy saw. */
-function ExecutionsChart({ run, focus }: { run: EngineRun; focus: RunTrade | null }) {
-  const [symbol, setSymbol] = useState(run.symbols[0] ?? '')
-  // the run's own dates: a backtest on an old range would otherwise get today's newest bars, and
-  // its arrows would land on candles that were never loaded
-  const period = { start: istTime(run.summary.from).slice(0, 10), end: istTime(run.summary.to).slice(0, 10) }
-  const ref = useRef<HTMLDivElement>(null)
-  const {
-    data: bars,
-    isLoading,
-    error,
-  } = useQuery({
-    queryKey: ['intradayBars', symbol, run.interval, period.start, period.end],
-    queryFn: () => getIntradayBars(symbol, run.interval, period),
-    enabled: !!symbol,
-    staleTime: 5 * 60_000,
-  })
-
-  // A clicked trade switches the symbol tab to its own, if it isn't showing already.
-  useEffect(() => {
-    if (focus) setSymbol(focus[0])
-  }, [focus])
-
-  const markers = useMemo(() => tradeMarkers(run.trades, symbol, COLORS), [run.trades, symbol])
-  const total = useMemo(() => run.trades.filter((t) => t[0] === symbol).length, [run.trades, symbol])
-
-  useEffect(() => {
-    const rows = bars?.bars
-    if (!ref.current || !rows?.length) return
-    const chart = createChart(ref.current, {
-      autoSize: true,
-      layout: { background: { color: 'transparent' }, textColor: COLORS.text, attributionLogo: false },
-      grid: { vertLines: { visible: false }, horzLines: { color: COLORS.grid } },
-      // Bar times are already IST-shifted (see minute_data.py) and the chart renders UTC, so the
-      // axis reads as market-local time.
-      timeScale: { borderVisible: false, timeVisible: run.interval !== '1D', secondsVisible: false },
-      rightPriceScale: { borderVisible: false },
-      localization: { priceFormatter: (p: number) => fmt(p) },
-    })
-    const candles = chart.addSeries(CandlestickSeries, {
-      upColor: COLORS.up,
-      downColor: COLORS.down,
-      wickUpColor: COLORS.up,
-      wickDownColor: COLORS.down,
-      borderVisible: false,
-    })
-    candles.setData(
-      rows.map((b) => ({
-        time: b.time as UTCTimestamp,
-        open: b.open,
-        high: b.high,
-        low: b.low,
-        close: b.close,
-      })),
-    )
-    if (markers.length) createSeriesMarkers(candles, markers as never)
-    // A clicked trade wins: zoom tight on its own entry/exit. Otherwise open on the LAST few trades,
-    // not on all of them - 300 trades can span months of 5m bars, and at that zoom every arrow is a
-    // smear. The rest are still there to pan and zoom out to.
-    const range =
-      focus && focus[0] === symbol
-        ? focusRange(focus[1], focus[2], run.interval)
-        : markerRange(markers.slice(-OPENING_MARKERS))
-    if (range) {
-      chart.timeScale().setVisibleRange({ from: range.from as UTCTimestamp, to: range.to as UTCTimestamp })
-    } else {
-      chart.timeScale().fitContent()
-    }
-    return () => chart.remove()
-  }, [bars, markers, focus, symbol, run.interval])
-
-  if (!run.symbols.length) return null
-  return (
-    <div>
-      <div className="mb-1 flex flex-wrap items-center gap-2">
-        <p className="text-xs text-muted-foreground">
-          Executions on {run.interval} candles
-          {total > markers.length / 2 ? ` (latest ${markers.length / 2} of ${total} trades)` : ''}
-        </p>
-        <span className="text-[11px] text-muted-foreground">
-          ▲ buy · ▼ sell · exit arrow green when that trade made money
-        </span>
-        {run.symbols.length > 1 && (
-          <div className="ml-auto flex gap-1">
-            {run.symbols.map((sym) => (
-              <Button
-                key={sym}
-                size="sm"
-                variant={sym === symbol ? 'secondary' : 'ghost'}
-                onClick={() => setSymbol(sym)}
-              >
-                {sym}
-              </Button>
-            ))}
-          </div>
-        )}
-      </div>
-      {error ? (
-        <p className="rounded-lg border p-4 text-sm text-destructive">
-          {error instanceof Error ? error.message : 'Could not load bars'}
-        </p>
-      ) : isLoading ? (
-        <div className="flex h-96 items-center justify-center gap-2 rounded-lg border text-sm text-muted-foreground">
-          <Spinner className="size-4" /> Loading {symbol} {run.interval} bars — the first fetch of a symbol
-          takes a few seconds
-        </div>
-      ) : (
-        <div ref={ref} className="h-96 rounded-lg border" />
-      )}
-    </div>
   )
 }
 
@@ -1016,6 +867,9 @@ function RunDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const title = run ? runName(run) : id
   const actions = (
     <>
+      <Button size="sm" variant="outline" render={<Link to="/engine/runs/$runId" params={{ runId: id }} />}>
+        <Maximize2Icon /> Full page
+      </Button>
       {run && <ExportMenu name={run.id} sheets={() => runSheets(run)} csvSheet={1} />}
       <Button size="sm" variant="ghost" disabled={remove.isPending} onClick={() => remove.mutate()}>
         <Trash2Icon /> Delete
@@ -1721,13 +1575,15 @@ function SweepView({
   // A sweep keeps summaries only; opening a run re-runs that exact parameter set as a full backtest
   const openRun = useMutation({
     mutationFn: (r: EngineSweepRun) => {
-      const { cost_bps, ...params } = r.params
+      // a compounded sweep's runs carry the engine's own sizing params - hand them back as sizing
+      const { cost_bps, sizing, capital, ...params } = r.params
       return runEngineBacktest({
         strategy: sweep!.strategy,
         symbols: sweep!.symbols,
         interval: sweep!.interval,
         params: Object.fromEntries(Object.entries(params).map(([k, v]) => [k, [v]])),
         cost_bps: cost_bps ?? sweep!.cost_bps,
+        sizing: sizing ? { mode: sizing === 2 ? 'all_in' : 'scale', capital } : { mode: 'fixed', capital: 100000 },
         label: sweep!.label ?? `${sweep!.strategy} sweep`,
         // the same bars the sweep ran on, not today's history - or the numbers won't match the cell
         range: pinnedRange(sweep!.history, sweep!.coverage),
@@ -2299,8 +2155,6 @@ const DAILY_TUNE: Partial<Record<(typeof TUNE_NUMBERS)[number][0], number>> = {
 }
 const MAX_TUNE_CELLS = 5000 // app/core/autotune.py MAX_CELLS
 
-/** A test window's first bar, on the same IST-read-as-UTC clock as every engine time. */
-const sessionTime = (date: string) => (Date.parse(`${date}T09:15:00Z`) / 1000) as UTCTimestamp
 
 /** A titled group inside a form, so a long form reads as a few decisions instead of one wall. */
 function FormSection({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
@@ -2339,6 +2193,7 @@ function AutotuneForm({
   const [nums, setNums] = useStored<Record<string, string>>(`${TUNE_FORM_KEY}.numbers`, {}, isRecord)
   // untouched, it follows the bars: a year of intraday sessions, all of a daily history
   const [historyChoice, setHistory] = useStored<BarRange | null>(`${TUNE_FORM_KEY}.history`, null, isRecord)
+  const [sizing, setSizing] = useStored(`${TUNE_FORM_KEY}.sizing`, NO_COMPOUND, isRecord)
   const history: BarRange =
     historyChoice ?? (barInterval === '1D' ? { mode: 'all' } : { mode: 'years', years: 1 })
   const historyProblem = historyError(history, todayIST())
@@ -2355,6 +2210,17 @@ function AutotuneForm({
   const numbers = TUNE_NUMBERS.map(([k, , d]) => [k, Number(valueOf(k, d))] as const)
   const badNumber = numbers.some(([, v]) => !Number.isFinite(v))
 
+  const tuneRequest = () =>
+    ({
+      strategy: strategy!.name,
+      symbols,
+      interval: barInterval,
+      range: history,
+      params: Object.fromEntries(parsed.map(([k]) => [k, text(k)])),
+      ...Object.fromEntries(numbers),
+      sizing: sizingOf(sizing),
+    }) as EngineAutotuneRequest
+  const queue = useQueueJob()
   // stocks finished so far, of how many - the button counts them while the walk streams in
   const [progress, setProgress] = useState<[number, number]>([0, 0])
   const run = useMutation({
@@ -2364,14 +2230,7 @@ function AutotuneForm({
       let batch = ''
       let finished = 0
       await runEngineAutotune(
-        {
-          strategy: strategy!.name,
-          symbols,
-          interval: barInterval,
-          range: history,
-          params: Object.fromEntries(parsed.map(([k]) => [k, text(k)])),
-          ...Object.fromEntries(numbers),
-        } as EngineAutotuneRequest,
+        tuneRequest(),
         (e) => {
           if (e.type === 'start') {
             batch = e.batch
@@ -2454,6 +2313,7 @@ function AutotuneForm({
           </Select>
         </Field>
         {numberField(TUNE_NUMBERS.find(([k]) => k === 'cost_bps')!, 'h-7 w-24')}
+        <SizingFields value={sizing} onChange={setSizing} />
       </div>
       <SymbolChips value={symbols} onChange={setSymbols} />
 
@@ -2505,6 +2365,7 @@ function AutotuneForm({
             !tuned.length ||
             cells > MAX_TUNE_CELLS ||
             badNumber ||
+            sizingBad(sizing) ||
             !!historyProblem ||
             run.isPending
           }
@@ -2525,572 +2386,28 @@ function AutotuneForm({
                     ? `${fmt(cells, 0)} cells - keep it under ${fmt(MAX_TUNE_CELLS, 0)}`
                     : `Walk forward ${symbols.length > 1 ? `${symbols.length} stocks` : symbols[0]} · ${fmt(cells, 0)} cells per window`}
         </Button>
-      </div>
-    </div>
-  )
-}
-
-type CellSort = 'net' | 'profit_factor' | 'win_rate' | 'picked'
-const CELL_SORTS: Record<CellSort, string> = {
-  net: 'Net',
-  profit_factor: 'PF',
-  win_rate: 'Win %',
-  picked: 'Picked',
-}
-
-/** Every grid cell as if traded, unchanged, in every test window - which part of the grid actually
- *  held up out-of-sample, against what the tuner picked. Hindsight: no walk could have known the
- *  winner in advance, which is the point of comparing it with the picks. */
-function CellTable({
-  cells,
-  axes,
-  sort,
-  onSort,
-}: {
-  cells: EngineAutotuneCell[]
-  axes: string[]
-  sort: CellSort
-  onSort: (s: CellSort) => void
-}) {
-  const bestNet = cells[0]?.net
-  const rows = [...cells].sort((a, b) => b[sort] - a[sort]).slice(0, 200)
-  return (
-    <div>
-      <p className="mb-1 text-xs text-muted-foreground">
-        Every combination, traded unchanged in every window (hindsight) · {cells.length} combinations
-        {cells.length > rows.length ? `, top ${rows.length} shown` : ''} · highlighted = the tuner picked it
-      </p>
-      <div className="max-h-80 overflow-auto rounded-lg border">
-        <Table>
-          <TableHeader>
-            <TableRow className="hover:bg-transparent">
-              {axes.map((k) => (
-                <TableHead key={k} className="font-mono">
-                  {k}
-                </TableHead>
-              ))}
-              {(Object.keys(CELL_SORTS) as CellSort[]).map((k) => (
-                <TableHead key={k} className="text-right">
-                  <button type="button" className="hover:text-foreground" onClick={() => onSort(k)}>
-                    {CELL_SORTS[k]}
-                    {sort === k ? ' ↓' : ''}
-                  </button>
-                </TableHead>
-              ))}
-              <TableHead className="text-right">Trades</TableHead>
-              <TableHead className="text-right">Windows won</TableHead>
-              <TableHead className="text-right">In-sample / window</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((c) => (
-              <TableRow key={paramsLabel(c.params, axes)} className={cn(c.picked > 0 && 'bg-primary/5')}>
-                {axes.map((k) => (
-                  <TableCell key={k} className="font-mono text-xs">
-                    {c.params[k]}
-                  </TableCell>
-                ))}
-                <TableCell className={cn('text-right tabular-nums', pnlClass(c.net))}>
-                  {inr(c.net)}
-                  {c.net === bestNet && c.trades > 0 && (
-                    <Badge variant="outline" className="ml-1.5 text-success">
-                      best
-                    </Badge>
-                  )}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {c.trades ? fmt(c.profit_factor) : '—'}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {c.trades ? `${fmt(c.win_rate, 0)}%` : '—'}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">{c.picked ? `×${c.picked}` : '—'}</TableCell>
-                <TableCell className="text-right tabular-nums">{c.trades}</TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {c.positive_windows}/{c.windows}
-                </TableCell>
-                <TableCell className={cn('text-right tabular-nums', pnlClass(c.is_net))}>
-                  {inr(c.is_net)}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    </div>
-  )
-}
-
-function AutotuneView({ id, onClose }: { id: string; onClose: () => void }) {
-  const queryClient = useQueryClient()
-  const { data: r, error } = useQuery({
-    queryKey: ['engineAutotune', id],
-    queryFn: () => getEngineAutotune(id),
-  })
-  const remove = useMutation({
-    mutationFn: () => deleteEngineAutotune(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['engineAutotunes'] })
-      onClose()
-    },
-    onError: (e) => toast.error(e.message),
-  })
-  const swept = useMemo(() => Object.keys(r?.axes ?? {}), [r])
-  // Drill-down: a window row filters the trades and zooms the chart onto it; a trade row zooms to
-  // that trade. Tuned and fixed-default executions are both kept, one shown at a time.
-  const [selected, setSelected] = useState<number | null>(null)
-  const [focusTrade, setFocusTrade] = useState<RunTrade | null>(null)
-  const [side, setSide] = useState<'tuned' | 'fixed'>('tuned')
-  const [cellSort, setCellSort] = useState<CellSort>('net')
-  const trades = useMemo(() => (side === 'tuned' ? r?.oos.trades : r?.baseline.trades) ?? [], [r, side])
-  const tradeWindow = useMemo(() => (r ? trades.map((t) => windowOfTrade(t, r.windows)) : []), [r, trades])
-  const shownTrades = useMemo(
-    () => (selected == null ? trades : trades.filter((_, i) => tradeWindow[i] === selected)),
-    [trades, tradeWindow, selected],
-  )
-  // The executions chart takes a run; this is the walk's out-of-sample trades dressed as one. With a
-  // window selected, its bars run from that window's train start (context) to its test end - the
-  // chart gets the newest 30k bars of what it asks for, which on 1m wouldn't reach an old window.
-  const execRun = useMemo(() => {
-    if (!r) return null
-    const w = selected == null ? null : r.windows[selected]
-    const from = w ? sessionTime(w.train[0]) : (r.windows[0]?.start ?? sessionTime(r.sessions[0]))
-    const to = w ? (w.end ?? sessionTime(w.test[1])) : (r.windows.at(-1)?.end ?? sessionTime(r.sessions[1]))
-    return {
-      id: r.id,
-      symbols: [r.symbol],
-      interval: r.interval,
-      trades: shownTrades,
-      summary: { from, to },
-    } as unknown as EngineRun
-  }, [r, selected, shownTrades])
-  const focus = useMemo<RunTrade | null>(() => {
-    if (focusTrade) return focusTrade
-    const w = selected == null || !r ? null : r.windows[selected]
-    return w && r
-      ? [r.symbol, w.start ?? sessionTime(w.test[0]), w.end ?? sessionTime(w.test[1]), 0, 0, 0, 0]
-      : null
-  }, [focusTrade, selected, r])
-  const curves = useMemo<Dataset[]>(() => {
-    if (!r) return []
-    const pts = (curve: [number, number][]) => curve.map(([t, v]) => ({ time: t as UTCTimestamp, value: v }))
-    const start = r.oos.equity[0]?.[0]
-    const promised: [number, number][] =
-      start != null && r.promised.length && start < r.promised[0][0]
-        ? [[start, 0], ...r.promised]
-        : r.promised
-    return [
-      { key: 'Tuned (out-of-sample)', color: seriesColor(0), points: pts(r.oos.equity) },
-      { key: 'Fixed defaults (out-of-sample)', color: seriesColor(3), points: pts(r.baseline.equity) },
-      { key: 'In-sample promise', color: seriesColor(1), points: pts(promised) },
-    ]
-  }, [r])
-  const paths = useMemo<Dataset[]>(
-    () =>
-      r
-        ? swept.map((k, i) => ({
-            key: k,
-            color: seriesColor(i),
-            points: r.windows
-              .filter((w) => w.chosen)
-              .map((w) => ({ time: sessionTime(w.test[0]), value: w.chosen![k] })),
-          }))
-        : [],
-    [r, swept],
-  )
-
-  const actions = (
-    <>
-      {r && <ExportMenu name={r.id} sheets={() => autotuneSheets(r)} csvSheet={2} />}
-      <Button size="sm" variant="ghost" disabled={remove.isPending} onClick={() => remove.mutate()}>
-        <Trash2Icon /> Delete
-      </Button>
-      <Button size="icon-sm" variant="ghost" aria-label="Close" onClick={onClose}>
-        <XIcon />
-      </Button>
-    </>
-  )
-  if (error || !r)
-    return (
-      <Panel title="Walk-forward" actions={actions}>
-        {error ? <p className="text-sm text-destructive">{error.message}</p> : <Spinner className="size-4" />}
-      </Panel>
-    )
-
-  const st = r.stats
-  const tuned = r.oos.summary
-  const base = r.baseline.summary
-  // what happened, in numbers - not advice
-  const verdict = !st.traded_windows
-    ? 'No cell made money in-sample in any window, so the tuner never traded. This grid has nothing to tune.'
-    : tuned.net <= 0
-      ? `Tuned parameters lost ${inr(-tuned.net)} out-of-sample${st.beats_baseline ? ` - less than fixed defaults (${inr(base.net)}), largely by sitting out ${st.sat_out} of ${st.windows} windows` : ''}. No out-of-sample edge.`
-      : st.beats_baseline
-        ? `Tuned parameters made ${inr(tuned.net)} out-of-sample, against ${inr(base.net)} for fixed defaults. Read it with the efficiency, deflated Sharpe and stability below before trusting it.`
-        : `Tuned parameters made ${inr(tuned.net)} out-of-sample, but fixed defaults made more (${inr(base.net)}) - tuning added nothing here.`
-
-  return (
-    <Panel
-      title={`Walk-forward · ${r.strategy} · ${r.symbol} ${r.interval} · ${st.windows} windows`}
-      actions={actions}
-    >
-      <div className="space-y-5">
-        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
-          <span>
-            {r.sessions[0]} → {r.sessions[1]} · train {r.train} / test {r.test} sessions · min {r.min_trades}{' '}
-            trades · switch margin {fmt(r.margin * 100, 0)}% · cost {r.cost_bps} bps
-          </span>
-          <span>
-            Tuned:{' '}
-            <span className="font-mono text-foreground">
-              {swept.map((k) => `${k} ${r.axes[k][0]}…${r.axes[k].at(-1)} (${r.axes[k].length})`).join(', ')}
-            </span>
-          </span>
-          <span>
-            Fixed defaults:{' '}
-            <span className="font-mono text-foreground">
-              {swept.map((k) => `${k}=${r.defaults[k]}`).join(' ')}
-            </span>
-          </span>
-          <span>created {formatDateTime(r.created)}</span>
-        </div>
-        <HistoryLine history={r.history} coverage={r.coverage && { [r.symbol]: r.coverage }} />
-
-        <p
-          className={cn(
-            'text-sm',
-            tuned.net > 0 && st.beats_baseline ? 'text-success' : 'text-muted-foreground',
-          )}
+        <Button
+          size="sm"
+          variant="outline"
+          title="Queue it and keep working - the Jobs tab shows its progress, and it survives a server restart"
+          disabled={
+            !symbols.length ||
+            symbols.length > MAX_TUNE_SYMBOLS ||
+            invalid.length > 0 ||
+            !tuned.length ||
+            cells > MAX_TUNE_CELLS ||
+            badNumber ||
+            sizingBad(sizing) ||
+            !!historyProblem ||
+            queue.isPending
+          }
+          onClick={() => queue.mutate({ kind: 'autotune', request: tuneRequest() })}
         >
-          {verdict}
-        </p>
-
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-          <Stat label="Tuned net · out-of-sample" value={inr(tuned.net)} className={pnlClass(tuned.net)} />
-          <Stat
-            label="Fixed defaults net · out-of-sample"
-            value={inr(base.net)}
-            className={pnlClass(base.net)}
-          />
-          <Stat label="Trades · tuned vs fixed" value={`${fmt(tuned.trades, 0)} vs ${fmt(base.trades, 0)}`} />
-          <Stat
-            label="Profit factor · tuned vs fixed"
-            value={`${fmt(tuned.profit_factor)} vs ${fmt(base.profit_factor)}`}
-          />
-          <Stat label="Max drawdown · tuned vs fixed" value={`${inr(tuned.max_dd)} vs ${inr(base.max_dd)}`} />
-          <Stat
-            label="Walk-forward efficiency · want ≥ 0.5"
-            value={st.wfe == null ? '—' : fmt(st.wfe)}
-            className={st.wfe == null ? undefined : st.wfe >= 0.5 ? 'text-success' : 'text-destructive'}
-          />
-          <Stat
-            label={`Deflated Sharpe · ${st.trials} tries/window · want ≥ 90%`}
-            value={st.dsr == null ? '—' : `${fmt(st.dsr * 100, 0)}%`}
-            className={st.dsr == null ? undefined : st.dsr >= 0.9 ? 'text-success' : 'text-destructive'}
-          />
-          <Stat label="Windows traded" value={`${st.traded_windows} / ${st.windows}`} />
-          <Stat
-            label="Param stability · want ≥ 70%"
-            value={st.stability == null ? '—' : `${fmt(st.stability * 100, 0)}%`}
-            className={
-              st.stability == null ? undefined : st.stability >= 0.7 ? 'text-success' : 'text-destructive'
-            }
-          />
-          <Stat label="Pick switches" value={fmt(st.switches, 0)} />
-        </div>
-
-        <div>
-          <p className="mb-1 text-xs text-muted-foreground">
-            Out-of-sample equity, stitched window to window. The gap between the tuned line and the in-sample
-            promise is how much of the in-sample result was fit to noise.
-          </p>
-          <div className="h-72">
-            <SeriesChart datasets={curves} fill format={inr} />
-          </div>
-        </div>
-
-        <div className="grid gap-4 xl:grid-cols-5">
-          <div className="xl:col-span-2">
-            <p className="mb-1 text-xs text-muted-foreground">
-              What the tuner picked - each parameter set it traded, and what those windows made out-of-sample
-            </p>
-            <div className="max-h-80 overflow-auto rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead>Params</TableHead>
-                    <TableHead className="text-right">Windows</TableHead>
-                    <TableHead className="text-right">Won</TableHead>
-                    <TableHead className="text-right">Trades</TableHead>
-                    <TableHead className="text-right">Net</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {pickedSets(r.windows, swept).map((g) => (
-                    <TableRow key={paramsLabel(g.params, swept)}>
-                      <TableCell className="font-mono text-xs">{paramsLabel(g.params, swept)}</TableCell>
-                      <TableCell className="text-right tabular-nums">{g.windows}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {g.positive}/{g.windows}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">{g.trades}</TableCell>
-                      <TableCell className={cn('text-right tabular-nums', pnlClass(g.net))}>
-                        {inr(g.net)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {!st.traded_windows && (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-xs text-muted-foreground italic">
-                        Nothing picked - every window was sat out.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-          <div className="xl:col-span-3">
-            {r.cells?.length ? (
-              <CellTable cells={r.cells} axes={swept} sort={cellSort} onSort={setCellSort} />
-            ) : (
-              <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">
-                Every combination's out-of-sample result is kept on walk-forwards run from now on - re-run
-                this one to see which parameter sets held up across all its windows.
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div>
-          <div className="mb-1 flex flex-wrap items-center gap-2">
-            <p className="text-xs text-muted-foreground">
-              Executed trades, out-of-sample
-              {selected != null &&
-                ` - window ${r.windows[selected].test[0]} → ${r.windows[selected].test[1]}`}
-              {' · click a trade to zoom to it'}
-            </p>
-            {selected != null && (
-              <Button
-                size="xs"
-                variant="outline"
-                onClick={() => {
-                  setSelected(null)
-                  setFocusTrade(null)
-                }}
-              >
-                All windows <XIcon />
-              </Button>
-            )}
-            <div className="ml-auto flex gap-1">
-              {(['tuned', 'fixed'] as const).map((k) => (
-                <Button
-                  key={k}
-                  size="xs"
-                  variant={side === k ? 'secondary' : 'ghost'}
-                  onClick={() => {
-                    setSide(k)
-                    setFocusTrade(null)
-                  }}
-                >
-                  {k === 'tuned'
-                    ? `Tuned (${r.oos.trades?.length ?? 0})`
-                    : `Fixed defaults (${r.baseline.trades?.length ?? 0})`}
-                </Button>
-              ))}
-            </div>
-          </div>
-          {r.oos.trades ? (
-            <div className="space-y-2">
-              {execRun && <ExecutionsChart key={`${side}-${selected}`} run={execRun} focus={focus} />}
-              <div className="max-h-80 overflow-auto rounded-lg border">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead>Window</TableHead>
-                      {side === 'tuned' && <TableHead>Params</TableHead>}
-                      <TableHead>Side</TableHead>
-                      <TableHead className="text-right">Qty</TableHead>
-                      <TableHead>Entry</TableHead>
-                      <TableHead className="text-right">Entry px</TableHead>
-                      <TableHead>Exit</TableHead>
-                      <TableHead className="text-right">Exit px</TableHead>
-                      <TableHead className="text-right">Gross P&L</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {shownTrades.slice(-1000).map((t, i) => {
-                      const w = r.windows[windowOfTrade(t, r.windows)]
-                      const active = focusTrade?.[1] === t[1] && focusTrade?.[2] === t[2]
-                      return (
-                        <TableRow
-                          key={`${t[1]}-${i}`}
-                          className={cn('cursor-pointer', active && 'bg-muted')}
-                          onClick={() => setFocusTrade(t)}
-                        >
-                          <TableCell className="text-xs text-muted-foreground tabular-nums">
-                            {w ? `${w.test[0]} → ${w.test[1]}` : '—'}
-                          </TableCell>
-                          {side === 'tuned' && (
-                            <TableCell className="font-mono text-xs">
-                              {w?.chosen ? paramsLabel(w.chosen, swept) : '—'}
-                            </TableCell>
-                          )}
-                          <TableCell>{t[3] > 0 ? 'Long' : 'Short'}</TableCell>
-                          <TableCell className="text-right tabular-nums">{Math.abs(t[3])}</TableCell>
-                          <TableCell className="tabular-nums">{istTime(t[1])}</TableCell>
-                          <TableCell className="text-right tabular-nums">{fmt(t[4])}</TableCell>
-                          <TableCell className="tabular-nums">{istTime(t[2])}</TableCell>
-                          <TableCell className="text-right tabular-nums">{fmt(t[5])}</TableCell>
-                          <TableCell className={cn('text-right tabular-nums', pnlClass(t[6]))}>
-                            {inr(t[6])}
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                    {!shownTrades.length && (
-                      <TableRow>
-                        <TableCell colSpan={9} className="text-xs text-muted-foreground italic">
-                          No trades {selected != null ? 'in this window' : ''}.
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-              {shownTrades.length > 1000 && (
-                <p className="text-[11px] text-muted-foreground">
-                  Showing the latest 1,000 of {shownTrades.length} - pick a window to see its own. Export has
-                  them all.
-                </p>
-              )}
-            </div>
-          ) : (
-            <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">
-              Executed trades are kept on walk-forwards run from now on - re-run this one to see them on the
-              chart.
-            </p>
-          )}
-        </div>
-
-        {paths.some((p) => p.points.length > 1) && (
-          <div>
-            <p className="mb-1 text-xs text-muted-foreground">
-              Parameter path - the pick at each window's start. A line that jumps around the grid means there
-              is no stable optimum to tune toward.
-            </p>
-            <div className="grid gap-4 lg:grid-cols-2">
-              {paths.map((p) => (
-                <div key={p.key} className="h-40">
-                  <SeriesChart datasets={[p]} fill />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div>
-          <p className="mb-1 text-xs text-muted-foreground">
-            Windows · click one to see its trades on the chart · <em>pick rank</em> is where the tuner's
-            choice finished among every combination on that window's unseen bars
-          </p>
-          <div className="max-h-[28rem] overflow-auto rounded-lg border">
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead>Test sessions</TableHead>
-                  {swept.map((k) => (
-                    <TableHead key={k} className="font-mono">
-                      {k}
-                    </TableHead>
-                  ))}
-                  <TableHead className="text-right">Eligible cells</TableHead>
-                  <TableHead className="text-right">In-sample net</TableHead>
-                  <TableHead className="text-right">Out-of-sample net</TableHead>
-                  <TableHead className="text-right">Trades</TableHead>
-                  <TableHead className="text-right">Fixed defaults net</TableHead>
-                  <TableHead className="text-right">Pick rank</TableHead>
-                  <TableHead>Best combination (hindsight)</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {r.windows.map((w, wi) => (
-                  <TableRow
-                    key={w.test[0]}
-                    className={cn(
-                      'cursor-pointer',
-                      !w.chosen && 'text-muted-foreground/60',
-                      selected === wi && 'bg-muted',
-                    )}
-                    onClick={() => {
-                      setSelected(selected === wi ? null : wi)
-                      setFocusTrade(null)
-                    }}
-                  >
-                    <TableCell className="tabular-nums">
-                      {w.test[0]} → {w.test[1]}
-                      {w.switched && (
-                        <Badge variant="outline" className="ml-2">
-                          switched
-                        </Badge>
-                      )}
-                    </TableCell>
-                    {w.chosen ? (
-                      swept.map((k) => (
-                        <TableCell key={k} className="font-mono text-xs">
-                          {w.chosen![k]}
-                        </TableCell>
-                      ))
-                    ) : (
-                      <TableCell colSpan={swept.length} className="text-xs italic">
-                        sat out
-                      </TableCell>
-                    )}
-                    <TableCell className="text-right tabular-nums">
-                      {w.eligible} / {w.cells}
-                    </TableCell>
-                    <TableCell className={cn('text-right tabular-nums', w.is && pnlClass(w.is.net))}>
-                      {w.is ? inr(w.is.net) : '—'}
-                    </TableCell>
-                    <TableCell className={cn('text-right tabular-nums', w.oos && pnlClass(w.oos.net))}>
-                      {w.oos ? inr(w.oos.net) : '—'}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{w.oos ? w.oos.trades : '—'}</TableCell>
-                    <TableCell className={cn('text-right tabular-nums', pnlClass(w.baseline.net))}>
-                      {inr(w.baseline.net)}
-                    </TableCell>
-                    <TableCell
-                      className={cn(
-                        'text-right tabular-nums',
-                        w.rank != null && w.of
-                          ? w.rank <= Math.ceil(w.of / 3)
-                            ? 'text-success'
-                            : w.rank > Math.floor((2 * w.of) / 3)
-                              ? 'text-destructive'
-                              : ''
-                          : '',
-                      )}
-                    >
-                      {w.rank != null && w.of ? `${w.rank}/${w.of}` : '—'}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {w.best ? (
-                        <>
-                          {paramsLabel(w.best.params, swept)}{' '}
-                          <span className={pnlClass(w.best.net)}>{inr(w.best.net)}</span>
-                        </>
-                      ) : (
-                        '—'
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </div>
+          {queue.isPending ? <Spinner className="size-3.5" /> : <ListPlusIcon />}
+          Run in background
+        </Button>
       </div>
-    </Panel>
+    </div>
   )
 }
 
@@ -3333,14 +2650,13 @@ function AutotuneBatchView({
   )
 }
 
+/** Every walk-forward report; a row opens that report's own page (/engine/autotune/<id>). */
 function AutotuneList({
   rows,
-  active,
   onOpen,
   onOpenBatch,
 }: {
   rows: EngineAutotuneRow[]
-  active?: string
   onOpen: (id: string) => void
   onOpenBatch: (batch: string) => void
 }) {
@@ -3353,6 +2669,7 @@ function AutotuneList({
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
+            <TableHead>Report</TableHead>
             <TableHead>Stock</TableHead>
             <TableHead>Tuned</TableHead>
             <TableHead>Sessions</TableHead>
@@ -3367,11 +2684,16 @@ function AutotuneList({
         </TableHeader>
         <TableBody>
           {rows.map((r) => (
-            <TableRow
-              key={r.id}
-              className={cn('cursor-pointer', active === r.id && 'bg-muted')}
-              onClick={() => onOpen(r.id)}
-            >
+            <TableRow key={r.id} className="cursor-pointer" onClick={() => onOpen(r.id)}>
+              <TableCell onClick={(e) => e.stopPropagation()}>
+                <Link
+                  to="/engine/autotune/$reportId"
+                  params={{ reportId: r.id }}
+                  className="font-mono text-xs text-primary hover:underline"
+                >
+                  {r.id}
+                </Link>
+              </TableCell>
               <TableCell>
                 <span className="font-medium">{r.symbol}</span>{' '}
                 <span className="text-muted-foreground">
@@ -3427,6 +2749,13 @@ export default function Engine() {
   const { data: sweeps = [] } = useQuery({ queryKey: ['engineSweeps'], queryFn: getEngineSweeps })
   const { data: tunes = [] } = useQuery({ queryKey: ['engineAutotunes'], queryFn: getEngineAutotunes })
   const { data: settings } = useQuery({ queryKey: ['engineSettings'], queryFn: getEngineSettings })
+  // the Jobs tab's count: queued + running, polled while there are any
+  const { data: jobs = [] } = useQuery({
+    queryKey: ['engineJobs'],
+    queryFn: getEngineJobs,
+    refetchInterval: (q) => (q.state.data?.some((j) => j.status === 'queued' || j.status === 'running') ? 3000 : 30_000),
+  })
+  const activeJobs = jobs.filter((j) => j.status === 'queued' || j.status === 'running').length
   usePageTitle(settings?.name ?? 'Algo engine')
   const [source, setSource] = useState<Source>('all')
   const [picked, setPicked] = useState<string[]>([])
@@ -3438,7 +2767,11 @@ export default function Engine() {
   const open = (id?: string, nextBatch = activeBatch) =>
     navigate({ search: (prev) => ({ ...prev, run: id, batch: nextBatch }) })
   const openSweep = (id?: string) => navigate({ search: (prev) => ({ ...prev, sweep: id }) })
-  const openTune = (id?: string) => navigate({ search: (prev) => ({ ...prev, autotune: id }) })
+  // a walk-forward report opens on its own page; an old ?autotune= link is sent there too
+  const openTune = (id: string) => navigate({ to: '/engine/autotune/$reportId', params: { reportId: id } })
+  useEffect(() => {
+    if (autotune) navigate({ to: '/engine/autotune/$reportId', params: { reportId: autotune }, replace: true })
+  }, [autotune, navigate])
   const openTuneBatch = (b?: string) => navigate({ search: (prev) => ({ ...prev, tunebatch: b }) })
   const setTab = (next: string) => navigate({ search: (prev) => ({ ...prev, tab: next as EngineTab }) })
 
@@ -3455,6 +2788,10 @@ export default function Engine() {
                 {tunes.length}
               </Badge>
             )}
+          </TabsTab>
+          <TabsTab value="jobs">
+            Jobs
+            {activeJobs > 0 && <Badge className="ml-1.5">{activeJobs}</Badge>}
           </TabsTab>
           <TabsIndicator />
         </TabsList>
@@ -3575,12 +2912,8 @@ export default function Engine() {
                 onDone={(b, ids) => {
                   queryClient.invalidateQueries({ queryKey: ['engineAutotunes'] })
                   // one stock opens its report; several open the batch, one click from each report
-                  navigate({
-                    search: (prev) =>
-                      ids.length === 1
-                        ? { ...prev, autotune: ids[0], tunebatch: undefined }
-                        : { ...prev, tunebatch: b, autotune: undefined },
-                  })
+                  if (ids.length === 1) openTune(ids[0])
+                  else navigate({ search: (prev) => ({ ...prev, tunebatch: b, autotune: undefined }) })
                 }}
               />
             ) : (
@@ -3598,10 +2931,13 @@ export default function Engine() {
               onClose={() => openTuneBatch(undefined)}
             />
           )}
-          {autotune && <AutotuneView key={autotune} id={autotune} onClose={() => openTune(undefined)} />}
           <Panel title={`Reports (${tunes.length})`}>
-            <AutotuneList rows={tunes} active={autotune} onOpen={openTune} onOpenBatch={openTuneBatch} />
+            <AutotuneList rows={tunes} onOpen={openTune} onOpenBatch={openTuneBatch} />
           </Panel>
+        </TabsPanel>
+
+        <TabsPanel value="jobs" className="space-y-6 pt-4">
+          <JobsPanel />
         </TabsPanel>
       </Tabs>
     </div>

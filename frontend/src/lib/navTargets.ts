@@ -68,6 +68,7 @@ export const PAPER_TABS = [
 export const ENGINE_TABS = [
   { label: 'Algo engine > Backtests', tab: 'backtest' },
   { label: 'Algo engine > Auto-tune', tab: 'autotune' },
+  { label: 'Algo engine > Jobs', tab: 'jobs' },
 ]
 
 export const SIMULATION_MODES = [

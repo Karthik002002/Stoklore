@@ -43,6 +43,7 @@ export type BulkMaxCollectRequest = Schemas['BulkMaxCollectRequest']
 export type EngineBacktestRequest = Schemas['EngineBacktestRequest']
 export type EngineSweepRequest = Schemas['EngineSweepRequest']
 export type EngineAutotuneRequest = Schemas['EngineAutotuneRequest']
+export type EngineSizing = Schemas['Sizing']
 /** A run's history choice as sent: everything, the last `years`, or `start`..`end` (inclusive). */
 export type BarRange = Schemas['BarRange']
 /** The history a run was given, resolved to dates (null = open-ended), as its report keeps it. */
@@ -2000,6 +2001,15 @@ export type EngineRunRow = {
   history?: EngineHistory
   coverage?: EngineCoverage
   skipped?: EngineSkipped
+  /** backtests made after the run page existed: the background job that ran it (null = run now),
+   *  how the engine was called, the exact request (re-runnable as-is), and Compound sizing */
+  job?: number | null
+  engine?: { cmd: string; build: string | null; ms: number }
+  request?: EngineBacktestRequest
+  sizing?: EngineSizing
+  /** saved from the run page, into the run's own file */
+  note?: string | null
+  tags?: string[]
 }
 
 /** [symbol, entry time, exit time, signed qty, entry px, exit px, gross pnl] */
@@ -2033,6 +2043,13 @@ export const runEngineBacktest = (req: EngineBacktestRequest) =>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(req),
   }).then(json<{ batch: string; runs: EngineRunRow[]; skipped: EngineSkipped }>)
+
+export const saveEngineRunNotes = (id: string, note: string | null, tags: string[]) =>
+  fetch(`/api/engine/runs/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ note, tags }),
+  }).then(json<{ note: string | null; tags: string[] }>)
 
 export const deleteEngineRun = (id: string) =>
   fetch(`/api/engine/runs/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(json)
@@ -2187,6 +2204,10 @@ export type EngineAutotuneRow = {
   baseline: EngineAutotuneSummary
   /** the best cell with hindsight (reports from before cells were kept have none) */
   best_cell?: EngineAutotuneCell | null
+  /** the background job that walked it (null = run now); newer reports only */
+  job?: number | null
+  /** the engine's compounding args, e.g. ["sizing=1", "capital=100000"]; null = fixed qty */
+  sizing?: string[] | null
 }
 
 type Stitched = {
@@ -2252,3 +2273,53 @@ export const deleteEngineAutotuneBatch = (batch: string) =>
 
 export const deleteEngineAutotune = (id: string) =>
   fetch(`/api/engine/autotune/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(json)
+
+// --- engine background queue (app/services/engine_jobs.py) ----------------------------------------
+// "Run in background" queues exactly what "Run now" sends; a job only points at the runs it made.
+
+export type EngineJobKind = 'backtest' | 'sweep' | 'autotune'
+export type EngineJobStatus = 'queued' | 'running' | 'done' | 'failed' | 'cancelled' | 'interrupted'
+export type EngineJob = {
+  id: number
+  kind: EngineJobKind
+  request: EngineBacktestRequest | EngineSweepRequest | EngineAutotuneRequest
+  label: string | null
+  status: EngineJobStatus
+  priority: number
+  cancel: boolean
+  progress: { done: number; total: number } | null
+  result: {
+    batch?: string
+    ids?: string[]
+    sweep?: string
+    skipped?: EngineSkipped
+    errors?: { symbol: string; error: string }[]
+  } | null
+  error: string | null
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+}
+
+const jobPost = <T>(url: string, body?: unknown, method = 'POST') =>
+  fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  }).then(json<T>)
+
+export const queueEngineJob = (
+  kind: EngineJobKind,
+  request: EngineBacktestRequest | EngineSweepRequest | EngineAutotuneRequest,
+  priority = 0,
+) => jobPost<EngineJob>('/api/engine/jobs', { kind, request, priority })
+
+export const getEngineJobs = () => fetch('/api/engine/jobs').then(json<EngineJob[]>)
+export const cancelEngineJob = (id: number) => jobPost<EngineJob>(`/api/engine/jobs/${id}/cancel`)
+export const retryEngineJob = (id: number) => jobPost<EngineJob>(`/api/engine/jobs/${id}/retry`)
+export const setEngineJobPriority = (id: number, priority: number) =>
+  jobPost<EngineJob>(`/api/engine/jobs/${id}`, { priority }, 'PATCH')
+export const deleteEngineJob = (id: number) => jobPost(`/api/engine/jobs/${id}`, undefined, 'DELETE')
+export const getEngineJobsConfig = () => fetch('/api/engine/jobs/config').then(json<{ workers: number; max: number }>)
+export const setEngineJobsConfig = (workers: number) =>
+  jobPost<{ workers: number; max: number }>('/api/engine/jobs/config', { workers }, 'PUT')

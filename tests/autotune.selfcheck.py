@@ -186,6 +186,19 @@ json_calls = [c for c in calls if "--json" in c]
 assert all(any(a.startswith("--trade-from=") for a in c) for c in json_calls), "every OOS run is cut at the test start"
 assert any("qty=2" in c for c in calls if "--sweep=grid" in c), "fixed params reach the sweep"
 
+# compounding: tuning sweeps stay fixed-size; each traded window starts from its own account's P&L
+# over the windows before it (tuned and baseline apart), so the stitched curve compounds end to end
+calls.clear()
+r = at.walk_forward(fake_engine, BARS, **kw, sizing=["sizing=1", "capital=100000"])
+assert not any("sizing=1" in c for c in calls if "--sweep=grid" in c), "tuning and the hindsight grid are never sized"
+json_calls = [c for c in calls if "--json" in c]
+assert all("sizing=1" in c and "capital=100000" in c for c in json_calls), "every traded window is sized"
+carry = [float(next(a for a in c if a.startswith("carry="))[6:]) for c in json_calls]
+tuned_carry, base_carry = carry[0::2], carry[1::2]  # per window: the tuned run, then the baseline
+assert tuned_carry == list(itertools.accumulate([0] + [w["oos"]["net"] for w in r["windows"][:-1]])), tuned_carry
+assert base_carry == list(itertools.accumulate([0] + [w["baseline"]["net"] for w in r["windows"][:-1]])), base_carry
+assert r["sizing"] == ["sizing=1", "capital=100000"] and at.walk_forward(fake_engine, BARS, **kw)["sizing"] is None
+
 # nothing eligible (min_trades above what any cell has): every window sat out, flat and counted
 r = at.walk_forward(fake_engine, BARS, **{**kw, "min_trades": 1000})
 assert r["stats"]["sat_out"] == 4 and r["oos"]["summary"]["net"] == 0 and r["oos"]["summary"]["days"] == 20

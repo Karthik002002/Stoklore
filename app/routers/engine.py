@@ -5,7 +5,8 @@ logic, so a strategy backtested here is the same compiled code that trades on th
 
 Runs are the engine's own JSON files, not table rows: `backtest --json` writes one per run and the
 live engine rewrites `<paper|live>-<date>.json` every minute, both in one shape. Nothing here
-touches the journal database except the settings below.
+touches the journal database except the settings below and the background queue (`engine_jobs`,
+worked by app/services/engine_jobs.py), whose rows only point at the run files a job made.
 
 Bars are written for each run into a temporary folder, cut to the run's history range - two runs on
 the same stock with different ranges must never share one CSV.
@@ -22,12 +23,14 @@ the user's own label for their engine - it's what the sidebar and page title cal
 import itertools
 import json
 import os
+import queue
 import re
 import secrets
 import subprocess
 import tempfile
+import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -37,7 +40,16 @@ from fastapi.responses import StreamingResponse
 from app.core import autotune
 from app.core import db
 from app.core import minute_data
-from app.schemas import EngineAutotuneRequest, EngineBacktestRequest, EngineSettingsRequest, EngineSweepRequest
+from app.schemas import (
+    EngineAutotuneRequest,
+    EngineBacktestRequest,
+    EngineJobConfig,
+    EngineJobPriority,
+    EngineJobRequest,
+    EngineRunNotesRequest,
+    EngineSettingsRequest,
+    EngineSweepRequest,
+)
 
 router = APIRouter(tags=["engine"])
 
@@ -84,6 +96,26 @@ def _engine(root, *args):
     if res.returncode:
         raise HTTPException(500, res.stderr.strip() or f"engine exited {res.returncode}")
     return json.loads(res.stdout)
+
+
+_builds = {}  # binary mtime -> build id
+
+
+def _engine_build(root):
+    """The engine checkout's git commit, with "+dirty" when the tree has uncommitted changes - what a
+    run's numbers came from. Cached per binary mtime: a rebuild asks again. None outside git."""
+    binary = root / "build" / "backtest"
+    key = (str(root), binary.stat().st_mtime if binary.exists() else 0)
+    if key not in _builds:
+        try:
+            head = subprocess.run(["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
+                                  capture_output=True, text=True, timeout=10).stdout.strip()
+            dirty = subprocess.run(["git", "-C", str(root), "status", "--porcelain", "src"],
+                                   capture_output=True, text=True, timeout=10).stdout.strip()
+            _builds[key] = (head + ("+dirty" if dirty else "")) or None
+        except (OSError, subprocess.SubprocessError):
+            _builds[key] = None
+    return _builds[key]
 
 
 def _hold(interval):
@@ -137,6 +169,12 @@ def _stock_bars(symbols, interval, start, end):
         else:
             skipped.append({"symbol": s, "reason": "no bars in this range"})
     return got, coverage, skipped
+
+
+def _sizing(sizing):
+    """Engine args for a Sizing: none for fixed, so a fixed run's report is what it always was."""
+    mode = {"fixed": 0, "scale": 1, "all_in": 2}[sizing.mode]
+    return [f"sizing={mode}", f"capital={sizing.capital:.10g}"] if mode else []
 
 
 def _nothing_left(skipped):
@@ -200,6 +238,12 @@ def engine_strategies():
 def engine_backtest(req: EngineBacktestRequest):
     """One backtest per combination of the param lists, run in parallel. Blocks until all finish -
     each is milliseconds of C++; the only slow part is Stoklore's first extract of a new symbol."""
+    return run_backtest(req)
+
+
+def run_backtest(req, job=None):
+    """The backtest itself, for the endpoint and for a background job (`job` = its id, kept on
+    every run it made). Each run also keeps how it was made: the engine command, build and time."""
     root = _root()
     runs_dir = _runs(root)[0]
     symbols = _check(root, req.strategy, req.symbols, req.interval)
@@ -223,12 +267,19 @@ def engine_backtest(req: EngineBacktestRequest):
         files = [_bars_csv(tmp, s, req.interval, b) for s, b in got.items()]
         del got
 
+        build = _engine_build(root)
+
         def run(i, combo):
             kv = [f"{k}={v:g}" for k, v in combo.items()]
-            result = _engine(root, req.strategy, *files, *kv, f"cost_bps={req.cost_bps:g}", "--json", *_hold(req.interval))
+            args = [req.strategy, *files, *kv, f"cost_bps={req.cost_bps:g}", *_sizing(req.sizing), "--json", *_hold(req.interval)]
+            t0 = time.monotonic()
+            result = _engine(root, *args)
             result.update(id=f"bt-{batch}-{i}", source="backtest", created=created, batch=batch,
                           label=(req.label or "").strip() or None, symbols=list(coverage), interval=req.interval,
-                          varied=varied, history=history, coverage=coverage, skipped=skipped)
+                          varied=varied, history=history, coverage=coverage, skipped=skipped, job=job,
+                          sizing=req.sizing.model_dump(), request=req.model_dump(mode="json"),
+                          engine={"cmd": " ".join(["backtest", *(Path(a).name if a in files else a for a in args)]),
+                                  "build": build, "ms": round((time.monotonic() - t0) * 1000)})
             path = runs_dir / f"{result['id']}.json"
             path.write_text(json.dumps(result))
             return _row(path)
@@ -258,6 +309,18 @@ def engine_delete_run(run_id: str):
     path.unlink()
     _rows.pop(path, None)
     return {"ok": True}
+
+
+@router.patch("/api/engine/runs/{run_id}")
+def engine_run_notes(run_id: str, req: EngineRunNotesRequest):
+    """Saves a note and tags into the run's own file. A live report is rewritten by the next sync."""
+    path = _path(run_id)
+    d = json.loads(path.read_text())
+    d["note"] = (req.note or "").strip() or None
+    d["tags"] = sorted({t.strip() for t in req.tags if t.strip()})
+    path.write_text(json.dumps(d))
+    _rows.pop(path, None)
+    return {"note": d["note"], "tags": d["tags"]}
 
 
 @router.delete("/api/engine/batches/{batch}")
@@ -308,6 +371,10 @@ def _sweep_row(path):
 def engine_sweep(req: EngineSweepRequest):
     """mode "oat": each param with several values walks its range while the others hold their base
     value. mode "grid": every combination. A param with one value is fixed for the whole sweep."""
+    return run_sweep(req)
+
+
+def run_sweep(req, job=None):
     root = _root()
     symbols = _check(root, req.strategy, req.symbols, req.interval)
     params = {k: v.strip() for k, v in req.params.items() if v.strip()}
@@ -325,14 +392,14 @@ def engine_sweep(req: EngineSweepRequest):
         del got
         try:
             result = _engine(
-                root, req.strategy, *files, *args, f"cost_bps={req.cost_bps:g}", f"--sweep={req.mode}", *_hold(req.interval)
+                root, req.strategy, *files, *args, f"cost_bps={req.cost_bps:g}", *_sizing(req.sizing), f"--sweep={req.mode}", *_hold(req.interval)
             )
         except HTTPException as e:
             raise HTTPException(422 if e.status_code == 500 else e.status_code, e.detail) from e
     result.update(id=f"sw-{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}",
                   created=datetime.now(timezone.utc).isoformat(), label=(req.label or "").strip() or None,
                   symbols=list(coverage), interval=req.interval, cost_bps=req.cost_bps,
-                  history=history, coverage=coverage, skipped=skipped)
+                  history=history, coverage=coverage, skipped=skipped, job=job, sizing=req.sizing.model_dump())
     folder = _sweeps_dir(root)
     folder.mkdir(parents=True, exist_ok=True)
     (folder / f"{result['id']}.json").write_text(json.dumps(result))
@@ -398,6 +465,13 @@ def engine_autotune(req: EngineAutotuneRequest):
     of 5m sessions in one-week steps is ~40 windows and a few seconds per stock, plus ~11s the
     first time a stock's bars are fetched. A stock that fails (no bars, too little history) is
     reported and the rest still run. Bad requests are still refused up front with a 4xx."""
+    events = autotune_events(req)
+    return StreamingResponse((json.dumps(e) + "\n" for e in events), media_type="application/x-ndjson")
+
+
+def autotune_events(req, job=None):
+    """Validates now (raising 4xx), then returns the walk as a generator of the events above - the
+    endpoint streams them, a background job reads them for its progress."""
     root = _root()
     symbols = _check(root, req.strategy, req.symbols, req.interval)
     params = {k: v.strip() for k, v in req.params.items() if v.strip()}
@@ -417,11 +491,11 @@ def engine_autotune(req: EngineAutotuneRequest):
             report = autotune.walk_forward(
                 lambda *a: _engine(root, *a, *_hold(req.interval)), bars, symbol=symbol, interval=req.interval, strategy=req.strategy,
                 params=params, defaults=defaults, train=req.train, test=req.test, min_trades=req.min_trades,
-                margin=req.margin, cost_bps=req.cost_bps,
+                margin=req.margin, cost_bps=req.cost_bps, sizing=_sizing(req.sizing),
             )
         except (ValueError, RuntimeError, HTTPException) as e:
             return {"symbol": symbol, "error": str(getattr(e, "detail", e))}
-        report.update(id=f"wf-{batch}-{i}", batch=batch, created=created, history=history, coverage=coverage[symbol])
+        report.update(id=f"wf-{batch}-{i}", batch=batch, created=created, history=history, coverage=coverage[symbol], job=job)
         folder = _autotune_dir(root) / req.strategy / symbol
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / f"{report['id']}.json"
@@ -429,34 +503,63 @@ def engine_autotune(req: EngineAutotuneRequest):
         return _autotune_row(path)
 
     def events():
-        # Bars are loaded one stock at a time (see _stock_bars); only the walks - engine subprocesses,
-        # no DuckDB - run in parallel.
+        # A pipeline: one loader thread fetches each stock's bars in turn (one at a time - see
+        # _stock_bars) and hands the stock to the walk pool the moment its bars are in, so the first
+        # walks run while later stocks are still loading. Everything reaches the stream through `q`
+        # as it happens, loading problems and finished walks alike.
         yield {"type": "start", "batch": batch, "symbols": len(symbols)}
-        got, cov, skipped = _stock_bars(symbols, req.interval, start, end)
-        coverage.update(cov)
-        for x in skipped:
-            yield {"type": "error", "symbol": x["symbol"], "error": x["reason"]}
-        loaded = []
-        for symbol, bars in got.items():
-            days = autotune.sessions_of(bars)
-            if len(days) < need:  # a stock listed late, or a short range: say what it had, and what would fit
-                fit = len(days) - 3 * req.test  # a train that leaves room for three test windows
-                hint = f"; a train of {fit} or less would walk it in 3+ windows" if fit >= 20 else ""
-                yield {"type": "error", "symbol": symbol, "error": f"only {len(days)} sessions in this range ({days[0]} → {days[-1]}) - "
-                                                                   f"a walk needs train + test = {need}{hint}"}
-            else:
-                loaded.append((symbol, bars))
-        del got
-        if loaded:
-            with ThreadPoolExecutor(min(AUTOTUNE_WORKERS, len(loaded))) as pool:
-                futures = [pool.submit(walk, i, s, b) for i, (s, b) in enumerate(loaded)]
-                del loaded
-                for f in as_completed(futures):
-                    r = f.result()
-                    yield {"type": "error", **r} if "error" in r else {"type": "report", "report": r}
+        q, stop = queue.Queue(), threading.Event()
+
+        def outcome(future, symbol):
+            try:
+                r = future.result()
+            except Exception as e:  # noqa: BLE001 - an unexpected failure still has to reach the stream
+                r = {"symbol": symbol, "error": str(e)}
+            return {"type": "error", **r} if "error" in r else {"type": "report", "report": r}
+
+        def load(pool):
+            walks = 0
+            try:
+                for symbol in symbols:
+                    if stop.is_set():  # the client went away
+                        break
+                    got, cov, skipped = _stock_bars([symbol], req.interval, start, end)
+                    coverage.update(cov)
+                    for x in skipped:
+                        q.put({"type": "error", "symbol": x["symbol"], "error": x["reason"]})
+                    for bars in got.values():
+                        days = autotune.sessions_of(bars)
+                        if len(days) < need:  # a stock listed late, or a short range: say what it had, and what would fit
+                            fit = len(days) - 3 * req.test  # a train that leaves room for three test windows
+                            hint = f"; a train of {fit} or less would walk it in 3+ windows" if fit >= 20 else ""
+                            q.put({"type": "error", "symbol": symbol,
+                                   "error": f"only {len(days)} sessions in this range ({days[0]} → {days[-1]}) - "
+                                            f"a walk needs train + test = {need}{hint}"})
+                            continue
+                        future = pool.submit(walk, walks, symbol, bars)
+                        future.add_done_callback(lambda f, s=symbol: q.put({**outcome(f, s), "walk": True}))
+                        walks += 1
+            except Exception as e:  # noqa: BLE001 - the stocks not reached are reported, not silently lost
+                q.put({"type": "error", "symbol": symbol, "error": f"loading stopped: {e}"})
+            finally:
+                q.put({"type": "loaded", "walks": walks})
+
+        with ThreadPoolExecutor(AUTOTUNE_WORKERS) as pool:
+            threading.Thread(target=load, args=(pool,), daemon=True).start()
+            expected, finished = None, 0
+            try:
+                while expected is None or finished < expected:
+                    e = q.get()
+                    if e["type"] == "loaded":
+                        expected = e["walks"]
+                        continue
+                    finished += bool(e.pop("walk", False))
+                    yield e
+            finally:
+                stop.set()
         yield {"type": "done", "batch": batch}
 
-    return StreamingResponse((json.dumps(e) + "\n" for e in events()), media_type="application/x-ndjson")
+    return events()
 
 
 @router.get("/api/engine/autotune")
@@ -543,3 +646,78 @@ def engine_live_sync():
     if res.returncode:
         raise HTTPException(502, res.stderr.strip() or "rsync failed")
     return {"reports": len(list(live_dir.glob("*.json")))}
+
+
+# --- background queue -----------------------------------------------------------------------------
+# "Run in background" queues the same request "Run now" sends; app/services/engine_jobs.py works the
+# queue. A job row only records where its output went - the runs themselves are files as always.
+
+JOB_REQUESTS = {"backtest": EngineBacktestRequest, "sweep": EngineSweepRequest, "autotune": EngineAutotuneRequest}
+
+
+def _job(job_id):
+    row = db.get_engine_job(job_id)
+    if not row:
+        raise HTTPException(404, f"No job {job_id}")
+    return row
+
+
+@router.post("/api/engine/jobs")
+def engine_job_create(req: EngineJobRequest):
+    try:
+        body = JOB_REQUESTS[req.kind](**req.request)
+    except ValueError as e:  # pydantic's ValidationError is one
+        raise HTTPException(422, str(e)) from e
+    _check(_root(), body.strategy, body.symbols, body.interval)
+    label = (req.label or getattr(body, "label", None) or "").strip() or None
+    return db.create_engine_job(req.kind, body.model_dump(mode="json"), label, req.priority)
+
+
+@router.get("/api/engine/jobs")
+def engine_jobs():
+    return db.list_engine_jobs()
+
+
+@router.get("/api/engine/jobs/config")
+def engine_jobs_config():
+    from app.services import engine_jobs
+    return {"workers": engine_jobs.workers(), "max": engine_jobs.MAX_WORKERS}
+
+
+@router.put("/api/engine/jobs/config")
+def engine_jobs_set_config(req: EngineJobConfig):
+    db._set_setting("engine_workers", str(req.workers))
+    return engine_jobs_config()
+
+
+@router.get("/api/engine/jobs/{job_id}")
+def engine_job(job_id: int):
+    return _job(job_id)
+
+
+@router.post("/api/engine/jobs/{job_id}/cancel")
+def engine_job_cancel(job_id: int):
+    _job(job_id)
+    db.cancel_engine_job(job_id)
+    return db.get_engine_job(job_id)
+
+
+@router.post("/api/engine/jobs/{job_id}/retry")
+def engine_job_retry(job_id: int):
+    """A new job with the same request - the old one stays as the record of what happened."""
+    old = _job(job_id)
+    return db.create_engine_job(old["kind"], old["request"], old["label"], old["priority"])
+
+
+@router.patch("/api/engine/jobs/{job_id}")
+def engine_job_priority(job_id: int, req: EngineJobPriority):
+    _job(job_id)
+    db.set_engine_job_priority(job_id, req.priority)
+    return db.get_engine_job(job_id)
+
+
+@router.delete("/api/engine/jobs/{job_id}")
+def engine_job_delete(job_id: int):
+    if not db.delete_engine_job(job_id):
+        raise HTTPException(409, "Only a finished job can be removed - cancel it first")
+    return {"ok": True}

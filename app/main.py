@@ -14,10 +14,12 @@ from app.core import classifier
 from app.core import db
 from app.core import live
 from app.core import llm
+from app.core import minute_data
 from app.core import paper
 
 from app.core.config import UPLOAD_DIR
 from app.routers import router
+from app.services import engine_jobs
 from app.services.jobs import (
     _auto_event_scan_loop,
     _auto_shareholding_loop,
@@ -56,6 +58,10 @@ def _startup():
     # Alerts run whether or not live trading is switched on; the mirror only runs when it is and
     # credentials exist - see app/core/live.py.
     live.start(paper_price)
+    # The algo engine's background queue (queued jobs survive restarts; running ones are marked
+    # interrupted) and the bar cache's 2-week sliding TTL - see engine_jobs.py and minute_data.py.
+    engine_jobs.start()
+    minute_data.start_ttl_sweeper()
 
 
 # --- the login gate ------------------------------------------------------------------------------

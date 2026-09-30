@@ -783,6 +783,38 @@ CREATE TABLE IF NOT EXISTS live_intents (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   settled_at TIMESTAMPTZ
 );
+
+-- Bookkeeping for the engine's bar cache (app/core/minute_data.py). The bars stay in parquet files
+-- under MINUTE_DATA_DIR; this holds each stock's sliding expiry (every use pushes it 2 weeks out,
+-- an expired stock's files are deleted) and its built 1D series, so a restart reloads the series
+-- instead of rebuilding it. Nothing here is user data: losing a row only costs a re-fetch.
+CREATE TABLE IF NOT EXISTS minute_cache (
+  symbol TEXT PRIMARY KEY,
+  last_used TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  daily_key TEXT,        -- the source files' mtimes the series was built from; a change rebuilds it
+  daily JSONB            -- [days, events, patched, jumps] as _full_days returns them
+);
+
+-- The algo engine's background runs (app/services/engine_jobs.py). `request` is the same body the
+-- run-now endpoint takes, so a job is replayable as-is. Results stay files under the engine folder;
+-- a job only points at them.
+CREATE TABLE IF NOT EXISTS engine_jobs (
+  id BIGSERIAL PRIMARY KEY,
+  kind TEXT NOT NULL,                      -- 'backtest' | 'sweep' | 'autotune'
+  request JSONB NOT NULL,
+  label TEXT,
+  status TEXT NOT NULL DEFAULT 'queued',   -- queued | running | done | failed | cancelled | interrupted
+  priority INT NOT NULL DEFAULT 0,         -- higher first, then oldest first
+  cancel BOOLEAN NOT NULL DEFAULT false,   -- asked to stop while running; the worker checks between stocks
+  progress JSONB,                          -- {done, total} while it runs
+  result JSONB,                            -- where the output is: {batch, ids} | {sweep} | {batch, ids, errors}
+  error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  started_at TIMESTAMPTZ,
+  finished_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS engine_jobs_queue ON engine_jobs (status, priority DESC, id);
 """
 
 
@@ -2905,6 +2937,151 @@ def exchange_of(symbol):
             "SELECT exchange, board FROM stocks_master WHERE symbol = %s", (symbol,)
         ).fetchone() or {}
     return row.get("exchange") or "NSE", row.get("board") or "MAIN"
+
+
+# --- engine bar cache TTL (minute_cache) ---------------------------------------------------------
+
+def touch_minute_cache(symbols, ttl_days):
+    """Marks stocks used now: expiry slides to `ttl_days` from now. Registers ones never seen."""
+    with connect() as conn:
+        conn.cursor().executemany(
+            "INSERT INTO minute_cache (symbol, last_used, expires_at) VALUES (%s, now(), now() + make_interval(days => %s)) "
+            "ON CONFLICT (symbol) DO UPDATE SET last_used = now(), expires_at = excluded.expires_at",
+            [(s, ttl_days) for s in symbols],
+        )
+
+
+def register_minute_cache(symbols, ttl_days):
+    """Starts the clock for cached stocks with no row yet (files from before the TTL existed),
+    without touching the expiry of ones already tracked."""
+    with connect() as conn:
+        conn.cursor().executemany(
+            "INSERT INTO minute_cache (symbol, expires_at) VALUES (%s, now() + make_interval(days => %s)) "
+            "ON CONFLICT (symbol) DO NOTHING",
+            [(s, ttl_days) for s in symbols],
+        )
+
+
+def expired_minute_cache():
+    with connect() as conn:
+        return [r["symbol"] for r in conn.execute("SELECT symbol FROM minute_cache WHERE expires_at < now()").fetchall()]
+
+
+def delete_minute_cache(symbol):
+    """One stock's row, by its key - after its files are gone."""
+    with connect() as conn:
+        conn.execute("DELETE FROM minute_cache WHERE symbol = %s", (symbol,))
+
+
+def get_minute_daily(symbol):
+    """(daily_key, [days, events, patched, jumps]) or None."""
+    with connect() as conn:
+        row = conn.execute("SELECT daily_key, daily FROM minute_cache WHERE symbol = %s", (symbol,)).fetchone()
+    return (row["daily_key"], row["daily"]) if row and row["daily"] is not None else None
+
+
+def set_minute_daily(symbol, key, daily, ttl_days):
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO minute_cache (symbol, expires_at, daily_key, daily) "
+            "VALUES (%s, now() + make_interval(days => %s), %s, %s) "
+            "ON CONFLICT (symbol) DO UPDATE SET daily_key = excluded.daily_key, daily = excluded.daily",
+            (symbol, ttl_days, key, json.dumps(daily)),
+        )
+
+
+def list_minute_cache():
+    with connect() as conn:
+        return conn.execute(
+            "SELECT symbol, last_used, expires_at, daily IS NOT NULL AS has_daily FROM minute_cache ORDER BY symbol"
+        ).fetchall()
+
+
+# --- engine background jobs (engine_jobs) --------------------------------------------------------
+# Every write here is by primary key or by status transition on the job's own row.
+
+ENGINE_JOB_COLS = "id, kind, request, label, status, priority, cancel, progress, result, error, created_at, started_at, finished_at"
+
+
+def create_engine_job(kind, request, label=None, priority=0):
+    with connect() as conn:
+        return conn.execute(
+            f"INSERT INTO engine_jobs (kind, request, label, priority) VALUES (%s, %s, %s, %s) RETURNING {ENGINE_JOB_COLS}",
+            (kind, json.dumps(request), label, priority),
+        ).fetchone()
+
+
+def claim_engine_job():
+    """The next queued job, marked running in the same statement - two workers never get one job."""
+    with connect() as conn:
+        return conn.execute(
+            f"""UPDATE engine_jobs SET status = 'running', started_at = now()
+                WHERE id = (SELECT id FROM engine_jobs WHERE status = 'queued'
+                            ORDER BY priority DESC, id LIMIT 1 FOR UPDATE SKIP LOCKED)
+                RETURNING {ENGINE_JOB_COLS}"""
+        ).fetchone()
+
+
+def update_engine_job(job_id, **fields):
+    """progress/result are JSON; status/error as given. A final status stamps finished_at."""
+    allowed = {"status", "progress", "result", "error"}
+    assert set(fields) <= allowed, fields
+    sets, vals = [], []
+    for k, v in fields.items():
+        sets.append(f"{k} = %s")
+        vals.append(json.dumps(v) if k in ("progress", "result") and v is not None else v)
+    if fields.get("status") in ("done", "failed", "cancelled", "interrupted"):
+        sets.append("finished_at = now()")
+    with connect() as conn:
+        conn.execute(f"UPDATE engine_jobs SET {', '.join(sets)} WHERE id = %s", (*vals, job_id))
+
+
+def get_engine_job(job_id):
+    with connect() as conn:
+        return conn.execute(f"SELECT {ENGINE_JOB_COLS} FROM engine_jobs WHERE id = %s", (job_id,)).fetchone()
+
+
+def list_engine_jobs(limit=200):
+    with connect() as conn:
+        return conn.execute(f"SELECT {ENGINE_JOB_COLS} FROM engine_jobs ORDER BY id DESC LIMIT %s", (limit,)).fetchall()
+
+
+def cancel_engine_job(job_id):
+    """Queued: cancelled on the spot. Running: flagged, and the worker stops at its next check."""
+    with connect() as conn:
+        conn.execute(
+            "UPDATE engine_jobs SET status = 'cancelled', finished_at = now() WHERE id = %s AND status = 'queued'",
+            (job_id,),
+        )
+        conn.execute("UPDATE engine_jobs SET cancel = true WHERE id = %s AND status = 'running'", (job_id,))
+
+
+def engine_job_cancelled(job_id):
+    with connect() as conn:
+        row = conn.execute("SELECT cancel FROM engine_jobs WHERE id = %s", (job_id,)).fetchone()
+    return bool(row and row["cancel"])
+
+
+def set_engine_job_priority(job_id, priority):
+    with connect() as conn:
+        conn.execute("UPDATE engine_jobs SET priority = %s WHERE id = %s AND status = 'queued'", (priority, job_id))
+
+
+def delete_engine_job(job_id):
+    """A finished job's row, by id. Its results are files the job only pointed at - they stay."""
+    with connect() as conn:
+        return conn.execute(
+            "DELETE FROM engine_jobs WHERE id = %s AND status NOT IN ('queued', 'running')", (job_id,)
+        ).rowcount
+
+
+def interrupt_engine_jobs():
+    """At startup: a job still marked running died with the last process. Queued ones just wait."""
+    with connect() as conn:
+        return conn.execute(
+            "UPDATE engine_jobs SET status = 'interrupted', finished_at = now(), "
+            "error = 'the server restarted while this ran - retry it' WHERE status = 'running'"
+        ).rowcount
 
 
 # --- alerts + live trading -----------------------------------------------------------------------

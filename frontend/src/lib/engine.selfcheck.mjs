@@ -27,6 +27,10 @@ import {
   parseValues,
   listedOn,
   parseSymbolJson,
+  drawdownPeriods,
+  excursions,
+  runAnalytics,
+  tradeCost,
   pickedSets,
   pinnedRange,
   sweepGrid,
@@ -586,5 +590,68 @@ assert.equal(
   0,
   'older reports: by date',
 )
+
+// --- run detail page analytics ---
+{
+  const D = 86400
+  // drawdowns: +100, -30, -20 (trough 50 below the peak), +60 (recovered), -10 (still under at the end)
+  const daily = [[0, 100], [D, -30], [2 * D, -20], [3 * D, 60], [4 * D, -10]]
+  const dd = drawdownPeriods(daily, 1000)
+  assert.equal(dd.length, 2)
+  assert.deepEqual([dd[0].start, dd[0].trough, dd[0].end, dd[0].depth, dd[0].days, dd[0].recovery], [0, 2 * D, 3 * D, 50, 3, 1])
+  assert.equal(+dd[0].pct.toFixed(4), +((100 * 50) / 1100).toFixed(4), '% of the account at the peak')
+  assert.deepEqual([dd[1].end, dd[1].depth, dd[1].recovery], [null, 10, null], 'still under water')
+
+  // MAE/MFE: a long from 100 held over two bars, exit bar excluded; a short mirrors it
+  const bars = [
+    { time: 10, high: 104, low: 97 },
+    { time: 20, high: 108, low: 99 },
+    { time: 30, high: 200, low: 1 },
+  ]
+  const ex = excursions(
+    [
+      ['X', 10, 30, 2, 100, 105, 10],
+      ['X', 10, 30, -1, 100, 105, -5],
+      ['X', 40, 50, 1, 1, 1, 0],
+    ],
+    bars,
+  )
+  assert.deepEqual(ex[0], { mae: -6, mfe: 16 }, 'long: 2 x (97-100), 2 x (108-100)')
+  assert.deepEqual(ex[1], { mae: -8, mfe: 3 }, 'short: -(108-100), -(97-100)')
+  assert.equal(ex[2], null, 'no bar covers it')
+
+  // the whole run: two symbols, costs 10 bps, fixed qty -> capital is the peak concurrent notional
+  const trades = [
+    ['A', 0 * D + 3600 * 10, 0 * D + 3600 * 11, 10, 100, 110, 100],
+    ['B', 0 * D + 3600 * 10.5, 0 * D + 3600 * 12, -5, 200, 210, -50],
+    ['A', 1 * D + 3600 * 10, 1 * D + 3600 * 13, 10, 110, 99, -110],
+    ['A', 3 * D + 3600 * 14, 3 * D + 3600 * 15, 10, 100, 120, 200],
+  ]
+  assert.equal(tradeCost(trades[0], 10), (10 * 210 * 10) / 1e4)
+  const a = runAnalytics({
+    summary: { net: 0, gross: 140, costs: 0, max_dd: 0, from: 0, to: 4 * D },
+    daily: [[0, 50], [D, -110], [3 * D, 200]],
+    trades,
+    params: { cost_bps: 10 },
+  })
+  assert.equal(a.capital, 2000, 'A (1000) and B (1000) were open at once')
+  assert.equal(a.capitalBasis, 'peak exposure')
+  assert.deepEqual(a.nets.map((x) => +x.toFixed(2)), [97.9, -52.05, -112.09, 197.8])
+  assert.deepEqual([a.winStreak, a.lossStreak], [1, 2])
+  assert.deepEqual(a.bySymbol.map((s) => [s.symbol, s.trades]), [['A', 3], ['B', 1]], 'best symbol first')
+  assert.deepEqual(a.byHour.map((b) => [b.label, b.trades]), [['10:00', 3], ['14:00', 1]])
+  assert.equal(+a.exposurePct.toFixed(4), +((100 * (2 * 3600 + 3 * 3600 + 3600)) / (4 * D)).toFixed(4), 'overlapping trades counted once')
+  assert.equal(a.largestLoss < -112 && a.largestWin > 197, true)
+  const sized = runAnalytics({
+    summary: { net: 100000, gross: 1, costs: 0, max_dd: 0, from: 0, to: 365.25 * D },
+    daily: [[0, 100000]],
+    trades: [],
+    params: {},
+    sizing: { mode: 'all_in', capital: 100000 },
+  })
+  assert.equal(sized.capital, 100000)
+  assert.equal(+sized.cagr.toFixed(6), 100, 'doubled in a year')
+  assert.equal(sized.returnPct, 100)
+}
 
 console.log('engine selfcheck passed')

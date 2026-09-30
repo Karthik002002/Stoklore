@@ -89,15 +89,14 @@ function Output({ job }: { job: EngineJob }) {
     )
   if (job.kind === 'autotune' && n)
     return (
-      n === 1 ? (
-        <Link to="/engine/autotune/$reportId" params={{ reportId: r.ids![0] }} className="text-primary hover:underline">
-          Open report
-        </Link>
-      ) : (
-        <Link to="/engine" search={{ tab: 'autotune', tunebatch: r.batch }} className="text-primary hover:underline">
-          {n} stocks
-        </Link>
-      )
+      <Link
+        to="/engine/autotune/$runId"
+        params={{ runId: r.batch ?? r.ids![0] }}
+        search={{}}
+        className="text-primary hover:underline"
+      >
+        {n === 1 ? 'Open run' : `Open run · ${n} stocks`}
+      </Link>
     )
   return null
 }

@@ -14,6 +14,10 @@ strategy's trading logic, that's a change in the other repo, not this one.
 Full user-facing behavior: [docs/engine.md](../../../docs/engine.md). This skill is the
 implementation map for changing it.
 
+**Building or changing the engine itself** (a new engine, a new strategy, a new CLI flag or output
+field): see the `algo-engine-contract` skill - the full CLI/CSV/JSON contract and a conformance
+checker (`.claude/skills/algo-engine-contract/check_engine.py <engine folder>`).
+
 ## The three layers
 
 ```
@@ -79,11 +83,13 @@ sweep and autotune. Autotune sizes only the OOS + baseline runs and carries each
 windows with the engine's `carry=` param; tuning sweeps stay fixed-size. Fixed sends no args, so an
 unsized run's report is byte-identical to before.
 
-**Walk-forward page** `/engine/autotune/$reportId` (`EngineAutotunePage.tsx`): `WalkForward` (what
-used to be the inline AutotuneView, plus `CellTable`) and, for each side, `runAnalytics` over the
-stitched `oos` / `baseline` shaped as a run (`sideRun`); it reuses the run page's exported sections
-(ReturnsHeatmap, BucketBars, Histogram, TradeLog, Section). The Auto-tune tab no longer opens reports
-inline - `openTune` navigates there, and an old `?autotune=` link redirects.
+**Auto-tune run page** `/engine/autotune/$runId` (`EngineAutotunePage.tsx`, default export
+`EngineAutotuneRunPage`): the run id is `runIdOf(report)` = its batch, or its own id for pre-batch
+reports (an old report-id link redirects to its run with `?stocks=<symbol>`). All stocks' OOS
+equity + `portfolioCurve` book, a per-stock table with checkboxes (selection in `?stocks=`), and a
+`StockReport` tab per picked stock - `WalkForward` plus `runAnalytics` over `sideRun(r, 'oos'|'baseline')`,
+reusing the run page's exported sections. The Auto-tune tab's `AutotuneList` is one row per run;
+old `?autotune=` / `?tunebatch=` links redirect to the run page.
 **Run page** `/engine/runs/$runId` (`EngineRunPage.tsx`, route in router.tsx): everything derives
 from the run file via `runAnalytics` / `drawdownPeriods` / `excursions` / `tradeCost` in
 `lib/engine.ts` (asserted in the self-check). Shared pieces (Panel, Stat, ExportMenu, ExecutionsChart,

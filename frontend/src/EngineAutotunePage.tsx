@@ -2,36 +2,60 @@
 // The walk itself (verdict, curves, picks, cells, executions, windows) is what the Auto-tune tab used
 // to show inline; around it, every metric of the run page for the tuned and the fixed-defaults
 // out-of-sample results side by side, window-by-window charts, and the full trade log with MAE/MFE.
-import { useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useNavigate, useParams } from '@tanstack/react-router'
+import { useEffect, useMemo, useState } from 'react'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import type { UTCTimestamp } from 'lightweight-charts'
-import { ArrowLeftIcon, ListPlusIcon, PrinterIcon, Trash2Icon, XIcon } from 'lucide-react'
+import { ArrowLeftIcon, DownloadIcon, ListPlusIcon, PrinterIcon, Trash2Icon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import SeriesChart from '@/components/charts/SeriesChart'
 import { seriesColor } from '@/components/charts/colors'
 import type { Dataset } from '@/components/charts/colors'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
+  autotuneBatchSheet,
+  autotuneRunSheets,
   autotuneSheets,
   excursions,
   istTime,
   paramsLabel,
   pickedSets,
   pinnedRange,
+  portfolioCurve,
   runAnalytics,
   sessionTime as sessionEpoch,
+  tuneVerdict,
   windowOfTrade,
 } from '@/lib/engine'
 import type { RunAnalytics, RunTrade } from '@/lib/engine'
+import { download, downloadCsv, downloadXlsx } from '@/lib/exportFile'
 import { fmt, formatDateTime, inr } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { cn } from '@/lib/utils'
-import { deleteEngineAutotune, getEngineAutotune, getIntradayBars } from '@/services/api'
-import type { EngineAutotuneCell, EngineAutotuneReport, EngineAutotuneRequest, EngineRun, EngineSizing } from '@/services/api'
+import {
+  deleteEngineAutotune,
+  deleteEngineAutotuneBatch,
+  getEngineAutotune,
+  getEngineAutotunes,
+  getIntradayBars,
+} from '@/services/api'
+import type {
+  EngineAutotuneCell,
+  EngineAutotuneReport,
+  EngineAutotuneRequest,
+  EngineAutotuneRow,
+  EngineRun,
+  EngineSizing,
+} from '@/services/api'
 import { useQueueJob } from './EngineJobs'
 import {
   BucketBars,
@@ -745,57 +769,39 @@ function WindowCharts({ r }: { r: EngineAutotuneReport }) {
   )
 }
 
-export default function EngineAutotunePage() {
-  const { reportId } = useParams({ from: '/engine/autotune/$reportId' })
-  const navigate = useNavigate()
+/** One stock of a run, in full: its walk, every metric tuned vs fixed, window charts, drawdowns,
+ *  monthly returns, timing and the trade log. The run page shows one per selected stock. */
+function StockReport({ r, onDeleted }: { r: EngineAutotuneReport; onDeleted: () => void }) {
   const queryClient = useQueryClient()
-  const { data: r, error } = useQuery({
-    queryKey: ['engineAutotune', reportId],
-    queryFn: () => getEngineAutotune(reportId),
-  })
-  usePageTitle(r ? `${r.symbol} walk-forward` : reportId)
   const queue = useQueueJob()
   const remove = useMutation({
-    mutationFn: () => deleteEngineAutotune(reportId),
+    mutationFn: () => deleteEngineAutotune(r.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['engineAutotunes'] })
-      navigate({ to: '/engine', search: { tab: 'autotune' } })
+      onDeleted()
     },
     onError: (e) => toast.error(e.message),
   })
   const [side, setSide] = useState<'oos' | 'baseline'>('oos')
   const [focus, setFocus] = useState<RunTrade | null>(null)
-  const runs = useMemo(() => (r ? { oos: sideRun(r, 'oos'), baseline: sideRun(r, 'baseline') } : null), [r])
-  const an = useMemo(() => (runs ? { oos: runAnalytics(runs.oos), baseline: runAnalytics(runs.baseline) } : null), [runs])
+  const runs = useMemo(() => ({ oos: sideRun(r, 'oos'), baseline: sideRun(r, 'baseline') }), [r])
+  const an = useMemo(() => ({ oos: runAnalytics(runs.oos), baseline: runAnalytics(runs.baseline) }), [runs])
 
   // MAE/MFE: the stock's bars over the traded windows
-  const span = runs && { start: istTime(runs.oos.summary.from).slice(0, 10), end: istTime(runs.oos.summary.to).slice(0, 10) }
+  const span = { start: istTime(runs.oos.summary.from).slice(0, 10), end: istTime(runs.oos.summary.to).slice(0, 10) }
   const { data: bars } = useQuery({
-    queryKey: ['intradayBars', r?.symbol, r?.interval, span?.start, span?.end],
-    queryFn: () => getIntradayBars(r!.symbol, r!.interval, span!),
-    enabled: !!r && !!runs?.oos.summary.from,
+    queryKey: ['intradayBars', r.symbol, r.interval, span.start, span.end],
+    queryFn: () => getIntradayBars(r.symbol, r.interval, span),
+    enabled: !!runs.oos.summary.from,
     staleTime: 5 * 60_000,
   })
   const exc = useMemo(() => {
     const out = new Map<RunTrade, { mae: number; mfe: number } | null>()
-    if (!an || !bars?.bars) return out
+    if (!bars?.bars) return out
     const trades = an[side].trades
     excursions(trades, bars.bars).forEach((e, i) => out.set(trades[i], e))
     return out
   }, [an, bars, side])
-
-  const back = (
-    <Link to="/engine" search={{ tab: 'autotune' }} className="no-print inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-      <ArrowLeftIcon className="size-4" /> Auto-tune reports
-    </Link>
-  )
-  if (error || !r || !runs || !an)
-    return (
-      <div className="space-y-4">
-        {back}
-        {error ? <p className="text-sm text-destructive">{error.message}</p> : <Spinner className="size-4" />}
-      </div>
-    )
 
   const a = an[side]
   const run = runs[side]
@@ -821,12 +827,11 @@ export default function EngineAutotunePage() {
   return (
     <div className="space-y-6">
       <div className="space-y-2">
-        {back}
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="space-y-1">
-            <h1 className="text-lg font-medium">
+            <h2 className="text-lg font-medium">
               {r.symbol} · {r.strategy} {r.interval} walk-forward
-            </h1>
+            </h2>
             <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
               <Badge variant="outline" className="font-mono">
                 {r.id}
@@ -839,11 +844,6 @@ export default function EngineAutotunePage() {
               {r.job != null && (
                 <Link to="/engine" search={{ tab: 'jobs' }}>
                   <Badge variant="secondary">job #{r.job}</Badge>
-                </Link>
-              )}
-              {r.batch && (
-                <Link to="/engine" search={{ tab: 'autotune', tunebatch: r.batch }}>
-                  <Badge variant="secondary">batch {r.batch}</Badge>
                 </Link>
               )}
               <span>
@@ -862,11 +862,8 @@ export default function EngineAutotunePage() {
               {queue.isPending ? <Spinner className="size-3.5" /> : <ListPlusIcon />} Walk again
             </Button>
             <ExportMenu name={r.id} sheets={() => autotuneSheets(r)} csvSheet={2} />
-            <Button size="sm" variant="outline" onClick={() => window.print()}>
-              <PrinterIcon /> PDF
-            </Button>
             <Button size="sm" variant="ghost" disabled={remove.isPending} onClick={() => remove.mutate()}>
-              <Trash2Icon /> Delete
+              <Trash2Icon /> Delete {r.symbol}
             </Button>
           </div>
         </div>
@@ -1045,6 +1042,383 @@ export default function EngineAutotunePage() {
           </details>
         </Section>
       </div>
+    </div>
+  )
+}
+
+const VERDICT_BADGE = {
+  held: { label: 'held up', className: 'text-success' },
+  failed: { label: 'no edge', className: 'text-destructive' },
+  idle: { label: 'never traded', className: 'text-muted-foreground' },
+} as const
+
+/** The run page's export. "Everything" is one workbook with every number the run has (see
+ *  autotuneRunSheets); it waits for every stock's report to load. Raw JSON is the reports as the
+ *  engine folder holds them, for anything the workbook doesn't lay out. */
+function RunExport({
+  runId,
+  rows,
+  reports,
+}: {
+  runId: string
+  rows: EngineAutotuneRow[]
+  reports: EngineAutotuneReport[]
+}) {
+  const ready = reports.length === rows.length
+  const file = `autotune-${runId}`
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger render={<Button size="sm" variant="outline" />}>
+        {ready ? <DownloadIcon /> : <Spinner className="size-3.5" />} Export
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem disabled={!ready} onClick={() => downloadXlsx(autotuneRunSheets(rows, reports), `${file}-complete`)}>
+          Everything (.xlsx) - every stock, every sheet
+          {!ready && ` · loading ${reports.length}/${rows.length}`}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => downloadXlsx([autotuneBatchSheet(rows)], `${file}-stocks`)}>
+          Stocks summary (.xlsx)
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => downloadCsv(autotuneBatchSheet(rows), `${file}-stocks`)}>
+          Stocks summary (.csv)
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={!ready}
+          onClick={() => download(JSON.stringify(reports, null, 2), `${file}-reports.json`, 'application/json')}
+        >
+          Raw reports (.json)
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
+
+/** A run's id: the batch its stocks were walked in, or a report's own id for a walk from before
+ *  batches existed. The Reports list, jobs and this page all key on it. */
+export const runIdOf = (r: { id: string; batch?: string | null }) => r.batch ?? r.id
+
+/** One auto-tune run at /engine/autotune/$runId: every stock's out-of-sample curve on one chart,
+ *  the run as one book, a row per stock - and, for the stocks picked in that table (kept in the
+ *  URL as ?stocks=), each one's full report. */
+export default function EngineAutotuneRunPage() {
+  const { runId } = useParams({ from: '/engine/autotune/$runId' })
+  const { stocks } = useSearch({ from: '/engine/autotune/$runId' })
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const { data: all = [], isPending, error } = useQuery({ queryKey: ['engineAutotunes'], queryFn: getEngineAutotunes })
+  const rows = useMemo(
+    () => all.filter((r) => runIdOf(r) === runId).sort((a, b) => b.oos.net - a.oos.net),
+    [all, runId],
+  )
+  // an old link to a single report (before runs had pages): open its run with that stock picked
+  useEffect(() => {
+    if (rows.length) return
+    const hit = all.find((r) => r.id === runId)
+    if (hit && runIdOf(hit) !== runId)
+      navigate({ to: '/engine/autotune/$runId', params: { runId: runIdOf(hit) }, search: { stocks: hit.symbol }, replace: true })
+  }, [all, rows.length, runId, navigate])
+
+  const reports = useQueries({
+    queries: rows.map((r) => ({ queryKey: ['engineAutotune', r.id], queryFn: () => getEngineAutotune(r.id) })),
+  })
+  const loaded = reports.filter((q) => q.data).length
+  const byId = useMemo(() => {
+    const m = new Map<string, EngineAutotuneReport>()
+    reports.forEach((q) => q.data && m.set(q.data.id, q.data))
+    return m
+    // `loaded` stands in for the query results, which are a new array every render
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, rows])
+
+  const picked = useMemo(() => {
+    const want = new Set((stocks ?? '').split(',').filter(Boolean))
+    // a one-stock run has nothing to pick between: its report just shows
+    return rows.length === 1 ? rows : rows.filter((r) => want.has(r.symbol))
+  }, [stocks, rows])
+  const setPicked = (symbols: string[]) =>
+    navigate({
+      to: '/engine/autotune/$runId',
+      params: { runId },
+      search: { stocks: symbols.length ? symbols.join(',') : undefined },
+      replace: true,
+    })
+  const toggle = (symbol: string) =>
+    setPicked(
+      picked.some((r) => r.symbol === symbol)
+        ? picked.filter((r) => r.symbol !== symbol).map((r) => r.symbol)
+        : [...picked.map((r) => r.symbol), symbol],
+    )
+  const [active, setActive] = useState<string | null>(null)
+  const shownTab = picked.find((r) => r.symbol === active) ?? picked[0]
+  const [side, setSide] = useState<'oos' | 'baseline'>('oos')
+
+  const first = rows[0]
+  usePageTitle(first ? `${first.strategy} auto-tune · ${rows.length} stocks` : runId)
+  const remove = useMutation({
+    mutationFn: () => (first?.batch ? deleteEngineAutotuneBatch(first.batch) : deleteEngineAutotune(runId)),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['engineAutotunes'] })
+      navigate({ to: '/engine', search: { tab: 'autotune' } })
+    },
+    onError: (e) => toast.error(e.message),
+  })
+
+  // on the chart: the picked stocks, or every stock while none is picked
+  const plotted = picked.length ? picked : rows
+  const perStock = useMemo<Dataset[]>(
+    () =>
+      plotted.flatMap((r, i) => {
+        const d = byId.get(r.id)
+        return d ? [{ key: r.symbol, color: seriesColor(i), points: points(d[side].equity) }] : []
+      }),
+    [plotted, byId, side],
+  )
+  const book = useMemo<Dataset[]>(() => {
+    const ds = plotted.flatMap((r) => (byId.get(r.id) ? [byId.get(r.id)!] : []))
+    if (!ds.length) return []
+    return [
+      { key: 'Tuned (out-of-sample)', color: seriesColor(0), points: points(portfolioCurve(ds.map((d) => d.oos.daily))) },
+      { key: 'Fixed defaults (out-of-sample)', color: seriesColor(3), points: points(portfolioCurve(ds.map((d) => d.baseline.daily))) },
+    ]
+  }, [plotted, byId])
+
+  const back = (
+    <Link to="/engine" search={{ tab: 'autotune' }} className="no-print inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+      <ArrowLeftIcon className="size-4" /> Auto-tune runs
+    </Link>
+  )
+  if (error || isPending || !first)
+    return (
+      <div className="space-y-4">
+        {back}
+        {error ? (
+          <p className="text-sm text-destructive">{error.message}</p>
+        ) : isPending ? (
+          <Spinner className="size-4" />
+        ) : (
+          <p className="text-sm text-muted-foreground">No auto-tune run {runId} - it may have been deleted.</p>
+        )}
+      </div>
+    )
+
+  const verdicts = rows.map(tuneVerdict)
+  const held = verdicts.filter((v) => v === 'held').length
+  const idle = verdicts.filter((v) => v === 'idle').length
+  const tunedNet = rows.reduce((n, r) => n + r.oos.net, 0)
+  const fixedNet = rows.reduce((n, r) => n + r.baseline.net, 0)
+  const wfes = rows.flatMap((r) => (r.stats.wfe == null ? [] : [r.stats.wfe])).sort((a, b) => a - b)
+  const sized = sizingOf(first.sizing)
+  const allPicked = picked.length === rows.length
+
+  return (
+    <div className="space-y-6">
+      <div className="space-y-2">
+        {back}
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <h1 className="text-lg font-medium">
+              {first.strategy} {first.interval} auto-tune · {rows.length} stock{rows.length === 1 ? '' : 's'}
+            </h1>
+            <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+              <Badge variant="outline" className="font-mono">
+                {runId}
+              </Badge>
+              {sized && (
+                <Badge>
+                  {sized.mode === 'all_in' ? 'All-in' : 'Scale qty'} · {inr(sized.capital)}
+                </Badge>
+              )}
+              {first.job != null && (
+                <Link to="/engine" search={{ tab: 'jobs' }}>
+                  <Badge variant="secondary">job #{first.job}</Badge>
+                </Link>
+              )}
+              <span>
+                train {first.train} / test {first.test} sessions · min {first.min_trades} trades · switch margin{' '}
+                {fmt(first.margin * 100, 0)}% · cost {first.cost_bps} bps · tuned{' '}
+                <span className="font-mono text-foreground">
+                  {Object.entries(first.axes)
+                    .map(([k, v]) => `${k} ${v[0]}…${v.at(-1)}`)
+                    .join(', ')}
+                </span>{' '}
+                · created {formatDateTime(first.created)}
+              </span>
+            </div>
+          </div>
+          <div className="no-print flex flex-wrap items-center gap-2">
+            <RunExport runId={runId} rows={rows} reports={rows.flatMap((r) => (byId.get(r.id) ? [byId.get(r.id)!] : []))} />
+            <Button size="sm" variant="outline" onClick={() => window.print()}>
+              <PrinterIcon /> PDF
+            </Button>
+            <Button size="sm" variant="ghost" disabled={remove.isPending} onClick={() => remove.mutate()}>
+              <Trash2Icon /> Delete run
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <Stat label="Stocks where tuning held up" value={`${held} / ${rows.length}`} />
+        <Stat label="Tuned net · all stocks" value={inr(tunedNet)} className={pnlClass(tunedNet)} />
+        <Stat label="Fixed defaults net · all stocks" value={inr(fixedNet)} className={pnlClass(fixedNet)} />
+        <Stat label="Tuning added" value={inr(tunedNet - fixedNet)} className={pnlClass(tunedNet - fixedNet)} />
+        <Stat label="Never traded" value={`${idle} / ${rows.length}`} />
+        <Stat label="Median walk-forward efficiency" value={wfes.length ? fmt(wfes[Math.floor(wfes.length / 2)]) : '—'} />
+      </div>
+
+      <Section
+        title={picked.length ? `${picked.length} of ${rows.length} stocks` : `All ${rows.length} stocks`}
+        hint={picked.length ? 'the stocks you picked below' : 'pick stocks in the table below to narrow this down and open their reports'}
+      >
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs text-muted-foreground">Each stock's own out-of-sample equity</p>
+            <div className="no-print ml-auto flex gap-1">
+              {(['oos', 'baseline'] as const).map((k) => (
+                <Button key={k} size="xs" variant={side === k ? 'secondary' : 'ghost'} onClick={() => setSide(k)}>
+                  {k === 'oos' ? 'Tuned' : 'Fixed defaults'}
+                </Button>
+              ))}
+            </div>
+          </div>
+          {loaded < rows.length && (
+            <p className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Spinner className="size-3" /> Loading reports {loaded}/{rows.length}
+            </p>
+          )}
+          <div className="h-80">
+            <SeriesChart datasets={perStock} fill format={inr} />
+          </div>
+          <div>
+            <p className="mb-1 text-xs text-muted-foreground">
+              {picked.length ? 'These stocks' : 'The whole run'} as one book: every stock's out-of-sample P&L summed day by day
+            </p>
+            <div className="h-64">
+              <SeriesChart datasets={book} fill format={inr} />
+            </div>
+          </div>
+        </div>
+      </Section>
+
+      <Section title="Stocks" hint="tick any number to see their full reports below">
+        <div className="no-print mb-2 flex flex-wrap items-center gap-2 text-xs">
+          <Button size="xs" variant="outline" disabled={allPicked} onClick={() => setPicked(rows.map((r) => r.symbol))}>
+            Select all
+          </Button>
+          <Button size="xs" variant="ghost" disabled={!picked.length || rows.length === 1} onClick={() => setPicked([])}>
+            Clear
+          </Button>
+          <span className="text-muted-foreground">
+            {held} of {rows.length} held up (made money out-of-sample and beat fixed defaults)
+            {idle ? ` · ${idle} never traded` : ''}
+          </span>
+        </div>
+        <div className="max-h-[32rem] overflow-auto rounded-lg border">
+          <Table>
+            <TableHeader className="sticky top-0 bg-card">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-8" />
+                <TableHead>Stock</TableHead>
+                <TableHead>Verdict</TableHead>
+                <TableHead className="text-right">Traded</TableHead>
+                <TableHead className="text-right">Tuned net</TableHead>
+                <TableHead className="text-right">Fixed net</TableHead>
+                <TableHead className="text-right">Trades</TableHead>
+                <TableHead className="text-right">PF tuned / fixed</TableHead>
+                <TableHead className="text-right">WFE</TableHead>
+                <TableHead className="text-right">Defl. Sharpe</TableHead>
+                <TableHead className="text-right">Stability</TableHead>
+                <TableHead>Sessions</TableHead>
+                <TableHead>Best combination (hindsight)</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((r, i) => {
+                const v = VERDICT_BADGE[verdicts[i]]
+                const on = picked.some((p) => p.id === r.id)
+                return (
+                  <TableRow key={r.id} className={cn('cursor-pointer', on && 'bg-muted/60')} onClick={() => toggle(r.symbol)}>
+                    <TableCell>
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        readOnly
+                        aria-label={`Pick ${r.symbol}`}
+                        className="size-3.5 accent-primary"
+                      />
+                    </TableCell>
+                    <TableCell className="font-medium">{r.symbol}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={v.className}>
+                        {v.label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.stats.traded_windows} / {r.stats.windows}
+                    </TableCell>
+                    <TableCell className={cn('text-right tabular-nums', pnlClass(r.oos.net))}>{inr(r.oos.net)}</TableCell>
+                    <TableCell className={cn('text-right tabular-nums', pnlClass(r.baseline.net))}>{inr(r.baseline.net)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{r.oos.trades}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.oos.trades ? fmt(r.oos.profit_factor) : '—'} / {fmt(r.baseline.profit_factor)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">{r.stats.wfe == null ? '—' : fmt(r.stats.wfe)}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.stats.dsr == null ? '—' : `${fmt(r.stats.dsr * 100, 0)}%`}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.stats.stability == null ? '—' : `${fmt(r.stats.stability * 100, 0)}%`}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-xs text-muted-foreground tabular-nums">
+                      {r.sessions[0]} → {r.sessions[1]}
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {r.best_cell ? (
+                        <>
+                          {paramsLabel(r.best_cell.params, Object.keys(r.axes))}{' '}
+                          <span className={pnlClass(r.best_cell.net)}>{inr(r.best_cell.net)}</span>
+                          {!r.best_cell.picked && <span className="text-muted-foreground"> · never picked</span>}
+                        </>
+                      ) : (
+                        '—'
+                      )}
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      </Section>
+
+      {shownTab && (
+        <div className="space-y-4">
+          {picked.length > 1 && (
+            <div className="no-print flex flex-wrap gap-1 border-b pb-2">
+              {picked.map((r) => (
+                <Button
+                  key={r.id}
+                  size="sm"
+                  variant={r.id === shownTab.id ? 'secondary' : 'ghost'}
+                  onClick={() => setActive(r.symbol)}
+                >
+                  {r.symbol}
+                  <span className={cn('ml-1 text-xs tabular-nums', pnlClass(r.oos.net))}>{inr(r.oos.net)}</span>
+                </Button>
+              ))}
+            </div>
+          )}
+          {byId.get(shownTab.id) ? (
+            <StockReport
+              key={shownTab.id}
+              r={byId.get(shownTab.id)!}
+              onDeleted={() => setPicked(picked.filter((p) => p.id !== shownTab.id).map((p) => p.symbol))}
+            />
+          ) : (
+            <Spinner className="size-4" />
+          )}
+        </div>
+      )}
     </div>
   )
 }

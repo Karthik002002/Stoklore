@@ -1138,3 +1138,149 @@ export type RunAnalytics = ReturnType<typeof runAnalytics>
 
 /** A session date's first bar (09:15), on the same IST-read-as-UTC clock as every engine time. */
 export const sessionTime = (date: string) => Date.parse(`${date}T09:15:00Z`) / 1000
+
+type RunReportLike = AutotuneLike & {
+  oos: { summary: Summary; trades?: RunTrade[]; daily?: [number, number][]; equity?: [number, number][] }
+  baseline: { summary: Summary; trades?: RunTrade[]; daily?: [number, number][]; equity?: [number, number][] }
+  sizing?: string[] | null
+}
+
+/** A whole auto-tune run as one workbook, for the run page's complete export: the per-stock summary,
+ *  then every per-report sheet (walk settings, tuned vs fixed, windows, combinations, trades) merged
+ *  into one sheet each with a Symbol column, plus what the run page derives - every metric per stock
+ *  and side, both trade logs, daily P&L, the run as one book, monthly returns and drawdowns. Long
+ *  format throughout, so a pivot table or filter slices it by stock. */
+export function autotuneRunSheets(rows: TuneRowLike[], reports: RunReportLike[]): Sheet[] {
+  const out: Sheet[] = [autotuneBatchSheet(rows)]
+  const bySide = [
+    ['Tuned', 'oos'],
+    ['Fixed defaults', 'baseline'],
+  ] as const
+  const ymd = (t: number) => istTime(t).slice(0, 10)
+
+  // every report's own sheets, one merged sheet per kind (same name and same columns)
+  const merged = new Map<string, Sheet>()
+  for (const r of reports)
+    for (const sh of autotuneSheets(r)) {
+      const key = `${sh.sheet}|${sh.headers.join('|')}`
+      const m = merged.get(key) ?? { sheet: sh.sheet, headers: ['Symbol', ...sh.headers], rows: [] }
+      m.rows.push(...sh.rows.map((row) => [r.symbol, ...row]))
+      merged.set(key, m)
+    }
+  for (const m of merged.values()) out.push(m.sheet === 'Trades' ? { ...m, sheet: 'Tuned trades' } : m)
+
+  const metricRows: Cell[][] = []
+  const fixedTrades: Cell[][] = []
+  const monthly: Cell[][] = []
+  const dds: Cell[][] = []
+  const daily: Cell[][] = []
+  for (const r of reports) {
+    const kv = Object.fromEntries((r.sizing ?? []).map((a) => a.split('=')))
+    const sizing = kv.sizing ? { mode: kv.sizing === '2' ? 'all_in' : 'scale', capital: Number(kv.capital) } : null
+    for (const [label, key] of bySide) {
+      const s = r[key]
+      const a = runAnalytics({
+        summary: {
+          net: s.summary.net ?? 0,
+          gross: s.summary.gross ?? 0,
+          costs: s.summary.costs ?? 0,
+          max_dd: s.summary.max_dd ?? 0,
+          from: s.equity?.[0]?.[0] ?? 0,
+          to: s.equity?.at(-1)?.[0] ?? 0,
+        },
+        daily: s.daily ?? [],
+        trades: s.trades ?? [],
+        params: { cost_bps: r.cost_bps },
+        sizing,
+      })
+      metricRows.push([
+        r.symbol,
+        label,
+        s.summary.net ?? null,
+        a.returnPct,
+        a.cagr,
+        s.summary.max_dd ?? null,
+        a.maxDdPct,
+        s.summary.sharpe ?? null,
+        a.sortino,
+        a.calmar,
+        a.ulcer,
+        s.summary.profit_factor ?? null,
+        s.summary.win_rate ?? null,
+        s.summary.expectancy ?? null,
+        a.payoff,
+        a.sqn,
+        a.kelly,
+        s.summary.trades ?? null,
+        a.tradesPerMonth,
+        a.exposurePct,
+        a.medianHoldMin,
+        a.avgWin,
+        a.avgLoss,
+        a.largestWin,
+        a.largestLoss,
+        a.winStreak,
+        a.lossStreak,
+        s.summary.costs ?? null,
+        a.costDragPct,
+        a.capital,
+        a.capitalBasis,
+      ])
+      for (const m of a.monthly) monthly.push([r.symbol, label, m.year, m.month + 1, m.pnl, m.pct])
+      for (const d of a.drawdowns)
+        dds.push([r.symbol, label, ymd(d.start), ymd(d.trough), d.end ? ymd(d.end) : null, -d.depth, d.pct, d.days, d.recovery])
+      if (key === 'baseline')
+        a.trades.forEach((t, i) =>
+          fixedTrades.push([r.symbol, t[3] > 0 ? 'Long' : 'Short', Math.abs(t[3]), istTime(t[1]), t[4], istTime(t[2]), t[5], t[6], a.nets[i]]),
+        )
+    }
+    const fixedByDay = new Map(r.baseline.daily ?? [])
+    const days = new Set([...(r.oos.daily ?? []).map(([t]) => t), ...fixedByDay.keys()])
+    const tunedByDay = new Map(r.oos.daily ?? [])
+    for (const t of [...days].sort((x, y) => x - y)) daily.push([r.symbol, ymd(t), tunedByDay.get(t) ?? 0, fixedByDay.get(t) ?? 0])
+  }
+  // the run as one book, both sides on the union of their days (a day only one side traded still counts)
+  const sumBy = (key: 'oos' | 'baseline') => {
+    const m = new Map<number, number>()
+    for (const r of reports) for (const [t, v] of r[key].daily ?? []) m.set(t, (m.get(t) ?? 0) + v)
+    return m
+  }
+  const tunedDay = sumBy('oos')
+  const fixedDay = sumBy('baseline')
+  let tunedCum = 0
+  let fixedCum = 0
+  const book: Cell[][] = [...new Set([...tunedDay.keys(), ...fixedDay.keys()])]
+    .sort((a, b) => a - b)
+    .map((t) => [ymd(t), (tunedCum += tunedDay.get(t) ?? 0), (fixedCum += fixedDay.get(t) ?? 0)])
+  out.push(
+    {
+      sheet: 'Metrics',
+      headers: [
+        'Symbol', 'Side', 'Net', 'Return %', 'CAGR %', 'Max drawdown', 'Max drawdown %', 'Sharpe', 'Sortino',
+        'Calmar', 'Ulcer index', 'Profit factor', 'Win rate %', 'Expectancy (gross)', 'Payoff ratio', 'SQN',
+        'Kelly %', 'Trades', 'Trades / month', 'Exposure %', 'Median hold (min)', 'Avg win (net)',
+        'Avg loss (net)', 'Largest win', 'Largest loss', 'Longest win streak', 'Longest loss streak', 'Costs',
+        'Cost drag %', 'Capital for %', 'Capital basis',
+      ],
+      rows: metricRows,
+    },
+    {
+      sheet: 'Fixed trades',
+      headers: ['Symbol', 'Side', 'Qty', 'Entry (IST)', 'Entry px', 'Exit (IST)', 'Exit px', 'Gross P&L', 'Net P&L'],
+      rows: fixedTrades,
+    },
+    { sheet: 'Daily', headers: ['Symbol', 'Day', 'Tuned P&L', 'Fixed defaults P&L'], rows: daily },
+    {
+      sheet: 'Book',
+      headers: ['Day', 'Tuned cumulative', 'Fixed defaults cumulative'],
+      rows: book,
+    },
+    { sheet: 'Monthly', headers: ['Symbol', 'Side', 'Year', 'Month', 'P&L', '% of capital'], rows: monthly },
+    {
+      sheet: 'Drawdowns',
+      headers: ['Symbol', 'Side', 'Peak', 'Trough', 'Recovered', 'Depth', 'Depth %', 'Length (days)', 'Recovery (days)'],
+      rows: dds,
+    },
+  )
+  return out
+}

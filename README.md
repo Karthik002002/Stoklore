@@ -945,9 +945,10 @@ trades on the VPS, and its paper/live sessions land on this page beside the back
   drawdowns, per-symbol curves, P&L by hour/weekday/month, the full trade log with MAE/MFE,
   costs & sizing, data provenance, the exact engine command and build, notes & tags, re-run
   (as-is or edited) and compare
-- **Walk-forward page** — `/engine/autotune/<report id>`: the whole walk, every metric tuned vs
-  fixed defaults side by side, window-by-window charts, drawdowns, monthly returns, time-of-day and
-  the full trade log with MAE/MFE. The Reports list links each report id there
+- **Auto-tune run page** — `/engine/autotune/<run id>`: every stock of the run on one chart plus the
+  run as one book. Tick any stocks to narrow the charts and open each one's full report: the walk,
+  every metric tuned vs fixed defaults, window charts, drawdowns, monthly returns, time-of-day and
+  the trade log with MAE/MFE. The Auto-tune tab lists runs, one row each
 - **Background jobs** — *Run in background* on every form queues the run in Postgres. The Jobs
   tab shows live progress with cancel, retry, priority and how many run at once. Queued jobs survive
   a restart

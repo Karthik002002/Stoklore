@@ -24,6 +24,17 @@ Any field left empty falls back to an environment variable, which is handy for h
 | VPS | `ENGINE_VPS` | none (Sync live is hidden) |
 | VPS reports folder | `ENGINE_VPS_REPORTS` | `/var/lib/algo/reports` |
 
+### Writing your own engine
+
+Any engine that follows the contract works: one `build/backtest` binary, bars in as CSV, JSON out.
+The contract (every flag, param and output field, and the trading rules Stoklore assumes) is in
+[.claude/skills/algo-engine-contract/SKILL.md](../.claude/skills/algo-engine-contract/SKILL.md).
+Check an engine against it before pointing Stoklore at it:
+
+```bash
+.venv/bin/python .claude/skills/algo-engine-contract/check_engine.py ~/Coding/hft ema_cross
+```
+
 ## Using it
 
 - **New backtest:** pick a strategy, symbols, and bar size (1m–4H or **1D**, all from the same minute
@@ -301,11 +312,24 @@ report supports:
 Trade stats on the page are net of the cost the engine charged (`cost_bps` a side on each fill),
 so they add up to the run's net. The engine's own win rate and averages are gross.
 
-## The walk-forward page
+## The auto-tune run page
 
-The Auto-tune tab's **Reports** list shows every report with its id. Clicking a row (or the id)
-opens that report's own page at `/engine/autotune/<report id>`. So do a one-stock walk when it
-finishes, a row of a batch view, and a finished job's *Open report*. It has:
+The Auto-tune tab lists **runs**: one row per run, by its id (the batch the stocks were walked in).
+Each row shows the strategy, the stocks, how many held up, and the tuned and fixed-defaults net
+summed over the run. Clicking one opens `/engine/autotune/<run id>`, as does a finished run or
+job. The page has:
+
+- The run's settings, and totals: how many stocks held up, tuned vs fixed net, what tuning added,
+  how many stocks never traded, and the median walk-forward efficiency.
+- **Every stock on one chart**: each stock's out-of-sample equity, tuned or fixed defaults, and
+  the run as one book (every stock's P&L summed day by day).
+- **Stocks**: a row per stock (verdict, traded windows, tuned/fixed net, trades, profit factor,
+  WFE, deflated Sharpe, stability, sessions, the best combination with hindsight). Tick any number
+  of them, or *Select all*. Both charts narrow to the ticked stocks, and each ticked stock gets a
+  tab with its full report below. The ticks are kept in the URL (`?stocks=INFY,TCS`), so the view
+  can be bookmarked. A one-stock run just shows its report.
+
+Each stock's report:
 
 - **The walk**: the verdict, headline stats (WFE, deflated Sharpe, stability, switches), the tuned,
   fixed-defaults and in-sample-promise curves, what the tuner picked, every grid cell
@@ -324,8 +348,8 @@ finishes, a row of a batch view, and a finished job's *Open report*. It has:
   with MAE/MFE.
 - **Data provenance** and **How it was made**: the report id, whether *Run now* or a job made it,
   the walk settings, params as typed, fixed defaults, sizing, and the request to walk it again.
-- **Walk again** queues the same walk on the same sessions as a background job. Also Export, PDF
-  and Delete.
+- **Walk again** queues that stock's walk again on the same sessions as a background job. Also
+  Export and Delete for that stock. The run page has Export, PDF and *Delete run* for the whole run.
 
 ## Background jobs
 
@@ -356,7 +380,13 @@ Every view has an **Export** button with two options. **Excel** gives one workbo
 | Sweep (one at a time or grid) | Sweep (mode, base/fixed/swept values), Runs (every param + every metric), Impact (one at a time only: each param's best value and spread) | Runs |
 | Auto-tune report | Walk-forward (settings, tuned ranges, fixed defaults, every verdict number), Tuned vs fixed (every metric side by side), Windows (one row per window, with pick rank and the hindsight-best combination), Combinations (every cell out-of-sample across all windows), Trades (every executed trade with its window and params) | Windows |
 | Auto-tune batch | Stocks: one row per stock with its verdict, tuned vs fixed net and profit factor, WFE, deflated Sharpe, stability | Stocks |
+| Auto-tune run page · **Everything** | Stocks; every per-report sheet merged across stocks with a Symbol column (Walk-forward, Tuned vs fixed, Windows, Combinations, Tuned trades); Metrics (every run-page metric per stock, tuned and fixed); Fixed trades; Daily (each stock's tuned and fixed P&L per day); Book (the run as one book, both sides cumulative); Monthly; Drawdowns | Stocks summary |
 | Runs list | Runs: every run currently shown by the source filter, with every metric | Runs |
+
+The run page's Export also has **Raw reports (.json)**, every stock's report exactly as the engine
+folder holds it. *Everything* and the JSON wait until every stock's report has loaded. A big run
+makes a big workbook: 23 stocks of 1D history is about 50 MB, because the sheets are stored
+uncompressed.
 
 Numbers are written as numbers, so Excel can sort, sum and chart them. Times are IST. CSVs are
 UTF-8 with a BOM so Excel opens them correctly.

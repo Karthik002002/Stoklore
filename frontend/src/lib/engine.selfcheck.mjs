@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict'
 import {
   autotuneBatchSheet,
+  autotuneRunSheets,
   autotuneSheets,
   fanPaths,
   histogram,
@@ -652,6 +653,33 @@ assert.equal(
   assert.equal(sized.capital, 100000)
   assert.equal(+sized.cagr.toFixed(6), 100, 'doubled in a year')
   assert.equal(sized.returnPct, 100)
+}
+
+// --- a whole auto-tune run as one workbook ---
+{
+  const D = 86400
+  const rep = (symbol, tuned, fixed) => ({
+    ...wf,
+    id: `wf-x-${symbol}`,
+    symbol,
+    oos: { ...wf.oos, daily: tuned, equity: [[tuned[0][0], 0], [tuned.at(-1)[0], 1]], trades: [[symbol, D, 2 * D, 1, 10, 11, 1]] },
+    baseline: { ...wf.baseline, daily: fixed, equity: [[fixed[0][0], 0], [fixed.at(-1)[0], 1]], trades: [[symbol, D, 2 * D, -1, 10, 11, -1]] },
+  })
+  const a = rep('AAA', [[D, 5], [2 * D, -1]], [[D, 1]])
+  const b = rep('BBB', [[2 * D, 3]], [[3 * D, 2]])
+  const rowOf = (r) => ({ ...r, oos: r.oos.summary, baseline: r.baseline.summary })
+  const sheets = autotuneRunSheets([rowOf(a), rowOf(b)], [a, b])
+  const names = sheets.map((s) => s.sheet)
+  for (const n of ['Stocks', 'Walk-forward', 'Windows', 'Tuned trades', 'Metrics', 'Fixed trades', 'Daily', 'Book', 'Monthly', 'Drawdowns'])
+    assert.ok(names.includes(n), `has ${n}`)
+  const get = (n) => sheets.find((s) => s.sheet === n)
+  assert.deepEqual(get('Windows').rows.map((r) => r[0]), ['AAA', 'AAA', 'BBB', 'BBB'], 'per-report sheets merged, Symbol first')
+  assert.equal(get('Windows').headers[0], 'Symbol')
+  assert.equal(get('Metrics').rows.length, 4, 'a row per stock and side')
+  assert.deepEqual(get('Fixed trades').rows.map((r) => [r[0], r[1]]), [['AAA', 'Short'], ['BBB', 'Short']])
+  assert.deepEqual(get('Book').rows.map((r) => r.slice(1)), [[5, 1], [7, 1], [7, 3]], 'union of days, both sides cumulative')
+  assert.deepEqual(get('Daily').rows.filter((r) => r[0] === 'BBB').map((r) => r.slice(2)), [[3, 0], [0, 2]])
+  for (const s of sheets) assert.ok(s.rows.every((r) => r.length === s.headers.length), `${s.sheet}: every row matches its headers`)
 }
 
 console.log('engine selfcheck passed')

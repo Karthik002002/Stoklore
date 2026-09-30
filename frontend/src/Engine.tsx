@@ -37,7 +37,6 @@ import { Textarea } from '@/components/ui/textarea'
 import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import {
-  autotuneBatchSheet,
   comboCount,
   drawdown,
   fanPaths,
@@ -47,11 +46,9 @@ import {
   istTime,
   noTrades,
   oatSeries,
-  portfolioCurve,
   runSheets,
   runsSheet,
   sweepSheets,
-  paramsLabel,
   listedOn,
   parseSymbolJson,
   parseValues,
@@ -79,11 +76,11 @@ import {
   pnlClass,
   runName,
 } from './engineUi'
+import { runIdOf } from './EngineAutotunePage'
 import { JobsPanel, useQueueJob } from './EngineJobs'
 import { cn } from '@/lib/utils'
 import type {
   BarRange,
-  EngineAutotuneReport,
   EngineAutotuneRequest,
   EngineBacktestRequest,
   EngineSizing,
@@ -95,11 +92,9 @@ import type {
   EngineSweepRun,
 } from '@/services/api'
 import {
-  deleteEngineAutotuneBatch,
   deleteEngineBatch,
   deleteEngineRun,
   deleteEngineSweep,
-  getEngineAutotune,
   getEngineAutotunes,
   getEngineRun,
   getEngineRuns,
@@ -2411,326 +2406,71 @@ function AutotuneForm({
   )
 }
 
-const VERDICT_BADGE = {
-  held: { label: 'held up', className: 'text-success' },
-  failed: { label: 'no edge', className: 'text-destructive' },
-  idle: { label: 'never traded', className: 'text-muted-foreground' },
-} as const
-
-/** A multi-stock run: every stock's own walk-forward side by side, and the batch traded as one book.
- *  Each stock was tuned on its own; this only adds their results up. */
-function AutotuneBatchView({
-  batch,
-  rows,
-  onOpen,
-  onClose,
-}: {
-  batch: string
-  rows: EngineAutotuneRow[]
-  onOpen: (id: string) => void
-  onClose: () => void
-}) {
-  const queryClient = useQueryClient()
-  const remove = useMutation({
-    mutationFn: () => deleteEngineAutotuneBatch(batch),
-    onSuccess: (r) => {
-      toast.success(`Deleted ${r.deleted} reports`)
-      queryClient.invalidateQueries({ queryKey: ['engineAutotunes'] })
-      onClose()
-    },
-    onError: (e) => toast.error(e.message),
-  })
-  // the portfolio curve needs each stock's daily P&L, which the list rows leave out
-  const combine = useCallback((results: UseQueryResult<EngineAutotuneReport>[]) => {
-    const loaded = results.flatMap((r) => (r.data ? [r.data] : []))
-    const pts = (curve: [number, number][]) => curve.map(([t, v]) => ({ time: t as UTCTimestamp, value: v }))
-    return {
-      loading: results.some((r) => r.isPending),
-      datasets: loaded.length
-        ? [
-            {
-              key: 'Tuned (out-of-sample)',
-              color: seriesColor(0),
-              points: pts(portfolioCurve(loaded.map((d) => d.oos.daily))),
-            },
-            {
-              key: 'Fixed defaults (out-of-sample)',
-              color: seriesColor(3),
-              points: pts(portfolioCurve(loaded.map((d) => d.baseline.daily))),
-            },
-          ]
-        : [],
-    }
-  }, [])
-  const { datasets, loading } = useQueries({
-    queries: rows.map((r) => ({
-      queryKey: ['engineAutotune', r.id],
-      queryFn: () => getEngineAutotune(r.id),
-    })),
-    combine,
-  })
-
-  const sorted = [...rows].sort((a, b) => b.oos.net - a.oos.net)
-  const actions = (
-    <>
-      <ExportMenu name={`autotune-${batch}`} sheets={() => [autotuneBatchSheet(sorted)]} />
-      <Button size="sm" variant="ghost" disabled={remove.isPending} onClick={() => remove.mutate()}>
-        <Trash2Icon /> Delete all
-      </Button>
-      <Button size="icon-sm" variant="ghost" aria-label="Close" onClick={onClose}>
-        <XIcon />
-      </Button>
-    </>
-  )
-  if (!rows.length)
-    return (
-      <Panel title="Walk-forward batch" actions={actions}>
-        <Spinner className="size-4" />
-      </Panel>
-    )
-
-  const first = rows[0]
-  const verdicts = sorted.map(tuneVerdict)
-  const held = verdicts.filter((v) => v === 'held').length
-  const idle = verdicts.filter((v) => v === 'idle').length
-  const tunedNet = rows.reduce((n, r) => n + r.oos.net, 0)
-  const fixedNet = rows.reduce((n, r) => n + r.baseline.net, 0)
-  const wfes = rows.flatMap((r) => (r.stats.wfe == null ? [] : [r.stats.wfe])).sort((a, b) => a - b)
-
+/** Every auto-tune run, one row each: a batch of stocks walked together (or a single walk from
+ *  before batches). A row opens the run's page, where every stock is plotted and any can be opened. */
+function AutotuneList({ rows, onOpen }: { rows: EngineAutotuneRow[]; onOpen: (runId: string) => void }) {
+  const runs = useMemo(() => {
+    const by = new Map<string, EngineAutotuneRow[]>()
+    for (const r of rows) by.set(runIdOf(r), [...(by.get(runIdOf(r)) ?? []), r])
+    return [...by.entries()]
+      .map(([id, rs]) => ({ id, rows: rs, first: rs[0] }))
+      .sort((a, b) => b.first.created.localeCompare(a.first.created))
+  }, [rows])
+  if (!runs.length)
+    return <p className="text-sm text-muted-foreground">No auto-tune runs yet - start one above.</p>
   return (
-    <Panel
-      title={`Walk-forward batch · ${first.strategy} · ${rows.length} stocks · ${first.interval}`}
-      actions={actions}
-    >
-      <div className="space-y-5">
-        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
-          <span>
-            {first.sessions[0]} → {first.sessions[1]} · train {first.train} / test {first.test} sessions · min{' '}
-            {first.min_trades} trades · switch margin {fmt(first.margin * 100, 0)}% · cost {first.cost_bps}{' '}
-            bps
-          </span>
-          <span>
-            Tuned:{' '}
-            <span className="font-mono text-foreground">
-              {Object.entries(first.axes)
-                .map(([k, v]) => `${k} ${v[0]}…${v.at(-1)} (${v.length})`)
-                .join(', ')}
-            </span>
-          </span>
-          <span>created {formatDateTime(first.created)}</span>
-        </div>
-        <HistoryLine
-          history={first.history}
-          coverage={Object.fromEntries(rows.flatMap((r) => (r.coverage ? [[r.symbol, r.coverage]] : [])))}
-        />
-
-        <p className={cn('text-sm', held ? 'text-success' : 'text-muted-foreground')}>
-          {held} of {rows.length} stocks held up out-of-sample (made money and beat fixed defaults)
-          {idle ? `; ${idle} never found a cell that made money in-sample and never traded` : ''}. Each stock
-          was tuned on its own - open one for its windows and parameter path.
-        </p>
-
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-          <Stat label="Stocks where tuning held up" value={`${held} / ${rows.length}`} />
-          <Stat label="Tuned net · all stocks" value={inr(tunedNet)} className={pnlClass(tunedNet)} />
-          <Stat
-            label="Fixed defaults net · all stocks"
-            value={inr(fixedNet)}
-            className={pnlClass(fixedNet)}
-          />
-          <Stat label="Never traded" value={`${idle} / ${rows.length}`} />
-          <Stat
-            label="Median walk-forward efficiency"
-            value={wfes.length ? fmt(wfes[Math.floor(wfes.length / 2)]) : '—'}
-          />
-        </div>
-
-        <div>
-          <p className="mb-1 text-xs text-muted-foreground">
-            The batch as one book: every stock's out-of-sample P&L summed day by day.
-          </p>
-          {loading && !datasets.length ? (
-            <Spinner className="size-4" />
-          ) : (
-            <div className="h-72">
-              <SeriesChart datasets={datasets} fill format={inr} />
-            </div>
-          )}
-        </div>
-
-        <div className="max-h-[28rem] overflow-auto rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead>Stock</TableHead>
-                <TableHead>Verdict</TableHead>
-                <TableHead className="text-right">Traded</TableHead>
-                <TableHead className="text-right">Tuned net</TableHead>
-                <TableHead className="text-right">Fixed net</TableHead>
-                <TableHead className="text-right">Trades</TableHead>
-                <TableHead className="text-right">PF tuned / fixed</TableHead>
-                <TableHead className="text-right">WFE</TableHead>
-                <TableHead className="text-right">Defl. Sharpe</TableHead>
-                <TableHead className="text-right">Stability</TableHead>
-                <TableHead>Best combination (hindsight)</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sorted.map((r, i) => {
-                const v = VERDICT_BADGE[verdicts[i]]
-                return (
-                  <TableRow key={r.id} className="cursor-pointer" onClick={() => onOpen(r.id)}>
-                    <TableCell className="font-medium">{r.symbol}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={v.className}>
-                        {v.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {r.stats.traded_windows} / {r.stats.windows}
-                    </TableCell>
-                    <TableCell className={cn('text-right tabular-nums', pnlClass(r.oos.net))}>
-                      {inr(r.oos.net)}
-                    </TableCell>
-                    <TableCell className={cn('text-right tabular-nums', pnlClass(r.baseline.net))}>
-                      {inr(r.baseline.net)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{r.oos.trades}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {r.oos.trades ? fmt(r.oos.profit_factor) : '—'} / {fmt(r.baseline.profit_factor)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {r.stats.wfe == null ? '—' : fmt(r.stats.wfe)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {r.stats.dsr == null ? '—' : `${fmt(r.stats.dsr * 100, 0)}%`}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {r.stats.stability == null ? '—' : `${fmt(r.stats.stability * 100, 0)}%`}
-                    </TableCell>
-                    <TableCell className="font-mono text-xs">
-                      {r.best_cell ? (
-                        <>
-                          {paramsLabel(r.best_cell.params, Object.keys(r.axes))}{' '}
-                          <span className={pnlClass(r.best_cell.net)}>{inr(r.best_cell.net)}</span>
-                          {r.best_cell.picked ? (
-                            ''
-                          ) : (
-                            <span className="text-muted-foreground"> · never picked</span>
-                          )}
-                        </>
-                      ) : (
-                        '—'
-                      )}
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-              <TableRow className="font-medium hover:bg-transparent">
-                <TableCell colSpan={3}>All stocks</TableCell>
-                <TableCell className={cn('text-right tabular-nums', pnlClass(tunedNet))}>
-                  {inr(tunedNet)}
-                </TableCell>
-                <TableCell className={cn('text-right tabular-nums', pnlClass(fixedNet))}>
-                  {inr(fixedNet)}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {fmt(
-                    rows.reduce((n, r) => n + r.oos.trades, 0),
-                    0,
-                  )}
-                </TableCell>
-                <TableCell colSpan={5} />
-              </TableRow>
-            </TableBody>
-          </Table>
-        </div>
-      </div>
-    </Panel>
-  )
-}
-
-/** Every walk-forward report; a row opens that report's own page (/engine/autotune/<id>). */
-function AutotuneList({
-  rows,
-  onOpen,
-  onOpenBatch,
-}: {
-  rows: EngineAutotuneRow[]
-  onOpen: (id: string) => void
-  onOpenBatch: (batch: string) => void
-}) {
-  const perBatch = new Map<string, number>()
-  for (const r of rows) if (r.batch) perBatch.set(r.batch, (perBatch.get(r.batch) ?? 0) + 1)
-  if (!rows.length)
-    return <p className="text-sm text-muted-foreground">No walk-forward reports yet - start one above.</p>
-  return (
-    <div className="max-h-80 overflow-auto">
+    <div className="max-h-[32rem] overflow-auto">
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
-            <TableHead>Report</TableHead>
-            <TableHead>Stock</TableHead>
+            <TableHead>Run</TableHead>
+            <TableHead>Strategy</TableHead>
+            <TableHead>Stocks</TableHead>
             <TableHead>Tuned</TableHead>
-            <TableHead>Sessions</TableHead>
-            <TableHead className="text-right">Traded</TableHead>
+            <TableHead className="text-right">Held up</TableHead>
             <TableHead className="text-right">Tuned net</TableHead>
             <TableHead className="text-right">Fixed net</TableHead>
-            <TableHead className="text-right">WFE</TableHead>
-            <TableHead className="text-right">Defl. Sharpe</TableHead>
-            <TableHead>Run</TableHead>
             <TableHead>When</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((r) => (
-            <TableRow key={r.id} className="cursor-pointer" onClick={() => onOpen(r.id)}>
-              <TableCell onClick={(e) => e.stopPropagation()}>
-                <Link
-                  to="/engine/autotune/$reportId"
-                  params={{ reportId: r.id }}
-                  className="font-mono text-xs text-primary hover:underline"
-                >
-                  {r.id}
-                </Link>
-              </TableCell>
-              <TableCell>
-                <span className="font-medium">{r.symbol}</span>{' '}
-                <span className="text-muted-foreground">
-                  {r.strategy} · {r.interval}
-                </span>
-              </TableCell>
-              <TableCell className="font-mono text-xs text-muted-foreground">
-                {Object.keys(r.axes).join(', ')}
-              </TableCell>
-              <TableCell className="text-muted-foreground tabular-nums">
-                {r.sessions[0]} → {r.sessions[1]}
-              </TableCell>
-              <TableCell className="text-right tabular-nums">
-                {r.stats.traded_windows} / {r.stats.windows}
-              </TableCell>
-              <TableCell className={cn('text-right tabular-nums', pnlClass(r.oos.net))}>
-                {inr(r.oos.net)}
-              </TableCell>
-              <TableCell className={cn('text-right tabular-nums', pnlClass(r.baseline.net))}>
-                {inr(r.baseline.net)}
-              </TableCell>
-              <TableCell className="text-right tabular-nums">
-                {r.stats.wfe == null ? '—' : fmt(r.stats.wfe)}
-              </TableCell>
-              <TableCell className="text-right tabular-nums">
-                {r.stats.dsr == null ? '—' : `${fmt(r.stats.dsr * 100, 0)}%`}
-              </TableCell>
-              <TableCell onClick={(e) => e.stopPropagation()}>
-                {r.batch && (perBatch.get(r.batch) ?? 0) > 1 && (
-                  <Button size="xs" variant="outline" onClick={() => onOpenBatch(r.batch!)}>
-                    {perBatch.get(r.batch)} stocks
-                  </Button>
-                )}
-              </TableCell>
-              <TableCell className="text-muted-foreground">{formatDateTime(r.created)}</TableCell>
-            </TableRow>
-          ))}
+          {runs.map(({ id, rows: rs, first }) => {
+            const tuned = rs.reduce((n, r) => n + r.oos.net, 0)
+            const fixed = rs.reduce((n, r) => n + r.baseline.net, 0)
+            const held = rs.filter((r) => tuneVerdict(r) === 'held').length
+            const names = rs.map((r) => r.symbol)
+            return (
+              <TableRow key={id} className="cursor-pointer" onClick={() => onOpen(id)}>
+                <TableCell onClick={(e) => e.stopPropagation()}>
+                  <Link
+                    to="/engine/autotune/$runId"
+                    params={{ runId: id }}
+                    search={{}}
+                    className="font-mono text-xs text-primary hover:underline"
+                  >
+                    {id}
+                  </Link>
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-muted-foreground">
+                  {first.strategy} · {first.interval}
+                </TableCell>
+                <TableCell className="max-w-64 truncate" title={names.join(', ')}>
+                  <span className="font-medium">{rs.length}</span>{' '}
+                  <span className="text-muted-foreground">
+                    {names.slice(0, 3).join(', ')}
+                    {names.length > 3 ? ', …' : ''}
+                  </span>
+                </TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">{Object.keys(first.axes).join(', ')}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {held} / {rs.length}
+                </TableCell>
+                <TableCell className={cn('text-right tabular-nums', pnlClass(tuned))}>{inr(tuned)}</TableCell>
+                <TableCell className={cn('text-right tabular-nums', pnlClass(fixed))}>{inr(fixed)}</TableCell>
+                <TableCell className="whitespace-nowrap text-muted-foreground">{formatDateTime(first.created)}</TableCell>
+              </TableRow>
+            )
+          })}
         </TableBody>
       </Table>
     </div>
@@ -2767,12 +2507,14 @@ export default function Engine() {
   const open = (id?: string, nextBatch = activeBatch) =>
     navigate({ search: (prev) => ({ ...prev, run: id, batch: nextBatch }) })
   const openSweep = (id?: string) => navigate({ search: (prev) => ({ ...prev, sweep: id }) })
-  // a walk-forward report opens on its own page; an old ?autotune= link is sent there too
-  const openTune = (id: string) => navigate({ to: '/engine/autotune/$reportId', params: { reportId: id } })
+  // an auto-tune run opens on its own page. Old ?autotune=<report> and ?tunebatch=<batch> links are
+  // sent there too - the run page turns a report id into its run with that stock picked.
+  const openTune = (runId: string) =>
+    navigate({ to: '/engine/autotune/$runId', params: { runId }, search: {} })
   useEffect(() => {
-    if (autotune) navigate({ to: '/engine/autotune/$reportId', params: { reportId: autotune }, replace: true })
-  }, [autotune, navigate])
-  const openTuneBatch = (b?: string) => navigate({ search: (prev) => ({ ...prev, tunebatch: b }) })
+    const old = tunebatch ?? autotune
+    if (old) navigate({ to: '/engine/autotune/$runId', params: { runId: old }, search: {}, replace: true })
+  }, [autotune, tunebatch, navigate])
   const setTab = (next: string) => navigate({ search: (prev) => ({ ...prev, tab: next as EngineTab }) })
 
   return (
@@ -2904,16 +2646,13 @@ export default function Engine() {
           <Panel title="New walk-forward">
             {settings?.built ? (
               <AutotuneForm
-                onReport={(b, many) => {
-                  // each stock lands in the list - and the open batch view - as soon as it's walked
+                onReport={() => {
+                  // each stock lands in the runs list as soon as it's walked
                   queryClient.invalidateQueries({ queryKey: ['engineAutotunes'] })
-                  if (many) navigate({ search: (prev) => ({ ...prev, tunebatch: b, autotune: undefined }) })
                 }}
-                onDone={(b, ids) => {
+                onDone={(b) => {
                   queryClient.invalidateQueries({ queryKey: ['engineAutotunes'] })
-                  // one stock opens its report; several open the batch, one click from each report
-                  if (ids.length === 1) openTune(ids[0])
-                  else navigate({ search: (prev) => ({ ...prev, tunebatch: b, autotune: undefined }) })
+                  openTune(b)
                 }}
               />
             ) : (
@@ -2922,17 +2661,8 @@ export default function Engine() {
               </p>
             )}
           </Panel>
-          {tunebatch && (
-            <AutotuneBatchView
-              key={tunebatch}
-              batch={tunebatch}
-              rows={tunes.filter((r) => r.batch === tunebatch)}
-              onOpen={openTune}
-              onClose={() => openTuneBatch(undefined)}
-            />
-          )}
-          <Panel title={`Reports (${tunes.length})`}>
-            <AutotuneList rows={tunes} onOpen={openTune} onOpenBatch={openTuneBatch} />
+          <Panel title={`Runs (${new Set(tunes.map(runIdOf)).size})`}>
+            <AutotuneList rows={tunes} onOpen={openTune} />
           </Panel>
         </TabsPanel>
 

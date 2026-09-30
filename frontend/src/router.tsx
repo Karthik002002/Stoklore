@@ -446,10 +446,15 @@ const engineRoute = createRoute({
 
 // One run, in full: every metric, trade, symbol and time-of-day breakdown the engine's report
 // supports, plus how it was made (EngineRunPage.tsx). The run id is the whole key.
-// One walk-forward report in full (EngineAutotunePage.tsx); the Auto-tune tab's list links here.
+// One auto-tune run (EngineAutotunePage.tsx): every stock of it on one chart, and the full report
+// of each stock picked - `stocks`, comma-separated symbols. The run id is the batch (or, for a walk
+// from before batches, the report's own id); the Auto-tune tab's list links here.
 const engineAutotuneRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/engine/autotune/$reportId',
+  path: '/engine/autotune/$runId',
+  validateSearch: (search): { stocks?: string } => ({
+    stocks: typeof search.stocks === 'string' && search.stocks ? search.stocks : undefined,
+  }),
   component: EngineAutotunePage,
 })
 

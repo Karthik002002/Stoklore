@@ -871,6 +871,8 @@ Full details: [docs/paper-trading.md](docs/paper-trading.md).
 
 A `/live` page that places **real orders** through your own Dhan account, manages the position on
 the chart, and tells you what the broker did. Fills and rejections land in the [alerts](docs/alerts.md) feed.
+Price alerts show on the position charts as draggable lines. Right-click → *Add alert here* arms
+one, and the Alerts page lists each alert next to the position it guards.
 
 > Ships **switched off**. Read [docs/live-trading.md](docs/live-trading.md) before turning it on,
 > and test against Dhan's free sandbox first.

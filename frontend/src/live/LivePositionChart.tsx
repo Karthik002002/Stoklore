@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { fmt, inr } from '@/lib/format'
+import { useChartAlerts } from '@/lib/useChartAlerts'
 import { usePageTitle } from '@/lib/usePageTitle'
 import ReplayChart from '@/features/bar-replay/ReplayChart'
 import { useBarReplayStore } from '@/features/bar-replay/store'
@@ -88,6 +89,8 @@ export default function LivePositionChart() {
   const indicators = useBarReplayStore((st) => st.indicators)
   const chartSettings = useBarReplayStore((st) => st.settings)
   usePageTitle(`${symbol} · Live position`)
+  // price alerts on this stock, drawn and editable on the chart (same rows as the Alerts page)
+  const chartAlerts = useChartAlerts(symbol)
 
   const { data: positions = [], isPending } = useQuery({
     queryKey: ['livePositions'],
@@ -275,6 +278,7 @@ export default function LivePositionChart() {
           </p>
         ) : (
           <ReplayChart
+            {...chartAlerts}
             bars={bars}
             indicators={indicators}
             orders={position ? [asOrder(position, legs)] : []}

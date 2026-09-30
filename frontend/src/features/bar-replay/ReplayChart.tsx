@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type * as React from 'react'
 import type { ReactNode } from 'react'
+import { BellIcon } from 'lucide-react'
 import {
   CandlestickSeries,
   CrosshairMode,
@@ -24,6 +25,8 @@ import { compact, inr } from '@/lib/format'
 import { INDICATOR_COLORS, INDICATOR_TYPES } from '@/lib/indicators'
 import { tradeReturnPct } from '@/lib/manualTrades'
 import { measureRange } from '@/lib/replay'
+import { CHART_ALERT_KINDS } from '@/lib/useChartAlerts'
+import type { ChartAlert, ChartAlertKind } from '@/lib/useChartAlerts'
 import { riskReward } from './orderEngine'
 import { DEFAULT_CHART_SETTINGS } from './store'
 
@@ -130,6 +133,13 @@ type ReplayChartProps = {
   view?: ReplayView
   onViewChange?: (view: Partial<ReplayView>) => void
   settings?: ChartSettings
+  /** Price alerts armed on the charted symbol (lib/useChartAlerts): amber lines that drag to a new
+   *  level, a pill with ✕ to delete, and "Add alert here" in the right-click menu. Independent of
+   *  readOnly - an alert is about the market from now on, not about the trade being shown. */
+  alerts?: ChartAlert[]
+  onAddAlert?: (price: number, kind: ChartAlertKind) => void
+  onMoveAlert?: (id: number, price: number, which: 'price' | 'price2') => void
+  onRemoveAlert?: (id: number) => void
 }
 
 /** The framing a chart falls back to when nothing has been saved for it yet. */
@@ -403,6 +413,10 @@ const ReplayChart = forwardRef(function ReplayChart(
     view,
     onViewChange,
     settings = DEFAULT_CHART_SETTINGS,
+    alerts = [],
+    onAddAlert,
+    onMoveAlert,
+    onRemoveAlert,
   }: ReplayChartProps,
   ref: React.Ref<ReplayChartHandle>,
 ) {
@@ -416,6 +430,8 @@ const ReplayChart = forwardRef(function ReplayChart(
   /** One price line per level, keyed `orderId:entry` or `orderId:stopLoss:legId`. */
   const orderLinesRef = useRef(new Map<string, IPriceLine>())
   const previewLinesRef = useRef<IPriceLine[]>([])
+  /** One price line per alert level, keyed `alertId:price` or `alertId:price2` (a channel's bound). */
+  const alertLinesRef = useRef(new Map<string, IPriceLine>())
   const hasFitRef = useRef(false)
   // Pane keys whose saved price scale has already been applied. Applied ONCE each: after that the
   // scale belongs to the user, and re-applying on a later render would snap their drag back.
@@ -463,6 +479,11 @@ const ReplayChart = forwardRef(function ReplayChart(
   // Read through a ref so toggling it never tears down and rebuilds the chart's pointer wiring.
   const readOnlyRef = useRef(readOnly)
   readOnlyRef.current = readOnly
+  // Alerts through refs for the same reason as orders: the pointer wiring is bound once per chart.
+  const alertsRef = useRef(alerts)
+  alertsRef.current = alerts
+  const alertCbRef = useRef({ onAddAlert, onMoveAlert })
+  alertCbRef.current = { onAddAlert, onMoveAlert }
   const onDrawingsRef = useRef(onDrawingsChange)
   onDrawingsRef.current = onDrawingsChange
   const toolRef = useRef(tool)
@@ -619,6 +640,7 @@ const ReplayChart = forwardRef(function ReplayChart(
 
     // What the pointer is currently dragging: an order level, or a shape being drawn out.
     let drag: { orderId: string; field: DragField; legId?: string } | null = null
+    let alertDrag: { id: number; which: 'price' | 'price2' } | null = null
     let drawStart: Anchor | null = null
 
     const priceAt = (clientY: number) => {
@@ -678,6 +700,21 @@ const ReplayChart = forwardRef(function ReplayChart(
           }
         }
       }
+      return null
+    }
+
+    // An alert level under the pointer. Checked after the order levels: a stop you can be filled
+    // at wins a press over an alert that only notifies.
+    const findAlert = (clientY: number) => {
+      if (!alertCbRef.current.onMoveAlert) return null
+      const y = clientY - container.getBoundingClientRect().top
+      for (const a of alertsRef.current)
+        for (const which of ['price', 'price2'] as const) {
+          const price = a[which]
+          if (price == null) continue
+          const coord = coordFor(price)
+          if (coord != null && Math.abs(coord - y) <= DRAG_HIT_PX) return { id: a.id, which }
+        }
       return null
     }
 
@@ -773,6 +810,13 @@ const ReplayChart = forwardRef(function ReplayChart(
         container.style.cursor = 'ns-resize'
         return
       }
+      const alertHit = findAlert(e.clientY)
+      if (alertHit) {
+        alertDrag = alertHit
+        chart.applyOptions({ handleScroll: false, handleScale: false })
+        container.style.cursor = 'ns-resize'
+        return
+      }
       // An order line always wins the press (checked above): the levels you can actually get
       // filled at matter more than a sketch drawn near them.
       const armed = toolRef.current as Drawing['type'] | null
@@ -812,6 +856,11 @@ const ReplayChart = forwardRef(function ReplayChart(
           const from = drawStart
           setDraft((d) => (d ? { ...d, points: [from, anchor] } : d))
         }
+        return
+      }
+      if (alertDrag) {
+        const price = priceAt(e.clientY)
+        if (price != null) alertLinesRef.current.get(`${alertDrag.id}:${alertDrag.which}`)?.applyOptions({ price })
         return
       }
       if (!drag) return
@@ -855,6 +904,15 @@ const ReplayChart = forwardRef(function ReplayChart(
         else setDraft(null)
         return
       }
+      if (alertDrag) {
+        const { id, which } = alertDrag
+        const price = priceAt(e.clientY)
+        alertDrag = null
+        chart.applyOptions({ handleScroll: true, handleScale: true })
+        container.style.cursor = ''
+        if (price != null) alertCbRef.current.onMoveAlert?.(id, price, which)
+        return
+      }
       if (!drag) return
       const { orderId, field, legId } = drag
       const price = priceAt(e.clientY)
@@ -885,7 +943,8 @@ const ReplayChart = forwardRef(function ReplayChart(
       e.preventDefault()
       // The menu only ever offers actions - adding a level, moving a stop, cancelling. With
       // nothing to act on, opening it would be an empty box over a chart.
-      if (readOnlyRef.current) return
+      // A finished trade offers nothing - except arming an alert, which is about the market now.
+      if (readOnlyRef.current && !alertCbRef.current.onAddAlert) return
       const rect = container.getBoundingClientRect()
       const price = priceAt(e.clientY)
       if (price == null) return
@@ -1181,6 +1240,31 @@ const ReplayChart = forwardRef(function ReplayChart(
     // change anything about them. The live return moved to the pills, which re-render on their own.
   }, [orders, resetKey])
 
+  // Alert levels: amber, dotted when paused. Title-less like the order lines - the pill carries the
+  // text. A channel alert draws both bounds, each draggable on its own.
+  useEffect(() => {
+    const candles = candleSeriesRef.current
+    if (!candles) return
+    alertLinesRef.current.forEach((line) => candles.removePriceLine(line))
+    const next = new Map<string, IPriceLine>()
+    for (const a of alerts)
+      for (const which of ['price', 'price2'] as const) {
+        const price = a[which]
+        if (price == null) continue
+        next.set(
+          `${a.id}:${which}`,
+          candles.createPriceLine({
+            price,
+            color: a.active ? ALERT_COLOR : '#9ca3af',
+            lineWidth: 1,
+            lineStyle: a.active ? 2 : 1,
+            title: '',
+          }),
+        )
+      }
+    alertLinesRef.current = next
+  }, [alerts, resetKey])
+
   // Writes the chart's framing (zoom window, pane heights, price scales) back into the persisted
   // store, so a reload restores it. Driven by the time scale's own range-change event - the one
   // thing the chart actually tells us about - rather than a timer.
@@ -1260,7 +1344,7 @@ const ReplayChart = forwardRef(function ReplayChart(
   // it for the chart's own subscribeVisibleLogicalRangeChange plus a ResizeObserver.
   const hasDrawings = drawings.length > 0 || !!draft || !!measure
   useEffect(() => {
-    if (orders.length === 0 && !hasDrawings) return
+    if (orders.length === 0 && alerts.length === 0 && !hasDrawings) return
     let raf = 0
     const tick = () => {
       const series = candleSeriesRef.current
@@ -1279,7 +1363,7 @@ const ReplayChart = forwardRef(function ReplayChart(
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [orders.length, hasDrawings])
+  }, [orders.length, alerts.length, hasDrawings])
 
   // A measurement belongs to the bars it was drawn across. Switching symbol or timeframe replaces
   // those bars under the same anchors, so it is dropped rather than left pointing at whatever now
@@ -1444,6 +1528,9 @@ const ReplayChart = forwardRef(function ReplayChart(
             readOnly={readOnly}
           />
         ))}
+        {alerts.map((a) => (
+          <AlertPills key={a.id} alert={a} onRemove={onRemoveAlert} />
+        ))}
       </div>
 
       {ctxMenu && (
@@ -1453,9 +1540,10 @@ const ReplayChart = forwardRef(function ReplayChart(
           price={ctxMenu.price}
           orders={orders}
           onClose={() => setCtxMenu(null)}
-          onPlaceLevel={onPlaceLevel}
+          onPlaceLevel={readOnly ? undefined : onPlaceLevel}
           onMoveToBreakeven={onMoveToBreakeven}
           onCancelPending={onCancelPending}
+          onAddAlert={onAddAlert}
         />
       )}
     </div>
@@ -1620,6 +1708,41 @@ function LegPill({
   )
 }
 
+const ALERT_COLOR = '#f59e0b'
+const ALERT_PILL =
+  'absolute left-[62%] -translate-x-1/2 -translate-y-1/2 pointer-events-auto flex items-center ' +
+  'rounded border bg-background/90 text-[11px] whitespace-nowrap tabular-nums shadow-sm backdrop-blur-sm'
+
+/** A pill on each alert level: what it watches, and ✕ to delete it. Drag the line to move it. */
+function AlertPills({ alert, onRemove }: { alert: ChartAlert; onRemove?: (id: number) => void }) {
+  const tone = alert.active ? 'border-amber-500/70 text-amber-500' : 'border-dashed text-muted-foreground'
+  const word =
+    CHART_ALERT_KINDS.find(([k]) => k === alert.condition)?.[1] ?? (alert.condition ?? 'crossing').replace(/_/g, ' ')
+  return (
+    <>
+      {(['price', 'price2'] as const).map((which) =>
+        alert[which] == null ? null : (
+          <div
+            key={which}
+            data-price={alert[which]}
+            className={`${ALERT_PILL} ${tone}`}
+            title={`${alert.note ? `${alert.note} - ` : ''}drag the line to move it${alert.active ? '' : ' (paused)'}`}
+          >
+            <span className="flex items-center gap-1 px-1.5 py-0.5">
+              <BellIcon className="size-3" />
+              {word} {inr(alert[which]!)}
+              {!alert.active && ' · paused'}
+            </span>
+            {onRemove && (
+              <PillButton label="✕" title="Delete alert" onClick={() => onRemove(alert.id)} className="border-l" />
+            )}
+          </div>
+        ),
+      )}
+    </>
+  )
+}
+
 function PositionPills({
   order,
   lastClose,
@@ -1739,6 +1862,7 @@ function ContextMenu({
   onPlaceLevel,
   onMoveToBreakeven,
   onCancelPending,
+  onAddAlert,
 }: {
   /** Where the right-click landed, in container pixels, and the price under it. */
   x: number
@@ -1749,6 +1873,7 @@ function ContextMenu({
   onPlaceLevel?: (orderId: string, kind: 'stopLoss' | 'target', price: number) => void
   onMoveToBreakeven?: (orderId: string) => void
   onCancelPending?: (orderId: string) => void
+  onAddAlert?: (price: number, kind: ChartAlertKind) => void
 }) {
   useEffect(() => {
     const onKey = (e: any) => e.key === 'Escape' && onClose()
@@ -1764,9 +1889,10 @@ function ContextMenu({
     }
   }, [onClose])
 
-  const openOrders = orders.filter((o) => o.status === 'open')
-  const pendingOrders = orders.filter((o) => o.status === 'pending')
-  const hasAny = openOrders.length + pendingOrders.length > 0
+  // A read-only chart passes no onPlaceLevel: its positions are a record, so no level actions
+  const openOrders = onPlaceLevel ? orders.filter((o) => o.status === 'open') : []
+  const pendingOrders = onPlaceLevel ? orders.filter((o) => o.status === 'pending') : []
+  const hasAny = openOrders.length + pendingOrders.length > 0 || !!onAddAlert
   if (!hasAny) return null
 
   const label = (o: ReplayOrder) => `${o.direction} ${o.quantity} @ ${inr(o.entryPrice)}`
@@ -1779,6 +1905,21 @@ function ContextMenu({
       onContextMenu={(e) => e.preventDefault()}
     >
       <div className="px-2 py-1 text-xs text-muted-foreground">At {inr(price)}</div>
+      {onAddAlert && (
+        <div className="border-t pt-1 first:border-t-0">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+            <BellIcon className="size-3" style={{ color: ALERT_COLOR }} /> Alert here
+          </div>
+          {CHART_ALERT_KINDS.map(([kind, label]) => (
+            <MenuItem key={kind} onClick={() => (onAddAlert(price, kind), onClose())}>
+              {label}
+              {kind.endsWith('_channel') && (
+                <span className="ml-1.5 text-xs text-muted-foreground">±1%</span>
+              )}
+            </MenuItem>
+          ))}
+        </div>
+      )}
       {openOrders.map((order: ReplayOrder) => (
         <div key={order.id} className="border-t pt-1 first:border-t-0">
           <div className="px-2 py-0.5 text-[10px] uppercase text-muted-foreground">{label(order)}</div>

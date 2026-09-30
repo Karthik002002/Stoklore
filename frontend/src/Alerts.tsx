@@ -25,15 +25,29 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { formatDateTime, inr, timeAgo } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
-import type { Alert, AlertCondition, AlertConditionMeta, AlertCreated, AlertTrigger } from '@/services/api'
+import type {
+  Alert,
+  AlertCondition,
+  AlertConditionMeta,
+  AlertCreated,
+  AlertTrigger,
+  LivePosition,
+  PaperPosition,
+} from '@/services/api'
 import {
   acknowledgeAlerts,
   createAlert,
   deleteAlert,
   getAlertConditions,
   getAlerts,
+  getLivePositions,
+  getPaperPositions,
   updateAlert,
 } from '@/services/api'
+
+/** How far the level is from the last price the alert saw, signed: + means price must rise to it. */
+const distance = (a: Alert) =>
+  a.price == null || !a.last_price || a.condition?.startsWith('moving') ? null : (100 * (a.price - a.last_price)) / a.last_price
 
 const TRIGGER_LABELS: Record<AlertTrigger, string> = {
   once: 'Only once',
@@ -272,6 +286,50 @@ function conditionText(alert: Alert, conditions: AlertConditionMeta[]) {
   return `${label} ${meta?.percent ? `${alert.price}%` : inr(alert.price)}`
 }
 
+/** The open paper and live positions in one stock, each linking to its chart. */
+function PositionsFor({
+  symbol,
+  paper,
+  live,
+}: {
+  symbol: string | null
+  paper: PaperPosition[]
+  live: LivePosition[]
+}) {
+  if (!symbol) return <span className="text-muted-foreground">—</span>
+  const mine = paper.filter((p) => p.symbol === symbol)
+  const held = live.filter((p) => p.symbol === symbol && p.net_qty)
+  if (!mine.length && !held.length) return <span className="text-muted-foreground">none</span>
+  return (
+    <div className="space-y-0.5">
+      {mine.map((p) => (
+        <Link
+          key={`p${p.id}`}
+          to="/paper/$symbol"
+          params={{ symbol }}
+          search={{ account: p.account_id }}
+          className="block whitespace-nowrap text-primary hover:underline"
+          title="Open the position's chart - the alert is a line you can drag there"
+        >
+          Paper {p.direction.toUpperCase()} {p.quantity} @ {inr(p.entry_price)}
+          {p.status === 'pending' && ' · pending'}
+        </Link>
+      ))}
+      {held.map((p) => (
+        <Link
+          key={`l${p.security_id}`}
+          to="/live/$symbol"
+          params={{ symbol }}
+          className="block whitespace-nowrap text-primary hover:underline"
+        >
+          Live {p.net_qty > 0 ? 'LONG' : 'SHORT'} {Math.abs(p.net_qty)}
+          {(p.net_qty > 0 ? p.buy_avg : p.sell_avg) != null && ` @ ${inr((p.net_qty > 0 ? p.buy_avg : p.sell_avg)!)}`}
+        </Link>
+      ))}
+    </div>
+  )
+}
+
 export default function Alerts() {
   usePageTitle('Alerts')
   const queryClient = useQueryClient()
@@ -290,6 +348,21 @@ export default function Alerts() {
     queryKey: ['alerts'],
     queryFn: () => getAlerts({ limit: 200 }),
     refetchInterval: 10_000,
+  })
+
+  // What you hold in each alerted stock, so an alert reads next to the position it guards - and
+  // opens that position's chart, where the alert is a line you can drag. Same queries (and cache)
+  // as the position pages. Live answers an error when live trading is off: that's just "none".
+  const { data: paperPositions = [] } = useQuery({
+    queryKey: ['paperPositions', null],
+    queryFn: () => getPaperPositions(null),
+    refetchInterval: 10_000,
+  })
+  const { data: livePositions = [] } = useQuery({
+    queryKey: ['livePositions'],
+    queryFn: getLivePositions,
+    refetchInterval: 10_000,
+    retry: false,
   })
 
   const conditions = vocabulary?.conditions ?? []
@@ -348,6 +421,7 @@ export default function Alerts() {
           <TableHeader>
             <TableRow>
               <TableHead>Symbol</TableHead>
+              <TableHead>Position</TableHead>
               <TableHead>Condition</TableHead>
               <TableHead>Trigger</TableHead>
               <TableHead>Expires</TableHead>
@@ -359,13 +433,13 @@ export default function Alerts() {
           <TableBody>
             {isPending ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                   <Spinner className="mr-2 inline size-4" /> Loading alerts…
                 </TableCell>
               </TableRow>
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                   Nothing armed. Alerts you set show up here until they fire.
                 </TableCell>
               </TableRow>
@@ -373,6 +447,9 @@ export default function Alerts() {
               rows.map((a) => (
                 <TableRow key={a.id}>
                   <TableCell className="font-medium">{a.symbol}</TableCell>
+                  <TableCell className="text-xs">
+                    <PositionsFor symbol={a.symbol} paper={paperPositions} live={livePositions} />
+                  </TableCell>
                   <TableCell>
                     {conditionText(a, conditions)}
                     {a.note && <p className="text-xs text-muted-foreground">{a.note}</p>}
@@ -397,6 +474,12 @@ export default function Alerts() {
                   <TableCell className="text-muted-foreground tabular-nums">
                     {a.last_price == null ? '—' : inr(a.last_price)}
                     {a.last_checked_at && <span className="ml-1 text-xs">{timeAgo(a.last_checked_at)}</span>}
+                    {distance(a) != null && (
+                      <p className="text-xs" title="How far the level is from that price">
+                        level {distance(a)! >= 0 ? '+' : ''}
+                        {distance(a)!.toFixed(2)}%
+                      </p>
+                    )}
                   </TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-1">

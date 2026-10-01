@@ -971,6 +971,15 @@ Full details: [docs/engine.md](docs/engine.md).
 
 ### `*` What's more
 
+- **A chart one click from any stock** — every stock list on the home page, and any dashboard table
+  with a symbol column, starts with a chart icon. It opens a full-screen Bar Replay chart with your
+  saved indicators and settings, paper positions and alerts on it, and a paper order ticket beside
+  it, so you can put on a position without leaving the page ([details](docs/paper-trading.md))
+- **Every dropdown is searchable** — the shared `Select` (`frontend/src/components/ui/select.tsx`)
+  puts a search box at the top of any list with 6+ options and filters as you type, matching each
+  option's text or value. Short lists (Long/Short, a few intervals) stay plain; `searchable` on
+  `SelectContent` forces it either way. The chat's model picker is a grouped searchable combobox
+  (`components/ModelCombobox.tsx`)
 - **One date control everywhere** — shadcn's Base UI `Calendar` (added through the CLI, so it
   matches the project's `base-nova` style) behind a shared `DatePicker`/`DateRangePicker`
   (`frontend/src/components/DatePicker.tsx`). It replaced every `<input type="date">` in the app:

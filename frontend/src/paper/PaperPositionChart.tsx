@@ -60,10 +60,60 @@ function Row({
   )
 }
 
+/** The `/paper/$symbol` page: the chart below, filling the viewport beside the nav rail, with a
+ *  way back to holdings. Closing the position goes back there too. */
 export default function PaperPositionChart() {
   const { symbol } = useParams({ from: '/paper/$symbol' })
   const { account } = useSearch({ from: '/paper/$symbol' })
   const navigate = useNavigate()
+  usePageTitle(`${symbol} · Paper position`)
+  return (
+    // The whole viewport beside the nav rail, like Bar Replay: a thin symbol bar on top and the chart
+    // under it, nothing else competing for height.
+    <div className="fixed inset-y-0 right-0 left-14 z-40 flex flex-col bg-background">
+      <PaperChart
+        symbol={symbol}
+        account={account ?? null}
+        onClosed={() => navigate({ to: '/paper', search: { view: 'holdings', account } })}
+        leading={
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            nativeButton={false}
+            aria-label="Back to holdings"
+            render={<Link to="/paper" search={{ view: 'holdings', account }} />}
+          >
+            <ArrowLeftIcon className="size-4" />
+          </Button>
+        }
+      />
+    </div>
+  )
+}
+
+/** One stock on the Bar Replay chart - with the chart settings and indicators saved in Bar Replay,
+ *  the account's paper positions drawn and editable on it, and its price alerts. The one chart the
+ *  app reuses: the paper position page and the chart modal (components/ChartModal.tsx) both render
+ *  this. It fills its parent: give it a sized flex column. */
+export function PaperChart({
+  symbol,
+  account,
+  leading,
+  trailing,
+  side,
+  onClosed,
+}: {
+  symbol: string
+  /** Paper account whose positions are drawn; null = every account's. */
+  account: number | null
+  /** Toolbar content before the symbol (a back button) and after the ranges (modal controls). */
+  leading?: React.ReactNode
+  trailing?: React.ReactNode
+  /** A panel to the right of the chart - the modal's order ticket. */
+  side?: React.ReactNode
+  /** After a position is closed from the chart. */
+  onClosed?: () => void
+}) {
   const queryClient = useQueryClient()
   const [range, setRange] = useState('6mo')
   // The position panel sits on the candles; collapsed, it's one line - the summary is still there.
@@ -73,7 +123,6 @@ export default function PaperPositionChart() {
   // this page has no chart settings of its own.
   const indicators = useBarReplayStore((st) => st.indicators)
   const chartSettings = useBarReplayStore((st) => st.settings)
-  usePageTitle(`${symbol} · Paper position`)
   // price alerts on this stock, drawn and editable on the chart (same rows as the Alerts page)
   const chartAlerts = useChartAlerts(symbol)
 
@@ -110,7 +159,7 @@ export default function PaperPositionChart() {
       refresh()
       queryClient.invalidateQueries({ queryKey: ['manualTrades'] })
       toast.success(`Closed at ${inr(data.closed_at)}`)
-      navigate({ to: '/paper', search: { view: 'holdings', account } })
+      onClosed?.()
     },
     onError: (e) => toast.error(e.message),
   })
@@ -256,19 +305,9 @@ export default function PaperPositionChart() {
   )
 
   return (
-    // The whole viewport beside the nav rail, like Bar Replay: a thin symbol bar on top and the chart
-    // under it, nothing else competing for height.
-    <div className="fixed inset-y-0 right-0 left-14 z-40 flex flex-col bg-background">
+    <>
       <div className="flex h-10 shrink-0 items-center gap-2 border-b px-2">
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          nativeButton={false}
-          aria-label="Back to holdings"
-          render={<Link to="/paper" search={{ view: 'holdings', account }} />}
-        >
-          <ArrowLeftIcon className="size-4" />
-        </Button>
+        {leading}
         <h1 className="text-sm font-semibold">{symbol}</h1>
         {position && (
           <span className="text-xs text-muted-foreground capitalize">
@@ -288,40 +327,44 @@ export default function PaperPositionChart() {
             </Button>
           ))}
         </div>
+        {trailing}
       </div>
 
-      {/* ReplayChart is absolutely positioned inside its parent, so it needs a sized relative box -
-          exactly how BarReplay hosts it. Everything it draws here (entry line, SL/target ladders,
-          the pills and their actions) is the same code path the replay chart runs; only the
-          handlers differ, and they write to the paper API rather than a local store. */}
-      <div className="relative min-h-0 flex-1">
-        {chartPending || isPending ? (
-          <p className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Spinner className="size-4" /> Loading {symbol}…
-          </p>
-        ) : bars.length === 0 ? (
-          <p className="flex h-full items-center justify-center text-sm text-muted-foreground">
-            No price history for {symbol}.
-          </p>
-        ) : (
-          <ReplayChart
-            {...chartAlerts}
-            bars={bars}
-            indicators={indicators}
-            orders={mine.map(asOrder)}
-            resetKey={`${symbol}-${range}`}
-            settings={chartSettings}
-            topLeft={panel}
-            onAdjustOrder={adjustOrder}
-            onRemoveLevel={removeLevel}
-            onAdjustLegQty={adjustLegQty}
-            onMoveToBreakeven={moveToBreakeven}
-            onPlaceLevel={placeLevel}
-            onRequestClose={(order) => close.mutate(Number(order.id))}
-            onCancelPending={(id) => close.mutate(Number(id))}
-          />
-        )}
+      <div className="flex min-h-0 flex-1">
+        {/* ReplayChart is absolutely positioned inside its parent, so it needs a sized relative box -
+            exactly how BarReplay hosts it. Everything it draws here (entry line, SL/target ladders,
+            the pills and their actions) is the same code path the replay chart runs; only the
+            handlers differ, and they write to the paper API rather than a local store. */}
+        <div className="relative min-h-0 flex-1">
+          {chartPending || isPending ? (
+            <p className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
+              <Spinner className="size-4" /> Loading {symbol}…
+            </p>
+          ) : bars.length === 0 ? (
+            <p className="flex h-full items-center justify-center text-sm text-muted-foreground">
+              No price history for {symbol}.
+            </p>
+          ) : (
+            <ReplayChart
+              {...chartAlerts}
+              bars={bars}
+              indicators={indicators}
+              orders={mine.map(asOrder)}
+              resetKey={`${symbol}-${range}`}
+              settings={chartSettings}
+              topLeft={panel}
+              onAdjustOrder={adjustOrder}
+              onRemoveLevel={removeLevel}
+              onAdjustLegQty={adjustLegQty}
+              onMoveToBreakeven={moveToBreakeven}
+              onPlaceLevel={placeLevel}
+              onRequestClose={(order) => close.mutate(Number(order.id))}
+              onCancelPending={(id) => close.mutate(Number(id))}
+            />
+          )}
+        </div>
+        {side}
       </div>
-    </div>
+    </>
   )
 }

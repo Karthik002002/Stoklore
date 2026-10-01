@@ -6,6 +6,9 @@
 
 - Settings → **Model** tab: pick which model backend answers chat
   (`ollama/*`, `litellm/*`, or an OmniRoute model).
+- The chat popup's model picker (top right) overrides that for one conversation. Type to
+  search: it matches on the label and the id, and models are grouped by provider with local
+  ones first.
 - Settings → **OmniRoute** tab: the multi-provider gateway. Needs **nothing
   configured** to work — the fields are only for a gateway on another machine
   and for an endpoint key. Start it with `npx omniroute serve`, connect

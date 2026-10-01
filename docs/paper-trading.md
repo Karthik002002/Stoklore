@@ -93,6 +93,23 @@ Trades tab shows them; so does
 tabs work on them like any other trade — filter by the paper account there for
 the deeper breakdowns.
 
+**Trading from the chart, from anywhere**
+Every stock list on the home page leads with a chart icon: the watchlist table, NSE gainers and
+losers, Market Pulse movers, Unusual Attention and Recent Events. So does any dashboard or board
+table with a `symbol` / `ticker` / `stock` column. The icon opens a **full-screen chart** of that
+stock: the same Bar Replay chart the position pages use, with the indicators and chart settings
+saved in Bar Replay. On it you get:
+
+- **Your paper positions** in the chosen account, with stops and targets you can drag. Price
+  alerts show and can be armed from the right-click menu.
+- **The order ticket on the right**, with the ticker fixed to that stock. A market or limit
+  order, with stop and target ladders, goes straight to the account picked in the header, which is
+  remembered. The icon beside the picker hides the ticket.
+- **Open as a page** goes to `/paper/<symbol>`. Esc or ✕ closes it.
+
+It's one component (`components/ChartModal.tsx` around `PaperChart`), and any table can use it
+with `<ChartButton symbol=… />`.
+
 ## Catching up on what the engine slept through
 
 The live poller only ever sees the **current** price, and only between 09:15 and 15:30 IST. That

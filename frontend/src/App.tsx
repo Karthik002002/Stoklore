@@ -25,6 +25,7 @@ import { getEngineSettings } from '@/services/api'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import ActivityTracker from './ActivityTracker'
 import ChatWidget from './ChatWidget'
+import ChartModal from '@/components/ChartModal'
 import CommandPalette from './CommandPalette'
 import VoiceCapture from './VoiceCapture'
 import useRunNotifications from './agent/useRunNotifications'
@@ -172,6 +173,7 @@ function App() {
         <ActivityTracker />
         {!isBarReplay && <ChatWidget />}
         <CommandPalette />
+        <ChartModal />
         <VoiceCapture />
         <WatchlistManager />
       </LoginGate>

@@ -10,6 +10,7 @@ import {
   RefreshCwIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { ChartButton } from '@/components/ChartModal'
 import TerminalPanel, { TerminalRow } from '@/components/TerminalPanel'
 import { Button } from '@/components/ui/button'
 import {
@@ -223,7 +224,12 @@ function MoverList({ title, rows }: { title: string; rows: TrackedStock[] }) {
       {rows.map((s) => (
         <TerminalRow
           key={s.symbol}
-          label={s.symbol}
+          label={
+            <span className="flex items-center gap-1">
+              <ChartButton symbol={s.symbol} />
+              {s.symbol}
+            </span>
+          }
           value={`${arrow(s.changePercent)} ${signedPct(s.changePercent)}`}
           valueClassName={pctClass(s.changePercent)}
         />
@@ -255,6 +261,7 @@ function AttentionPanel({ attention }: { attention?: AttentionScore[] }) {
             <TerminalRow
               label={
                 <>
+                  <ChartButton symbol={a.symbol} className="mr-1 align-middle" />
                   <span className="font-semibold text-foreground">{a.symbol}</span>{' '}
                   <span className="text-muted-foreground">
                     {a.recent_count} evt{a.recent_count === 1 ? '' : 's'}
@@ -288,6 +295,7 @@ function EventsPanel({ events }: { events?: FeedEvent[] }) {
         events.slice(0, 12).map((e) => (
           <div key={e.id} className="border-b border-border/40 px-2 py-1 font-mono text-xs last:border-0">
             <div className="flex items-center gap-2">
+              <ChartButton symbol={e.symbol} className="shrink-0" />
               <Link
                 to="/stock/$exchange/$symbol"
                 params={{ exchange: 'NSE', symbol: e.symbol }}
@@ -410,6 +418,7 @@ function MoversPanel({
             <table className="w-full font-mono text-xs">
               <thead>
                 <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
+                  <th className="w-6 py-1 pl-1" aria-label="Chart" />
                   <th className="px-2 py-1 text-left font-medium">Symbol</th>
                   <th className="px-2 py-1 text-right font-medium">LTP</th>
                   <th className="px-2 py-1 text-right font-medium">Chg%</th>
@@ -420,6 +429,9 @@ function MoversPanel({
               <tbody>
                 {rows.slice(0, 12).map((r) => (
                   <tr key={r.symbol} className="border-b border-border/40 last:border-0 hover:bg-muted/40">
+                    <td className="py-1 pl-1">
+                      <ChartButton symbol={r.symbol} />
+                    </td>
                     <td className="px-2 py-1">
                       <Link
                         to="/stock/$exchange/$symbol"
@@ -1111,6 +1123,7 @@ export default function StocksList() {
             <table className="w-full font-mono text-xs">
               <thead>
                 <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
+                  <th className="w-6 py-1 pl-1" aria-label="Chart" />
                   <th className="px-2 py-1 text-left font-medium">Symbol</th>
                   <th className="px-2 py-1 text-right font-medium">Price</th>
                   <th className="px-2 py-1 text-right font-medium">Chg%</th>
@@ -1131,6 +1144,9 @@ export default function StocksList() {
                       })
                     }
                   >
+                    <td className="py-1 pl-1">
+                      <ChartButton symbol={s.symbol} />
+                    </td>
                     <td className="px-2 py-1 font-semibold">{s.symbol}</td>
                     <td className="px-2 py-1 text-right tabular-nums">{inr(s.price)}</td>
                     <td className={`px-2 py-1 text-right tabular-nums ${pctClass(s.changePercent)}`}>

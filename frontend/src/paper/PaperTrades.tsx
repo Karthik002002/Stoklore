@@ -261,13 +261,23 @@ function Readout({
   )
 }
 
-function OrderPanel({ accountId }: { accountId: number | null }) {
+/** The paper order ticket. `symbol` fixes the ticker (the chart modal: the order is for the stock on
+ *  screen); without it the ticker is picked here. Remount it (key) when the account changes. */
+export function OrderPanel({
+  accountId,
+  symbol,
+  className,
+}: {
+  accountId: number | null
+  symbol?: string
+  className?: string
+}) {
   const queryClient = useQueryClient()
   const form = useForm<OrderInput, unknown, OrderValues>({
     resolver: zodResolver(paperOrderSchema),
     defaultValues: {
       accountId: accountId ?? undefined,
-      symbol: '',
+      symbol: symbol ?? '',
       direction: 'long',
       orderType: 'market',
       quantity: '',
@@ -299,7 +309,7 @@ function OrderPanel({ accountId }: { accountId: number | null }) {
           ? `Limit order resting at ${inr(data.entry_price)}`
           : `Filled at ${inr(data.entry_price)}`,
       )
-      form.reset({ ...form.getValues(), symbol: '', quantity: '', stopLosses: [], targets: [], notes: '' })
+      form.reset({ ...form.getValues(), symbol: symbol ?? '', quantity: '', stopLosses: [], targets: [], notes: '' })
     },
     onError: (e) => toast.error(e.message),
   })
@@ -307,20 +317,24 @@ function OrderPanel({ accountId }: { accountId: number | null }) {
   return (
     <form
       onSubmit={form.handleSubmit((v) => place.mutate(v))}
-      className="space-y-3 rounded-xl border bg-card p-4"
+      className={className ?? 'space-y-3 rounded-xl border bg-card p-4'}
     >
-      <p className="text-sm font-medium">Place a paper order</p>
+      <p className="text-sm font-medium">Place a paper order{symbol ? ` · ${symbol}` : ''}</p>
 
       <div className="grid grid-cols-2 gap-2">
         <Field label="Ticker" error={form.formState.errors.symbol}>
           <Controller
             control={form.control}
             name="symbol"
-            render={({ field }) => (
-              // Validates against the live symbol list, and offers an "Add SYMBOL" fallback that
-              // verifies the ticker actually exists before it can be picked.
-              <SymbolCombobox value={field.value} onChange={field.onChange} className="w-full" />
-            )}
+            render={({ field }) =>
+              symbol ? (
+                <p className="flex h-8 items-center font-semibold">{symbol}</p>
+              ) : (
+                // Validates against the live symbol list, and offers an "Add SYMBOL" fallback that
+                // verifies the ticker actually exists before it can be picked.
+                <SymbolCombobox value={field.value} onChange={field.onChange} className="w-full" />
+              )
+            }
           />
         </Field>
         <TextField form={form} name="quantity" label="Quantity" type="number" min="0" />

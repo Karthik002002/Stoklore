@@ -26,7 +26,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import ModelCombobox from '@/components/ModelCombobox'
 import { useShortcut } from '@/lib/shortcuts'
 import { getActiveModel, getModels } from '@/services/api'
 import {
@@ -596,18 +596,7 @@ export default function ChatWidget() {
           </div>
         </header>
         <div className="flex justify-end border-b px-3 py-1.5">
-          <Select value={effectiveModel ?? ''} onValueChange={(m) => m && setModel(String(m))}>
-            <SelectTrigger size="sm" className="max-w-full border-none shadow-none">
-              <SelectValue placeholder="Model…" className="justify-end truncate" />
-            </SelectTrigger>
-            <SelectContent className="max-h-72" align="end">
-              {(models ?? []).map((m) => (
-                <SelectItem key={m.id} value={m.id}>
-                  {m.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <ModelCombobox models={models ?? []} value={effectiveModel ?? null} onChange={setModel} />
         </div>
         <ChatThread
           key={chatId}

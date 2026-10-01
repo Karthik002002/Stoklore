@@ -3,7 +3,7 @@ import * as React from 'react'
 import { Select as SelectPrimitive } from '@base-ui/react/select'
 
 import { cn } from '@/lib/utils'
-import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from 'lucide-react'
+import { ChevronDownIcon, CheckIcon, ChevronUpIcon, SearchIcon } from 'lucide-react'
 
 /** A popup wrapper's props: the popup's own, plus the placement props it forwards to the
  *  positioner (which is a separate element in Base UI, but one prop set to the caller). */
@@ -40,6 +40,25 @@ function collectItemLabels(children: React.ReactNode, items: SelectItemLabel[]):
     if (nested != null) collectItemLabels(nested, items)
   })
   return items
+}
+
+// Search inside every list long enough to need it (the shadcnblocks "select with search"): a box at
+// the top of the popup filters the items as you type. One place, so every <Select> in the app gets
+// it without its call site changing. An item matches on its visible text or its value.
+const SEARCH_MIN_ITEMS = 6
+const SearchContext = React.createContext('')
+
+/** The words a person would type to find an item: its rendered text, whatever JSX it's wrapped in. */
+function textOf(node: React.ReactNode): string {
+  if (node == null || typeof node === 'boolean') return ''
+  if (typeof node === 'string' || typeof node === 'number') return String(node)
+  if (Array.isArray(node)) return node.map(textOf).join(' ')
+  if (React.isValidElement(node)) return textOf((node.props as { children?: React.ReactNode }).children)
+  return ''
+}
+const matches = (query: string, label: React.ReactNode, value: unknown) => {
+  const q = query.trim().toLowerCase()
+  return !q || `${textOf(label)} ${typeof value === 'string' || typeof value === 'number' ? value : ''}`.toLowerCase().includes(q)
 }
 
 function Select({ items, children, ...props }: ComponentProps<typeof SelectPrimitive.Root>) {
@@ -99,9 +118,24 @@ function SelectContent({
   sideOffset = 4,
   align = 'center',
   alignOffset = 0,
-  alignItemWithTrigger = true,
+  alignItemWithTrigger,
+  searchable,
   ...props
-}: PositionedPopupProps) {
+}: PositionedPopupProps & {
+  /** Force the search box on or off. Default: on once the list has SEARCH_MIN_ITEMS items. */
+  searchable?: boolean
+}) {
+  const [query, setQuery] = React.useState('')
+  const inputRef = React.useRef<HTMLInputElement>(null)
+  const items = React.useMemo(() => collectItemLabels(children, []), [children])
+  const withSearch = searchable ?? items.length >= SEARCH_MIN_ITEMS
+  const shown = withSearch ? items.filter((i) => matches(query, i.label, i.value)).length : items.length
+  // the popup opens with focus on the selected item; a searchable one wants the box instead
+  React.useEffect(() => {
+    if (!withSearch) return
+    const id = requestAnimationFrame(() => inputRef.current?.focus())
+    return () => cancelAnimationFrame(id)
+  }, [withSearch])
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Positioner
@@ -109,20 +143,44 @@ function SelectContent({
         sideOffset={sideOffset}
         align={align}
         alignOffset={alignOffset}
-        alignItemWithTrigger={alignItemWithTrigger}
+        // a list that filters can't sit over its trigger - it would jump as it shrinks
+        alignItemWithTrigger={alignItemWithTrigger ?? !withSearch}
         className="isolate z-50"
       >
         <SelectPrimitive.Popup
           data-slot="select-content"
-          data-align-trigger={alignItemWithTrigger}
+          data-align-trigger={alignItemWithTrigger ?? !withSearch}
           className={cn(
             'relative isolate z-50 max-h-(--available-height) w-(--anchor-width) min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10 duration-100 data-[align-trigger=true]:animate-none data-[side=bottom]:slide-in-from-top-2 data-[side=inline-end]:slide-in-from-left-2 data-[side=inline-start]:slide-in-from-right-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
             className,
           )}
           {...props}
         >
+          {withSearch && (
+            <div className="sticky top-0 z-20 flex items-center gap-1.5 border-b bg-popover px-2">
+              <SearchIcon className="size-3.5 shrink-0 text-muted-foreground" />
+              <input
+                ref={inputRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                // typing is for the box: keep it from the list's typeahead (and Space from selecting);
+                // arrows, Enter, Escape and Tab still reach the list
+                onKeyDown={(e) => {
+                  if (!['ArrowDown', 'ArrowUp', 'Enter', 'Escape', 'Tab'].includes(e.key)) e.stopPropagation()
+                }}
+                placeholder="Search…"
+                aria-label="Search options"
+                className="h-8 w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              />
+            </div>
+          )}
           <SelectScrollUpButton />
-          <SelectPrimitive.List>{children}</SelectPrimitive.List>
+          <SearchContext.Provider value={withSearch ? query : ''}>
+            <SelectPrimitive.List>{children}</SelectPrimitive.List>
+          </SearchContext.Provider>
+          {withSearch && shown === 0 && (
+            <p className="px-2 py-3 text-center text-xs text-muted-foreground">No matches.</p>
+          )}
           <SelectScrollDownButton />
         </SelectPrimitive.Popup>
       </SelectPrimitive.Positioner>
@@ -141,6 +199,8 @@ function SelectLabel({ className, ...props }: ComponentProps<typeof SelectPrimit
 }
 
 function SelectItem({ className, children, ...props }: ComponentProps<typeof SelectPrimitive.Item>) {
+  const query = React.useContext(SearchContext)
+  if (!matches(query, children, props.value)) return null
   return (
     <SelectPrimitive.Item
       data-slot="select-item"

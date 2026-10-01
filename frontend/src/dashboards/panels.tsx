@@ -24,6 +24,7 @@ import type {
 import { formatSlot } from '@/workflows/status'
 import { useHoverTip } from './HoverTip'
 import PanelBoundary from './PanelBoundary'
+import { ChartButton } from '@/components/ChartModal'
 import { matchesShape } from './shaped'
 import { PANEL_META, formatValue, missingParam, panelRequest, withShape } from './shared'
 import type { DrillPoint, PanelContext } from './shared'
@@ -229,6 +230,9 @@ const cell = (value: unknown) => {
   return typeof value === 'object' ? JSON.stringify(value) : String(value)
 }
 
+/** Column names that hold a stock symbol - a table with one gets a chart icon per row. */
+const SYMBOL_COLUMNS = new Set(['symbol', 'ticker', 'stock'])
+
 export function RowsTable({
   rows,
   columns,
@@ -240,10 +244,17 @@ export function RowsTable({
   onOpenRow?: (row: Record<string, unknown>) => void
   extra?: (row: Record<string, unknown>) => React.ReactNode
 }) {
+  // a table of stocks leads with a chart icon per row (components/ChartModal)
+  const symbolCol = columns.find((c) => SYMBOL_COLUMNS.has(c.toLowerCase()))
+  const symbolOf = (row: Record<string, unknown>) => {
+    const v = symbolCol ? row[symbolCol] : null
+    return typeof v === 'string' && /^[A-Za-z0-9&._-]{1,32}$/.test(v) ? v : null
+  }
   return (
     <table className="w-full text-xs">
       <thead className="sticky top-0 z-10 bg-card">
         <tr>
+          {symbolCol && <th className="w-6 border-b py-1 pl-1" aria-label="Chart" />}
           {extra && <th className="border-b px-2 py-1" />}
           {columns.map((c) => (
             <th
@@ -263,6 +274,9 @@ export function RowsTable({
             onClick={onOpenRow ? () => onOpenRow(row) : undefined}
             className={cn(onOpenRow && 'cursor-pointer', 'hover:bg-muted/40')}
           >
+            {symbolCol && (
+              <td className="border-b py-1 pl-1">{symbolOf(row) && <ChartButton symbol={symbolOf(row)!} />}</td>
+            )}
             {extra && <td className="border-b px-2 py-1 whitespace-nowrap">{extra(row)}</td>}
             {columns.map((c) => (
               <td

@@ -10,7 +10,7 @@ import {
   RefreshCwIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { ChartButton } from '@/components/ChartModal'
+import { ChartButton, ScanButton } from '@/components/ChartModal'
 import TerminalPanel, { TerminalRow } from '@/components/TerminalPanel'
 import { Button } from '@/components/ui/button'
 import {
@@ -245,7 +245,11 @@ function AttentionPanel({ attention }: { attention?: AttentionScore[] }) {
     .filter((a) => a.is_new_attention || (a.ratio != null && a.ratio >= 1.3))
     .slice(0, 8)
   return (
-    <TerminalPanel title="Unusual Attention" accent="text-fuchsia-500">
+    <TerminalPanel
+      title="Unusual Attention"
+      accent="text-fuchsia-500"
+      actions={<ScanButton symbols={hot.map((a) => a.symbol)} name="Unusual attention" source="attention" />}
+    >
       {!attention ? (
         <PanelLoading />
       ) : hot.length === 0 ? (
@@ -280,7 +284,11 @@ function AttentionPanel({ attention }: { attention?: AttentionScore[] }) {
 
 function EventsPanel({ events }: { events?: FeedEvent[] }) {
   return (
-    <TerminalPanel title="Recent Events" accent="text-emerald-500">
+    <TerminalPanel
+      title="Recent Events"
+      accent="text-emerald-500"
+      actions={<ScanButton symbols={(events ?? []).slice(0, 12).map((e) => e.symbol)} name="Recent events" source="events" />}
+    >
       {!events ? (
         <PanelLoading />
       ) : events.length === 0 ? (
@@ -418,7 +426,13 @@ function MoversPanel({
             <table className="w-full font-mono text-xs">
               <thead>
                 <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
-                  <th className="w-6 py-1 pl-1" aria-label="Chart" />
+                  <th className="w-6 py-1 pl-1">
+                    <ScanButton
+                      symbols={rows.slice(0, 12).map((r) => r.symbol)}
+                      name={`NSE ${direction} · ${bucket}`}
+                      source={`nse-movers:${direction}:${bucket}`}
+                    />
+                  </th>
                   <th className="px-2 py-1 text-left font-medium">Symbol</th>
                   <th className="px-2 py-1 text-right font-medium">LTP</th>
                   <th className="px-2 py-1 text-right font-medium">Chg%</th>
@@ -1123,7 +1137,13 @@ export default function StocksList() {
             <table className="w-full font-mono text-xs">
               <thead>
                 <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
-                  <th className="w-6 py-1 pl-1" aria-label="Chart" />
+                  <th className="w-6 py-1 pl-1">
+                    <ScanButton
+                      symbols={visible.map((s) => s.symbol)}
+                      name={tab === 'All' ? 'All tracked stocks' : tab}
+                      source={tab === 'All' ? 'tracked' : `watchlist:${tab}`}
+                    />
+                  </th>
                   <th className="px-2 py-1 text-left font-medium">Symbol</th>
                   <th className="px-2 py-1 text-right font-medium">Price</th>
                   <th className="px-2 py-1 text-right font-medium">Chg%</th>

@@ -29,6 +29,7 @@ import { CHART_ALERT_KINDS } from '@/lib/useChartAlerts'
 import type { ChartAlert, ChartAlertKind } from '@/lib/useChartAlerts'
 import { riskReward } from './orderEngine'
 import { DEFAULT_CHART_SETTINGS } from './store'
+import type { ChartFrame } from './store'
 
 const COLORS = { up: '#22c55e', down: '#ef4444', text: '#9ca3af', grid: 'rgba(148, 163, 184, 0.15)' }
 
@@ -137,6 +138,11 @@ type ReplayChartProps = {
    *  level, a pill with ✕ to delete, and "Add alert here" in the right-click menu. Independent of
    *  readOnly - an alert is about the market from now on, not about the trade being shown. */
   alerts?: ChartAlert[]
+  /** Framing relative to the newest bar (store.ts ChartFrame), for charts that switch stocks: it
+   *  opens every stock with the same candle width and the same gap before the price axis, and is
+   *  reported back as the user zooms or pans. A saved `view.logicalRange` still wins over it. */
+  frame?: ChartFrame | null
+  onFrameChange?: (frame: ChartFrame) => void
   onAddAlert?: (price: number, kind: ChartAlertKind) => void
   onMoveAlert?: (id: number, price: number, which: 'price' | 'price2') => void
   onRemoveAlert?: (id: number) => void
@@ -414,6 +420,8 @@ const ReplayChart = forwardRef(function ReplayChart(
     onViewChange,
     settings = DEFAULT_CHART_SETTINGS,
     alerts = [],
+    frame,
+    onFrameChange,
     onAddAlert,
     onMoveAlert,
     onRemoveAlert,
@@ -503,6 +511,13 @@ const ReplayChart = forwardRef(function ReplayChart(
   const oscillatorTypesRef = useRef<string[]>([])
   const onViewChangeRef = useRef(onViewChange)
   onViewChangeRef.current = onViewChange
+  // Read at framing time and by the range sampler - through refs, for the same reasons as viewRef.
+  const frameRef = useRef(frame)
+  frameRef.current = frame
+  const onFrameChangeRef = useRef(onFrameChange)
+  onFrameChangeRef.current = onFrameChange
+  const barCountRef = useRef(bars.length)
+  barCountRef.current = bars.length
 
   // Lets the caller (BarReplay, when a trade closes) grab a snapshot of exactly what's on the
   // chart right now - candles, indicators, RSI pane, order lines - to attach to the journaled
@@ -1143,8 +1158,13 @@ const ReplayChart = forwardRef(function ReplayChart(
         // saved window. Flagging inside means a cancelled pass is simply rescheduled.
         hasFitRef.current = true
         const saved = viewRef.current?.logicalRange
+        const relative = frameRef.current
         if (saved) {
           scale.setVisibleLogicalRange(saved)
+        } else if (relative) {
+          // the last bar sits `gap` bars in from the right edge, `span` bars across - whatever stock
+          const to = bars.length - 1 + relative.gap
+          scale.setVisibleLogicalRange({ from: to - relative.span, to })
         } else if (bars.length > INITIAL_VISIBLE_BARS) {
           scale.setVisibleLogicalRange({ from: bars.length - INITIAL_VISIBLE_BARS, to: bars.length - 1 })
         } else {
@@ -1284,6 +1304,17 @@ const ReplayChart = forwardRef(function ReplayChart(
       // Before the initial framing has run, the range on offer is lightweight-charts' default -
       // storing it would overwrite the very window we are about to restore.
       if (!hasFitRef.current) return
+
+      // the relative framing, for charts that carry it from stock to stock
+      if (range && onFrameChangeRef.current && barCountRef.current) {
+        const next = {
+          span: Math.round((range.to - range.from) * 100) / 100,
+          gap: Math.round((range.to - (barCountRef.current - 1)) * 100) / 100,
+        }
+        const prev = frameRef.current
+        if (!prev || Math.abs(prev.span - next.span) > 0.05 || Math.abs(prev.gap - next.gap) > 0.05)
+          onFrameChangeRef.current(next)
+      }
 
       // Keyed by what each pane shows, not by its index - see store.js's paneHeights.
       const heights: Record<string, number> = {}

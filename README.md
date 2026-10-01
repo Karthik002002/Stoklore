@@ -975,6 +975,10 @@ Full details: [docs/engine.md](docs/engine.md).
   with a symbol column, starts with a chart icon. It opens a full-screen Bar Replay chart with your
   saved indicators and settings, paper positions and alerts on it, and a paper order ticket beside
   it, so you can put on a position without leaving the page ([details](docs/paper-trading.md))
+- **Chart scans** — flip a watchlist (or any stock table's rows) through the chart one stock at a
+  time, on a timer or with the arrow keys, and mark each A/B/C with `1`/`2`/`3`. Review the marks by
+  priority, trade the A's straight from the chart, and save the picks to a watchlist
+  ([details](docs/scans.md))
 - **Every dropdown is searchable** — the shared `Select` (`frontend/src/components/ui/select.tsx`)
   puts a search box at the top of any list with 6+ options and filters as you type, matching each
   option's text or value. Short lists (Long/Short, a few intervals) stay plain; `searchable` on

@@ -2323,3 +2323,39 @@ export const deleteEngineJob = (id: number) => jobPost(`/api/engine/jobs/${id}`,
 export const getEngineJobsConfig = () => fetch('/api/engine/jobs/config').then(json<{ workers: number; max: number }>)
 export const setEngineJobsConfig = (workers: number) =>
   jobPost<{ workers: number; max: number }>('/api/engine/jobs/config', { workers }, 'PUT')
+
+// --- chart scans (app/routers/scans.py) ------------------------------------------------------------
+// A list of stocks flipped through in the chart modal's slideshow, each marked A/B/C as it goes.
+
+export type ScanPriority = 'A' | 'B' | 'C'
+export type ScanMark = { symbol: string; priority: ScanPriority | null; note: string | null; price: number | null; marked_at: string }
+export type Scan = {
+  id: number
+  name: string
+  source: string
+  symbols: string[]
+  position: number
+  created_at: string
+  finished_at: string | null
+  marks: ScanMark[]
+}
+export type ScanRow = Omit<Scan, 'marks'> & { a: number; b: number; c: number }
+
+const scanSend = <T>(url: string, method: string, body?: unknown) =>
+  fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  }).then(json<T>)
+
+export const createScan = (name: string, source: string, symbols: string[]) =>
+  scanSend<Scan>('/api/scans', 'POST', { name, source, symbols })
+export const getScans = () => fetch('/api/scans').then(json<ScanRow[]>)
+export const getScan = (id: number) => fetch(`/api/scans/${id}`).then(json<Scan>)
+export const updateScan = (id: number, patch: { position?: number; finished?: boolean }) =>
+  scanSend<Scan>(`/api/scans/${id}`, 'PATCH', patch)
+export const markScan = (id: number, symbol: string, mark: { priority: ScanPriority | null; note?: string | null; price?: number | null }) =>
+  scanSend<{ mark: ScanMark | null }>(`/api/scans/${id}/marks/${encodeURIComponent(symbol)}`, 'PUT', mark)
+export const scanToWatchlist = (id: number, priorities: ScanPriority[], list_name: string) =>
+  scanSend<{ list_name: string; added: number }>(`/api/scans/${id}/watchlist`, 'POST', { priorities, list_name })
+export const deleteScan = (id: number) => scanSend<{ ok: boolean }>(`/api/scans/${id}`, 'DELETE')

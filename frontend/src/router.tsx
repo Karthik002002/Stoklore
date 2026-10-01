@@ -18,6 +18,7 @@ import Backtesting from './Backtesting'
 import Engine from './Engine'
 import EngineAutotunePage from './EngineAutotunePage'
 import EngineRunPage from './EngineRunPage'
+import { ScanReview, ScansList } from './Scans'
 import BarReplay from './features/bar-replay'
 import EventsFeed from './EventsFeed'
 import Holdings from './Holdings'
@@ -254,6 +255,19 @@ const alertsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/alerts',
   component: Alerts,
+})
+
+// Chart scans (Scans.tsx): the history and "scan a watchlist", and one scan's review by A/B/C
+// priority. The scanning itself happens in the chart modal (components/ChartModal.tsx).
+const scansRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/scans',
+  component: ScansList,
+})
+const scanRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/scans/$scanId',
+  component: ScanReview,
 })
 
 // The agent chat. `session` is the open conversation, so a pasted link carries it. `view=workflow`
@@ -579,6 +593,8 @@ const routeTree = rootRoute.addChildren([
     ]),
   ]),
   alertsRoute,
+  scansRoute,
+  scanRoute,
   liveRoute,
   livePositionRoute,
   simulationRoute,

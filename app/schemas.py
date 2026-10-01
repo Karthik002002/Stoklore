@@ -565,6 +565,30 @@ class EngineJobConfig(BaseModel):
     workers: int = Field(ge=1, le=8)  # jobs at once; each auto-tune job still walks 4 stocks at a time
 
 
+class ScanRequest(BaseModel):
+    """A chart scan: the stocks to flip through, in order."""
+    name: str = Field(min_length=1, max_length=120)
+    source: str = Field(max_length=200)
+    symbols: list[str] = Field(min_length=1, max_length=2000)
+
+
+class ScanUpdateRequest(BaseModel):
+    position: int | None = Field(None, ge=0)
+    finished: bool | None = None
+
+
+class ScanMarkRequest(BaseModel):
+    """priority null + no note clears the mark."""
+    priority: Literal["A", "B", "C"] | None = None
+    note: str | None = Field(None, max_length=500)
+    price: float | None = None
+
+
+class ScanToWatchlistRequest(BaseModel):
+    priorities: list[Literal["A", "B", "C"]] = Field(min_length=1)
+    list_name: str = Field(min_length=1, max_length=80)
+
+
 class EngineSettingsRequest(BaseModel):
     name: str = ""
     engine_dir: str = ""

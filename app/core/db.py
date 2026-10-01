@@ -815,6 +815,29 @@ CREATE TABLE IF NOT EXISTS engine_jobs (
   finished_at TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS engine_jobs_queue ON engine_jobs (status, priority DESC, id);
+
+-- Chart scans (the chart modal's slideshow, frontend components/ChartModal.tsx): a list of stocks
+-- flipped through one chart at a time, and the A/B/C priority marked on each. `symbols` is the
+-- list as it was when the scan started (a watchlist changes; the scan is a record), `position`
+-- where it was left, so it can be resumed.
+CREATE TABLE IF NOT EXISTS scans (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  source TEXT NOT NULL,            -- 'watchlist:<name>' or what table it came from
+  symbols JSONB NOT NULL,
+  position INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  finished_at TIMESTAMPTZ
+);
+CREATE TABLE IF NOT EXISTS scan_marks (
+  scan_id BIGINT NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
+  symbol TEXT NOT NULL,
+  priority TEXT CHECK (priority IN ('A', 'B', 'C')),  -- null with a note = noted, not ranked
+  note TEXT,
+  price NUMERIC,                   -- the last price on the chart when it was marked
+  marked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (scan_id, symbol)
+);
 """
 
 
@@ -2937,6 +2960,78 @@ def exchange_of(symbol):
             "SELECT exchange, board FROM stocks_master WHERE symbol = %s", (symbol,)
         ).fetchone() or {}
     return row.get("exchange") or "NSE", row.get("board") or "MAIN"
+
+
+# --- chart scans (scans, scan_marks) --------------------------------------------------------------
+# Every write is by a scan's id, or by (scan_id, symbol) - the mark's own key.
+
+SCAN_COLS = "id, name, source, symbols, position, created_at, finished_at"
+
+
+def create_scan(name, source, symbols):
+    with connect() as conn:
+        return conn.execute(
+            f"INSERT INTO scans (name, source, symbols) VALUES (%s, %s, %s) RETURNING {SCAN_COLS}",
+            (name, source, json.dumps(symbols)),
+        ).fetchone()
+
+
+def list_scans(limit=100):
+    """Newest first, each with how many stocks it got marked A, B and C."""
+    with connect() as conn:
+        return conn.execute(
+            f"""SELECT {", ".join("s." + c for c in SCAN_COLS.split(", "))},
+                   count(m.*) FILTER (WHERE m.priority = 'A') AS a,
+                   count(m.*) FILTER (WHERE m.priority = 'B') AS b,
+                   count(m.*) FILTER (WHERE m.priority = 'C') AS c
+                FROM scans s LEFT JOIN scan_marks m ON m.scan_id = s.id
+                GROUP BY s.id ORDER BY s.id DESC LIMIT %s""",
+            (limit,),
+        ).fetchall()
+
+
+def get_scan(scan_id):
+    with connect() as conn:
+        scan = conn.execute(f"SELECT {SCAN_COLS} FROM scans WHERE id = %s", (scan_id,)).fetchone()
+        if not scan:
+            return None
+        marks = conn.execute(
+            "SELECT symbol, priority, note, price, marked_at FROM scan_marks WHERE scan_id = %s ORDER BY marked_at",
+            (scan_id,),
+        ).fetchall()
+    return {**scan, "marks": [{**m, "price": float(m["price"]) if m["price"] is not None else None} for m in marks]}
+
+
+def update_scan(scan_id, position=None, finished=None):
+    with connect() as conn:
+        if position is not None:
+            conn.execute("UPDATE scans SET position = %s WHERE id = %s", (position, scan_id))
+        if finished is not None:
+            conn.execute(
+                "UPDATE scans SET finished_at = CASE WHEN %s THEN coalesce(finished_at, now()) END WHERE id = %s",
+                (finished, scan_id),
+            )
+
+
+def set_scan_mark(scan_id, symbol, priority, note, price):
+    """A mark with neither a priority nor a note is no mark: its row goes, by its own key."""
+    with connect() as conn:
+        if priority is None and not note:
+            conn.execute("DELETE FROM scan_marks WHERE scan_id = %s AND symbol = %s", (scan_id, symbol))
+            return None
+        return conn.execute(
+            "INSERT INTO scan_marks (scan_id, symbol, priority, note, price) VALUES (%s, %s, %s, %s, %s) "
+            "ON CONFLICT (scan_id, symbol) DO UPDATE SET priority = excluded.priority, note = excluded.note, "
+            "price = coalesce(excluded.price, scan_marks.price), marked_at = now() "
+            "RETURNING symbol, priority, note, price, marked_at",
+            (scan_id, symbol, priority, note or None, price),
+        ).fetchone()
+
+
+def delete_scan(scan_id):
+    """One scan by id; its marks go with it (ON DELETE CASCADE)."""
+    with connect() as conn:
+        return conn.execute("DELETE FROM scans WHERE id = %s", (scan_id,)).rowcount
 
 
 # --- engine bar cache TTL (minute_cache) ---------------------------------------------------------

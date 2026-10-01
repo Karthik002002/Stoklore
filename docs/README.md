@@ -30,6 +30,7 @@ why it exists, see the main [README](../README.md) — these docs are the
 - [Workflows](workflows.md) — triggers, notifications, per-workflow pages
 - [Dashboards](dashboards.md) — panels over workflow data, arranged on a grid
 - [Alerts](alerts.md)
+- [Chart Scans](scans.md)
 - [Trade Log Simulation & Stress Testing](trade-simulation.md)
 - [Scraping & Anti-Block Transport](scraping.md)
 - [Database Backups](backups.md)

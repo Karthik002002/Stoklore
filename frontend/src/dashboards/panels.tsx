@@ -24,7 +24,7 @@ import type {
 import { formatSlot } from '@/workflows/status'
 import { useHoverTip } from './HoverTip'
 import PanelBoundary from './PanelBoundary'
-import { ChartButton } from '@/components/ChartModal'
+import { ChartButton, ScanButton } from '@/components/ChartModal'
 import { matchesShape } from './shaped'
 import { PANEL_META, formatValue, missingParam, panelRequest, withShape } from './shared'
 import type { DrillPoint, PanelContext } from './shared'
@@ -254,7 +254,11 @@ export function RowsTable({
     <table className="w-full text-xs">
       <thead className="sticky top-0 z-10 bg-card">
         <tr>
-          {symbolCol && <th className="w-6 border-b py-1 pl-1" aria-label="Chart" />}
+          {symbolCol && (
+            <th className="w-6 border-b py-1 pl-1">
+              <ScanButton symbols={rows.flatMap((r) => symbolOf(r) ?? [])} name="Panel rows" source="dashboard" />
+            </th>
+          )}
           {extra && <th className="border-b px-2 py-1" />}
           {columns.map((c) => (
             <th

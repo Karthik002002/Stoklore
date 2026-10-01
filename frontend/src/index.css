@@ -69,6 +69,12 @@
   to { transform: translateX(-50%); }
 }
 
+/* The chart scan's clock (components/ChartModal): fills over one chart's seconds, restarted per chart. */
+@keyframes scan-clock {
+  from { width: 0%; }
+  to { width: 100%; }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

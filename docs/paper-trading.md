@@ -106,6 +106,10 @@ saved in Bar Replay. On it you get:
   order, with stop and target ladders, goes straight to the account picked in the header, which is
   remembered. The icon beside the picker hides the ticket.
 - **Open as a page** goes to `/paper/<symbol>`. Esc or ✕ closes it.
+- **The same framing on every chart**: zoom and pan once (candle width, and the gap after the last
+  candle), and every stock's chart, here and on the position pages, opens framed that way. It's
+  kept relative to the newest bar, so a stock with less history doesn't push its last candle onto
+  the price axis.
 
 It's one component (`components/ChartModal.tsx` around `PaperChart`), and any table can use it
 with `<ChartButton symbol=… />`.

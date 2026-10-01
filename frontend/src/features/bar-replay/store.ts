@@ -60,6 +60,12 @@ export type ReplayView = {
   priceRanges: Record<string, { minValue: number; maxValue: number } | null>
 }
 
+/** How a chart of any stock is framed, relative to its newest bar so it carries from one stock to
+ *  the next: `span` bars across the screen, and `gap` bars of empty space after the last candle (the
+ *  room before the price axis). The position/scan charts share one; Bar Replay keeps its own
+ *  per-session window in `view`. */
+export type ChartFrame = { span: number; gap: number }
+
 type ReplayState = {
   symbol: string | null
   timeframe: string
@@ -72,6 +78,7 @@ type ReplayState = {
   view: ReplayView
   autoRandomJump: boolean
   accountId: number | null
+  chartFrame: ChartFrame | null
   setSymbol: (symbol: string | null) => void
   setTimeframe: (timeframe: string) => void
   setBarIndex: (barIndex: number | null) => void
@@ -83,6 +90,7 @@ type ReplayState = {
   setAccountId: (accountId: number | null) => void
   setAutoRandomJump: (autoRandomJump: boolean) => void
   setView: (view: Partial<ReplayView>) => void
+  setChartFrame: (frame: ChartFrame) => void
   restart: () => void
 }
 
@@ -170,6 +178,9 @@ export const useBarReplayStore = create<ReplayState>()(
       // session is "practicing one strategy", the same strategy regardless of which symbol is on
       // screen at the moment. null = unassigned, same as the manual trade form's "No account".
       accountId: null,
+      // null until the user first zooms or pans a position/scan chart; then every stock opens like
+      // that. A session saved before this existed reads the key as undefined - treated as null.
+      chartFrame: null,
 
       // A fresh symbol/timeframe carries no orders or bar position over - a limit/SL/target (or
       // "bar 400") from a different instrument/timeframe makes no sense. Same for the saved zoom
@@ -199,6 +210,7 @@ export const useBarReplayStore = create<ReplayState>()(
       setAccountId: (accountId: number | null) => set({ accountId }),
       setAutoRandomJump: (autoRandomJump: boolean) => set({ autoRandomJump }),
       setView: (view: Partial<ReplayView>) => set((s) => ({ view: { ...s.view, ...view } })),
+      setChartFrame: (chartFrame: ChartFrame) => set({ chartFrame }),
       restart: () =>
         set((s) => ({
           barIndex: null,

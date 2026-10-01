@@ -20,7 +20,7 @@ import { closePaperPosition, getPaperPositions, getStockChart, modifyPaperPositi
 // a live position rather than stepping history, so it wants "how far back do I look", and the
 // /api/stocks/{symbol}/chart endpoint already answers exactly that (from price_history when it's
 // collected, from Yahoo when it isn't) with no "Collect max data" gate in front of it.
-const RANGES = ['1mo', '6mo', 'ytd', '1y']
+export const RANGES = ['1mo', '6mo', 'ytd', '1y']
 
 // A paper position is the same object the replay chart already knows how to draw - an entry, a
 // direction, a quantity and two ladders of legs - so it's mapped rather than re-rendered. The whole
@@ -101,6 +101,9 @@ export function PaperChart({
   leading,
   trailing,
   side,
+  footer,
+  range: rangeProp,
+  onRangeChange,
   onClosed,
 }: {
   symbol: string
@@ -111,11 +114,18 @@ export function PaperChart({
   trailing?: React.ReactNode
   /** A panel to the right of the chart - the modal's order ticket. */
   side?: React.ReactNode
+  /** Under the chart, full width - the scan's mark bar. */
+  footer?: React.ReactNode
+  /** The range, when the host keeps it (a scan holds one range across every stock). */
+  range?: string
+  onRangeChange?: (range: string) => void
   /** After a position is closed from the chart. */
   onClosed?: () => void
 }) {
   const queryClient = useQueryClient()
-  const [range, setRange] = useState('6mo')
+  const [ownRange, setOwnRange] = useState('6mo')
+  const range = rangeProp ?? ownRange
+  const setRange = onRangeChange ?? setOwnRange
   // The position panel sits on the candles; collapsed, it's one line - the summary is still there.
   const [panelOpen, setPanelOpen] = useState(true)
   // Read-only view of the Bar Replay chart config: whatever indicators and candle colours are set
@@ -123,6 +133,9 @@ export function PaperChart({
   // this page has no chart settings of its own.
   const indicators = useBarReplayStore((st) => st.indicators)
   const chartSettings = useBarReplayStore((st) => st.settings)
+  // the zoom and the gap before the price axis, kept from one stock to the next (and across visits)
+  const chartFrame = useBarReplayStore((st) => st.chartFrame ?? null)
+  const setChartFrame = useBarReplayStore((st) => st.setChartFrame)
   // price alerts on this stock, drawn and editable on the chart (same rows as the Alerts page)
   const chartAlerts = useChartAlerts(symbol)
 
@@ -352,6 +365,8 @@ export function PaperChart({
               orders={mine.map(asOrder)}
               resetKey={`${symbol}-${range}`}
               settings={chartSettings}
+              frame={chartFrame}
+              onFrameChange={setChartFrame}
               topLeft={panel}
               onAdjustOrder={adjustOrder}
               onRemoveLevel={removeLevel}
@@ -365,6 +380,7 @@ export function PaperChart({
         </div>
         {side}
       </div>
+      {footer}
     </>
   )
 }

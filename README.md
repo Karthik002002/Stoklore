@@ -735,6 +735,13 @@ Bar Replay.
 > bars up to today are topped up from moneycontrol (yfinance as the fallback). See [How it works](docs/bar-replay.md#how-it-works)
 > for the details.
 
+- **Every chart property** — per-indicator period, line colours, width, style, levels and hide; candle,
+  background, grid, axis-text, RSI level and level-fill colours; volume and last-price line toggles.
+  The settings dialog previews live and reverts on Cancel
+- **Chart templates** — save the indicators + chart look as a named template, pick it from any
+  chart (Bar Replay, position pages, the chart modal), and a **Save** button appears there when the
+  chart drifts from it. Managed with a live preview in Settings › Chart templates
+  ([details](docs/bar-replay.md#chart-templates))
 - **Playback** — step forward/back, play/pause at 0.5×–4×, jump to a date, or
   shuffle to a **random bar** so you don't know which period you're practising
   in. Shortcuts: `B`/`S` buy/sell, `Shift+↓` play/pause, `Shift+→` step

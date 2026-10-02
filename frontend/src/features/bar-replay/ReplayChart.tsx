@@ -3,6 +3,7 @@ import type * as React from 'react'
 import type { ReactNode } from 'react'
 import { BellIcon } from 'lucide-react'
 import {
+  BaselineSeries,
   CandlestickSeries,
   CrosshairMode,
   HistogramSeries,
@@ -22,7 +23,7 @@ import type {
   ReplayView,
 } from './store'
 import { compact, inr } from '@/lib/format'
-import { INDICATOR_COLORS, INDICATOR_TYPES } from '@/lib/indicators'
+import { INDICATOR_TYPES, indicatorLineColor } from '@/lib/indicators'
 import { tradeReturnPct } from '@/lib/manualTrades'
 import { measureRange } from '@/lib/replay'
 import { CHART_ALERT_KINDS } from '@/lib/useChartAlerts'
@@ -73,8 +74,14 @@ function candleOptionsFrom(settings: ChartSettings) {
     borderVisible: settings.borderVisible,
     borderUpColor: settings.borderUpColor,
     borderDownColor: settings.borderDownColor,
+    priceLineVisible: settings.lastPriceLine !== false,
   }
 }
+
+// Where the band fill and level lines for an oscillator come from: the indicator's own levels,
+// else RSI's global ones, else the registry's.
+const levelsOf = (ind: IndicatorConfig, rsiLevels: number[]) =>
+  ind.levels ?? (ind.type === 'rsi' ? rsiLevels : (INDICATOR_TYPES[ind.type]?.levels ?? []))
 
 // How many of the most recent bars the chart shows on its first render (per symbol/timeframe/
 // replay-start) - after that, zoom/pan is entirely user-controlled (see the chart's fitContent
@@ -375,6 +382,8 @@ function sameRange(a: PriceRange | null, b: PriceRange | null) {
 // Series-map key for one line of one indicator. A single-line indicator passes lineKey = null and
 // keys on its own id alone; a band keys on `id:upper`, `id:middle`, `id:lower`. Both the effect
 // that creates the series and the one that feeds them go through here, so they can't disagree.
+/** Line key of an oscillator's level band, alongside its real lines in the series map. */
+const BAND_KEY = '__band'
 const seriesKey = (indicatorKey: string, lineKey?: string | null) =>
   lineKey ? `${indicatorKey}:${lineKey}` : indicatorKey
 
@@ -434,7 +443,7 @@ const ReplayChart = forwardRef(function ReplayChart(
   const chartRef = useRef<IChartApi | null>(null)
   const candleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
   const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null)
-  const indicatorSeriesRef = useRef(new Map<string, ISeriesApi<'Line'>>())
+  const indicatorSeriesRef = useRef(new Map<string, ISeriesApi<'Line' | 'Baseline'>>())
   /** One price line per level, keyed `orderId:entry` or `orderId:stopLoss:legId`. */
   const orderLinesRef = useRef(new Map<string, IPriceLine>())
   const previewLinesRef = useRef<IPriceLine[]>([])
@@ -633,6 +642,20 @@ const ReplayChart = forwardRef(function ReplayChart(
   useEffect(() => {
     candleSeriesRef.current?.applyOptions(candleOptionsFrom(settings))
   }, [settings])
+
+  // The canvas: background, axis text, grid and the volume overlay. Same reasoning as the candle
+  // colours - applied in place, so a live preview from the settings dialog never resets the zoom.
+  useEffect(() => {
+    const grid = settings.gridColor ?? COLORS.grid
+    chartRef.current?.applyOptions({
+      layout: { background: { color: settings.background ?? 'transparent' }, textColor: settings.textColor ?? COLORS.text },
+      grid: {
+        vertLines: { visible: !!settings.vertGridVisible, color: grid },
+        horzLines: { visible: settings.horzGridVisible !== false, color: grid },
+      },
+    })
+    volumeSeriesRef.current?.applyOptions({ visible: settings.volumeVisible !== false })
+  }, [settings, resetKey])
 
   // Blind replay: the time axis and the crosshair's date label go, so nothing on the chart says
   // when this is. resetKey is a dependency because a symbol/timeframe change recreates the chart.
@@ -981,6 +1004,15 @@ const ReplayChart = forwardRef(function ReplayChart(
     }
   }, [resetKey])
 
+  // Everything about the oscillator levels that rebuilds the indicator series when it changes.
+  const levelDeps = [
+    settings.rsiLevels,
+    settings.levelUpperColor,
+    settings.levelLowerColor,
+    settings.levelBandVisible,
+    settings.levelBandColor,
+  ]
+
   // Indicator SERIES objects only change when the indicator list itself changes - not on every
   // bar step, so their zoom-affecting add/remove doesn't fire during normal replay. Overlays
   // (EMA/SMA, the previous-day levels) draw on the price pane; oscillators (anything with
@@ -1015,14 +1047,39 @@ const ReplayChart = forwardRef(function ReplayChart(
       // a synthetic one so this loop is the only code path. The map key carries the line, so the
       // data effect can address each series independently.
       const lines: IndicatorLine[] = type?.lines ?? [{ key: null }]
+      const levels = separatePane ? levelsOf(ind, settings.rsiLevels) : []
+
+      // The shaded band between the outermost levels (RSI's 30-70), drawn first so the lines sit
+      // on top of it. A baseline series pinned at the upper level, filled down to the lower one.
+      if (separatePane && type.range && levels.length >= 2 && settings.levelBandVisible !== false && !ind.hidden) {
+        const [minValue, maxValue] = type.range
+        const band = chart.addSeries(
+          BaselineSeries,
+          {
+            baseValue: { type: 'price', price: Math.min(...levels) },
+            topFillColor1: fade(settings.levelBandColor ?? '#7e57c2', 0.12),
+            topFillColor2: fade(settings.levelBandColor ?? '#7e57c2', 0.12),
+            topLineColor: 'rgba(0, 0, 0, 0)',
+            bottomLineColor: 'rgba(0, 0, 0, 0)',
+            lineVisible: false,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+            autoscaleInfoProvider: () => ({ priceRange: { minValue, maxValue } }),
+          },
+          paneIndex,
+        )
+        next.set(seriesKey(ind.key, BAND_KEY), band)
+      }
 
       lines.forEach((line, lineIndex) => {
         const series = chart.addSeries(
           LineSeries,
           {
-            color: line.color ?? INDICATOR_COLORS[(i + lineIndex) % INDICATOR_COLORS.length],
-            lineWidth: 1,
-            lineStyle: (line.lineStyle ?? type?.lineStyle ?? 0) as never,
+            color: indicatorLineColor(ind, i, line, lineIndex),
+            lineWidth: (ind.lineWidth ?? 1) as never,
+            lineStyle: (ind.lineStyle ?? line.lineStyle ?? type?.lineStyle ?? 0) as never,
+            visible: !ind.hidden,
             crosshairMarkerVisible: false,
             // Only the first line of a group gets a value badge on the axis - three bands would
             // otherwise stack three overlapping labels on one another.
@@ -1054,15 +1111,14 @@ const ReplayChart = forwardRef(function ReplayChart(
           // carries its own in the registry. Colored by which half of its range they sit in - the
           // upper one reads as the "stretched" side, same convention as the classic 30/70 pair.
           // An unbounded type has no halves, so its levels stay neutral.
-          const levels = ind.type === 'rsi' ? settings.rsiLevels : (type.levels ?? [])
           const midpoint = type.range ? (type.range[0] + type.range[1]) / 2 : null
           levels.forEach((level) => {
             const color =
               midpoint == null || level === midpoint
                 ? COLORS.text
                 : level > midpoint
-                  ? settings.bodyDownColor
-                  : settings.bodyUpColor
+                  ? (settings.levelUpperColor ?? settings.bodyDownColor)
+                  : (settings.levelLowerColor ?? settings.bodyUpColor)
             series.createPriceLine({
               price: level,
               color,
@@ -1087,7 +1143,7 @@ const ReplayChart = forwardRef(function ReplayChart(
       pane.setStretchFactor(heights[key] ?? fallback)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [indicators, resetKey, settings.rsiLevels, settings.bodyUpColor, settings.bodyDownColor])
+  }, [indicators, resetKey, ...levelDeps])
 
   // Data updates - runs on every bar step, but only ever calls .setData() on already-existing
   // series, never recreates the chart. The initial framing only fires once per resetKey (first
@@ -1131,6 +1187,8 @@ const ReplayChart = forwardRef(function ReplayChart(
       // Multi-line types return an object keyed by line; single-line ones return a bare array.
       const computed = type.compute(bars, ind.period ?? 0)
       const lines: IndicatorLine[] = type.lines ?? [{ key: null }]
+      const band = indicatorSeriesRef.current.get(seriesKey(ind.key, BAND_KEY))
+      band?.setData(bars.map((b) => ({ time: b.time, value: Math.max(...levelsOf(ind, settings.rsiLevels)) })) as never)
       lines.forEach((line) => {
         const series = indicatorSeriesRef.current.get(seriesKey(ind.key, line.key))
         if (!series) return
@@ -1176,7 +1234,7 @@ const ReplayChart = forwardRef(function ReplayChart(
     // Deps must stay a superset of the series-creating effect's: anything that makes that effect
     // tear down and rebuild the series (rsiLevels, resetKey) has to re-run this one too, or the
     // freshly created series sit there with no data until the next bar step.
-  }, [bars, indicators, markers, resetKey, settings.rsiLevels, settings.bodyUpColor, settings.bodyDownColor])
+  }, [bars, indicators, markers, resetKey, settings.bodyUpColor, settings.bodyDownColor, ...levelDeps])
 
   // Restores each pane's saved price scale. Per pane rather than once for the whole chart: an
   // oscillator pane added mid-session (adding RSI after the chart is already up) doesn't exist when

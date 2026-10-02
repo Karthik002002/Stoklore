@@ -1004,3 +1004,14 @@ export const INDICATOR_TYPES: Record<string, IndicatorType> = {
 }
 
 export const INDICATOR_COLORS = ['#f59e0b', '#3b82f6', '#a855f7', '#ec4899', '#14b8a6']
+
+/** One drawn line of an indicator: the user's colour, else the registry's, else the palette slot
+ *  for its position - shared by the chart and the indicator chips so the two always agree. */
+export function indicatorLineColor(
+  ind: { colors?: Record<string, string> },
+  index: number,
+  line: { key: string | null; color?: string },
+  lineIndex: number,
+) {
+  return ind.colors?.[line.key ?? ''] ?? line.color ?? INDICATOR_COLORS[(index + lineIndex) % INDICATOR_COLORS.length]
+}

@@ -49,7 +49,19 @@ export type Drawing = {
 
 /** An indicator on the chart: which kind, and its period where it has one. `period: null` is the
  *  periodless kind (VWAP, previous-day levels) - stored explicitly rather than left absent. */
-export type IndicatorConfig = { key: string; type: string; period?: number | null }
+export type IndicatorConfig = {
+  key: string
+  type: string
+  period?: number | null
+  /** Per-line colour overrides, keyed by the registry's line key ('' for a single-line type). */
+  colors?: Record<string, string>
+  lineWidth?: number
+  /** lightweight-charts line style: 0 solid, 1 dotted, 2 dashed. Unset = the registry's. */
+  lineStyle?: number
+  /** Reference lines in an oscillator's pane, in place of the registry's (RSI: settings.rsiLevels). */
+  levels?: number[]
+  hidden?: boolean
+}
 
 export type ChartSettings = typeof DEFAULT_CHART_SETTINGS
 
@@ -110,6 +122,20 @@ export const DEFAULT_CHART_SETTINGS = {
   sizeMode: 'qty',
   capitalPct: 10,
   rsiLevels: [30, 70],
+  // Oscillator reference lines: the ones above the pane's midpoint, below it, and the shaded band
+  // between the outermost two (RSI's 30-70 fill). Only for oscillators with a fixed range.
+  levelUpperColor: '#ef4444',
+  levelLowerColor: '#22c55e',
+  levelBandVisible: true,
+  levelBandColor: '#7e57c2',
+  // Canvas. null = the theme's default (transparent background, faint grid, muted axis text).
+  background: null as string | null,
+  gridColor: null as string | null,
+  textColor: null as string | null,
+  horzGridVisible: true,
+  vertGridVisible: false,
+  volumeVisible: true,
+  lastPriceLine: true,
   // Blind replay: no dates on the axis, legend, jump field or toasts, and the symbol masked, so
   // what's on the chart can't be matched to what you remember happening next.
   blind: false,
@@ -220,7 +246,7 @@ export const useBarReplayStore = create<ReplayState>()(
     }),
     {
       name: 'barReplay.store',
-      version: 8,
+      version: 9,
       // v0 -> v1: a position's stop-loss and target were single `stopLoss`/`target` numbers;
       // they're now `stopLosses`/`targets`, lists of {id, price, qty} legs (see orderEngine.js)
       // so one trade can carry a laddered exit on either side - a plain single-SL/single-target
@@ -233,7 +259,8 @@ export const useBarReplayStore = create<ReplayState>()(
         // v7 -> v8: `settings.sizeMode`/`capitalPct` are new. persist's merge is shallow and
         // `settings` already exists, so an upgraded session would read them as undefined and size
         // every order off an undefined preference.
-        if (version < 8 && persisted?.settings) {
+        // v8 -> v9: the level/canvas/volume keys are new - same shallow-merge problem.
+        if (version < 9 && persisted?.settings) {
           persisted.settings = { ...DEFAULT_CHART_SETTINGS, ...persisted.settings }
         }
         // v6 -> v7: `view.priceRanges` is new. persist's merge is shallow and `view` already

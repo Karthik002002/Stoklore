@@ -44,7 +44,9 @@ waiting out the poll interval.
   "where is this actually sitting" doesn't mean opening the stock page and
   re-plotting the levels by hand. Laid out like a charting package: the chart
   takes the whole screen beside the nav rail, under a thin bar with the symbol
-  and the 1MO/6MO/YTD/1Y ranges, and the position's numbers (current, value,
+  every timeframe (`1m`/`5m`/`15m`/`1H`/`4H` intraday bars, then the 1D/5D/1MO/6MO/YTD/1Y/5Y/MAX
+  ranges), **Indicators**, the **chart template** picker and the chart **settings** cog (the same
+  config Bar Replay edits - see [Chart templates](bar-replay.md#chart-templates)), and the position's numbers (current, value,
   unrealised, stop, target, R:R) float in the top-left under the OHLCV legend.
   Click its header to collapse it to one line - side, size @ entry, P&L.
 - **Modify** edits the ladder in place — add, retune, or remove levels on a

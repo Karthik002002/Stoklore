@@ -14,13 +14,8 @@ import type { PaperModifyRequest, PaperPosition } from '@/services/api'
 import ReplayChart from '@/features/bar-replay/ReplayChart'
 import { riskReward } from '@/features/bar-replay/orderEngine'
 import { useBarReplayStore } from '@/features/bar-replay/store'
-import { closePaperPosition, getPaperPositions, getStockChart, modifyPaperPosition } from '@/services/api'
-
-// Ranges the chart endpoint serves. Deliberately not Bar Replay's timeframe list: this page reads
-// a live position rather than stepping history, so it wants "how far back do I look", and the
-// /api/stocks/{symbol}/chart endpoint already answers exactly that (from price_history when it's
-// collected, from Yahoo when it isn't) with no "Collect max data" gate in front of it.
-export const RANGES = ['1mo', '6mo', 'ytd', '1y']
+import { closePaperPosition, getPaperPositions, modifyPaperPosition } from '@/services/api'
+import { ChartControls, TimeframeButtons, chartQuery } from '@/features/bar-replay/ChartControls'
 
 // A paper position is the same object the replay chart already knows how to draw - an entry, a
 // direction, a quantity and two ladders of legs - so it's mapped rather than re-rendered. The whole
@@ -128,9 +123,8 @@ export function PaperChart({
   const setRange = onRangeChange ?? setOwnRange
   // The position panel sits on the candles; collapsed, it's one line - the summary is still there.
   const [panelOpen, setPanelOpen] = useState(true)
-  // Read-only view of the Bar Replay chart config: whatever indicators and candle colours are set
-  // up over there render here too. Configured in one place (Bar Replay's own controls), not two -
-  // this page has no chart settings of its own.
+  // The Bar Replay chart config - indicators, candle colours, the applied template. Editable from
+  // this toolbar (ChartControls) as well as Bar Replay's; both write the same store.
   const indicators = useBarReplayStore((st) => st.indicators)
   const chartSettings = useBarReplayStore((st) => st.settings)
   // the zoom and the gap before the price axis, kept from one stock to the next (and across visits)
@@ -147,10 +141,7 @@ export function PaperChart({
   })
   const mine = useMemo(() => positions.filter((p) => p.symbol === symbol), [positions, symbol])
 
-  const { data: chart, isPending: chartPending } = useQuery({
-    queryKey: ['stockChart', symbol, range],
-    queryFn: () => getStockChart(symbol, range),
-  })
+  const { data: chart, isPending: chartPending } = useQuery(chartQuery(symbol, range))
   // The chart endpoint sends a unix `time` and no `date`. ReplayChart only reads `date` for bars
   // whose time is a string (see its `stamp`), so these never reach that branch - hence the cast
   // rather than inventing a date field the API does not send.
@@ -327,18 +318,11 @@ export function PaperChart({
             {position.direction} · {position.quantity} qty · paper
           </span>
         )}
-        <div className="ml-auto flex items-center gap-0.5 border-l pl-2">
-          {RANGES.map((r) => (
-            <Button
-              key={r}
-              size="sm"
-              variant={range === r ? 'secondary' : 'ghost'}
-              className="h-7 px-2 font-mono text-[11px] uppercase"
-              onClick={() => setRange(r)}
-            >
-              {r}
-            </Button>
-          ))}
+        <div className="ml-auto flex items-center gap-1 border-l pl-2">
+          <ChartControls />
+        </div>
+        <div className="flex items-center border-l pl-2">
+          <TimeframeButtons value={range} onChange={setRange} />
         </div>
         {trailing}
       </div>

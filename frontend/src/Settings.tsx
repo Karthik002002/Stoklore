@@ -18,6 +18,7 @@ import {
 import { toast } from 'sonner'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { BrokerLogo } from '@/BrokerLogo'
+import ChartTemplatesTab from '@/ChartTemplatesTab'
 import EngineSettingsTab from '@/EngineSettingsTab'
 import ShortcutsTab from '@/ShortcutsTab'
 import TradeAccountsTab from '@/TradeAccountsTab'
@@ -1718,6 +1719,7 @@ export default function Settings() {
           <TabsTab value="accounts">Trade accounts</TabsTab>
           <TabsTab value="paper-accounts">Paper accounts</TabsTab>
           <TabsTab value="engine">Algo engine</TabsTab>
+          <TabsTab value="chart-templates">Chart templates</TabsTab>
         </TabsList>
         <div className="min-w-0 flex-1 overflow-y-auto pr-1">
           <TabsPanel value="account">
@@ -1773,6 +1775,9 @@ export default function Settings() {
           </TabsPanel>
           <TabsPanel value="paper-accounts">
             <TradeAccountsTab kind="paper" />
+          </TabsPanel>
+          <TabsPanel value="chart-templates">
+            <ChartTemplatesTab />
           </TabsPanel>
         </div>
       </Tabs>

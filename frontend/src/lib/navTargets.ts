@@ -98,6 +98,7 @@ export const SETTINGS_TABS = [
   { label: 'Settings > Trade accounts', tab: 'accounts' },
   { label: 'Settings > Paper accounts', tab: 'paper-accounts' },
   { label: 'Settings > Algo engine', tab: 'engine' },
+  { label: 'Settings > Chart templates', tab: 'chart-templates' },
 ]
 
 // KEEP THIS FILE IN SYNC. It is the app's own index of itself: a new route, page tab or

@@ -30,7 +30,8 @@ import { inr } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { OrderPanel } from '@/paper/PaperTrades'
 import { PaperChart } from '@/paper/PaperPositionChart'
-import { createScan, getPaperAccounts, getScan, getStockChart, markScan, updateScan } from '@/services/api'
+import { chartQuery } from '@/features/bar-replay/ChartControls'
+import { createScan, getPaperAccounts, getScan, markScan, updateScan } from '@/services/api'
 import type { Scan, ScanMark, ScanPriority } from '@/services/api'
 
 type ModalState = { symbol: string | null; scan: Scan | null; index: number }
@@ -197,7 +198,7 @@ export default function ChartModal() {
   useEffect(() => {
     const next = scan?.symbols[index + 1]
     if (next)
-      queryClient.prefetchQuery({ queryKey: ['stockChart', next, range], queryFn: () => getStockChart(next, range) })
+      queryClient.prefetchQuery(chartQuery(next, range))
   }, [scan, index, range, queryClient])
 
   // the timer: one flip per `seconds` while playing
@@ -211,7 +212,7 @@ export default function ChartModal() {
     async (priority: ScanPriority | null, withNote = note) => {
       if (!scan || !symbol) return
       setPlaying(false) // deciding is not rushed: marking stops the clock
-      const bars = queryClient.getQueryData<{ bars: { close: number }[] }>(['stockChart', symbol, range])?.bars
+      const bars = queryClient.getQueryData<{ bars: { close: number }[] }>(chartQuery(symbol, range).queryKey)?.bars
       const price = bars?.at(-1)?.close ?? null
       const prev = marks[symbol]
       setMarks((m) => ({ ...m, [symbol]: { symbol, priority, note: withNote || null, price, marked_at: new Date().toISOString() } }))

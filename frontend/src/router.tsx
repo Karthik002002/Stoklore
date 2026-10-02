@@ -66,6 +66,7 @@ const SETTINGS_TABS = [
   'accounts',
   'paper-accounts',
   'engine',
+  'chart-templates',
 ] as const
 
 // Settings is its own page (/settings?tab=). `settings` stays on the root route only so a link from

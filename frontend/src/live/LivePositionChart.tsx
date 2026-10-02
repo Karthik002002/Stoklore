@@ -9,6 +9,7 @@ import { fmt, inr } from '@/lib/format'
 import { useChartAlerts } from '@/lib/useChartAlerts'
 import { usePageTitle } from '@/lib/usePageTitle'
 import ReplayChart from '@/features/bar-replay/ReplayChart'
+import { ChartControls, TimeframeButtons, chartQuery } from '@/features/bar-replay/ChartControls'
 import { useBarReplayStore } from '@/features/bar-replay/store'
 import type { ReplayBar, ReplayLeg, ReplayOrder } from '@/features/bar-replay/store'
 import type { LiveModifyRequest, LiveOrder, LivePosition } from '@/services/api'
@@ -17,7 +18,6 @@ import {
   closeLivePosition,
   getLiveOrders,
   getLivePositions,
-  getStockChart,
   modifyLiveOrder,
 } from '@/services/api'
 
@@ -28,7 +28,6 @@ import {
 // copy to update, and if the modify is refused the line snaps back on the next poll, which is the
 // honest outcome.
 
-const RANGES = ['1mo', '6mo', 'ytd', '1y']
 
 /** The live position plus its broker-side exits, in the shape the replay chart already draws.
  *  Ids are the broker's order ids, so a dragged line knows which leg to modify. */
@@ -103,8 +102,7 @@ export default function LivePositionChart() {
     refetchInterval: 10_000,
   })
   const { data: chart, isPending: chartPending } = useQuery({
-    queryKey: ['stockChart', symbol, range],
-    queryFn: () => getStockChart(symbol, range),
+    ...chartQuery(symbol, range),
   })
   // The chart endpoint sends a unix `time` and no `date`. ReplayChart only reads `date` for bars
   // whose time is a string (see its `stamp`), so these never reach that branch - hence the cast
@@ -226,17 +224,8 @@ export default function LivePositionChart() {
               Close at market
             </Button>
           )}
-          {RANGES.map((r) => (
-            <Button
-              key={r}
-              size="sm"
-              variant={range === r ? 'secondary' : 'ghost'}
-              className="h-7 font-mono text-[11px] uppercase"
-              onClick={() => setRange(r)}
-            >
-              {r}
-            </Button>
-          ))}
+          <ChartControls />
+          <TimeframeButtons value={range} onChange={setRange} />
         </div>
       </div>
 

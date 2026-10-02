@@ -38,6 +38,7 @@ import { REPLAY_SPEEDS, REPLAY_TIMEFRAMES } from '@/lib/replay'
 import { useShortcutLabel } from '@/lib/shortcuts'
 import DateJumpMenu from './DateJumpMenu'
 import IndicatorControls from './IndicatorControls'
+import { TemplateMenu } from './ChartControls'
 import PositionsList from './PositionsList'
 import { riskReward } from './orderEngine'
 import { DRAW_TOOLS } from './ReplayChart'
@@ -658,6 +659,7 @@ export default function BottomBar({
           <Separator orientation="vertical" className="h-full" />
         </>
       )}
+      <TemplateMenu />
       <Button size="icon-sm" variant="ghost" aria-label="Chart settings" onClick={onOpenSettings}>
         <SettingsIcon className="size-4" />
       </Button>

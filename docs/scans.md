@@ -33,7 +33,7 @@ back). The header adds the scan controls:
 | `N` | write a note on the stock; `Enter` saves it, `Esc` leaves the box |
 
 The thin bar under the chart is the timer. The next stock's chart loads while you read this one,
-so a flip is instant. The range (1mo / 6mo / YTD / 1y) stays the same across the whole scan, and so
+so a flip is instant. The timeframe (any of `1m`–`4H` intraday, or 1D … MAX) stays the same across the whole scan, and so
 does the **framing**: however you zoom and pan one chart (how many candles fit, and how much empty
 space sits between the last candle and the price axis), the next stock opens the same way. The
 framing is saved in the browser (`chartFrame` in the Bar Replay store), so it also carries over to

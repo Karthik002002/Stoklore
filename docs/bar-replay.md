@@ -211,6 +211,35 @@ paper-trade it.
   autoscale). A reload puts the candles back where you were looking, not at
   a default window.
 
+## Chart templates
+
+A template is a named snapshot of the chart's **indicators** plus its **look** (candle body/wick/border
+colours, RSI levels) - not order sizing or blind mode, which are trading preferences. Every chart that
+reads the Bar Replay store uses it: Bar Replay, the paper and live position pages, and the chart modal
+(scans, any stock list).
+
+- **On any of those charts** - the *Template* picker (Bar Replay: bottom bar; the others: the toolbar
+  next to *Indicators* and the settings cog) lists your templates; picking one applies it everywhere.
+  Change an indicator or a colour after that and the picker shows `*` and a **Save** button that writes
+  the change back over that template. *Save current as new…* names the current setup.
+- **Settings › Chart templates** - create (from the current chart, or blank), rename, edit indicators
+  and candle colours against a **live preview** (any symbol, any timeframe), delete, and apply.
+
+Stored in the browser (`chartTemplates` in localStorage), like the rest of the chart config.
+
+### What you can change
+
+- **Per indicator** - click its chip (Indicators popover): period, colour of each line (MACD's
+  MACD/Signal/Hist, Bollinger's bands…), width 1-4, solid/dotted/dashed, hide, and - for oscillators -
+  its own reference levels (blank = the registry's; RSI's come from Settings).
+- **Settings cog › Chart** - candle body/wick/border colours; canvas background, grid colour, axis
+  text colour (each can be reset to the theme), horizontal/vertical grid, volume, last-price line;
+  oscillator upper/lower level colours, the shaded fill between the outer levels and its colour; RSI
+  levels.
+- **Live preview** - every change in the settings dialog shows on the chart as you make it. **Ok**
+  keeps it; **Cancel**, ✕, Esc or clicking outside puts back what was there when the dialog opened.
+  Indicator edits apply straight away (the chart is the preview).
+
 ## How it works
 
 Everything here is client-side — `frontend/src/features/bar-replay/`.

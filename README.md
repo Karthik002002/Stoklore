@@ -923,6 +923,11 @@ trades on the VPS, and its paper/live sessions land on this page beside the back
   flat cost in bps per side, and positions square off at 15:15. Bars from 1m to **1D**: on daily
   bars positions are held across days (positional) and costs default to delivery's ~12 bps a side. Pick the **history** to run on - all available, the last N years, or a date range; each stock
   uses what it has inside it, a stock with nothing there is skipped, and the run says which
+- **Every field explained on the form** — an ⓘ on each param and setting opens what it does, which
+  way to turn it and an example (per strategy); params are listed entry → stops → size, and a
+  disabled stop reads `· off`. `ema_cross` has an RSI entry band (`rsi_len`, `rsi_lo`,
+  `rsi_hi`), three stops (`atr_stop`, `stop_pct`, `trail_atr`) and `reentry`, all sweepable
+  ([details](docs/engine.md#using-it))
 - **Sweep heatmap** — pick two axes and each cell shows its best run over the rest, so a parameter
   that only works in one corner is visible as one. Each cell carries its trade count, the best is
   ringed, and parameter sets that took **no trades** are drawn dashed and grey rather than as a red

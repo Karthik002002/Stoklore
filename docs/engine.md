@@ -40,6 +40,16 @@ Check an engine against it before pointing Stoklore at it:
 - **New backtest:** pick a strategy, symbols, and bar size (1m–4H or **1D**, all from the same minute
   dataset Bar Replay uses). Every strategy param takes one value `9`, a list `5,9,13`, or a range `5:20:5`.
   Every combination runs in parallel as one *sweep* (max 200 runs).
+  - **Params** come from the engine's `backtest --list`, shown in a logical order (entry, then
+    stops, then size). **Every field has an ⓘ** - hover or click it for what the field does, which
+    way to turn it, and an example; strategy params are explained per strategy, since `entry_z` means
+    something different in `kalman_pair` and `zscore_mr` (`lib/engineHelp.ts`; a param it doesn't
+    know still shows, last, with no icon). Stops that `0` disables read `· off` while set to 0.
+    `ema_cross` takes: `fast`/`slow` EMAs; an RSI entry filter (`rsi_len`, enter only while RSI is in
+    `rsi_lo`..`rsi_hi`); stops checked on the close - `atr_stop` (x ATR(14) from entry), `stop_pct`
+    (% from entry), `trail_atr` (x ATR back from the best close); and `reentry` (0 waits for the next
+    crossover after a stop, 1 re-enters while trend and RSI still agree). All of them sweep and
+    auto-tune like any other param, e.g. `atr_stop=0,1.5,2,3` or `reentry=0,1`.
   - **History** picks the stretch of bars a run uses, for backtests, sweeps and Auto-tune alike:
     **All available** (the default here), **Last N years** (counted back from today; `0.5` is six
     months), or a **Date range** (either end may be left open; an end after today is today).

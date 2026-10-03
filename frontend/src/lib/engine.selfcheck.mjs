@@ -1,5 +1,6 @@
 // node src/lib/engine.selfcheck.mjs
 import assert from 'node:assert/strict'
+import { PARAM_HELP, orderParams, paramLabel } from './engineHelp.ts'
 import {
   autotuneBatchSheet,
   autotuneRunSheets,
@@ -683,3 +684,24 @@ assert.equal(
 }
 
 console.log('engine selfcheck passed')
+
+// strategy params: per-strategy order, unknowns last; a zero stop reads as off
+assert.deepEqual(
+  orderParams('ema_cross', ['trail_atr', 'zeta', 'fast', 'qty', 'alpha', 'slow', 'rsi_lo']),
+  ['fast', 'slow', 'rsi_lo', 'trail_atr', 'qty', 'alpha', 'zeta'],
+)
+assert.deepEqual(orderParams('nope', ['b', 'a']), ['a', 'b'])
+assert.equal(paramLabel('ema_cross', 'atr_stop', '0'), 'atr_stop · off')
+assert.equal(paramLabel('ema_cross', 'atr_stop', '0,1,2'), 'atr_stop')
+assert.equal(paramLabel('ema_cross', 'fast', '0'), 'fast')
+assert.equal(paramLabel('kalman_pair', 'risk', '0'), 'risk')
+assert.equal(paramLabel('zscore_mr', 'risk', '0'), 'risk · off')
+// every strategy the engine ships has help for each of its params (hft src/strategies/*.hpp defaults)
+const SHIPPED = {
+  ema_cross: ['atr_stop', 'fast', 'qty', 'reentry', 'rsi_hi', 'rsi_len', 'rsi_lo', 'slow', 'stop_pct', 'trail_atr'],
+  kalman_pair: ['delta', 'entry_z', 'exit_z', 'flip', 'qty', 've'],
+  zscore_mr: ['entry_z', 'exit_z', 'lookback', 'max_hl', 'min_r2', 'qty', 'risk', 'stop_z'],
+}
+for (const [strategy, keys] of Object.entries(SHIPPED))
+  for (const k of keys) assert.ok(PARAM_HELP[strategy]?.[k]?.what, `${strategy}.${k} has help`)
+console.log('ok - strategy param help, order and labels')

@@ -58,6 +58,7 @@ import {
   sweepGrid,
   tuneVerdict,
 } from '@/lib/engine'
+import { FIELD_HELP, orderParams, paramHelp, paramLabel } from '@/lib/engineHelp'
 import type { RunTrade } from '@/lib/engine'
 import { fmt, formatDateTime, inr } from '@/lib/format'
 import type { EngineTab } from './router'
@@ -69,6 +70,7 @@ import {
   ExportMenu,
   Field,
   HistoryLine,
+  InfoTip,
   PREFILL_KEY,
   Panel,
   paramText,
@@ -177,7 +179,6 @@ function SizingFields({ value, onChange }: { value: SizingChoice; onChange: (v: 
     <>
       <label
         className="flex h-7 items-center gap-1.5 self-end text-xs"
-        title="Feed every trade's P&L into the next trade's size, instead of the same qty every time"
       >
         <input
           type="checkbox"
@@ -186,10 +187,11 @@ function SizingFields({ value, onChange }: { value: SizingChoice; onChange: (v: 
           className="size-3.5 accent-primary"
         />
         Compound
+        <InfoTip help={FIELD_HELP.compound} />
       </label>
       {value.compound && (
         <>
-          <Field label="Sizing">
+          <Field label="Sizing" help={FIELD_HELP.sizing}>
             <Select value={value.mode} onValueChange={(v) => onChange({ ...value, mode: v as SizingChoice['mode'] })}>
               <SelectTrigger
                 size="sm"
@@ -207,7 +209,7 @@ function SizingFields({ value, onChange }: { value: SizingChoice; onChange: (v: 
               </SelectContent>
             </Select>
           </Field>
-          <Field label="Capital (₹)">
+          <Field label="Capital (₹)" help={FIELD_HELP.capital}>
             <Input
               value={value.capital}
               onChange={(e) => onChange({ ...value, capital: e.target.value })}
@@ -580,7 +582,7 @@ function RunForm({
     const b = bases[k]?.trim()
     return b ? Number(b) : (strategy?.params[k] ?? 0)
   }
-  const parsed = Object.keys(strategy?.params ?? {}).map((k) => [k, parseValues(text(k))] as const)
+  const parsed = orderParams(strategy?.name, Object.keys(strategy?.params ?? {})).map((k) => [k, parseValues(text(k))] as const)
   const invalid = [
     ...parsed.filter(([, v]) => v === null).map(([k]) => k),
     ...Object.entries(bases)
@@ -649,7 +651,7 @@ function RunForm({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="Strategy">
+        <Field label="Strategy" help={FIELD_HELP.strategy}>
           <Select
             value={strategy.name}
             onValueChange={(v) => {
@@ -670,7 +672,7 @@ function RunForm({
             </SelectContent>
           </Select>
         </Field>
-        <Field label="Mode">
+        <Field label="Mode" help={FIELD_HELP.mode}>
           <Select value={mode} onValueChange={(v) => setMode(v as Mode)}>
             <SelectTrigger size="sm" className="w-36">
               <SelectValue>{(v: Mode) => MODES[v]}</SelectValue>
@@ -684,10 +686,10 @@ function RunForm({
             </SelectContent>
           </Select>
         </Field>
-        <Field label="Symbols">
+        <Field label="Symbols" help={FIELD_HELP.symbols}>
           <SymbolPicker value={symbols} onChange={setSymbols} />
         </Field>
-        <Field label="Bars">
+        <Field label="Bars" help={FIELD_HELP.bars}>
           <Select value={barInterval} onValueChange={(v) => setBarInterval(v as string)}>
             <SelectTrigger size="sm" className="w-20">
               <SelectValue />
@@ -701,10 +703,10 @@ function RunForm({
             </SelectContent>
           </Select>
         </Field>
-        <Field label="History">
+        <Field label="History" help={FIELD_HELP.history}>
           <HistoryPicker value={history} onChange={setHistory} />
         </Field>
-        <Field label="Cost (bps/side)">
+        <Field label="Cost (bps/side)" help={FIELD_HELP.cost_bps}>
           <Input
             value={costText}
             onChange={(e) => setCost(e.target.value)}
@@ -713,7 +715,7 @@ function RunForm({
           />
         </Field>
         <SizingFields value={sizing} onChange={setSizing} />
-        <Field label="Label">
+        <Field label="Label" help={FIELD_HELP.label}>
           <Input
             value={label}
             onChange={(e) => setLabel(e.target.value)}
@@ -726,7 +728,7 @@ function RunForm({
       <div className="flex flex-wrap items-end gap-3">
         {parsed.map(([k, v]) => (
           <div key={k} className="flex flex-col gap-1">
-            <Field label={k}>
+            <Field label={paramLabel(strategy.name, k, text(k))} help={paramHelp(strategy.name, k)}>
               <Input
                 value={text(k)}
                 onChange={(e) => setValues({ ...values, [k]: e.target.value })}
@@ -2195,7 +2197,7 @@ function AutotuneForm({
 
   const strategy = strategies?.find((s) => s.name === name) ?? strategies?.[0]
   const text = (k: string) => values[k] ?? String(strategy?.params[k] ?? '')
-  const parsed = Object.keys(strategy?.params ?? {}).map((k) => [k, parseValues(text(k))] as const)
+  const parsed = orderParams(strategy?.name, Object.keys(strategy?.params ?? {})).map((k) => [k, parseValues(text(k))] as const)
   const invalid = parsed.filter(([, v]) => v === null).map(([k]) => k)
   const tuned = parsed.filter(([, v]) => (v?.length ?? 0) > 1)
   const cells = comboCount(tuned.map(([, v]) => v ?? []))
@@ -2256,7 +2258,7 @@ function AutotuneForm({
   if (!strategy) return <Spinner className="size-4" />
 
   const numberField = ([k, label, d]: (typeof TUNE_NUMBERS)[number], className = 'h-7 w-full') => (
-    <Field key={k} label={label}>
+    <Field key={k} label={label} help={FIELD_HELP[k]}>
       <Input
         value={valueOf(k, d)}
         onChange={(e) => setNums({ ...nums, [k]: e.target.value })}
@@ -2270,7 +2272,7 @@ function AutotuneForm({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="Strategy">
+        <Field label="Strategy" help={FIELD_HELP.strategy}>
           <Select
             value={strategy.name}
             onValueChange={(v) => {
@@ -2290,10 +2292,10 @@ function AutotuneForm({
             </SelectContent>
           </Select>
         </Field>
-        <Field label="Symbols">
+        <Field label="Symbols" help={FIELD_HELP.symbols}>
           <SymbolPicker value={symbols} onChange={setSymbols} />
         </Field>
-        <Field label="Bars">
+        <Field label="Bars" help={FIELD_HELP.bars}>
           <Select value={barInterval} onValueChange={(v) => setBarInterval(v as string)}>
             <SelectTrigger size="sm" className="w-20">
               <SelectValue />
@@ -2313,7 +2315,7 @@ function AutotuneForm({
       <SymbolChips value={symbols} onChange={setSymbols} />
 
       <FormSection title="Walk" hint="how much history, and how it's cut into windows">
-        <Field label="History">
+        <Field label="History" help={FIELD_HELP.history}>
           <HistoryPicker value={history} onChange={setHistory} />
         </Field>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -2324,7 +2326,11 @@ function AutotuneForm({
       <FormSection title="Parameters" hint="a range 5:20:1 or list 5,9,13 is tuned · one value is fixed">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {parsed.map(([k, v]) => (
-            <Field key={k} label={`${k}${(v?.length ?? 0) > 1 ? ` · ${v!.length} values` : ''}`}>
+            <Field
+              key={k}
+              label={`${paramLabel(strategy.name, k, text(k))}${(v?.length ?? 0) > 1 ? ` · ${v!.length} values` : ''}`}
+              help={paramHelp(strategy.name, k)}
+            >
               <Input
                 value={text(k)}
                 onChange={(e) => setValues({ ...values, [k]: e.target.value })}

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { CandlestickSeries, HistogramSeries, createChart, createSeriesMarkers } from 'lightweight-charts'
 import type { UTCTimestamp } from 'lightweight-charts'
-import { DownloadIcon } from 'lucide-react'
+import { DownloadIcon, InfoIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -19,6 +19,8 @@ import { downloadCsv, downloadXlsx } from '@/lib/exportFile'
 import type { SheetData } from '@/lib/exportFile'
 import { fmt, inr } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import type { Help } from '@/lib/engineHelp'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { getIntradayBars } from '@/services/api'
 import type { EngineCoverage, EngineHistory, EngineRun, EngineRunRow, EngineSkipped } from '@/services/api'
 
@@ -102,10 +104,39 @@ export function ExportMenu({
   )
 }
 
-export function Field({ label, children }: { label: string; children: React.ReactNode }) {
+/** The ⓘ beside a field: hover (or click/tap) for what it does, which way to turn it, an example. */
+export function InfoTip({ help }: { help: Help }) {
+  return (
+    <Popover>
+      <PopoverTrigger
+        openOnHover
+        delay={150}
+        aria-label={`About ${help.title}`}
+        className="inline-flex text-muted-foreground/70 hover:text-foreground"
+      >
+        <InfoIcon className="size-3" />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-80 space-y-1.5 text-xs">
+        <p className="font-medium">{help.title}</p>
+        <p className="text-muted-foreground">{help.what}</p>
+        {help.effect && <p>{help.effect}</p>}
+        {help.example && (
+          <p className="text-muted-foreground">
+            e.g. <span className="font-mono text-foreground">{help.example}</span>
+          </p>
+        )}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+export function Field({ label, help, children }: { label: string; help?: Help; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+        {label}
+        {help && <InfoTip help={help} />}
+      </span>
       {children}
     </label>
   )

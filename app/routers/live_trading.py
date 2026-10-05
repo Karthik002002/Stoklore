@@ -52,7 +52,12 @@ def update_live_settings(req: LiveSettingsRequest):
 
 @router.get("/api/live/orders")
 def live_orders(open_only: bool = False):
-    return db.list_live_orders(open_only=open_only)
+    """The mirrored book. `time` is Dhan's own update time for the order (kept in `raw`) - the row's
+    updated_at is when the poller last wrote it, which is every few seconds."""
+    return [
+        {**o, "time": (o.get("raw") or {}).get("updated_at")}
+        for o in db.list_live_orders(open_only=open_only)
+    ]
 
 
 @router.get("/api/live/positions")

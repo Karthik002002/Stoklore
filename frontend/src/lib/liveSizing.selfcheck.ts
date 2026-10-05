@@ -6,7 +6,7 @@
 // produce no percentage and no warning, because a zero there would read as an empty account and
 // warn about every order.
 import assert from 'node:assert/strict'
-import { positionSize } from './liveSizing.ts'
+import { positionSize, ticketErrors } from './liveSizing.ts'
 
 const CAPS = { max_order_value: 25000, max_position_pct: 20 }
 
@@ -52,3 +52,23 @@ assert.equal(positionSize(10, null, 100000, CAPS).value, null, 'a market order w
 assert.deepEqual(positionSize(1000, 1000, 100000, {}).warnings.length, 1, 'only the affordability one')
 
 console.log('ok - liveSizing: value, share of wallet, cap warnings, unknown balance')
+
+// The live ticket's own checks (the backend's guardrail_errors repeats them).
+const o = { symbol: 'TCS', direction: 'long', quantity: 10, order_type: 'MARKET', reference_price: 100 }
+assert.deepEqual(ticketErrors(o, false), [])
+assert.ok(ticketErrors({ ...o, quantity: 1.5 }, false).some((e) => e.includes('whole number')))
+assert.ok(ticketErrors({ ...o, order_type: 'LIMIT' }, false).some((e) => e.includes('limit price')))
+assert.ok(ticketErrors({ ...o, order_type: 'STOP_LOSS_MARKET' }, false).some((e) => e.includes('trigger')))
+assert.ok(
+  ticketErrors({ ...o, order_type: 'STOP_LOSS', trigger_price: 104, limit_price: 103 }, false).some((e) =>
+    e.includes('beyond its trigger'),
+  ),
+)
+assert.deepEqual(ticketErrors({ ...o, order_type: 'STOP_LOSS', trigger_price: 104, limit_price: 104.5 }, false), [])
+assert.ok(ticketErrors({ ...o, disclosed_quantity: 2 }, false).some((e) => e.includes('Disclosed')))
+// Super Order: both levels, each on the right side of entry for the direction
+assert.ok(ticketErrors({ ...o, stop_price: 95 }, true).some((e) => e.includes('both')))
+assert.deepEqual(ticketErrors({ ...o, stop_price: 95, target_price: 120 }, true), [])
+assert.ok(ticketErrors({ ...o, stop_price: 105, target_price: 120 }, true).some((e) => e.includes('Stop-loss')))
+assert.deepEqual(ticketErrors({ ...o, direction: 'short', stop_price: 105, target_price: 90 }, true), [])
+console.log('ok - live ticket checks: order types, trigger/limit, disclosed qty, super order levels')

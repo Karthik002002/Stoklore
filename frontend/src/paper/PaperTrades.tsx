@@ -1,12 +1,13 @@
 import { useMemo } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import type { FieldError, UseFormReturn } from 'react-hook-form'
+import type { UseFormReturn } from 'react-hook-form'
 import { useFieldArray, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileSpreadsheetIcon, XIcon } from 'lucide-react'
+import { FileSpreadsheetIcon, PlusIcon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Field, SelectField, TextField } from '@/components/form'
+import { F, Seg, TicketFooter } from '@/components/OrderTicketParts'
+import { cn } from '@/lib/utils'
 import SymbolCombobox from '@/components/SymbolCombobox'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -33,15 +34,6 @@ import {
   getTradeAccounts,
 } from '@/services/api'
 
-const DIRECTION_OPTIONS = [
-  { value: 'long', label: 'Buy (Long)' },
-  { value: 'short', label: 'Sell (Short)' },
-]
-const ORDER_TYPE_OPTIONS = [
-  { value: 'market', label: 'Market' },
-  { value: 'limit', label: 'Limit' },
-]
-
 // The inputs hold whatever was typed (the schema's preprocess step turns '' into null and strings
 // into numbers), so the form is driven by the schema's INPUT type and submits its OUTPUT type.
 type OrderInput = z.input<typeof paperOrderSchema>
@@ -50,67 +42,125 @@ type OrderForm = UseFormReturn<OrderInput, unknown, OrderValues>
 /** Which of the two ladders a LegRows block edits. */
 type LegField = 'stopLosses' | 'targets'
 
+/** A field's validation message, small and red under it. */
+const ErrorText = ({ error }: { error?: { message?: string } | { root?: { message?: string } } }) => {
+  const message =
+    (error as { message?: string })?.message ?? (error as { root?: { message?: string } })?.root?.message
+  return message ? <p className="text-[11px] text-down">{message}</p> : null
+}
+
 // One rung of a laddered exit. The point of the ladder is partial exits - "half at target 1, the
 // rest at target 2" - so every rung carries its own quantity rather than a percentage; percentages
-// of a position that itself shrinks as rungs fill get confusing fast.
+// of a position that itself shrinks as rungs fill get confusing fast. Each rung shows how far it
+// sits from the entry, signed the way the trade sees it.
 function LegRows({
   form,
   name,
   label,
-  hint,
+  empty,
+  entry,
+  tone,
 }: {
   form: OrderForm
   name: LegField
   label: string
-  hint?: string
+  /** What the section says while it has no rungs. */
+  empty: string
+  entry: number | null
+  tone: 'up' | 'down'
 }) {
   const { fields, append, remove } = useFieldArray({ control: form.control, name })
-  const error = form.formState.errors[name]
   const quantity = Number(form.watch('quantity')) || 0
-  const covered = (form.watch(name) ?? []).reduce((s: number, l) => s + (Number(l.qty) || 0), 0)
+  const legs = form.watch(name) ?? []
+  const covered = legs.reduce((s: number, l) => s + (Number(l.qty) || 0), 0)
+  // A new rung starts with whatever is still uncovered, so a single stop is one click and a price.
+  const add = () =>
+    append({ id: crypto.randomUUID(), price: '', qty: quantity > covered ? String(quantity - covered) : '' })
 
   return (
-    <Field label={label} error={(error?.root ?? error) as FieldError | undefined} hint={hint}>
-      <div className="space-y-1.5">
-        {fields.map((field, i) => (
-          <div key={field.id} className="flex items-center gap-2">
-            <Input
-              type="number"
-              step="0.01"
-              placeholder="Price"
-              className="h-8"
-              {...form.register(`${name}.${i}.price`)}
-            />
-            <Input
-              type="number"
-              placeholder="Qty"
-              className="h-8 w-24"
-              {...form.register(`${name}.${i}.qty`)}
-            />
-            <Button size="icon-sm" variant="ghost" aria-label="Remove level" onClick={() => remove(i)}>
-              <XIcon className="size-3.5" />
-            </Button>
-          </div>
-        ))}
-        <div className="flex items-center justify-between">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => append({ id: crypto.randomUUID(), price: '', qty: '' })}
+    <div
+      className={cn(
+        'rounded-lg border',
+        fields.length > 0 && (tone === 'down' ? 'border-down/30' : 'border-up/30'),
+      )}
+    >
+      <div className="flex items-center gap-2 px-2.5 py-2">
+        <span className={cn('size-1.5 rounded-full', tone === 'down' ? 'bg-down' : 'bg-up')} />
+        <span className="text-xs font-medium">{label}</span>
+        {fields.length > 0 ? (
+          <span
+            className={cn(
+              'text-[11px] tabular-nums',
+              covered > quantity ? 'text-down' : 'text-muted-foreground',
+            )}
           >
-            Add level
-          </Button>
-          {fields.length > 0 && (
-            <span
-              className={`text-xs tabular-nums ${covered > quantity ? 'text-down' : 'text-muted-foreground'}`}
-            >
-              {covered} / {quantity || '—'} covered
-            </span>
-          )}
-        </div>
+            {covered}/{quantity || '—'} covered
+          </span>
+        ) : (
+          <span className="truncate text-[11px] text-muted-foreground">{empty}</span>
+        )}
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="ml-auto h-6 gap-1 px-1.5 text-xs"
+          onClick={add}
+        >
+          <PlusIcon className="size-3" />
+          {fields.length ? 'Level' : 'Add'}
+        </Button>
       </div>
-    </Field>
+      {fields.length > 0 && (
+        <div className="space-y-1.5 border-t px-2.5 pt-2 pb-2.5">
+          {fields.map((field, i) => {
+            const price = Number(legs[i]?.price) || null
+            const pct = price && entry ? ((price - entry) / entry) * 100 : null
+            return (
+              <div key={field.id} className="flex items-center gap-1.5">
+                <div className="relative flex-1">
+                  <Input
+                    type="number"
+                    step="0.01"
+                    inputMode="decimal"
+                    placeholder="Price"
+                    className="h-8 pr-14 tabular-nums"
+                    {...form.register(`${name}.${i}.price`)}
+                  />
+                  {pct != null && (
+                    <span
+                      className={cn(
+                        'pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-[11px] tabular-nums',
+                        tone === 'down' ? 'text-down' : 'text-up',
+                      )}
+                    >
+                      {pct >= 0 ? '+' : ''}
+                      {fmt(pct, 1)}%
+                    </span>
+                  )}
+                </div>
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  placeholder="Qty"
+                  className="h-8 w-16 tabular-nums"
+                  {...form.register(`${name}.${i}.qty`)}
+                />
+                <Button
+                  type="button"
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label="Remove level"
+                  onClick={() => remove(i)}
+                >
+                  <XIcon className="size-3.5" />
+                </Button>
+              </div>
+            )
+          })}
+          <ErrorText error={form.formState.errors[name] as never} />
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -119,9 +169,9 @@ function LegRows({
 // answer "should I send this" without opening another screen.
 //
 // Entry is the limit price on a limit order and the live price on a market one. Both may be
-// unknown (no symbol picked yet, or no quote for it), and every figure below degrades to a dash
-// rather than guessing - a made-up entry would make every percentage on this panel wrong.
-function OrderReadout({ form, accountId }: { form: OrderForm; accountId: number | null }) {
+// unknown (no symbol picked yet, or no quote for it), and every figure degrades to null rather
+// than guessing - a made-up entry would make every percentage on the ticket wrong.
+function useOrderFigures(form: OrderForm, accountId: number | null) {
   const [symbol, quantity, direction, orderType, limitPrice, stopLosses, targets] = form.watch([
     'symbol',
     'quantity',
@@ -155,7 +205,8 @@ function OrderReadout({ form, accountId }: { form: OrderForm; accountId: number 
 
   const account = accounts.find((a) => a.id === accountId) ?? null
   const qty = Number(quantity) || 0
-  const entry = orderType === 'limit' ? Number(limitPrice) || null : (detail?.quote?.currentPrice ?? null)
+  const ltp = detail?.quote?.currentPrice ?? null
+  const entry = orderType === 'limit' ? Number(limitPrice) || null : ltp
   const value = entry && qty ? entry * qty : null
 
   // Cash available = the wallet, less what is already committed to open positions. Committed
@@ -174,15 +225,10 @@ function OrderReadout({ form, accountId }: { form: OrderForm; accountId: number 
     (legs ?? [])
       .map((l) => ({ id: l.id, price: Number(l.price), qty: Number(l.qty) || 0 }))
       .filter((l) => l.price)
-
   const level = (legs: OrderInput['stopLosses'] | undefined) =>
     (legs ?? []).map((l) => Number(l.price)).filter((p) => p > 0)[0] ?? null
   const stop = level(stopLosses)
   const target = level(targets)
-  const away = (price: number | null) => (entry && price ? ((price - entry) / entry) * 100 : null)
-  // Signed against the direction, so a stop always reads negative and a target positive on both
-  // sides of the market rather than flipping sign on a short.
-  const directional = (pct: number | null) => (pct == null ? null : direction === 'short' ? -pct : pct)
   const rr = entry
     ? riskReward({
         direction,
@@ -191,77 +237,33 @@ function OrderReadout({ form, accountId }: { form: OrderForm; accountId: number 
         targets: legAmounts(targets),
       }).rr
     : null
-
-  const pct = (v: number | null) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${fmt(v, 2)}%`)
   const risk = stop && entry && qty ? Math.abs(entry - stop) * qty : null
   const reward = target && entry && qty ? Math.abs(target - entry) * qty : null
 
-  return (
-    <div className="grid grid-cols-2 gap-x-3 gap-y-2 rounded-lg border bg-muted/20 p-3 text-xs sm:grid-cols-3">
-      <Readout
-        label="Position value"
-        value={value == null ? '—' : inr(value)}
-        sub={entry ? `at ${inr(entry)}${orderType === 'limit' ? ' limit' : ''}` : 'pick a symbol'}
-      />
-      <Readout
-        label="Cash utilisation"
-        value={utilisation == null ? '—' : `${fmt(utilisation, 1)}%`}
-        sub={available == null ? 'no account wallet' : `${inr(available)} available`}
-        tone={(utilisation ?? 0) > 100 ? 'down' : undefined}
-      />
-      <Readout label="Risk : reward" value={rr == null ? '—' : `${fmt(rr, 2)}R`} />
-      <Readout
-        label="Stop loss"
-        value={stop == null ? '—' : inr(stop)}
-        sub={
-          stop == null ? 'none set' : `${pct(directional(away(stop)))}${risk ? ` · ${inr(risk)} risk` : ''}`
-        }
-        tone={stop == null ? undefined : 'down'}
-      />
-      <Readout
-        label="Target"
-        value={target == null ? '—' : inr(target)}
-        sub={
-          target == null
-            ? 'none set'
-            : `${pct(directional(away(target)))}${reward ? ` · ${inr(reward)} reward` : ''}`
-        }
-        tone={target == null ? undefined : 'up'}
-      />
-      <Readout
-        label="Risk of wallet"
-        value={risk && balance ? `${fmt((risk / balance) * 100, 2)}%` : '—'}
-        sub={balance == null ? undefined : `wallet ${inr(balance)}`}
-      />
-    </div>
-  )
+  const warnings: string[] = []
+  if (available != null && value != null && value > available)
+    warnings.push(`Costs ${inr(value)} - more than the ${inr(available)} cash available.`)
+  const riskOfWallet = risk && balance ? (risk / balance) * 100 : null
+
+  return {
+    account,
+    ltp,
+    entry,
+    qty,
+    value,
+    balance,
+    available,
+    utilisation,
+    risk,
+    reward,
+    rr,
+    riskOfWallet,
+    warnings,
+  }
 }
 
-function Readout({
-  label,
-  value,
-  sub,
-  tone,
-}: {
-  label: string
-  value: React.ReactNode
-  sub?: React.ReactNode
-  tone?: 'up' | 'down'
-}) {
-  return (
-    <div>
-      <p className="text-[10px] tracking-wide text-muted-foreground uppercase">{label}</p>
-      <p
-        className={`font-semibold tabular-nums ${tone === 'up' ? 'text-up' : tone === 'down' ? 'text-down' : ''}`}
-      >
-        {value}
-      </p>
-      {sub && <p className="text-[10px] text-muted-foreground tabular-nums">{sub}</p>}
-    </div>
-  )
-}
-
-/** The paper order ticket. `symbol` fixes the ticker (the chart modal: the order is for the stock on
+/** The paper order ticket - same layout as the live Dhan one (live/LiveOrderTicket.tsx), built from
+ *  the same parts. `symbol` fixes the ticker (the chart modal: the order is for the stock on
  *  screen); without it the ticker is picked here. Remount it (key) when the account changes. */
 export function OrderPanel({
   accountId,
@@ -287,7 +289,17 @@ export function OrderPanel({
       notes: '',
     },
   })
-  const orderType = form.watch('orderType')
+  const [orderType, direction, typedSymbol, limitPrice] = form.watch([
+    'orderType',
+    'direction',
+    'symbol',
+    'limitPrice',
+  ])
+  const f = useOrderFigures(form, accountId)
+  const errors = form.formState.errors
+  const buy = direction === 'long'
+  const shown = symbol ?? typedSymbol
+  const maxQty = f.available && f.entry ? Math.floor(f.available / f.entry) : null
 
   const place = useMutation({
     mutationFn: (v: OrderValues) =>
@@ -309,74 +321,197 @@ export function OrderPanel({
           ? `Limit order resting at ${inr(data.entry_price)}`
           : `Filled at ${inr(data.entry_price)}`,
       )
-      form.reset({ ...form.getValues(), symbol: symbol ?? '', quantity: '', stopLosses: [], targets: [], notes: '' })
+      form.reset({
+        ...form.getValues(),
+        symbol: symbol ?? '',
+        quantity: '',
+        stopLosses: [],
+        targets: [],
+        notes: '',
+      })
     },
     onError: (e) => toast.error(e.message),
   })
 
+  const limitPct =
+    orderType === 'limit' && Number(limitPrice) && f.ltp ? ((Number(limitPrice) - f.ltp) / f.ltp) * 100 : null
+
   return (
     <form
       onSubmit={form.handleSubmit((v) => place.mutate(v))}
-      className={className ?? 'space-y-3 rounded-xl border bg-card p-4'}
+      className={cn('flex flex-col gap-3', className ?? 'rounded-xl border bg-card p-4')}
     >
-      <p className="text-sm font-medium">Place a paper order{symbol ? ` · ${symbol}` : ''}</p>
+      {/* header: what, at what price, against which wallet */}
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-base font-semibold">{symbol ?? 'Paper order'}</p>
+          <p className="text-xs text-muted-foreground tabular-nums">
+            {f.ltp != null && <>LTP {inr(f.ltp)} · </>}
+            cash {f.available == null ? '—' : inr(f.available)}
+          </p>
+        </div>
+        <span className="flex max-w-36 shrink-0 items-center gap-1.5 truncate rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-600 dark:text-sky-400">
+          <span className="size-1.5 shrink-0 rounded-full bg-sky-500" />
+          <span className="truncate">Paper · {f.account?.name ?? 'account'}</span>
+        </span>
+      </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <Field label="Ticker" error={form.formState.errors.symbol}>
+      {!symbol && (
+        <F label="Symbol">
           <Controller
             control={form.control}
             name="symbol"
-            render={({ field }) =>
-              symbol ? (
-                <p className="flex h-8 items-center font-semibold">{symbol}</p>
-              ) : (
-                // Validates against the live symbol list, and offers an "Add SYMBOL" fallback that
-                // verifies the ticker actually exists before it can be picked.
-                <SymbolCombobox value={field.value} onChange={field.onChange} className="w-full" />
-              )
-            }
+            render={({ field }) => (
+              // Validates against the live symbol list, and offers an "Add SYMBOL" fallback that
+              // verifies the ticker actually exists before it can be picked.
+              <SymbolCombobox value={field.value} onChange={field.onChange} className="w-full" />
+            )}
           />
-        </Field>
-        <TextField form={form} name="quantity" label="Quantity" type="number" min="0" />
-      </div>
+          <ErrorText error={errors.symbol} />
+        </F>
+      )}
+
+      <Controller
+        control={form.control}
+        name="direction"
+        render={({ field }) => (
+          <Seg
+            size="lg"
+            value={field.value}
+            onChange={field.onChange}
+            options={[
+              { value: 'long', label: 'Buy' },
+              { value: 'short', label: 'Sell' },
+            ]}
+            tone={(v) => (v === 'long' ? 'bg-up text-white shadow-sm' : 'bg-down text-white shadow-sm')}
+          />
+        )}
+      />
 
       <div className="grid grid-cols-2 gap-2">
-        <SelectField form={form} name="direction" label="Direction" options={DIRECTION_OPTIONS} />
-        <SelectField form={form} name="orderType" label="Order type" options={ORDER_TYPE_OPTIONS} />
+        <F label="Order type">
+          <Controller
+            control={form.control}
+            name="orderType"
+            render={({ field }) => (
+              <Seg
+                value={field.value}
+                onChange={field.onChange}
+                options={[
+                  { value: 'market', label: 'Market', hint: 'Fills now at the live price' },
+                  {
+                    value: 'limit',
+                    label: 'Limit',
+                    hint: 'Rests until the live price reaches it, then fills',
+                  },
+                ]}
+              />
+            )}
+          />
+        </F>
+        <F
+          label="Quantity"
+          aside={
+            maxQty != null &&
+            maxQty > 0 && (
+              <button
+                type="button"
+                className="text-[11px] text-primary hover:underline"
+                title="As many as the account's cash pays for at this price"
+                onClick={(e) => {
+                  e.preventDefault()
+                  form.setValue('quantity', String(maxQty), { shouldValidate: true })
+                }}
+              >
+                max {maxQty}
+              </button>
+            )
+          }
+        >
+          <Input
+            type="number"
+            min="0"
+            inputMode="numeric"
+            placeholder="0"
+            className="h-7 tabular-nums"
+            {...form.register('quantity')}
+          />
+          <ErrorText error={errors.quantity} />
+        </F>
       </div>
 
       {orderType === 'limit' && (
-        <TextField
-          form={form}
-          name="limitPrice"
+        <F
           label="Limit price"
-          type="number"
-          step="0.01"
-          hint="Rests until the live price reaches it, then fills."
-        />
+          aside={
+            limitPct != null && (
+              <span className="tabular-nums">
+                {limitPct >= 0 ? '+' : ''}
+                {fmt(limitPct, 2)}% vs LTP
+              </span>
+            )
+          }
+        >
+          <Input
+            type="number"
+            step="0.01"
+            inputMode="decimal"
+            placeholder="₹"
+            className="h-8 tabular-nums"
+            {...form.register('limitPrice')}
+          />
+          <ErrorText error={errors.limitPrice} />
+        </F>
       )}
 
       <LegRows
         form={form}
         name="stopLosses"
-        label="Stop loss"
-        hint="Below entry for a long, above for a short."
+        label="Stop-loss"
+        empty="none - unprotected"
+        entry={f.entry}
+        tone="down"
       />
       <LegRows
         form={form}
         name="targets"
-        label="Targets (multi-exit)"
-        hint="Add two levels to scale out — e.g. 50 shares at target 1, 50 at target 2."
+        label="Targets"
+        empty="add 2+ to scale out"
+        entry={f.entry}
+        tone="up"
       />
 
-      <OrderReadout form={form} accountId={accountId} />
+      <F label="Notes">
+        <Input placeholder="Why this trade?" className="h-8" {...form.register('notes')} />
+      </F>
 
-      <TextField form={form} name="notes" label="Notes" placeholder="Why this trade?" />
-
-      <Button type="submit" className="w-full" disabled={place.isPending}>
-        {place.isPending && <Spinner className="size-4" />}
-        Place order
-      </Button>
+      <TicketFooter
+        quantity={f.qty}
+        price={f.entry}
+        priceNote={orderType === 'market' ? 'LTP' : 'limit'}
+        value={f.value}
+        pct={f.utilisation}
+        pctLabel="of cash"
+        risk={f.risk}
+        reward={f.reward}
+        rr={f.rr}
+        riskNote={f.riskOfWallet == null ? undefined : `${fmt(f.riskOfWallet, 2)}% of wallet`}
+        warnings={f.warnings}
+      >
+        <Button
+          type="submit"
+          className={cn(
+            'h-10 w-full text-sm font-semibold text-white',
+            buy ? 'bg-up hover:bg-up/90' : 'bg-down hover:bg-down/90',
+          )}
+          disabled={place.isPending}
+        >
+          {place.isPending && <Spinner className="size-4" />}
+          {buy ? 'Buy' : 'Sell'}
+          {f.qty > 0 ? ` ${f.qty}` : ''}
+          {shown ? ` ${shown}` : ''} · {orderType === 'limit' ? 'place limit' : 'paper'}
+        </Button>
+      </TicketFooter>
     </form>
   )
 }

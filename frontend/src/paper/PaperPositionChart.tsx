@@ -14,8 +14,8 @@ import type { PaperModifyRequest, PaperPosition } from '@/services/api'
 import ReplayChart from '@/features/bar-replay/ReplayChart'
 import { riskReward } from '@/features/bar-replay/orderEngine'
 import { useBarReplayStore } from '@/features/bar-replay/store'
-import { closePaperPosition, getPaperPositions, modifyPaperPosition } from '@/services/api'
-import { ChartControls, TimeframeButtons, chartQuery } from '@/features/bar-replay/ChartControls'
+import { closePaperPosition, getLivePositions, getPaperPositions, modifyPaperPosition } from '@/services/api'
+import { ChartControls, TimeframeSelect, chartQuery } from '@/features/bar-replay/ChartControls'
 
 // A paper position is the same object the replay chart already knows how to draw - an entry, a
 // direction, a quantity and two ladders of legs - so it's mapped rather than re-rendered. The whole
@@ -100,6 +100,7 @@ export function PaperChart({
   range: rangeProp,
   onRangeChange,
   onClosed,
+  live = false,
 }: {
   symbol: string
   /** Paper account whose positions are drawn; null = every account's. */
@@ -116,6 +117,9 @@ export function PaperChart({
   onRangeChange?: (range: string) => void
   /** After a position is closed from the chart. */
   onClosed?: () => void
+  /** The Dhan account is picked (the chart modal): no paper positions on the chart, and the panel
+   *  shows the live position in this stock instead. Its levels live on /live/$symbol. */
+  live?: boolean
 }) {
   const queryClient = useQueryClient()
   const [ownRange, setOwnRange] = useState('6mo')
@@ -138,8 +142,16 @@ export function PaperChart({
     queryFn: () => getPaperPositions(account ?? null),
     // Same cadence as the holdings table - the position lines move as the engine marks them.
     refetchInterval: 10_000,
+    enabled: !live,
   })
-  const mine = useMemo(() => positions.filter((p) => p.symbol === symbol), [positions, symbol])
+  const mine = useMemo(() => (live ? [] : positions.filter((p) => p.symbol === symbol)), [positions, symbol, live])
+  const { data: livePositions = [] } = useQuery({
+    queryKey: ['livePositions'],
+    queryFn: getLivePositions,
+    refetchInterval: 10_000,
+    enabled: live,
+  })
+  const livePosition = live ? (livePositions.find((p) => p.symbol === symbol && p.net_qty) ?? null) : null
 
   const { data: chart, isPending: chartPending } = useQuery(chartQuery(symbol, range))
   // The chart endpoint sends a unix `time` and no `date`. ReplayChart only reads `date` for bars
@@ -241,7 +253,28 @@ export function PaperChart({
   // On the chart, not above it: the candles get the whole page, the way a charting package lays out
   // a symbol, and the numbers sit in the corner under the OHLCV legend. Collapsed it keeps the one
   // line that matters - side, size, entry and the running P&L.
-  const panel = position ? (
+  const panel = live ? (
+    <p className="rounded-md border border-down/40 bg-background/85 px-2.5 py-1.5 text-xs shadow-lg backdrop-blur-sm">
+      <span className="font-semibold text-down">Dhan · live</span>{' '}
+      {livePosition ? (
+        <>
+          {livePosition.net_qty > 0 ? 'long' : 'short'} {Math.abs(livePosition.net_qty)} @{' '}
+          {inr(livePosition.net_qty > 0 ? livePosition.buy_avg : livePosition.sell_avg)}
+          {livePosition.mark_pnl != null && (
+            <span className={cn('ml-1.5 tabular-nums', livePosition.mark_pnl >= 0 ? 'text-up' : 'text-down')}>
+              {inr(livePosition.mark_pnl)}
+            </span>
+          )}{' '}
+          ·{' '}
+          <Link to="/live/$symbol" params={{ symbol }} className="underline">
+            levels
+          </Link>
+        </>
+      ) : (
+        <span className="text-muted-foreground">no open position in {symbol}</span>
+      )}
+    </p>
+  ) : position ? (
     <div className="w-72 rounded-md border bg-background/85 text-xs shadow-lg backdrop-blur-sm">
       <button
         type="button"
@@ -314,7 +347,7 @@ export function PaperChart({
         {leading}
         <h1 className="text-sm font-semibold">{symbol}</h1>
         {position && (
-          <span className="text-xs text-muted-foreground capitalize">
+          <span className="text-xs whitespace-nowrap text-muted-foreground capitalize">
             {position.direction} · {position.quantity} qty · paper
           </span>
         )}
@@ -322,7 +355,7 @@ export function PaperChart({
           <ChartControls />
         </div>
         <div className="flex items-center border-l pl-2">
-          <TimeframeButtons value={range} onChange={setRange} />
+          <TimeframeSelect value={range} onChange={setRange} />
         </div>
         {trailing}
       </div>
@@ -333,7 +366,7 @@ export function PaperChart({
             the pills and their actions) is the same code path the replay chart runs; only the
             handlers differ, and they write to the paper API rather than a local store. */}
         <div className="relative min-h-0 flex-1">
-          {chartPending || isPending ? (
+          {chartPending || (isPending && !live) ? (
             <p className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
               <Spinner className="size-4" /> Loading {symbol}…
             </p>

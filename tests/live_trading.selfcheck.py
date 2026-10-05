@@ -122,6 +122,41 @@ assert any("above 0" in e for e in do.guardrail_errors({**intent, "quantity": 0}
 assert any("No price to size" in e for e in do.guardrail_errors(
     {**intent, "reference_price": None, "limit_price": None}, LIMITS, CLEAR))
 
+# --- the other order shapes: stops, IOC, disclosed quantity, after-market ---------------------------
+plain = {**intent, "stop_price": None, "target_price": None}
+slm = do.build_order({**plain, "order_type": "STOP_LOSS_MARKET", "trigger_price": 104.0}, "100")
+assert slm["orderType"] == "STOP_LOSS_MARKET" and slm["triggerPrice"] == 104.0 and slm["price"] == 0, slm
+sl = do.build_order({**plain, "order_type": "STOP_LOSS", "trigger_price": 104.0, "limit_price": 105.0}, "100")
+assert sl["orderType"] == "STOP_LOSS" and sl["price"] == 105.0 and sl["triggerPrice"] == 104.0, sl
+assert "triggerPrice" not in order and "afterMarketOrder" not in order, "unused keys are not sent"
+# a market order never carries a price, even if a stale limit_price came along with it
+assert do.build_order({**plain, "order_type": "MARKET", "limit_price": 99.0}, "100")["price"] == 0
+extra = do.build_order({**plain, "validity": "IOC", "disclosed_quantity": 4, "amo": True, "amo_time": "OPEN_30"}, "100")
+assert (extra["validity"], extra["disclosedQuantity"], extra["afterMarketOrder"], extra["amoTime"]) == (
+    "IOC", 4, True, "OPEN_30"), extra
+assert do.build_order({**plain, "amo": True}, "100")["amoTime"] == "OPEN", "AMO defaults to the open"
+assert do.build_order({**plain, "product": "CNC"}, "100")["productType"] == "CNC"
+# super orders drop the keys Dhan's /super/orders does not take
+assert "validity" not in sup and "triggerPrice" not in sup, sup
+
+errs = lambda **kw: do.guardrail_errors({**plain, **kw}, LIMITS, CLEAR)  # noqa: E731
+assert errs(order_type="STOP_LOSS_MARKET", trigger_price=104.0) == []
+assert any("needs a trigger" in e for e in errs(order_type="STOP_LOSS_MARKET"))
+assert any("needs a limit price" in e for e in errs(order_type="LIMIT"))
+assert any("needs a limit price" in e for e in errs(order_type="STOP_LOSS", trigger_price=104.0))
+assert any("at or beyond its trigger" in e for e in errs(order_type="STOP_LOSS", trigger_price=104.0, limit_price=103.0))
+assert errs(order_type="STOP_LOSS", trigger_price=104.0, limit_price=104.5) == []
+assert errs(direction="short", order_type="STOP_LOSS", trigger_price=96.0, limit_price=95.5) == []
+assert any("Disclosed quantity" in e for e in errs(disclosed_quantity=2))  # 2 of 10 < 30%
+assert errs(disclosed_quantity=3) == []
+# Super Order: both legs or neither, and only a plain DAY market/limit entry
+assert any("both a stop-loss and a target" in e for e in errs(stop_price=95.0))
+assert any("both a stop-loss and a target" in e for e in errs(target_price=120.0))
+both = {"stop_price": 95.0, "target_price": 120.0}
+assert any("market or limit" in e for e in errs(**both, order_type="STOP_LOSS_MARKET", trigger_price=101.0))
+assert any("after-market" in e for e in errs(**both, amo=True))
+assert any("DAY order" in e for e in errs(**both, validity="IOC"))
+
 # --- reading the broker back ---------------------------------------------------------------------------
 raw_order = {
     "orderId": "112111182198", "correlationId": "SL260830101500", "orderStatus": "TRADED",

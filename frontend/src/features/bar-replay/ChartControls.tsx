@@ -11,6 +11,16 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { getIntradayBars, getStockChart } from '@/services/api'
 import IndicatorControls from './IndicatorControls'
 import SettingsDialog from './SettingsDialog'
@@ -43,21 +53,32 @@ export const chartQuery = (symbol: string, tf: string) =>
     ? { queryKey: ['intradayBars', symbol, tf], queryFn: () => getIntradayBars(symbol, tf) }
     : { queryKey: ['stockChart', symbol, tf], queryFn: () => getStockChart(symbol, tf) }
 
-export function TimeframeButtons({ value, onChange }: { value: string; onChange: (tf: string) => void }) {
+const TF_GROUPS = [
+  { label: 'Intraday bars', items: CHART_TIMEFRAMES.filter((t) => t.intraday) },
+  { label: 'Range', items: CHART_TIMEFRAMES.filter((t) => !t.intraday) },
+]
+
+/** The timeframe picker: one dropdown, intraday bar sizes and look-back ranges in two groups. */
+export function TimeframeSelect({ value, onChange }: { value: string; onChange: (tf: string) => void }) {
   return (
-    <div className="flex items-center gap-0.5">
-      {CHART_TIMEFRAMES.map((t, i) => (
-        <Button
-          key={t.value}
-          size="sm"
-          variant={value === t.value ? 'secondary' : 'ghost'}
-          className={`h-7 px-1.5 font-mono text-[11px] ${i === 5 ? 'ml-1 border-l pl-2' : ''}`}
-          onClick={() => onChange(t.value)}
-        >
-          {t.label}
-        </Button>
-      ))}
-    </div>
+    <Select value={value} onValueChange={(v) => onChange(v as string)}>
+      <SelectTrigger size="sm" className="h-7 w-20 font-mono text-xs" title="Timeframe">
+        <SelectValue>{(v: string) => CHART_TIMEFRAMES.find((t) => t.value === v)?.label ?? v}</SelectValue>
+      </SelectTrigger>
+      <SelectContent alignItemWithTrigger={false}>
+        {TF_GROUPS.map((g, i) => (
+          <SelectGroup key={g.label}>
+            {i > 0 && <SelectSeparator />}
+            <SelectLabel>{g.label}</SelectLabel>
+            {g.items.map((t) => (
+              <SelectItem key={t.value} value={t.value} className="font-mono text-xs">
+                {t.label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 

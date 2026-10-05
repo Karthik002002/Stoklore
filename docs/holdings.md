@@ -4,8 +4,10 @@
 
 ## Using it
 
-- `/holdings` — read-only mirror of your actual broker account, no order
-  placement.
+- `/holdings` — mirror of your actual broker account. With **Dhan** picked it also has
+  **Positions**, **Orders** (the day's whole order book, cancellable) and **Trade** (the live
+  order ticket, every Dhan order option, with a confirmation before anything is sent) tabs - see
+  [Live trading](live-trading.md#using-it). Kite stays holdings-only.
 - Switch broker (Dhan/Kite) from the logo dropdown.
 - If the active broker isn't configured yet, click **Configure** — it jumps
   straight to the right Settings → Broker sub-tab.

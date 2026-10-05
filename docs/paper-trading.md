@@ -44,7 +44,7 @@ waiting out the poll interval.
   "where is this actually sitting" doesn't mean opening the stock page and
   re-plotting the levels by hand. Laid out like a charting package: the chart
   takes the whole screen beside the nav rail, under a thin bar with the symbol
-  every timeframe (`1m`/`5m`/`15m`/`1H`/`4H` intraday bars, then the 1D/5D/1MO/6MO/YTD/1Y/5Y/MAX
+  a timeframe dropdown (`1m`/`5m`/`15m`/`1H`/`4H` intraday bars, then the 1D/5D/1MO/6MO/YTD/1Y/5Y/MAX
   ranges), **Indicators**, the **chart template** picker and the chart **settings** cog (the same
   config Bar Replay edits - see [Chart templates](bar-replay.md#chart-templates)), and the position's numbers (current, value,
   unrealised, stop, target, R:R) float in the top-left under the OHLCV legend.
@@ -106,7 +106,15 @@ saved in Bar Replay. On it you get:
   alerts show and can be armed from the right-click menu.
 - **The order ticket on the right**, with the ticker fixed to that stock. A market or limit
   order, with stop and target ladders, goes straight to the account picked in the header, which is
-  remembered. The icon beside the picker hides the ticket.
+  remembered. It's laid out like the live ticket (same parts, `components/OrderTicketParts.tsx`):
+  Buy/Sell, Market/Limit, quantity with a **max N** the account's cash pays for, then Stop-loss and
+  Targets as collapsible ladders - each rung with its % from entry, a new rung pre-filled with the
+  uncovered quantity - and a footer that stays in view with value, % of cash, risk (and % of
+  wallet), reward and the ladder's weighted R. Paper orders go straight in, no confirmation.
+  The icon beside the picker hides the ticket. With Dhan credentials saved the picker
+  also offers **Dhan · live**: the ticket becomes the real-money one (with a confirmation before
+  sending - see [Live trading](live-trading.md#using-it)), the chart's corner shows your Dhan
+  position in that stock, and *Open as a page* goes to `/live/<symbol>`.
 - **Open as a page** goes to `/paper/<symbol>`. Esc or ✕ closes it.
 - **The same framing on every chart**: zoom and pan once (candle width, and the gap after the last
   candle), and every stock's chart, here and on the position pages, opens framed that way. It's

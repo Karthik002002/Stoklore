@@ -161,12 +161,20 @@ const topNewsRoute = createRoute({
   component: TopNews,
 })
 
+// Holdings plus, on Dhan, the account's live trading: open positions, the day's order book and an
+// order ticket. Kite has only the Holdings view - this app sends orders through Dhan alone.
+export const HOLDINGS_VIEWS = ['holdings', 'positions', 'orders', 'trade'] as const
+export type HoldingsView = (typeof HOLDINGS_VIEWS)[number]
+
 const holdingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/holdings',
-  validateSearch: (search): { kiteLogin?: 'success' | 'failed' } => ({
+  validateSearch: (
+    search: { view?: HoldingsView; kite_login?: string } & SearchSchemaInput,
+  ): { kiteLogin?: 'success' | 'failed'; view?: HoldingsView } => ({
     kiteLogin:
       search.kite_login === 'success' || search.kite_login === 'failed' ? search.kite_login : undefined,
+    view: oneOf(HOLDINGS_VIEWS, search.view) && search.view !== 'holdings' ? search.view : undefined,
   }),
   component: Holdings,
 })

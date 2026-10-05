@@ -60,6 +60,13 @@ export const HOME_TABS = [
   { label: 'Home > My board', tab: 'board' },
 ]
 
+// Holdings' Dhan trading views (router.tsx HOLDINGS_VIEWS); Holdings itself is in PAGES.
+export const HOLDINGS_TABS = [
+  { label: 'Holdings > Positions (Dhan)', view: 'positions' },
+  { label: 'Holdings > Orders (Dhan)', view: 'orders' },
+  { label: 'Holdings > Trade (Dhan)', view: 'trade' },
+] as const
+
 export const PAPER_TABS = [
   { label: 'Paper Trading > Overview', view: 'overview' },
   { label: 'Paper Trading > Holdings', view: 'holdings' },
@@ -123,6 +130,11 @@ export const NAV_TARGETS: NavTarget[] = [
   ...WORKFLOW_PAGES.map((t) => ({ label: t.label, to: t.to })),
   ...HOME_TABS.map((t) => ({ label: t.label, to: '/' as LinkProps['to'], search: { tab: t.tab } })),
   ...PAPER_TABS.map((t) => ({ label: t.label, to: '/paper' as LinkProps['to'], search: { view: t.view } })),
+  ...HOLDINGS_TABS.map((t) => ({
+    label: t.label,
+    to: '/holdings' as LinkProps['to'],
+    search: { broker: 'dhan', view: t.view },
+  })),
   ...ENGINE_TABS.map((t) => ({ label: t.label, to: '/engine' as LinkProps['to'], search: { tab: t.tab } })),
   ...SIMULATION_MODES.map((m) => ({
     label: m.label,

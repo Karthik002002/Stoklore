@@ -8,6 +8,10 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Tabs, TabsIndicator, TabsList, TabsTab } from '@/components/ui/tabs'
+import LiveOrderTicket from '@/live/LiveOrderTicket'
+import { LiveOrdersTable, LivePositionsTable, LiveStateBar } from '@/live/LiveTrading'
+import type { HoldingsView } from '@/router'
 import type { Broker } from '@/BrokerLogo'
 import { BrokerLogo, brokerLabel } from '@/BrokerLogo'
 import { fmt, inr } from '@/lib/format'
@@ -76,7 +80,11 @@ function BrokerSelect({ broker, onChange }: { broker: Broker; onChange: (next: B
 
 export default function Holdings() {
   usePageTitle('Holdings')
-  const { broker, kiteLogin } = useSearch({ from: '/holdings' })
+  const { broker, kiteLogin, view: viewParam } = useSearch({ from: '/holdings' })
+  // Positions / Orders / Trade are Dhan's live account - Kite only ever shows holdings here.
+  const view: HoldingsView = broker === 'dhan' ? (viewParam ?? 'holdings') : 'holdings'
+  const setView = (next: string) =>
+    navigate({ search: (prev) => ({ ...prev, view: next === 'holdings' ? undefined : (next as HoldingsView) }), replace: true })
   const navigate = useNavigate({ from: '/holdings' })
   const queryClient = useQueryClient()
   const [reloading, setReloading] = useState(false)
@@ -126,7 +134,19 @@ export default function Holdings() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium text-muted-foreground">Holdings</h2>
+        {broker === 'dhan' ? (
+          <Tabs value={view} onValueChange={setView}>
+            <TabsList>
+              <TabsTab value="holdings">Holdings</TabsTab>
+              <TabsTab value="positions">Positions</TabsTab>
+              <TabsTab value="orders">Orders</TabsTab>
+              <TabsTab value="trade">Trade</TabsTab>
+              <TabsIndicator />
+            </TabsList>
+          </Tabs>
+        ) : (
+          <h2 className="text-sm font-medium text-muted-foreground">Holdings</h2>
+        )}
         <div className="flex items-center gap-2">
           <BrokerSelect broker={broker} onChange={setBroker} />
           <Button
@@ -141,7 +161,26 @@ export default function Holdings() {
         </div>
       </div>
 
-      {error && (
+      {view !== 'holdings' && (
+        <div className="space-y-4">
+          <LiveStateBar />
+          {view === 'positions' && <LivePositionsTable />}
+          {view === 'orders' && <LiveOrdersTable />}
+          {view === 'trade' && (
+            <div className="grid gap-4 lg:grid-cols-[22rem_1fr]">
+              <LiveOrderTicket className="h-fit rounded-xl border bg-card p-3" />
+              <div className="min-w-0 space-y-2">
+                <p className="text-xs font-medium text-muted-foreground">Working orders</p>
+                <LiveOrdersTable openOnly />
+                <p className="pt-2 text-xs font-medium text-muted-foreground">Open positions</p>
+                <LivePositionsTable />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {view === 'holdings' && error && (
         <div className="flex flex-col items-center gap-3 py-24 text-center text-muted-foreground">
           <p>{error.message}</p>
           <Button
@@ -154,13 +193,13 @@ export default function Holdings() {
         </div>
       )}
 
-      {!error && !data && (
+      {view === 'holdings' && !error && !data && (
         <div className="flex items-center justify-center gap-2 py-24 text-muted-foreground">
           <Spinner className="size-4" /> Syncing holdings…
         </div>
       )}
 
-      {!error && data && (
+      {view === 'holdings' && !error && data && (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             <StatCard label="Available balance" value={inr(data.available_balance)} />

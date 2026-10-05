@@ -20,6 +20,7 @@ import {
   LayoutGridIcon,
   TrendingUpIcon,
   UserRoundIcon,
+  WalletIcon,
 } from 'lucide-react'
 import {
   Command,
@@ -37,6 +38,7 @@ import {
   ENGINE_TABS,
   HOME_TABS,
   PAGES,
+  HOLDINGS_TABS,
   PAPER_TABS,
   SETTINGS_TABS,
   SIMULATION_MODES,
@@ -262,6 +264,18 @@ export default function CommandPalette() {
                 {HOME_TABS.map((t) => (
                   <CommandItem key={t.tab} value={t.label} onSelect={() => goTo('/', { tab: t.tab })}>
                     <LayoutDashboardIcon className="size-4" />
+                    {t.label}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+              <CommandGroup heading="Holdings">
+                {HOLDINGS_TABS.map((t) => (
+                  <CommandItem
+                    key={t.view}
+                    value={t.label}
+                    onSelect={() => goTo('/holdings', { broker: 'dhan', view: t.view })}
+                  >
+                    <WalletIcon className="size-4" />
                     {t.label}
                   </CommandItem>
                 ))}

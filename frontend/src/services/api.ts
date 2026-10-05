@@ -134,6 +134,8 @@ export type LiveOrder = {
   price: number | null
   trigger_price: number | null
   error: string | null
+  /** Dhan's own time for the order ("YYYY-MM-DD HH:MM:SS", IST): its updateTime, else createTime. */
+  time: string | null
 }
 
 /** Dhan's position book, mirrored, plus the app's own delayed mark. */

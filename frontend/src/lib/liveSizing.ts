@@ -69,3 +69,44 @@ export function positionSize(
   }
   return { value, pctOfWallet, warnings }
 }
+
+/** The fields of a live order the ticket checks - a structural subset of LiveOrderRequest, so this
+ *  file stays importable by node without the generated API types. */
+export type TicketOrder = {
+  symbol: string
+  direction: string
+  quantity: number
+  order_type?: string | null
+  limit_price?: number | null
+  trigger_price?: number | null
+  disclosed_quantity?: number | null
+  stop_price?: number | null
+  target_price?: number | null
+  reference_price?: number | null
+}
+
+/** What's wrong with the order as typed, in the backend's words. Empty = it may be confirmed. */
+export function ticketErrors(o: TicketOrder, superOn: boolean): string[] {
+  const errors: string[] = []
+  const kind = o.order_type ?? 'MARKET'
+  if (!o.symbol) errors.push('Pick a symbol.')
+  if (!(o.quantity > 0) || !Number.isInteger(o.quantity)) errors.push('Quantity must be a whole number above 0.')
+  if ((kind === 'LIMIT' || kind === 'STOP_LOSS') && !o.limit_price) errors.push('Set a limit price.')
+  if ((kind === 'STOP_LOSS' || kind === 'STOP_LOSS_MARKET') && !o.trigger_price) errors.push('Set a trigger price.')
+  if (kind === 'STOP_LOSS' && o.trigger_price && o.limit_price) {
+    const bad = o.direction === 'long' ? o.limit_price < o.trigger_price : o.limit_price > o.trigger_price
+    if (bad) errors.push('A stop-limit\'s limit must be at or beyond its trigger (above for a buy, below for a sell).')
+  }
+  const d = o.disclosed_quantity
+  if (d && o.quantity > 0 && (d < 0.3 * o.quantity || d > o.quantity))
+    errors.push('Disclosed quantity must be 30%-100% of the quantity.')
+  if (superOn) {
+    if (o.stop_price == null || o.target_price == null) errors.push('A Super Order needs both a stop-loss and a target.')
+    const ref = o.limit_price ?? o.reference_price
+    if (ref && o.stop_price != null && (o.direction === 'long' ? o.stop_price >= ref : o.stop_price <= ref))
+      errors.push('Stop-loss must be below entry for a buy, above it for a sell.')
+    if (ref && o.target_price != null && (o.direction === 'long' ? o.target_price <= ref : o.target_price >= ref))
+      errors.push('Target must be above entry for a buy, below it for a sell.')
+  }
+  return errors
+}

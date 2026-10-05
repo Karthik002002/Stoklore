@@ -407,6 +407,15 @@ class LiveOrderRequest(BaseModel):
     target_price: float | None = None
     trailing_jump: float | None = None
     product: Literal["INTRADAY", "CNC", "MARGIN", "MTF"] | None = None
+    # Omitted = MARKET, or LIMIT when limit_price is set (what older clients send). STOP_LOSS is a
+    # stop-limit (trigger + limit_price), STOP_LOSS_MARKET a stop-market (trigger only).
+    order_type: Literal["MARKET", "LIMIT", "STOP_LOSS", "STOP_LOSS_MARKET"] | None = None
+    trigger_price: float | None = None
+    validity: Literal["DAY", "IOC"] = "DAY"
+    disclosed_quantity: int | None = None
+    # After-market order: queued now, sent to the exchange at `amo_time`.
+    amo: bool = False
+    amo_time: Literal["PRE_OPEN", "OPEN", "OPEN_30", "OPEN_60"] | None = None
     # What the UI showed the user when they pressed the button. Sizing guardrails are checked
     # against this for a market order, so the cap means something before the fill price exists.
     reference_price: float | None = None

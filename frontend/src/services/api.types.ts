@@ -2628,6 +2628,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/scans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Scans */
+        get: operations["list_scans_api_scans_get"];
+        put?: never;
+        /** Create Scan */
+        post: operations["create_scan_api_scans_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scans/{scan_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Scan */
+        get: operations["get_scan_api_scans__scan_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Scan */
+        delete: operations["delete_scan_api_scans__scan_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Scan */
+        patch: operations["update_scan_api_scans__scan_id__patch"];
+        trace?: never;
+    };
+    "/api/scans/{scan_id}/marks/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Mark */
+        put: operations["mark_api_scans__scan_id__marks__symbol__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/scans/{scan_id}/watchlist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * To Watchlist
+         * @description The marked stocks of the chosen priorities into a watchlist (made if it doesn't exist).
+         */
+        post: operations["to_watchlist_api_scans__scan_id__watchlist_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/indices": {
         parameters: {
             query?: never;
@@ -4122,6 +4196,25 @@ export interface components {
             trailing_jump?: number | null;
             /** Product */
             product?: ("INTRADAY" | "CNC" | "MARGIN" | "MTF") | null;
+            /** Order Type */
+            order_type?: ("MARKET" | "LIMIT" | "STOP_LOSS" | "STOP_LOSS_MARKET") | null;
+            /** Trigger Price */
+            trigger_price?: number | null;
+            /**
+             * Validity
+             * @default DAY
+             * @enum {string}
+             */
+            validity: "DAY" | "IOC";
+            /** Disclosed Quantity */
+            disclosed_quantity?: number | null;
+            /**
+             * Amo
+             * @default false
+             */
+            amo: boolean;
+            /** Amo Time */
+            amo_time?: ("PRE_OPEN" | "OPEN" | "OPEN_30" | "OPEN_60") | null;
             /** Reference Price */
             reference_price?: number | null;
         };
@@ -4339,6 +4432,44 @@ export interface components {
              * @default []
              */
             emotions: string[];
+        };
+        /**
+         * ScanMarkRequest
+         * @description priority null + no note clears the mark.
+         */
+        ScanMarkRequest: {
+            /** Priority */
+            priority?: ("A" | "B" | "C") | null;
+            /** Note */
+            note?: string | null;
+            /** Price */
+            price?: number | null;
+        };
+        /**
+         * ScanRequest
+         * @description A chart scan: the stocks to flip through, in order.
+         */
+        ScanRequest: {
+            /** Name */
+            name: string;
+            /** Source */
+            source: string;
+            /** Symbols */
+            symbols: string[];
+        };
+        /** ScanToWatchlistRequest */
+        ScanToWatchlistRequest: {
+            /** Priorities */
+            priorities: ("A" | "B" | "C")[];
+            /** List Name */
+            list_name: string;
+        };
+        /** ScanUpdateRequest */
+        ScanUpdateRequest: {
+            /** Position */
+            position?: number | null;
+            /** Finished */
+            finished?: boolean | null;
         };
         /** ScrapeRequest */
         ScrapeRequest: {
@@ -9731,6 +9862,227 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_scans_api_scans_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_scan_api_scans_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_scan_api_scans__scan_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scan_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_scan_api_scans__scan_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scan_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_scan_api_scans__scan_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scan_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScanUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_api_scans__scan_id__marks__symbol__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scan_id: number;
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScanMarkRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    to_watchlist_api_scans__scan_id__watchlist_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                scan_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScanToWatchlistRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

@@ -9,7 +9,7 @@ import { fmt, inr } from '@/lib/format'
 import { useChartAlerts } from '@/lib/useChartAlerts'
 import { usePageTitle } from '@/lib/usePageTitle'
 import ReplayChart from '@/features/bar-replay/ReplayChart'
-import { ChartControls, TimeframeButtons, chartQuery } from '@/features/bar-replay/ChartControls'
+import { ChartControls, TimeframeSelect, chartQuery } from '@/features/bar-replay/ChartControls'
 import { useBarReplayStore } from '@/features/bar-replay/store'
 import type { ReplayBar, ReplayLeg, ReplayOrder } from '@/features/bar-replay/store'
 import type { LiveModifyRequest, LiveOrder, LivePosition } from '@/services/api'
@@ -225,7 +225,7 @@ export default function LivePositionChart() {
             </Button>
           )}
           <ChartControls />
-          <TimeframeButtons value={range} onChange={setRange} />
+          <TimeframeSelect value={range} onChange={setRange} />
         </div>
       </div>
 

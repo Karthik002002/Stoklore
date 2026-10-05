@@ -146,7 +146,7 @@ def place_intent(intent, super_order=True):
     if errors:
         return {"ok": False, "errors": errors}
 
-    wants_exits = intent.get("stop_price") is not None or intent.get("target_price") is not None
+    wants_exits = intent.get("stop_price") is not None and intent.get("target_price") is not None
     use_super = super_order and wants_exits
     payload = (
         dhan_orders.build_super_order(intent, sec_id)

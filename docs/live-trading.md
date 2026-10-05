@@ -13,6 +13,24 @@ looking at something else lands in the [alerts](alerts.md) feed, which this page
 - `/live` — the state bar says whether an order can be sent at all, then the ticket, your positions
   and today's orders. Fills, rejections and closed positions are written to [Alerts](alerts.md),
   which is its own page: alerts run whether or not live trading is on.
+- **The same ticket in three places** — `/live`, **Holdings › Trade** (with Dhan picked), and the
+  **chart modal** (pick *Dhan · live* in its account dropdown, next to the paper accounts; it's only
+  offered once Dhan credentials are saved). It takes everything Dhan's order API does for NSE cash:
+  - **Product** — Intraday (MIS), Delivery (CNC) or MTF.
+  - **Order type** — Market, Limit, Stop-limit (SL: trigger + limit) or Stop-market (SL-M: trigger).
+  - **Super Order** — stop-loss + target (+ optional trailing jump) held at the broker. Dhan only
+    takes it on a plain DAY market/limit entry, so the box is disabled otherwise.
+  - **More options** — validity Day or IOC, disclosed quantity (30-100% of the order), and
+    after-market orders sent at pre-open, the open, or 30/60 minutes after it.
+  - The footer shows value, share of the wallet and, with a Super Order, rupees at risk/reward and
+    R. Stop and target show their % from entry; **max N** fills the most the wallet buys at this
+    price. If live trading is off, the ticket says so with a **Switch on** button right there.
+  - **Review** opens a confirmation listing every field that will be sent (account, side, product,
+    type, qty, trigger, price, validity, AMO, stop/target, value). Nothing is sent until you press
+    *Place order* there. Paper orders don't ask; only real ones do.
+- **Holdings › Positions / Orders** (Dhan) — the same positions and order book as `/live`. The order
+  book is Dhan's whole day book, so orders placed in Dhan's own app show too, Super Order legs as
+  rows of their own; working ones can be cancelled. Closing a position asks first.
 - Click a position to open `/live/:symbol` — the Bar Replay chart with the position on it. Drag the
   stop or target line and the change goes to the broker.
 - **Kill switch** halts for the rest of the day and cancels every working order. It does **not**
@@ -33,7 +51,7 @@ this is a bug — which is why there is no local fill logic to disagree *with*.
 | `app/routers/live_trading.py` | `/api/live/*` |
 | `app/routers/alerts.py` | `/api/alerts` |
 
-**Orders are Super Orders** when a stop or target is set: entry, target and stop go to Dhan as one
+**Orders are Super Orders** when a stop and a target are set: entry, target and stop go to Dhan as one
 order, so the exits live at the broker. A stop that only exists in this app's poller is not a stop —
 it dies with the process, the laptop lid, or the wifi.
 
@@ -87,6 +105,11 @@ everything that's wrong with it at once (`guardrail_errors`):
 - more orders today than the daily count
 - realised loss today at or past the daily loss limit
 - a stop or target on the wrong side of the entry — a typo that would fire on the next tick
+- a limit/stop-limit with no limit price, a stop order with no trigger, a stop-limit whose limit
+  is on the wrong side of its trigger (it would trigger and never fill), a disclosed quantity
+  outside 30-100% of the order
+- a Super Order with only one of stop/target (Dhan has no one-legged shape), or on an SL/SL-M,
+  AMO, IOC or disclosed-quantity entry
 
 The daily loss stop also trips **by itself**: every sweep sums realised P&L, and hitting the limit
 halts trading and writes an alert. Realised only — an open position moving against you is not yet a

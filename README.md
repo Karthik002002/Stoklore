@@ -175,7 +175,7 @@ to guard rails you can see and control.
 - **Watchlists**: bookmark any tracked stock into named lists, move a stock
   between lists, filter the table by tab
 - A minimal icon-rail sidebar nav (hover tooltips, active-route highlight) —
-  Stocks dashboard, Events feed, Top news, Holdings, Backtesting, Paper
+  Stocks dashboard, Events feed, Top news, Holdings, Backtesting, Bar Replay, Paper
   Trading, Settings, theme toggle, and a **Reload** button that clears the
   shared cache on demand
 
@@ -722,7 +722,7 @@ separately in `app/core/backtest.py` and `app/main.py` + `app/routers/`'s `/api/
 
 ### `12` Bar Replay
 
-A `/backtest/replay` page (linked from Backtesting → Manual): step through a
+A `/backtest/replay` page (its own sidebar icon, and linked from Backtesting → Manual): step through a
 stock's real history one bar at a time and paper-trade it, like TradingView's
 Bar Replay.
 
@@ -887,7 +887,12 @@ one, and the Alerts page lists each alert next to the position it guards.
 - **Nothing is simulated.** Paper trading decides its own fills; this one never does — Dhan's order
   and position books are mirrored every 5 seconds and every screen reads the mirror. Where the app
   and the broker disagree, the broker is right
-- **Exits live at the broker** — a stop or target makes the entry a Dhan **Super Order**, so the
+- **Trade from anywhere** — the same ticket on `/live`, Holdings › Trade and the chart modal (pick
+  *Dhan · live* as the account): Intraday / Delivery / MTF, market, limit, SL and SL-M, Day or IOC,
+  disclosed qty, after-market orders, and a Super Order's stop + target + trailing jump. Every real
+  order shows a **confirmation** of exactly what will be sent first. Holdings (Dhan) also gets
+  Positions and Orders tabs - the day's whole order book, including orders placed in Dhan's app
+- **Exits live at the broker** — a stop and target make the entry a Dhan **Super Order**, so the
   protection survives this app being closed. Dragging the stop line on the chart sends a modify;
   there is no local copy to drift
 - **The wallet, and what a position is worth against it** — Dhan's available cash in the state bar

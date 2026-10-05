@@ -92,24 +92,47 @@ def security_id(symbol, today=None):
 # --- what an order looks like before it is sent ----------------------------------------------------
 
 
+ORDER_TYPES = ("MARKET", "LIMIT", "STOP_LOSS", "STOP_LOSS_MARKET")
+#: The order types that take a trigger price: STOP_LOSS fires a limit at `price`, STOP_LOSS_MARKET a
+#: market order, once the trigger trades.
+TRIGGER_TYPES = ("STOP_LOSS", "STOP_LOSS_MARKET")
+#: The types that carry a limit price.
+PRICED_TYPES = ("LIMIT", "STOP_LOSS")
+AMO_TIMES = ("PRE_OPEN", "OPEN", "OPEN_30", "OPEN_60")
+
+
+def order_type(intent):
+    """The order type asked for, or the one implied by the older shape (limit_price set = LIMIT)."""
+    return intent.get("order_type") or ("LIMIT" if intent.get("limit_price") else "MARKET")
+
+
 def build_order(intent, sec_id):
     """A plain order (no attached exits) as Dhan's POST /orders wants it.
 
-    `price` is sent as 0 for a market order because the field is required and Dhan ignores it -
-    sending the last traded price instead would look like a limit at a price nobody asked for.
+    `price` is sent as 0 for a market (and stop-market) order because the field is required and
+    Dhan ignores it - sending the last traded price instead would look like a limit at a price
+    nobody asked for. The optional keys (trigger, disclosed quantity, AMO) are only sent when used.
     """
+    kind = order_type(intent)
     payload = {
         "dhanClientId": intent["client_id"],
         "correlationId": intent["correlation_id"],
         "transactionType": "BUY" if intent["direction"] == "long" else "SELL",
         "exchangeSegment": EXCHANGE_SEGMENT,
         "productType": intent.get("product", "INTRADAY"),
-        "orderType": "LIMIT" if intent.get("limit_price") else "MARKET",
-        "validity": "DAY",
+        "orderType": kind,
+        "validity": intent.get("validity") or "DAY",
         "securityId": sec_id,
         "quantity": int(intent["quantity"]),
-        "price": float(intent.get("limit_price") or 0),
+        "price": float(intent.get("limit_price") or 0) if kind in PRICED_TYPES else 0.0,
     }
+    if kind in TRIGGER_TYPES:
+        payload["triggerPrice"] = float(intent["trigger_price"])
+    if intent.get("disclosed_quantity"):
+        payload["disclosedQuantity"] = int(intent["disclosed_quantity"])
+    if intent.get("amo"):
+        payload["afterMarketOrder"] = True
+        payload["amoTime"] = intent.get("amo_time") or "OPEN"
     return payload
 
 
@@ -122,6 +145,10 @@ def build_super_order(intent, sec_id):
     key out says the same thing without relying on that.
     """
     payload = build_order(intent, sec_id)
+    # Dhan's /super/orders takes neither of these, and the guardrails refuse an AMO or IOC super
+    # order before it gets here - dropped anyway, so a stray key can't make Dhan reject the order.
+    for key in ("validity", "disclosedQuantity", "afterMarketOrder", "amoTime", "triggerPrice"):
+        payload.pop(key, None)
     payload["targetPrice"] = float(intent["target_price"])
     payload["stopLossPrice"] = float(intent["stop_price"])
     if intent.get("trailing_jump"):
@@ -189,7 +216,41 @@ def guardrail_errors(intent, limits, state):
     if quantity != int(quantity):
         errors.append("Quantity must be a whole number of shares.")
 
-    reference = intent.get("limit_price") or intent.get("reference_price")
+    kind = order_type(intent)
+    trigger = intent.get("trigger_price")
+    if kind not in ORDER_TYPES:
+        errors.append(f"Unknown order type {kind!r}.")
+    if kind in PRICED_TYPES and not intent.get("limit_price"):
+        errors.append(f"A {'stop-limit' if kind == 'STOP_LOSS' else 'limit'} order needs a limit price.")
+    if kind in TRIGGER_TYPES and not trigger:
+        errors.append("A stop order needs a trigger price.")
+    # A buy stop sits above the market and fires on the way up; a stop-limit's limit must give the
+    # fill room past the trigger, or it triggers and never fills.
+    if kind == "STOP_LOSS" and trigger and intent.get("limit_price"):
+        wrong = intent["limit_price"] < trigger if intent["direction"] == "long" else intent["limit_price"] > trigger
+        if wrong:
+            errors.append("A stop-limit's limit price must be at or beyond its trigger (above for a buy, below for a sell).")
+    disclosed = intent.get("disclosed_quantity")
+    if disclosed and quantity and not (0.3 * quantity <= disclosed <= quantity):
+        errors.append("Disclosed quantity must be between 30% of the quantity and the whole of it.")
+    if intent.get("amo") and intent.get("amo_time") not in (None, *AMO_TIMES):
+        errors.append(f"AMO time must be one of {', '.join(AMO_TIMES)}.")
+
+    # A Super Order is entry + target + stop, all three: Dhan has no stop-only or target-only shape.
+    stop, target = intent.get("stop_price"), intent.get("target_price")
+    if (stop is None) != (target is None):
+        errors.append("A Super Order needs both a stop-loss and a target - set both, or neither.")
+    if stop is not None and target is not None:
+        if kind not in ("MARKET", "LIMIT"):
+            errors.append("A Super Order's entry must be a market or limit order.")
+        if intent.get("amo"):
+            errors.append("A Super Order can't be an after-market order.")
+        if (intent.get("validity") or "DAY") != "DAY":
+            errors.append("A Super Order is always a DAY order.")
+        if disclosed:
+            errors.append("A Super Order can't disclose a partial quantity.")
+
+    reference = intent.get("limit_price") or trigger or intent.get("reference_price")
     if not reference:
         errors.append("No price to size this order against.")
     else:
@@ -210,7 +271,6 @@ def guardrail_errors(intent, limits, state):
 
     # A stop on the wrong side of entry fires on the next tick - that is a typo, not a plan. Same
     # check the paper engine makes, for the same reason, except here it costs real money.
-    stop, target = intent.get("stop_price"), intent.get("target_price")
     if reference and stop is not None:
         wrong = stop >= reference if intent["direction"] == "long" else stop <= reference
         if wrong:

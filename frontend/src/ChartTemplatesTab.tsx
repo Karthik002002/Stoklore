@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
 import IndicatorControls from '@/features/bar-replay/IndicatorControls'
 import ReplayChart from '@/features/bar-replay/ReplayChart'
 import SettingsDialog from '@/features/bar-replay/SettingsDialog'
-import { TimeframeButtons, chartQuery } from '@/features/bar-replay/ChartControls'
+import { TimeframeSelect, chartQuery } from '@/features/bar-replay/ChartControls'
 import { styleOf, useChartTemplate, useChartTemplates } from '@/features/bar-replay/chartTemplates'
 import { DEFAULT_CHART_SETTINGS } from '@/features/bar-replay/store'
 import type { ChartTemplate } from '@/features/bar-replay/chartTemplates'
@@ -120,7 +120,7 @@ export default function ChartTemplatesTab() {
               className="h-7 w-32 font-mono text-xs"
               aria-label="Preview symbol"
             />
-            <TimeframeButtons value={tf} onChange={setTf} />
+            <TimeframeSelect value={tf} onChange={setTf} />
           </div>
           <div className="relative h-[28rem] overflow-hidden rounded-md border">
             {isPending ? (

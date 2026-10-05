@@ -216,7 +216,7 @@ export default function CloseTradeDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-md overflow-y-auto">
+      <DialogContent className="max-h-[95vh] w-[95vw] max-w-4xl overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle className="capitalize">
             Close {symbol} {order.direction}
@@ -229,57 +229,63 @@ export default function CloseTradeDialog({
         </DialogHeader>
         <form
           onSubmit={form.handleSubmit((values) => save.mutate(values as CloseTradeForm))}
-          className="space-y-3"
+          // Two columns: the trade and what you write about it on the left, the review checklist on the
+          // right, and the save row across both - so the whole dialog fits without scrolling.
+          className="grid gap-4 md:grid-cols-2"
         >
-          {reason && reason !== 'manual' && (
-            <p className="text-xs font-medium text-muted-foreground">{CLOSE_REASON_LABEL[reason]}</p>
-          )}
-          <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-3 text-sm">
-            <span>
-              {quantity} @ {inr(order.entryPrice)} → {inr(exitPrice)}
-            </span>
-            <span className="text-right">
-              <span
-                className={`font-semibold tabular-nums ${
-                  computedResult === 'neutral' ? '' : (pnl ?? 0) >= 0 ? 'text-up' : 'text-down'
-                }`}
-              >
-                {inr(pnl)}
+          <div className="space-y-3">
+            {reason && reason !== 'manual' && (
+              <p className="text-xs font-medium text-muted-foreground">{CLOSE_REASON_LABEL[reason]}</p>
+            )}
+            <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-3 text-sm">
+              <span>
+                {quantity} @ {inr(order.entryPrice)} → {inr(exitPrice)}
               </span>
-              {(costs?.total ?? 0) > 0 && (
-                <span className="block text-[11px] text-muted-foreground tabular-nums">
-                  {inr(net)} net · {inr(costs?.total)} costs
+              <span className="text-right">
+                <span
+                  className={`font-semibold tabular-nums ${
+                    computedResult === 'neutral' ? '' : (pnl ?? 0) >= 0 ? 'text-up' : 'text-down'
+                  }`}
+                >
+                  {inr(pnl)}
                 </span>
-              )}
-            </span>
+                {(costs?.total ?? 0) > 0 && (
+                  <span className="block text-[11px] text-muted-foreground tabular-nums">
+                    {inr(net)} net · {inr(costs?.total)} costs
+                  </span>
+                )}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <SelectField
+                form={form}
+                name="result"
+                label="Result"
+                options={RESULT_OPTIONS}
+                placeholder="—"
+                hint={`Set from P&L — within ±${inr(NEUTRAL_PNL_BAND)} of flat counts as neutral. Override if you disagree.`}
+              />
+
+              <SelectField
+                form={form}
+                name="emotion"
+                label="Emotion"
+                options={EMOTION_OPTIONS}
+                placeholder="How did it feel?"
+              />
+            </div>
+
+            <TagField form={form} name="tags" label="Tags" />
+
+            <TextAreaField
+              form={form}
+              name="notes"
+              label="Notes"
+              rows={4}
+              placeholder="What happened, what would you do differently…"
+            />
           </div>
-
-          <SelectField
-            form={form}
-            name="result"
-            label="Result"
-            options={RESULT_OPTIONS}
-            placeholder="—"
-            hint={`Set from P&L — within ±${inr(NEUTRAL_PNL_BAND)} of flat counts as neutral. Override if you disagree.`}
-          />
-
-          <SelectField
-            form={form}
-            name="emotion"
-            label="Emotion"
-            options={EMOTION_OPTIONS}
-            placeholder="How did it feel?"
-          />
-
-          <TagField form={form} name="tags" label="Tags" />
-
-          <TextAreaField
-            form={form}
-            name="notes"
-            label="Notes"
-            rows={3}
-            placeholder="What happened, what would you do differently…"
-          />
 
           <TradeReviewFields
             compact
@@ -299,36 +305,38 @@ export default function CloseTradeDialog({
             }
           />
 
-          <label className="flex items-start gap-2 rounded-lg border bg-muted/20 p-2.5 text-xs">
-            <input
-              type="checkbox"
-              className="mt-0.5 size-3.5 shrink-0 accent-primary"
-              checked={autoRandomJump}
-              onChange={(e) => setAutoRandomJump(e.target.checked)}
-            />
-            <span className="flex-1">
-              <span className="font-medium">Jump to a random date after logging</span>
-              <span className="block text-muted-foreground">
-                Saves clicking Jump to date › Random bar between trades.
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch md:col-span-2">
+            <label className="flex flex-1 items-start gap-2 rounded-lg border bg-muted/20 p-2.5 text-xs">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-3.5 shrink-0 accent-primary"
+                checked={autoRandomJump}
+                onChange={(e) => setAutoRandomJump(e.target.checked)}
+              />
+              <span className="flex-1">
+                <span className="font-medium">Jump to a random date after logging</span>
+                <span className="block text-muted-foreground">
+                  Saves clicking Jump to date › Random bar between trades.
+                </span>
               </span>
-            </span>
-            <Tooltip>
-              <TooltipTrigger render={<span className="mt-0.5 inline-flex text-muted-foreground" />}>
-                <InfoIcon className="size-3.5" />
-              </TooltipTrigger>
-              <TooltipContent side="top" className="max-w-64">
-                On save, the replay moves to a randomly picked bar somewhere else in this symbol's history — a
-                different date and time — and pauses there. Open positions and drawings stay as they are; only
-                where you're standing in the chart changes. The new date is shown in a message and on the
-                playback bar.
-              </TooltipContent>
-            </Tooltip>
-          </label>
+              <Tooltip>
+                <TooltipTrigger render={<span className="mt-0.5 inline-flex text-muted-foreground" />}>
+                  <InfoIcon className="size-3.5" />
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-64">
+                  On save, the replay moves to a randomly picked bar somewhere else in this symbol's history —
+                  a different date and time — and pauses there. Open positions and drawings stay as they are;
+                  only where you're standing in the chart changes. The new date is shown in a message and on
+                  the playback bar.
+                </TooltipContent>
+              </Tooltip>
+            </label>
 
-          <Button type="submit" className="w-full" disabled={save.isPending}>
-            {save.isPending && <Spinner className="size-4" />}
-            Log trade
-          </Button>
+            <Button type="submit" className="h-auto min-h-9 sm:w-48" disabled={save.isPending}>
+              {save.isPending && <Spinner className="size-4" />}
+              Log trade
+            </Button>
+          </div>
         </form>
       </DialogContent>
     </Dialog>

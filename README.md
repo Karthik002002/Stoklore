@@ -169,6 +169,10 @@ to guard rails you can see and control.
 ### `1` Live Dashboard & Watchlists
 
 - **NIFTY 50 / SENSEX** index cards with a live sparkline chart on the home page
+- **Every home-page table sorts by any column** — Indices, your watchlist, Top Gainers / Losers and
+  Macro Indices: click a header for highest-first (A-Z for names), again to flip, a third time for
+  the original order. Blanks always sit last. Movers sort across the whole bucket before the top 12
+  are shown, so *Vol* gives the heaviest-traded movers
 - Tracked-stocks table (every scraped symbol plus everything on a watchlist,
   report or not) with live price + day change, refreshed via a shared
   TTL cache (`stock_cache`) instead of hitting Yahoo Finance on every request
@@ -177,7 +181,9 @@ to guard rails you can see and control.
 - A minimal icon-rail sidebar nav (hover tooltips, active-route highlight) —
   Stocks dashboard, Events feed, Top news, Holdings, Backtesting, Bar Replay, Paper
   Trading, Settings, theme toggle, and a **Reload** button that clears the
-  shared cache on demand
+  shared cache on demand. **Hide it** with the button at its foot or `⌘\` / `Ctrl+\`
+  (rebindable in Settings › Shortcuts) - the full-screen charts take the room, a tab on the
+  left edge brings it back, and the choice is remembered per browser
 
 <div align="right">
 

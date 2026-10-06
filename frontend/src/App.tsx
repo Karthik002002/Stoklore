@@ -2,6 +2,8 @@ import { Link, Outlet } from '@tanstack/react-router'
 import {
   IconBolt,
   IconChartCandle,
+  IconChevronRight,
+  IconLayoutSidebarLeftCollapse,
   IconChartHistogram,
   IconCpu,
   IconRobot,
@@ -17,7 +19,8 @@ import {
   IconWallet,
   IconSettings,
 } from '@tabler/icons-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useShortcut, useShortcutLabel } from '@/lib/shortcuts'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { Toaster } from 'sonner'
@@ -112,7 +115,35 @@ function ReloadButton() {
   )
 }
 
+// The nav rail can be hidden for more chart room. The choice is per browser (localStorage), and its
+// width is published as --sidebar-w so the full-screen pages pinned beside it (Bar Replay, the
+// position charts: `fixed ... left-[var(--sidebar-w)]`) slide over with it.
+const SIDEBAR_KEY = 'sidebar.hidden'
+const readHidden = () => {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function useSidebar() {
+  const [hidden, setHidden] = useState(readHidden)
+  useEffect(() => {
+    document.documentElement.style.setProperty('--sidebar-w', hidden ? '0px' : '3.5rem')
+    try {
+      localStorage.setItem(SIDEBAR_KEY, hidden ? '1' : '0')
+    } catch {
+      // private window: the choice lasts this session
+    }
+  }, [hidden])
+  useShortcut('global.sidebar', () => setHidden((h) => !h))
+  return [hidden, setHidden] as const
+}
+
 function App() {
+  const [sidebarHidden, setSidebarHidden] = useSidebar()
+  const sidebarKey = useShortcutLabel('global.sidebar')
   // Background runs finish while you're on another page - see agent/useRunNotifications.ts.
   useRunNotifications()
   // the engine's user-chosen name (Settings > Algo engine) labels its nav icon
@@ -126,7 +157,22 @@ function App() {
     <TooltipProvider>
       <LoginGate>
         <div className="flex min-h-screen ">
-          <aside className="no-print sticky top-0 flex h-screen w-14 shrink-0 flex-col items-center gap-1 border-r bg-background py-4">
+          {sidebarHidden && (
+            // A sliver on the left edge to bring the rail back - visible enough to find, small
+            // enough to stay off the charts that now use the whole width.
+            <button
+              type="button"
+              aria-label="Show sidebar"
+              title={`Show sidebar (${sidebarKey})`}
+              onClick={() => setSidebarHidden(false)}
+              className="no-print fixed top-1/2 left-0 z-50 flex h-12 w-3 -translate-y-1/2 items-center justify-center rounded-r-md border border-l-0 bg-background text-muted-foreground opacity-60 hover:w-5 hover:opacity-100"
+            >
+              <IconChevronRight className="size-3" />
+            </button>
+          )}
+          <aside
+            className={`no-print sticky top-0 h-screen w-14 shrink-0 flex-col items-center gap-1 border-r bg-background py-4 ${sidebarHidden ? 'hidden' : 'flex'}`}
+          >
             <Link
               to="/"
               aria-label="NSE Research"
@@ -158,6 +204,11 @@ function App() {
               </TooltipIcon>
               <TooltipIcon label="Sign out">
                 <SignOutButton />
+              </TooltipIcon>
+              <TooltipIcon label={`Hide sidebar (${sidebarKey})`}>
+                <Button variant="ghost" size="icon" aria-label="Hide sidebar" onClick={() => setSidebarHidden(true)}>
+                  <IconLayoutSidebarLeftCollapse className="size-4" />
+                </Button>
               </TooltipIcon>
             </div>
           </aside>

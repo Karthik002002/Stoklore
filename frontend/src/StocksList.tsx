@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  ChevronsUpDownIcon,
   PlusIcon,
   BookmarkIcon,
   EllipsisVerticalIcon,
@@ -34,6 +37,9 @@ import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { fmt, formatDate, inr } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
+import { nextSort, sortRows } from '@/lib/sortRows'
+import type { Sort, SortDir } from '@/lib/sortRows'
+import { cn } from '@/lib/utils'
 import {
   getEvents,
   getEventsAttention,
@@ -124,6 +130,49 @@ function TickerTape({ indices }: { indices?: IndexQuote[] }) {
 }
 
 // --- panels ----------------------------------------------------------------------------------
+/** A clickable column header: highest-first (or A-Z) on the first click, flipped on the second, the
+ *  table's own order on the third. The arrow shows which way it's sorted right now. */
+function SortTh({
+  label,
+  k,
+  sort,
+  onSort,
+  align = 'right',
+  first = 'desc',
+}: {
+  label: string
+  k: string
+  sort: Sort
+  onSort: (next: Sort) => void
+  align?: 'left' | 'right'
+  first?: SortDir
+}) {
+  const active = sort?.key === k
+  const Icon = !active ? ChevronsUpDownIcon : sort.dir === 'asc' ? ArrowUpIcon : ArrowDownIcon
+  return (
+    <th
+      aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
+      className={cn('px-2 py-1 font-medium', align === 'right' ? 'text-right' : 'text-left')}
+    >
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation()
+          onSort(nextSort(sort, k, first))
+        }}
+        className={cn(
+          'inline-flex items-center gap-0.5 tracking-widest uppercase hover:text-foreground',
+          align === 'right' && 'flex-row-reverse',
+          active && 'text-foreground',
+        )}
+      >
+        {label}
+        <Icon className={cn('size-2.5 shrink-0', !active && 'opacity-40')} />
+      </button>
+    </th>
+  )
+}
+
 function IndicesPanel({
   indices,
   isFetching,
@@ -133,6 +182,12 @@ function IndicesPanel({
   isFetching: boolean
   onRefresh: () => void
 }) {
+  const [sort, setSort] = useState<Sort>(null)
+  const rows = sortRows(indices ?? [], sort, {
+    name: (i) => i.name,
+    price: (i) => i.price,
+    chg: (i) => i.changePercent,
+  })
   return (
     <TerminalPanel
       title="Indices"
@@ -145,13 +200,13 @@ function IndicesPanel({
         <table className="w-full font-mono text-xs">
           <thead>
             <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
-              <th className="px-2 py-1 text-left font-medium">Symbol</th>
-              <th className="px-2 py-1 text-right font-medium">Price</th>
-              <th className="px-2 py-1 text-right font-medium">Chg%</th>
+              <SortTh label="Symbol" k="name" sort={sort} onSort={setSort} align="left" first="asc" />
+              <SortTh label="Price" k="price" sort={sort} onSort={setSort} />
+              <SortTh label="Chg%" k="chg" sort={sort} onSort={setSort} />
             </tr>
           </thead>
           <tbody>
-            {indices.map((i) => (
+            {rows.map((i) => (
               <tr key={i.name} className="border-b border-border/40 last:border-0">
                 <td className="px-2 py-1 font-semibold">{i.name}</td>
                 <td className="px-2 py-1 text-right tabular-nums">{num(i.price)}</td>
@@ -287,7 +342,13 @@ function EventsPanel({ events }: { events?: FeedEvent[] }) {
     <TerminalPanel
       title="Recent Events"
       accent="text-emerald-500"
-      actions={<ScanButton symbols={(events ?? []).slice(0, 12).map((e) => e.symbol)} name="Recent events" source="events" />}
+      actions={
+        <ScanButton
+          symbols={(events ?? []).slice(0, 12).map((e) => e.symbol)}
+          name="Recent events"
+          source="events"
+        />
+      }
     >
       {!events ? (
         <PanelLoading />
@@ -365,7 +426,16 @@ function MoversPanel({
   const [direction, setDirection] = useState<'gainers' | 'losers'>('gainers')
   const groups = data?.groups ?? []
   const active = groups.find((g) => g.key === bucket) ?? groups[0]
-  const rows = active?.[direction] ?? []
+  const [sort, setSort] = useState<Sort>(null)
+  // Sorted across the whole bucket before the top 12 are cut, so "Vol, highest first" is the
+  // heaviest-traded movers rather than a reshuffle of whichever 12 NSE listed first.
+  const rows = sortRows(active?.[direction] ?? [], sort, {
+    symbol: (r) => r.symbol,
+    ltp: (r) => r.ltp,
+    chg: (r) => r.perChange,
+    vol: (r) => r.trade_quantity,
+    turnover: (r) => r.turnover,
+  })
 
   return (
     <TerminalPanel
@@ -433,11 +503,11 @@ function MoversPanel({
                       source={`nse-movers:${direction}:${bucket}`}
                     />
                   </th>
-                  <th className="px-2 py-1 text-left font-medium">Symbol</th>
-                  <th className="px-2 py-1 text-right font-medium">LTP</th>
-                  <th className="px-2 py-1 text-right font-medium">Chg%</th>
-                  <th className="px-2 py-1 text-right font-medium">Vol</th>
-                  <th className="px-2 py-1 text-right font-medium">₹Cr</th>
+                  <SortTh label="Symbol" k="symbol" sort={sort} onSort={setSort} align="left" first="asc" />
+                  <SortTh label="LTP" k="ltp" sort={sort} onSort={setSort} />
+                  <SortTh label="Chg%" k="chg" sort={sort} onSort={setSort} />
+                  <SortTh label="Vol" k="vol" sort={sort} onSort={setSort} />
+                  <SortTh label="₹Cr" k="turnover" sort={sort} onSort={setSort} />
                 </tr>
               </thead>
               <tbody>
@@ -504,7 +574,18 @@ function MacroIndicesPanel({
   const [group, setGroup] = useState(DEFAULT_GROUP)
   const groups = data?.groups ?? []
   const active = groups.find((g) => g.key === group) ?? groups[0]
-  const rows = active?.indices ?? []
+  const [sort, setSort] = useState<Sort>(null)
+  const rows = sortRows(active?.indices ?? [], sort, {
+    name: (i) => i.name,
+    last: (i) => i.last,
+    chg: (i) => i.percentChange,
+    d30: (i) => i.perChange30d,
+    y1: (i) => i.perChange365d,
+    pe: (i) => (i.pe == null ? null : Number(i.pe)),
+    // breadth as a ratio, so 40/10 outranks 45/45
+    breadth: (i) =>
+      i.advances == null || i.declines == null ? null : Number(i.advances) / Math.max(1, Number(i.declines)),
+  })
 
   return (
     <TerminalPanel
@@ -539,13 +620,13 @@ function MacroIndicesPanel({
         <table className="w-full font-mono text-xs">
           <thead>
             <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
-              <th className="px-2 py-1 text-left font-medium">Index</th>
-              <th className="px-2 py-1 text-right font-medium">Last</th>
-              <th className="px-2 py-1 text-right font-medium">Chg%</th>
-              <th className="px-2 py-1 text-right font-medium">30d</th>
-              <th className="px-2 py-1 text-right font-medium">1y</th>
-              <th className="px-2 py-1 text-right font-medium">PE</th>
-              <th className="px-2 py-1 text-right font-medium">Adv/Dec</th>
+              <SortTh label="Index" k="name" sort={sort} onSort={setSort} align="left" first="asc" />
+              <SortTh label="Last" k="last" sort={sort} onSort={setSort} />
+              <SortTh label="Chg%" k="chg" sort={sort} onSort={setSort} />
+              <SortTh label="30d" k="d30" sort={sort} onSort={setSort} />
+              <SortTh label="1y" k="y1" sort={sort} onSort={setSort} />
+              <SortTh label="PE" k="pe" sort={sort} onSort={setSort} />
+              <SortTh label="Adv/Dec" k="breadth" sort={sort} onSort={setSort} />
             </tr>
           </thead>
           <tbody>
@@ -1014,6 +1095,15 @@ export default function StocksList() {
   const lists = listNames
   const stockCountOf = (name: string) => watchlist.filter((w) => w.list_name === name).length
   const visible = tab === 'All' ? stocks : stocks?.filter((s) => membersOf.get(s.symbol)?.has(tab))
+  // Kept across watchlist tabs: switching from All to a list should keep "by Chg%".
+  const [stockSort, setStockSort] = useState<Sort>(null)
+  const sortedVisible = sortRows(visible ?? [], stockSort, {
+    symbol: (s) => s.symbol,
+    price: (s) => s.price,
+    chg: (s) => s.changePercent,
+    reports: (s) => s.report_count,
+    updated: (s) => s.last_scraped,
+  })
 
   const dropOn = (targetName: string) => {
     if (!dragName || dragName === targetName) return
@@ -1139,21 +1229,28 @@ export default function StocksList() {
                 <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
                   <th className="w-6 py-1 pl-1">
                     <ScanButton
-                      symbols={visible.map((s) => s.symbol)}
+                      symbols={sortedVisible.map((s) => s.symbol)}
                       name={tab === 'All' ? 'All tracked stocks' : tab}
                       source={tab === 'All' ? 'tracked' : `watchlist:${tab}`}
                     />
                   </th>
-                  <th className="px-2 py-1 text-left font-medium">Symbol</th>
-                  <th className="px-2 py-1 text-right font-medium">Price</th>
-                  <th className="px-2 py-1 text-right font-medium">Chg%</th>
-                  <th className="px-2 py-1 text-right font-medium">Rpts</th>
-                  <th className="px-2 py-1 text-right font-medium">Updated</th>
+                  <SortTh
+                    label="Symbol"
+                    k="symbol"
+                    sort={stockSort}
+                    onSort={setStockSort}
+                    align="left"
+                    first="asc"
+                  />
+                  <SortTh label="Price" k="price" sort={stockSort} onSort={setStockSort} />
+                  <SortTh label="Chg%" k="chg" sort={stockSort} onSort={setStockSort} />
+                  <SortTh label="Rpts" k="reports" sort={stockSort} onSort={setStockSort} />
+                  <SortTh label="Updated" k="updated" sort={stockSort} onSort={setStockSort} />
                   <th className="w-16" />
                 </tr>
               </thead>
               <tbody>
-                {visible.map((s) => (
+                {sortedVisible.map((s) => (
                   <tr
                     key={s.symbol}
                     className="cursor-pointer border-b border-border/40 last:border-0 hover:bg-muted/40"

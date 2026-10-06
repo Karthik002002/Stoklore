@@ -752,7 +752,7 @@ export default function BarReplay() {
     // Chart above, one control bar below - a plain flex column, so the chart's box is whatever
     // height is left over and nothing ever overlaps the candles. (This page used to float
     // Setup/Indicators/Trade/Playback cards on top of the chart; see BottomBar.jsx.)
-    <div className="fixed inset-y-0 right-0 left-16 z-40 flex flex-col bg-background">
+    <div className="fixed inset-y-0 right-0 left-[var(--sidebar-w,3.5rem)] z-40 flex flex-col bg-background">
       <div className="relative min-h-0 flex-1">
         <ReplayChart
           ref={replayChartRef}

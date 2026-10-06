@@ -5,7 +5,9 @@ gap since the latest stored date - so scanning many symbols never re-downloads a
 """
 from datetime import date, datetime, timedelta
 
-from app.core import db
+import time
+
+from app.core import db, moneycontrol_local
 from app.core import price_sources
 from app.core import scraper
 
@@ -83,6 +85,61 @@ def chart_from_history(symbol, range_key):
         for r in rows
     ]
     return {"bars": bars, "interval": interval, "visibleFrom": int(datetime.combine(cutoff, datetime.min.time()).timestamp())}
+
+
+# IST, in seconds. A daily bar's session is the IST calendar day of its stamp: Yahoo stamps sessions at
+# 00:00 UTC, price_history ones at IST midnight (18:30 UTC the day before), and both land on the
+# same day once shifted by this.
+_IST_SECONDS = 19800
+
+
+def _session(t):
+    return (int(t) + _IST_SECONDS) // 86400
+
+
+def merge_recent_daily(bars, fresh):
+    """`bars` with the sessions in `fresh` that are as new as its last one or newer: a later session
+    is appended, the last session itself is replaced (a bar fetched mid-session is a partial one and
+    `fresh` is the later print). Older sessions are never touched - `fresh` only fills the tail.
+
+    New bars are restamped on `bars`' own convention (its last bar's offset within the day), so the
+    chart's time axis stays on one clock whichever source the history came from."""
+    if not bars or not fresh:
+        return bars
+    last = bars[-1]["time"]
+    last_day = _session(last)
+    offset = int(last) - last_day * 86400
+    out = list(bars)
+    for bar in sorted(fresh, key=lambda b: b["time"]):
+        day = _session(bar["time"])
+        if day < last_day:
+            continue
+        restamped = {**bar, "time": day * 86400 + offset}
+        if _session(out[-1]["time"]) == day:
+            out[-1] = restamped
+        else:
+            out.append(restamped)
+    return out
+
+
+def top_up_daily(symbol, chart):
+    """A daily chart (from Yahoo or price_history) with its newest sessions filled from moneycontrol.
+
+    Yahoo's daily series for NSE regularly lags by a session or more - SMCGLOBAL's stopped at 1 Oct
+    while 5 Oct had already traded +15% - and stored price_history is only as fresh as its last sync.
+    moneycontrol's 1D feed is current, so its last few bars close the gap. Anything but a daily chart
+    is returned as is (weekly/monthly bars aggregate sessions, intraday ones come from elsewhere), as
+    is the chart when moneycontrol can't be reached - a day-old chart beats an error."""
+    bars = (chart or {}).get("bars") or []
+    if chart.get("interval") != "1d" or not bars:
+        return chart
+    now = int(time.time())
+    try:
+        fresh = moneycontrol_local.fetch_history(symbol, now - 14 * 86400, now, "1D", countback=10)
+    except Exception as e:
+        print(f"chart top-up {symbol}: moneycontrol failed: {e}")
+        return chart
+    return {**chart, "bars": merge_recent_daily(bars, fresh)}
 
 
 def ema_crossover(symbol, short=20, long=50):

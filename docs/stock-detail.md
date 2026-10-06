@@ -29,6 +29,15 @@ reads `price_history`; the full-history view only renders once
 `price_history_max` actually has data for that symbol (see
 [Dashboard](dashboard.md#how-it-works) for how each table gets populated).
 
+**The newest bars are topped up from moneycontrol.** `/api/stocks/{symbol}/chart` serves daily ranges
+from `price_history` when it covers them, else from Yahoo - and both can be a session or more behind
+(Yahoo's NSE daily series regularly lags: SMCGLOBAL's stopped at 1 Oct while 5 Oct had already
+traded). So every daily chart's tail is refreshed from moneycontrol's 1D feed
+(`prices.top_up_daily`, cached 5 min): missing sessions are appended and the last one is replaced by
+the later print. Older bars are never changed, and if moneycontrol can't be reached the chart is
+served as it was. Every chart reading that endpoint gets it - the stock page, the chart modal and
+scans, and the paper and live position charts. Weekly/monthly ranges (5Y, MAX) aren't topped up.
+
 **EMA Crossover panel** — `GET /api/prices/{symbol}/ema-crossover?short=..&long=..`
 → `prices.ema_crossover(symbol, short, long)` (`app/core/prices.py:84`). It pulls
 `long + 250` closes from `price_history`, computes both EMAs with pandas'

@@ -33,6 +33,7 @@ export const SHORTCUTS = [
   { id: 'global.commandPalette', scope: 'Global', label: 'Command palette', default: 'Mod+K' },
   { id: 'global.chat', scope: 'Global', label: 'Toggle AI chat', default: 'Mod+/' },
   { id: 'global.watchlists', scope: 'Global', label: 'Watchlists (map stocks to lists)', default: 'Mod+B' },
+  { id: 'global.sidebar', scope: 'Global', label: 'Hide / show the sidebar', default: 'Mod+\\' },
   // Hold-to-talk, so this one is read on keydown AND keyup (see VoiceCapture.tsx).
   { id: 'global.voice', scope: 'Global', label: 'Voice capture (hold to talk)', default: 'Mod+shift+v' },
 

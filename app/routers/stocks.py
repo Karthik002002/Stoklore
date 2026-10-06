@@ -164,6 +164,9 @@ def stock_chart(symbol: str, range: str = "1mo"):
         raise HTTPException(status_code=400, detail=f"range must be one of {list(scraper.CHART_RANGES)}")
     symbol = symbol.upper()
     from_db = prices.chart_from_history(symbol, range)
-    if from_db is not None:
-        return from_db
-    return _cached(symbol, f"chart:{range}", 15, lambda: scraper.get_chart(symbol, range))
+    chart = from_db if from_db is not None else _cached(
+        symbol, f"chart:{range}", 15, lambda: scraper.get_chart(symbol, range)
+    )
+    # Both sources can be a session or more behind (see prices.top_up_daily); its own short cache so
+    # a chart flipping through a scan doesn't ask moneycontrol on every view.
+    return _cached(symbol, f"chart-topup:{range}", 5, lambda: prices.top_up_daily(symbol, chart))

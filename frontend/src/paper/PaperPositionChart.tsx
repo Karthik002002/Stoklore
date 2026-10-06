@@ -65,7 +65,7 @@ export default function PaperPositionChart() {
   return (
     // The whole viewport beside the nav rail, like Bar Replay: a thin symbol bar on top and the chart
     // under it, nothing else competing for height.
-    <div className="fixed inset-y-0 right-0 left-14 z-40 flex flex-col bg-background">
+    <div className="fixed inset-y-0 right-0 left-[var(--sidebar-w,3.5rem)] z-40 flex flex-col bg-background">
       <PaperChart
         symbol={symbol}
         account={account ?? null}

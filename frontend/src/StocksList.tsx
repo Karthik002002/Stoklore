@@ -41,6 +41,7 @@ import { nextSort, sortRows } from '@/lib/sortRows'
 import type { Sort, SortDir } from '@/lib/sortRows'
 import { cn } from '@/lib/utils'
 import {
+  addStock,
   getEvents,
   getEventsAttention,
   getIndices,
@@ -60,8 +61,6 @@ import type {
   TrackedStock,
 } from '@/services/api'
 import DeleteStockButton from './DeleteStockButton'
-
-const EMPTY_SET: Set<string> = new Set()
 
 // --- formatting helpers, shared by every panel ------------------------------------------------
 const pctClass = (v: number | null | undefined) =>
@@ -285,8 +284,14 @@ function MoverList({ title, rows }: { title: string; rows: TrackedStock[] }) {
               {s.symbol}
             </span>
           }
-          value={`${arrow(s.changePercent)} ${signedPct(s.changePercent)}`}
-          valueClassName={pctClass(s.changePercent)}
+          value={
+            <span className="inline-flex items-center gap-1">
+              <span
+                className={pctClass(s.changePercent)}
+              >{`${arrow(s.changePercent)} ${signedPct(s.changePercent)}`}</span>
+              <WatchlistButton symbol={s.symbol} className="-my-1" />
+            </span>
+          }
         />
       ))}
     </div>
@@ -311,26 +316,29 @@ function AttentionPanel({ attention }: { attention?: AttentionScore[] }) {
         <PanelEmpty>Nothing above its usual coverage pace.</PanelEmpty>
       ) : (
         hot.map((a) => (
-          <Link
-            key={a.symbol}
-            to="/stock/$exchange/$symbol"
-            params={{ exchange: 'NSE', symbol: a.symbol }}
-            className="block hover:bg-muted/40"
-          >
-            <TerminalRow
-              label={
-                <>
-                  <ChartButton symbol={a.symbol} className="mr-1 align-middle" />
-                  <span className="font-semibold text-foreground">{a.symbol}</span>{' '}
-                  <span className="text-muted-foreground">
-                    {a.recent_count} evt{a.recent_count === 1 ? '' : 's'}
-                  </span>
-                </>
-              }
-              value={a.is_new_attention ? 'NEW' : `${a.ratio}×`}
-              valueClassName="text-fuchsia-500"
-            />
-          </Link>
+          // the bookmark sits beside the link, not inside it - a menu inside an anchor would navigate
+          <div key={a.symbol} className="flex items-center pr-1 hover:bg-muted/40">
+            <Link
+              to="/stock/$exchange/$symbol"
+              params={{ exchange: 'NSE', symbol: a.symbol }}
+              className="block min-w-0 flex-1"
+            >
+              <TerminalRow
+                label={
+                  <>
+                    <ChartButton symbol={a.symbol} className="mr-1 align-middle" />
+                    <span className="font-semibold text-foreground">{a.symbol}</span>{' '}
+                    <span className="text-muted-foreground">
+                      {a.recent_count} evt{a.recent_count === 1 ? '' : 's'}
+                    </span>
+                  </>
+                }
+                value={a.is_new_attention ? 'NEW' : `${a.ratio}×`}
+                valueClassName="text-fuchsia-500"
+              />
+            </Link>
+            <WatchlistButton symbol={a.symbol} />
+          </div>
         ))
       )}
     </TerminalPanel>
@@ -386,6 +394,7 @@ function EventsPanel({ events }: { events?: FeedEvent[] }) {
               >
                 {e.event_time ? formatDate(e.event_time) : ''}
               </span>
+              <WatchlistButton symbol={e.symbol} className="-my-1" />
             </div>
           </div>
         ))
@@ -508,6 +517,7 @@ function MoversPanel({
                   <SortTh label="Chg%" k="chg" sort={sort} onSort={setSort} />
                   <SortTh label="Vol" k="vol" sort={sort} onSort={setSort} />
                   <SortTh label="₹Cr" k="turnover" sort={sort} onSort={setSort} />
+                  <th className="w-7" />
                 </tr>
               </thead>
               <tbody>
@@ -544,6 +554,9 @@ function MoversPanel({
                     </td>
                     <td className="px-2 py-1 text-right text-muted-foreground tabular-nums">
                       {crore(r.turnover)}
+                    </td>
+                    <td className="py-1 pr-1 text-right">
+                      <WatchlistButton symbol={r.symbol} />
                     </td>
                   </tr>
                 ))}
@@ -777,31 +790,42 @@ function AddStock({ onAdded }: { onAdded: () => void }) {
 // A stock can belong to any number of watchlists (composite symbol+list_name key on the
 // backend), so this is a checkbox menu rather than a single-select - toggling one list on/off
 // doesn't touch its membership in any other.
-function WatchlistButton({
-  symbol,
-  lists,
-  memberOf,
-  onChange,
-}: {
-  symbol: string
-  lists: string[]
-  memberOf: Set<string>
-  onChange: () => void
-}) {
+/** Save a stock to one or more watchlists, from any row on the page. Self-contained (it reads the
+ *  watchlist queries the page already has cached), so the movers, events and attention rows get it
+ *  as easily as the watchlist table. A stock that isn't tracked yet - most of NSE's gainers - is
+ *  tracked first: the watchlist table lists tracked stocks, so an untracked one would vanish. */
+function WatchlistButton({ symbol, className }: { symbol: string; className?: string }) {
+  const queryClient = useQueryClient()
+  const { data: watchlist = [] } = useQuery({ queryKey: ['watchlist'], queryFn: getWatchlist })
+  const { data: lists = [] } = useQuery({ queryKey: ['watchlists'], queryFn: getWatchlistNames })
+  const memberOf = new Set(watchlist.filter((w) => w.symbol === symbol).map((w) => w.list_name))
+  const refresh = () =>
+    ['stocks', 'watchlist', 'watchlists'].forEach((key) => queryClient.invalidateQueries({ queryKey: [key] }))
+
   const add = async (listName: string) => {
-    await fetch(`/api/watchlist/${symbol}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ list_name: listName }),
-    })
-    toast.success(`${symbol} added to ${listName}`)
-    onChange()
+    const tracked = (queryClient.getQueryData<TrackedStock[]>(['stocks']) ?? []).some(
+      (s) => s.symbol === symbol,
+    )
+    const id = toast.loading(tracked ? `Saving ${symbol}…` : `Tracking ${symbol}…`)
+    try {
+      if (!tracked) await addStock(symbol)
+      const res = await fetch(`/api/watchlist/${symbol}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ list_name: listName }),
+      })
+      if (!res.ok) throw new Error(`Couldn't save ${symbol} to ${listName}`)
+      toast.success(`${symbol} added to ${listName}`, { id })
+    } catch (e) {
+      toast.error((e as Error).message, { id })
+    }
+    refresh()
   }
 
   const remove = async (listName: string) => {
     await fetch(`/api/watchlist/${symbol}?list_name=${encodeURIComponent(listName)}`, { method: 'DELETE' })
     toast.success(`${symbol} removed from ${listName}`)
-    onChange()
+    refresh()
   }
 
   const createNew = () => {
@@ -816,8 +840,9 @@ function WatchlistButton({
           <Button
             variant="ghost"
             size="icon-sm"
-            className="size-6"
+            className={cn('size-6 shrink-0', className)}
             aria-label={`Save ${symbol} to watchlist`}
+            title={memberOf.size ? `In ${[...memberOf].join(', ')}` : 'Add to watchlist'}
             onClick={(e) => e.stopPropagation()}
           />
         }
@@ -1048,7 +1073,7 @@ export default function StocksList() {
   const stocksQuery = useQuery({ queryKey: ['stocks'], queryFn: timedStocks, refetchInterval: 30_000 })
   const indicesQuery = useQuery({ queryKey: ['indices'], queryFn: getIndices, refetchInterval: 60_000 })
   const { data: watchlist = [] } = useQuery({ queryKey: ['watchlist'], queryFn: getWatchlist })
-  const { data: listNames = [] } = useQuery({ queryKey: ['watchlists'], queryFn: getWatchlistNames })
+  const { data: lists = [] } = useQuery({ queryKey: ['watchlists'], queryFn: getWatchlistNames })
   const listParam = tab === 'All' ? undefined : tab
   const { data: events } = useQuery({
     queryKey: ['events', listParam ?? 'all'],
@@ -1092,7 +1117,6 @@ export default function StocksList() {
     })
     return m
   }, [watchlist])
-  const lists = listNames
   const stockCountOf = (name: string) => watchlist.filter((w) => w.list_name === name).length
   const visible = tab === 'All' ? stocks : stocks?.filter((s) => membersOf.get(s.symbol)?.has(tab))
   // Kept across watchlist tabs: switching from All to a list should keep "by Chg%".
@@ -1224,75 +1248,74 @@ export default function StocksList() {
           )}
 
           {visible && visible.length > 0 && (
-            <table className="w-full font-mono text-xs">
-              <thead>
-                <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
-                  <th className="w-6 py-1 pl-1">
-                    <ScanButton
-                      symbols={sortedVisible.map((s) => s.symbol)}
-                      name={tab === 'All' ? 'All tracked stocks' : tab}
-                      source={tab === 'All' ? 'tracked' : `watchlist:${tab}`}
+            // Scrolls past 600px so a long list doesn't push the panels below off the screen; the
+            // header stays put so the sort controls are always in reach.
+            <div className="h-[400px] overflow-y-auto">
+              <table className="w-full font-mono text-xs">
+                <thead className="sticky top-0 z-10 bg-background">
+                  <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
+                    <th className="w-6 py-1 pl-1">
+                      <ScanButton
+                        symbols={sortedVisible.map((s) => s.symbol)}
+                        name={tab === 'All' ? 'All tracked stocks' : tab}
+                        source={tab === 'All' ? 'tracked' : `watchlist:${tab}`}
+                      />
+                    </th>
+                    <SortTh
+                      label="Symbol"
+                      k="symbol"
+                      sort={stockSort}
+                      onSort={setStockSort}
+                      align="left"
+                      first="asc"
                     />
-                  </th>
-                  <SortTh
-                    label="Symbol"
-                    k="symbol"
-                    sort={stockSort}
-                    onSort={setStockSort}
-                    align="left"
-                    first="asc"
-                  />
-                  <SortTh label="Price" k="price" sort={stockSort} onSort={setStockSort} />
-                  <SortTh label="Chg%" k="chg" sort={stockSort} onSort={setStockSort} />
-                  <SortTh label="Rpts" k="reports" sort={stockSort} onSort={setStockSort} />
-                  <SortTh label="Updated" k="updated" sort={stockSort} onSort={setStockSort} />
-                  <th className="w-16" />
-                </tr>
-              </thead>
-              <tbody>
-                {sortedVisible.map((s) => (
-                  <tr
-                    key={s.symbol}
-                    className="cursor-pointer border-b border-border/40 last:border-0 hover:bg-muted/40"
-                    onClick={() =>
-                      navigate({
-                        to: '/stock/$exchange/$symbol',
-                        params: { exchange: 'NSE', symbol: s.symbol },
-                      })
-                    }
-                  >
-                    <td className="py-1 pl-1">
-                      <ChartButton symbol={s.symbol} />
-                    </td>
-                    <td className="px-2 py-1 font-semibold">{s.symbol}</td>
-                    <td className="px-2 py-1 text-right tabular-nums">{inr(s.price)}</td>
-                    <td className={`px-2 py-1 text-right tabular-nums ${pctClass(s.changePercent)}`}>
-                      {arrow(s.changePercent)} {signedPct(s.changePercent)}
-                    </td>
-                    <td className="px-2 py-1 text-right text-muted-foreground tabular-nums">
-                      {s.report_count}
-                    </td>
-                    <td className="px-2 py-1 text-right text-[10px] text-muted-foreground">
-                      {formatDate(s.last_scraped)}
-                    </td>
-                    <td className="px-1 py-1 text-right whitespace-nowrap">
-                      <WatchlistButton
-                        symbol={s.symbol}
-                        lists={lists}
-                        memberOf={membersOf.get(s.symbol) ?? EMPTY_SET}
-                        onChange={load}
-                      />
-                      <DeleteStockButton
-                        symbol={s.symbol}
-                        onDeleted={load}
-                        stopPropagation
-                        className="text-muted-foreground"
-                      />
-                    </td>
+                    <SortTh label="Price" k="price" sort={stockSort} onSort={setStockSort} />
+                    <SortTh label="Chg%" k="chg" sort={stockSort} onSort={setStockSort} />
+                    <SortTh label="Rpts" k="reports" sort={stockSort} onSort={setStockSort} />
+                    <SortTh label="Updated" k="updated" sort={stockSort} onSort={setStockSort} />
+                    <th className="w-16" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {sortedVisible.map((s) => (
+                    <tr
+                      key={s.symbol}
+                      className="cursor-pointer border-b border-border/40 last:border-0 hover:bg-muted/40"
+                      onClick={() =>
+                        navigate({
+                          to: '/stock/$exchange/$symbol',
+                          params: { exchange: 'NSE', symbol: s.symbol },
+                        })
+                      }
+                    >
+                      <td className="py-1 pl-1">
+                        <ChartButton symbol={s.symbol} />
+                      </td>
+                      <td className="px-2 py-1 font-semibold">{s.symbol}</td>
+                      <td className="px-2 py-1 text-right tabular-nums">{inr(s.price)}</td>
+                      <td className={`px-2 py-1 text-right tabular-nums ${pctClass(s.changePercent)}`}>
+                        {arrow(s.changePercent)} {signedPct(s.changePercent)}
+                      </td>
+                      <td className="px-2 py-1 text-right text-muted-foreground tabular-nums">
+                        {s.report_count}
+                      </td>
+                      <td className="px-2 py-1 text-right text-[10px] text-muted-foreground">
+                        {formatDate(s.last_scraped)}
+                      </td>
+                      <td className="px-1 py-1 text-right whitespace-nowrap">
+                        <WatchlistButton symbol={s.symbol} />
+                        <DeleteStockButton
+                          symbol={s.symbol}
+                          onDeleted={load}
+                          stopPropagation
+                          className="text-muted-foreground"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </TerminalPanel>
 

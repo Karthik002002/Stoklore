@@ -169,6 +169,9 @@ to guard rails you can see and control.
 ### `1` Live Dashboard & Watchlists
 
 - **NIFTY 50 / SENSEX** index cards with a live sparkline chart on the home page
+- **Save any stock on the home page to a watchlist** — the bookmark is on every stock row: your
+  watchlist, Top Gainers / Losers, Recent Events, Unusual Attention and Market Pulse. A stock you
+  don't track yet (most of NSE's movers) is tracked first, so it shows up in the list you picked
 - **Every home-page table sorts by any column** — Indices, your watchlist, Top Gainers / Losers and
   Macro Indices: click a header for highest-first (A-Z for names), again to flip, a third time for
   the original order. Blanks always sit last. Movers sort across the whole bucket before the top 12

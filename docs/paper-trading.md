@@ -69,7 +69,10 @@ drawdown, and an equity curve of realized P&L day by day.
   finished trade is half the story. The chart is
   read-only here — no dragging a level, no editing a leg's quantity, no
   right-click menu, and the pills carry no buttons. A closed trade is a record,
-  and every control on it would be a lie. Beside the chart: realised and net
+  and every control on it would be a lie. Laid out like the open position's page: the chart takes
+  the whole screen beside the nav rail under a thin bar (symbol, side · qty · paper, the result,
+  the dates, Indicators / template / settings, and a 1M-ALL range dropdown), and everything below
+  sits in a collapsible panel in the chart's corner: realised and net
   P&L, return, the R multiple against the R that was planned, how long it was
   held, and — for a Bar Replay trade, which records it as it runs — the heat it
   took and the best it ever reached. Notes, tags and the chart screenshot sit

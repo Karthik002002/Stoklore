@@ -379,6 +379,37 @@ export type MacroIndices = {
 
 export const getMacroIndices = () => fetch('/api/macro-indices').then(json<MacroIndices>)
 
+/** One company in an ET sector. ET carries its name, not an exchange symbol. */
+export type SectorMember = {
+  name: string
+  slug: string | null
+  id: string | null
+  price: number | null
+  change_pct: number | null
+  mcap_cr: number | null
+  volume_k: number | null
+}
+
+/** One sector from ET Markets' sector performance (GET /api/sectors). Members are biggest first. */
+export type Sector = {
+  id: string
+  name: string
+  mcap_cr: number | null
+  mcap_change_cr: number | null
+  change_pct: number | null
+  advance: number | null
+  decline: number | null
+  unchanged: number | null
+  /** Members by today's move: < -2%, -2..0, 0, 0..+2, > +2%. */
+  buckets: [number, number, number, number, number]
+  members: SectorMember[]
+  /** ET's own "03:53 PM | 09 Oct 2026" stamp of the data. */
+  updated: string | null
+}
+
+export const getSectors = (exchange: 'NSE' | 'BSE' = 'NSE') =>
+  fetch(`/api/sectors?exchange=${exchange}`).then(json<{ sectors: Sector[] }>)
+
 // --- Dashboard (StocksList's terminal view) -------------------------------------------------
 // These wrap endpoints StocksList used to hit with bare fetch()es - moved here so the dashboard
 // can poll them through react-query (refetchInterval) like every other live view in the app.

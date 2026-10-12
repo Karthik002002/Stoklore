@@ -169,6 +169,14 @@ to guard rails you can see and control.
 ### `1` Live Dashboard & Watchlists
 
 - **NIFTY 50 / SENSEX** index cards with a live sparkline chart on the home page
+- **Sector performance** (ET Markets, NSE or BSE, refreshed every 5 min) — all 67 sectors three
+  ways: a heat map of tiles sized by market cap and coloured by the day's move; a sortable table
+  with each sector's market cap and its change, a centred move bar, a five-way breadth bar (members
+  down >2% / down / flat / up / up >2%), its members as a cap-weighted heat strip, and its best and
+  worst member; and, on opening a row (or clicking its tile), every member company as a tile. The
+  header line sums the day: sectors up/down, the cap-weighted market move, best and worst sector.
+  A filter finds a sector or a company in it. ET names companies but carries no NSE symbol, so
+  members aren't linked to the chart or stock page
 - **Save any stock on the home page to a watchlist** — the bookmark is on every stock row: your
   watchlist, Top Gainers / Losers, Recent Events, Unusual Attention and Market Pulse. A stock you
   don't track yet (most of NSE's movers) is tracked first, so it shows up in the list you picked

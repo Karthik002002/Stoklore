@@ -2,9 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  ArrowDownIcon,
-  ArrowUpIcon,
-  ChevronsUpDownIcon,
   PlusIcon,
   BookmarkIcon,
   EllipsisVerticalIcon,
@@ -37,8 +34,10 @@ import { Spinner } from '@/components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { fmt, formatDate, inr } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
-import { nextSort, sortRows } from '@/lib/sortRows'
-import type { Sort, SortDir } from '@/lib/sortRows'
+import { sortRows } from '@/lib/sortRows'
+import type { Sort } from '@/lib/sortRows'
+import SortTh from '@/components/SortTh'
+import SectorPerformancePanel from '@/components/SectorPerformancePanel'
 import { cn } from '@/lib/utils'
 import {
   addStock,
@@ -129,49 +128,6 @@ function TickerTape({ indices }: { indices?: IndexQuote[] }) {
 }
 
 // --- panels ----------------------------------------------------------------------------------
-/** A clickable column header: highest-first (or A-Z) on the first click, flipped on the second, the
- *  table's own order on the third. The arrow shows which way it's sorted right now. */
-function SortTh({
-  label,
-  k,
-  sort,
-  onSort,
-  align = 'right',
-  first = 'desc',
-}: {
-  label: string
-  k: string
-  sort: Sort
-  onSort: (next: Sort) => void
-  align?: 'left' | 'right'
-  first?: SortDir
-}) {
-  const active = sort?.key === k
-  const Icon = !active ? ChevronsUpDownIcon : sort.dir === 'asc' ? ArrowUpIcon : ArrowDownIcon
-  return (
-    <th
-      aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
-      className={cn('px-2 py-1 font-medium', align === 'right' ? 'text-right' : 'text-left')}
-    >
-      <button
-        type="button"
-        onClick={(e) => {
-          e.stopPropagation()
-          onSort(nextSort(sort, k, first))
-        }}
-        className={cn(
-          'inline-flex items-center gap-0.5 tracking-widest uppercase hover:text-foreground',
-          align === 'right' && 'flex-row-reverse',
-          active && 'text-foreground',
-        )}
-      >
-        {label}
-        <Icon className={cn('size-2.5 shrink-0', !active && 'opacity-40')} />
-      </button>
-    </th>
-  )
-}
-
 function IndicesPanel({
   indices,
   isFetching,
@@ -1340,6 +1296,8 @@ export default function StocksList() {
         isFetching={macroQuery.isFetching}
         onRefresh={() => macroQuery.refetch()}
       />
+
+      <SectorPerformancePanel />
 
       <StatusBar
         session={session}

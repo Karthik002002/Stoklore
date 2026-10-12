@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 from fastapi import APIRouter
 from fastapi import HTTPException
 
-from app.core import db, scraper
+from app.core import db, scraper, stocks_master
 
 from app.deps import _cached
 
@@ -34,6 +34,16 @@ def index_chart(name: str, range: str = "1mo"):
     return _cached(name, f"index-chart:{range}", 15, lambda: scraper.get_index_chart(name, range))
 
 
+def _with_symbols(sectors):
+    """Each member gets the NSE (else BSE) symbol its name matches in the stocks master, or None.
+    ET names companies but sends no ticker; the symbol is what lets a member open its chart."""
+    index = stocks_master.symbol_index([dict(r) for r in db.stocks_master_names()])
+    for sector in sectors:
+        for m in sector["members"]:
+            m["symbol"] = stocks_master.match_symbol(index, m.get("slug"), m.get("name"))
+    return sectors
+
+
 @router.get("/api/sectors")
 def sectors(exchange: str = "NSE"):
     """ET Markets' sector performance - see scraper.get_sector_performance. Cached 5 minutes: it
@@ -42,7 +52,7 @@ def sectors(exchange: str = "NSE"):
     if exchange not in ("NSE", "BSE"):
         raise HTTPException(status_code=400, detail="exchange must be NSE or BSE")
     try:
-        rows = _cached("ET", f"sectors:{exchange}", 5, lambda: {"sectors": scraper.get_sector_performance(exchange)})
+        rows = _cached("ET", f"sectors-v2:{exchange}", 5, lambda: {"sectors": _with_symbols(scraper.get_sector_performance(exchange))})
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"ET sector fetch failed: {exc}") from exc
     return rows

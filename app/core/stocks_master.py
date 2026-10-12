@@ -104,3 +104,68 @@ def parse_csv(raw: bytes, board=None):
             "face_value": _float(_field(row, "face_value")),
         })
     return rows
+
+
+# --- company name -> symbol ------------------------------------------------------------------------
+# Sources that name companies without a ticker (ET Markets' sector members) are matched to the
+# master by name. Exact on a normalised key, never fuzzy: a near miss that lands on the wrong
+# company would open the wrong chart, which is worse than opening none.
+
+_NAME_NOISE = {"ltd", "limited", "the", "and", "of", "co", "company", "corp", "corporation", "inc", "pvt", "private"}
+
+
+def name_keys(name):
+    """Match keys for a company name or URL slug, most specific first. Case, punctuation, spacing,
+    '&'/'and', legal suffixes and plurals are ignored - 'L&T Technology Services Limited' and
+    'lt-technology-services-ltd' share a key, as do 'Dr. Lal Path Labs Ltd.' / 'dr-lal-pathlabs-ltd'
+    and 'SHREE CEMENT LIMITED' / 'shree-cements-ltd'. A second key without 'india' covers names that
+    carry it on one side only."""
+    text = (name or "").lower().replace("&", " and ").replace("'", "")
+    words = [w for w in re.split(r"[^a-z0-9]+", text) if w and w not in _NAME_NOISE]
+    # NSE abbreviates India as "(I)": "Berger Paints (I) Limited"
+    words = ["india" if w == "i" else w for w in words]
+    words = [w[:-1] if len(w) > 3 and w.endswith("s") else w for w in words]
+    full = "".join(words)
+    keys = [full] if full else []
+    without_india = "".join(w for w in words if w != "india")
+    if without_india and without_india != full:
+        keys.append(without_india)
+    return keys
+
+
+def symbol_index(rows):
+    """{key: symbol} from stocks_master rows ({symbol, name, exchange}). A key two different symbols
+    share is dropped - ambiguous means unmatched. NSE listings win over BSE ones for the same key;
+    a BSE-only key still maps (the chart resolves a BSE symbol through Yahoo's .BO). Every symbol is
+    also indexed as itself under "sym:<SYMBOL>", for sources whose short name is the ticker."""
+    out, clash = {}, set()
+    for exchange in ("NSE", "BSE"):
+        seen = {}
+        for r in rows:
+            if r.get("exchange", "NSE") != exchange or not r.get("symbol"):
+                continue
+            for key in name_keys(r.get("name")):
+                if key in out:
+                    continue  # an NSE listing already has it
+                if key in seen and seen[key] != r["symbol"]:
+                    clash.add(key)
+                seen[key] = r["symbol"]
+        out.update({k: v for k, v in seen.items() if k not in clash})
+    for r in rows:
+        if r.get("symbol"):
+            out.setdefault(f"sym:{r['symbol'].upper()}", r["symbol"].upper())
+    return out
+
+
+def match_symbol(index, *names):
+    """The symbol for the first of `names` (slug, full name, short name...) with a key in `index`,
+    else the first name that IS a listed symbol, exactly ("SAIL")."""
+    for name in names:
+        for key in name_keys((name or "").replace("-", " ")):
+            if key in index:
+                return index[key]
+    for name in names:
+        ticker = re.sub(r"[^A-Za-z0-9&-]", "", name or "").upper()
+        if ticker and f"sym:{ticker}" in index:
+            return index[f"sym:{ticker}"]
+    return None

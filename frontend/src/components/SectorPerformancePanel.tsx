@@ -10,6 +10,7 @@
 import { Fragment, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRightIcon, RefreshCwIcon } from 'lucide-react'
+import { openChart } from '@/components/ChartModal'
 import TerminalPanel from '@/components/TerminalPanel'
 import SortTh from '@/components/SortTh'
 import { Button } from '@/components/ui/button'
@@ -72,7 +73,26 @@ function ChangeBar({ pct, max }: { pct: number | null; max: number }) {
 }
 
 const memberTitle = (m: SectorMember) =>
-  `${m.name}  ${pctText(m.change_pct)}\n₹${fmt(m.price)} · ${croreShort(m.mcap_cr)}${m.volume_k != null ? ` · vol ${fmt(m.volume_k, 0)}k` : ''}`
+  `${m.name}${m.symbol ? ` (${m.symbol})` : ''}  ${pctText(m.change_pct)}\n₹${fmt(m.price)} · ${croreShort(m.mcap_cr)}${
+    m.volume_k != null ? ` · vol ${fmt(m.volume_k, 0)}k` : ''
+  }\n${m.symbol ? 'click to open the chart' : 'no NSE/BSE symbol matched'}`
+
+/** Opens a member's chart, when its name matched a symbol. Stops the click there, so a member
+ *  inside a sector row doesn't also fold the row. */
+const chartOf = (m: SectorMember) => (e: React.MouseEvent) => {
+  e.stopPropagation()
+  if (m.symbol) openChart(m.symbol)
+}
+
+/** A member's name - a link to its chart when it has a symbol, plain text when it doesn't. */
+function MemberName({ m }: { m: SectorMember }) {
+  if (!m.symbol) return <span title="no NSE/BSE symbol matched">{m.name}</span>
+  return (
+    <button type="button" onClick={chartOf(m)} title={`Chart ${m.symbol}`} className="hover:underline">
+      {m.name}
+    </button>
+  )
+}
 
 /** The members as one strip, each as wide as its share of the sector's market cap - so a sector
  *  carried by one giant reads differently from one that rose across the board. The long tail of
@@ -85,6 +105,8 @@ function MemberStrip({ members }: { members: SectorMember[] }) {
         <div
           key={m.id ?? m.name}
           title={memberTitle(m)}
+          onClick={chartOf(m)}
+          className={cn(m.symbol && 'cursor-pointer hover:brightness-125')}
           style={{ flexGrow: Math.max(m.mcap_cr ?? 0, 1), flexBasis: 0, background: heatColor(m.change_pct) }}
         />
       ))}
@@ -119,14 +141,19 @@ function MemberTiles({ members }: { members: SectorMember[] }) {
             <span className={pctClass(ranked.at(-1)!.change_pct)}>{pctText(ranked.at(-1)!.change_pct)}</span>
           </span>
         )}
-        <span className="ml-auto normal-case">tile size = market cap · colour = today's move</span>
+        <span className="ml-auto normal-case">
+          tile size = market cap · colour = today's move · click a tile for its chart
+        </span>
       </div>
       <div className="flex flex-wrap gap-0.5">
         {members.map((m) => (
-          <div
+          <button
+            type="button"
             key={m.id ?? m.name}
             title={memberTitle(m)}
-            className="min-w-[4.5rem] overflow-hidden rounded-sm px-1.5 py-1"
+            disabled={!m.symbol}
+            onClick={chartOf(m)}
+            className="min-w-[4.5rem] overflow-hidden rounded-sm px-1.5 py-1 text-left ring-foreground/70 enabled:hover:ring-1 disabled:cursor-default"
             style={{
               flexGrow: Math.sqrt(Math.max(m.mcap_cr ?? 0, 1)),
               flexBasis: `${Math.min(18, 4.5 + Math.sqrt(Math.max(m.mcap_cr ?? 0, 0)) / 40)}rem`,
@@ -136,9 +163,9 @@ function MemberTiles({ members }: { members: SectorMember[] }) {
             <p className="truncate text-[11px] font-semibold text-foreground">{m.name}</p>
             <p className="flex justify-between gap-1 text-[10px] text-foreground/80 tabular-nums">
               <span>{pctText(m.change_pct)}</span>
-              <span className="truncate">₹{fmt(m.price)}</span>
+              <span className="truncate">{m.symbol ?? `₹${fmt(m.price)}`}</span>
             </p>
-          </div>
+          </button>
         ))}
       </div>
     </div>
@@ -291,7 +318,7 @@ export default function SectorPerformancePanel() {
               ))}
           </div>
 
-          <div className="max-h-[640px] overflow-auto">
+          <div className="max-h-[600px] overflow-auto">
             <table className="w-full min-w-[56rem] font-mono text-xs">
               <thead className="sticky top-0 z-10 bg-background">
                 <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
@@ -385,12 +412,13 @@ function SectorRow({
         <td className="max-w-56 px-2 py-1.5 text-[10px]">
           {best && (
             <p className="truncate">
-              <span className="text-up">▲ {pctText(best.change_pct)}</span> {best.name}
+              <span className="text-up">▲ {pctText(best.change_pct)}</span> <MemberName m={best} />
             </p>
           )}
           {worst && (
             <p className="truncate">
-              <span className={pctClass(worst.change_pct)}>▼ {pctText(worst.change_pct)}</span> {worst.name}
+              <span className={pctClass(worst.change_pct)}>▼ {pctText(worst.change_pct)}</span>{' '}
+              <MemberName m={worst} />
             </p>
           )}
         </td>

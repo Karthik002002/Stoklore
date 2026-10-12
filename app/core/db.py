@@ -2741,6 +2741,12 @@ def upsert_stocks_master(rows):
         )
 
 
+def stocks_master_names():
+    """Every listing's symbol, name and exchange - what stocks_master.symbol_index matches names on."""
+    with connect() as conn:
+        return conn.execute("SELECT symbol, name, exchange FROM stocks_master").fetchall()
+
+
 def search_stocks_master(query="", limit=30, board=None):
     """Case-insensitive substring match on symbol, company name, or ISIN, capped at `limit`.
 

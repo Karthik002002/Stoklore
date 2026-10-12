@@ -388,6 +388,8 @@ export type SectorMember = {
   change_pct: number | null
   mcap_cr: number | null
   volume_k: number | null
+  /** NSE (else BSE) symbol matched from the stocks master by name; null when no exact match. */
+  symbol: string | null
 }
 
 /** One sector from ET Markets' sector performance (GET /api/sectors). Members are biggest first. */

@@ -97,6 +97,69 @@ def get_movers(count=25):
     return list(movers.values())[:count]
 
 
+# ET Markets' sector performance (economictimes.indiatimes.com/stocks/marketstats/sector-performance):
+# every sector of the exchange in one request - market cap and its day change, how many members rose
+# and fell (split five ways by the size of the move), and each member company's price, move and size.
+# ET's own numbering, so its sectors don't line up with NSE's sectoral indices - it is the finer cut
+# (67 on NSE: Shipping, Tobacco, NBFC...).
+ET_SECTORS_URL = "https://etmarketsapis.indiatimes.com/ET_Stats/sectorperformance"
+ET_HEADERS = {
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Origin": "https://economictimes.indiatimes.com",
+    "Referer": "https://economictimes.indiatimes.com/",
+}
+
+
+def _sector_row(r):
+    """One sector, in rupees crore (ET sends market cap in rupees) and with the five move buckets
+    as plain counts. Members keep ET's company name only - ET carries no exchange symbol."""
+    crore = lambda v: round(v / 1e7, 2) if v is not None else None  # noqa: E731
+    members = [
+        {
+            "name": c.get("companyName"),
+            "slug": c.get("seoName"),
+            "id": c.get("companyId"),
+            "price": c.get("current"),
+            "change_pct": c.get("percentChange"),
+            "mcap_cr": c.get("marketCap"),
+            "volume_k": c.get("volumeInThousand"),
+        }
+        for c in r.get("sectorConstituents") or []
+    ]
+    members.sort(key=lambda c: c["mcap_cr"] or 0, reverse=True)
+    return {
+        "id": r.get("sectorId"),
+        "name": r.get("sectorName"),
+        "mcap_cr": crore(r.get("marketCap")),
+        "mcap_change_cr": crore(r.get("marketCapChange")),
+        "change_pct": r.get("marketCapPercentChange"),
+        "advance": r.get("advance"),
+        "decline": r.get("decline"),
+        "unchanged": r.get("noChange"),
+        # members by the size of their move today: < -2%, -2..0, 0, 0..+2, > +2%
+        "buckets": [
+            r.get("countLessThanMinus2") or 0,
+            r.get("countBetMinus2to0") or 0,
+            r.get("countEq0") or 0,
+            r.get("countBet0toPlus2") or 0,
+            r.get("countGreaterThanPlus2") or 0,
+        ],
+        "members": members,
+        "updated": next((c.get("updatedDateTime") for c in r.get("sectorConstituents") or []), None),
+    }
+
+
+def get_sector_performance(exchange="NSE"):
+    """Every sector on `exchange` ("NSE" | "BSE"), biggest day move first, as ET ranks them."""
+    data = netfetch.get_json(
+        ET_SECTORS_URL,
+        pool="etmarkets",
+        headers=ET_HEADERS,
+        params={"pagesize": 100, "exchange": exchange, "pageno": 1, "marketcap": ""},
+    )
+    return [_sector_row(r) for r in data.get("searchresult") or []]
+
+
 # NSE's top gainers/losers table (nseindia.com/market-data/top-gainers-losers). One request per
 # direction returns EVERY bucket at once - the seven index cuts the page's own dropdown offers -
 # so this is two fetches for the whole table, not two per bucket.

@@ -34,6 +34,20 @@ def index_chart(name: str, range: str = "1mo"):
     return _cached(name, f"index-chart:{range}", 15, lambda: scraper.get_index_chart(name, range))
 
 
+@router.get("/api/sectors")
+def sectors(exchange: str = "NSE"):
+    """ET Markets' sector performance - see scraper.get_sector_performance. Cached 5 minutes: it
+    moves through the session, but not faster than anyone reads a sector table."""
+    exchange = exchange.upper()
+    if exchange not in ("NSE", "BSE"):
+        raise HTTPException(status_code=400, detail="exchange must be NSE or BSE")
+    try:
+        rows = _cached("ET", f"sectors:{exchange}", 5, lambda: {"sectors": scraper.get_sector_performance(exchange)})
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"ET sector fetch failed: {exc}") from exc
+    return rows
+
+
 @router.get("/api/market-movers")
 def market_movers(refresh: bool = False):
     """NSE's top gainers/losers for every index bucket, fetched at most once per session.

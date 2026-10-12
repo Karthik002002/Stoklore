@@ -175,8 +175,11 @@ to guard rails you can see and control.
   down >2% / down / flat / up / up >2%), its members as a cap-weighted heat strip, and its best and
   worst member; and, on opening a row (or clicking its tile), every member company as a tile. The
   header line sums the day: sectors up/down, the cap-weighted market move, best and worst sector.
-  A filter finds a sector or a company in it. ET names companies but carries no NSE symbol, so
-  members aren't linked to the chart or stock page
+  A filter finds a sector or a company in it. The table scrolls past 600px. ET names companies but
+  sends no ticker, so each member is matched to the stocks master by name (exact after normalising
+  case, punctuation, spacing, plurals, '&', 'Ltd', '(I)' - NSE first, else BSE; ~92% of NSE
+  members, 198 of the 200 largest); a matched member's tile, strip segment or best/worst name opens
+  its chart, an unmatched one says so on hover rather than guessing
 - **Save any stock on the home page to a watchlist** — the bookmark is on every stock row: your
   watchlist, Top Gainers / Losers, Recent Events, Unusual Attention and Market Pulse. A stock you
   don't track yet (most of NSE's movers) is tracked first, so it shows up in the list you picked

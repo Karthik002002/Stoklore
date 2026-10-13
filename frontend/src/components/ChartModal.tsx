@@ -32,6 +32,7 @@ import { OrderPanel } from '@/paper/PaperTrades'
 import { PaperChart } from '@/paper/PaperPositionChart'
 import { chartQuery } from '@/features/bar-replay/ChartControls'
 import LiveOrderTicket from '@/live/LiveOrderTicket'
+import { prefillTicket } from '@/lib/ticketPrefill'
 import { createScan, getLiveStatus, getPaperAccounts, getScan, markScan, updateScan } from '@/services/api'
 import type { Scan, ScanMark, ScanPriority } from '@/services/api'
 
@@ -153,12 +154,20 @@ const KEYS: Record<string, ScanPriority> = { '1': 'A', '2': 'B', '3': 'C' }
 export default function ChartModal() {
   const { symbol, scan, index } = useChartModal()
   const queryClient = useQueryClient()
-  const { data: accounts = [] } = useQuery({ queryKey: ['paperAccounts'], queryFn: getPaperAccounts, enabled: !!symbol })
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['paperAccounts'],
+    queryFn: getPaperAccounts,
+    enabled: !!symbol,
+  })
   // the paper account last traded from here, else the first one
   const [picked, setPicked] = useState<number | null>(() => read(ACCOUNT_KEY))
   const account = accounts.find((a) => a.id === picked)?.id ?? accounts[0]?.id ?? null
   // The Dhan account is offered once credentials are in; picked, the ticket sends real orders.
-  const { data: liveStatus } = useQuery({ queryKey: ['liveStatus'], queryFn: getLiveStatus, enabled: !!symbol })
+  const { data: liveStatus } = useQuery({
+    queryKey: ['liveStatus'],
+    queryFn: getLiveStatus,
+    enabled: !!symbol,
+  })
   const [livePicked, setLivePicked] = useState(() => read(LIVE_KEY) === 1)
   const live = livePicked && !!liveStatus?.configured
   const [ticket, setTicket] = useState(true)
@@ -204,8 +213,7 @@ export default function ChartModal() {
   // the next chart loads while this one is read, so a flip is instant
   useEffect(() => {
     const next = scan?.symbols[index + 1]
-    if (next)
-      queryClient.prefetchQuery(chartQuery(next, range))
+    if (next) queryClient.prefetchQuery(chartQuery(next, range))
   }, [scan, index, range, queryClient])
 
   // the timer: one flip per `seconds` while playing
@@ -219,10 +227,15 @@ export default function ChartModal() {
     async (priority: ScanPriority | null, withNote = note) => {
       if (!scan || !symbol) return
       setPlaying(false) // deciding is not rushed: marking stops the clock
-      const bars = queryClient.getQueryData<{ bars: { close: number }[] }>(chartQuery(symbol, range).queryKey)?.bars
+      const bars = queryClient.getQueryData<{ bars: { close: number }[] }>(
+        chartQuery(symbol, range).queryKey,
+      )?.bars
       const price = bars?.at(-1)?.close ?? null
       const prev = marks[symbol]
-      setMarks((m) => ({ ...m, [symbol]: { symbol, priority, note: withNote || null, price, marked_at: new Date().toISOString() } }))
+      setMarks((m) => ({
+        ...m,
+        [symbol]: { symbol, priority, note: withNote || null, price, marked_at: new Date().toISOString() },
+      }))
       try {
         const r = await markScan(scan.id, symbol, { priority, note: withNote || null, price })
         setMarks((m) => {
@@ -233,7 +246,11 @@ export default function ChartModal() {
         })
         queryClient.invalidateQueries({ queryKey: ['scans'] })
       } catch (e) {
-        setMarks((m) => (prev ? { ...m, [symbol]: prev } : Object.fromEntries(Object.entries(m).filter(([k]) => k !== symbol))))
+        setMarks((m) =>
+          prev
+            ? { ...m, [symbol]: prev }
+            : Object.fromEntries(Object.entries(m).filter(([k]) => k !== symbol)),
+        )
         toast.error((e as Error).message)
       }
     },
@@ -308,18 +325,35 @@ export default function ChartModal() {
           ))}
         </SelectContent>
       </Select>
-      <Button size="icon-sm" variant="ghost" aria-label="Previous (←)" title="Previous (←)" disabled={index === 0} onClick={() => go(index - 1)}>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        aria-label="Previous (←)"
+        title="Previous (←)"
+        disabled={index === 0}
+        onClick={() => go(index - 1)}
+      >
         <ChevronLeftIcon className="size-4" />
       </Button>
       <span className="min-w-14 text-center font-mono text-xs tabular-nums" title={scan.name}>
         {index + 1} / {total}
       </span>
-      <Button size="icon-sm" variant="ghost" aria-label="Next (→)" title="Next (→)" onClick={() => go(index + 1)}>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        aria-label="Next (→)"
+        title="Next (→)"
+        onClick={() => go(index + 1)}
+      >
         <ChevronRightIcon className="size-4" />
       </Button>
       <span className="ml-1 flex gap-1 font-mono text-[11px]">
         {(['A', 'B', 'C'] as const).map((p) => (
-          <span key={p} className={cn('rounded border px-1', PRIORITY[p].className)} title={`${PRIORITY[p].label}: ${counts[p] ?? 0}`}>
+          <span
+            key={p}
+            className={cn('rounded border px-1', PRIORITY[p].className)}
+            title={`${PRIORITY[p].label}: ${counts[p] ?? 0}`}
+          >
             {p} {counts[p] ?? 0}
           </span>
         ))}
@@ -332,7 +366,11 @@ export default function ChartModal() {
       {/* the clock: fills over `seconds`, restarts on every chart */}
       <div className="h-0.5 bg-muted">
         {playing && !done && (
-          <div key={`${index}-${seconds}`} className="h-full bg-primary" style={{ animation: `scan-clock ${seconds}s linear forwards` }} />
+          <div
+            key={`${index}-${seconds}`}
+            className="h-full bg-primary"
+            style={{ animation: `scan-clock ${seconds}s linear forwards` }}
+          />
         )}
       </div>
       {done ? (
@@ -341,7 +379,11 @@ export default function ChartModal() {
           <span className="text-muted-foreground">
             {counts.A ?? 0} A · {counts.B ?? 0} B · {counts.C ?? 0} C of {total}
           </span>
-          <Button size="sm" nativeButton={false} render={<Link to="/scans/$scanId" params={{ scanId: String(scan.id) }} onClick={closeChart} />}>
+          <Button
+            size="sm"
+            nativeButton={false}
+            render={<Link to="/scans/$scanId" params={{ scanId: String(scan.id) }} onClick={closeChart} />}
+          >
             Review
           </Button>
           <Button size="sm" variant="ghost" onClick={() => go(0)}>
@@ -383,9 +425,12 @@ export default function ChartModal() {
             placeholder="Note (N) - Enter saves"
             className="h-7 min-w-48 flex-1 rounded border bg-transparent px-2 outline-none focus:border-ring"
           />
-          {current?.price != null && <span className="text-muted-foreground">marked at {inr(current.price)}</span>}
+          {current?.price != null && (
+            <span className="text-muted-foreground">marked at {inr(current.price)}</span>
+          )}
           <span className="ml-auto text-muted-foreground">
-            <kbd className="font-mono">←</kbd>/<kbd className="font-mono">→</kbd> flip · <kbd className="font-mono">Space</kbd> play · <kbd className="font-mono">0</kbd> clear
+            <kbd className="font-mono">←</kbd>/<kbd className="font-mono">→</kbd> flip ·{' '}
+            <kbd className="font-mono">Space</kbd> play · <kbd className="font-mono">0</kbd> clear
           </span>
         </div>
       )}
@@ -405,11 +450,21 @@ export default function ChartModal() {
             symbol={symbol}
             account={account}
             live={live}
+            // Right-click → Buy/Sell here: open the ticket (if it was hidden) with that order ready.
+            onNewOrder={(direction, price) => {
+              setTicket(true)
+              prefillTicket({ symbol, direction, price })
+            }}
             range={range}
             onRangeChange={setRange}
             leading={
               current?.priority ? (
-                <span className={cn('rounded border px-1.5 font-mono text-[11px] font-semibold', PRIORITY[current.priority].className)}>
+                <span
+                  className={cn(
+                    'rounded border px-1.5 font-mono text-[11px] font-semibold',
+                    PRIORITY[current.priority].className,
+                  )}
+                >
                   {current.priority}
                 </span>
               ) : undefined
@@ -423,10 +478,18 @@ export default function ChartModal() {
                       <SelectTrigger
                         size="sm"
                         className={cn('w-44', live && 'border-down/60 text-down')}
-                        title={live ? 'Dhan: orders from the ticket are real' : 'Paper account: its positions show on the chart, orders go to it'}
+                        title={
+                          live
+                            ? 'Dhan: orders from the ticket are real'
+                            : 'Paper account: its positions show on the chart, orders go to it'
+                        }
                       >
                         <SelectValue>
-                          {(v: string) => (v === 'live' ? 'Dhan · live' : (accounts.find((a) => String(a.id) === v)?.name ?? v))}
+                          {(v: string) =>
+                            v === 'live'
+                              ? 'Dhan · live'
+                              : (accounts.find((a) => String(a.id) === v)?.name ?? v)
+                          }
                         </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
@@ -452,7 +515,11 @@ export default function ChartModal() {
                     title={ticket ? 'Hide order ticket' : live ? 'New live order' : 'New paper order'}
                     onClick={() => setTicket((t) => !t)}
                   >
-                    {ticket ? <PanelRightCloseIcon className="size-4" /> : <PanelRightOpenIcon className="size-4" />}
+                    {ticket ? (
+                      <PanelRightCloseIcon className="size-4" />
+                    ) : (
+                      <PanelRightOpenIcon className="size-4" />
+                    )}
                   </Button>
                   <Button
                     size="icon-sm"
@@ -464,7 +531,12 @@ export default function ChartModal() {
                       live ? (
                         <Link to="/live/$symbol" params={{ symbol }} onClick={closeChart} />
                       ) : (
-                        <Link to="/paper/$symbol" params={{ symbol }} search={{ account: account ?? undefined }} onClick={closeChart} />
+                        <Link
+                          to="/paper/$symbol"
+                          params={{ symbol }}
+                          search={{ account: account ?? undefined }}
+                          onClick={closeChart}
+                        />
                       )
                     }
                   >
@@ -490,7 +562,12 @@ export default function ChartModal() {
                       to trade from the chart.
                     </p>
                   ) : (
-                    <OrderPanel key={`${symbol}-${account}`} accountId={account} symbol={symbol} className="min-h-full bg-background p-4" />
+                    <OrderPanel
+                      key={`${symbol}-${account}`}
+                      accountId={account}
+                      symbol={symbol}
+                      className="min-h-full bg-background p-4"
+                    />
                   )}
                 </aside>
               )

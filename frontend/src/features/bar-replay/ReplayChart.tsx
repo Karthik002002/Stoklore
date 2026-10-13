@@ -153,6 +153,8 @@ type ReplayChartProps = {
   onAddAlert?: (price: number, kind: ChartAlertKind) => void
   onMoveAlert?: (id: number, price: number, which: 'price' | 'price2') => void
   onRemoveAlert?: (id: number) => void
+  /** Right-click "Buy/Sell here": hands the side and price (null = market) to an order ticket. */
+  onNewOrder?: (direction: 'long' | 'short', price: number | null) => void
 }
 
 /** The framing a chart falls back to when nothing has been saved for it yet. */
@@ -182,7 +184,10 @@ export type ChartMarker = {
   position: 'aboveBar' | 'belowBar'
   shape: 'arrowUp' | 'arrowDown'
   color: string
-  text: string
+  /** Label beside the arrow. Optional: on a busy chart a bare arrow reads better than text over candles. */
+  text?: string
+  /** Arrow size, 1 = lightweight-charts' default. */
+  size?: number
 }
 
 /** A pinned price window on a pane's scale, as lightweight-charts reports it. */
@@ -434,6 +439,7 @@ const ReplayChart = forwardRef(function ReplayChart(
     onAddAlert,
     onMoveAlert,
     onRemoveAlert,
+    onNewOrder,
   }: ReplayChartProps,
   ref: React.Ref<ReplayChartHandle>,
 ) {
@@ -501,6 +507,8 @@ const ReplayChart = forwardRef(function ReplayChart(
   alertsRef.current = alerts
   const alertCbRef = useRef({ onAddAlert, onMoveAlert })
   alertCbRef.current = { onAddAlert, onMoveAlert }
+  const newOrderRef = useRef(onNewOrder)
+  newOrderRef.current = onNewOrder
   const onDrawingsRef = useRef(onDrawingsChange)
   onDrawingsRef.current = onDrawingsChange
   const toolRef = useRef(tool)
@@ -648,7 +656,10 @@ const ReplayChart = forwardRef(function ReplayChart(
   useEffect(() => {
     const grid = settings.gridColor ?? COLORS.grid
     chartRef.current?.applyOptions({
-      layout: { background: { color: settings.background ?? 'transparent' }, textColor: settings.textColor ?? COLORS.text },
+      layout: {
+        background: { color: settings.background ?? 'transparent' },
+        textColor: settings.textColor ?? COLORS.text,
+      },
       grid: {
         vertLines: { visible: !!settings.vertGridVisible, color: grid },
         horzLines: { visible: settings.horzGridVisible !== false, color: grid },
@@ -898,7 +909,8 @@ const ReplayChart = forwardRef(function ReplayChart(
       }
       if (alertDrag) {
         const price = priceAt(e.clientY)
-        if (price != null) alertLinesRef.current.get(`${alertDrag.id}:${alertDrag.which}`)?.applyOptions({ price })
+        if (price != null)
+          alertLinesRef.current.get(`${alertDrag.id}:${alertDrag.which}`)?.applyOptions({ price })
         return
       }
       if (!drag) return
@@ -982,7 +994,7 @@ const ReplayChart = forwardRef(function ReplayChart(
       // The menu only ever offers actions - adding a level, moving a stop, cancelling. With
       // nothing to act on, opening it would be an empty box over a chart.
       // A finished trade offers nothing - except arming an alert, which is about the market now.
-      if (readOnlyRef.current && !alertCbRef.current.onAddAlert) return
+      if (readOnlyRef.current && !alertCbRef.current.onAddAlert && !newOrderRef.current) return
       const rect = container.getBoundingClientRect()
       const price = priceAt(e.clientY)
       if (price == null) return
@@ -1051,7 +1063,13 @@ const ReplayChart = forwardRef(function ReplayChart(
 
       // The shaded band between the outermost levels (RSI's 30-70), drawn first so the lines sit
       // on top of it. A baseline series pinned at the upper level, filled down to the lower one.
-      if (separatePane && type.range && levels.length >= 2 && settings.levelBandVisible !== false && !ind.hidden) {
+      if (
+        separatePane &&
+        type.range &&
+        levels.length >= 2 &&
+        settings.levelBandVisible !== false &&
+        !ind.hidden
+      ) {
         const [minValue, maxValue] = type.range
         const band = chart.addSeries(
           BaselineSeries,
@@ -1188,7 +1206,9 @@ const ReplayChart = forwardRef(function ReplayChart(
       const computed = type.compute(bars, ind.period ?? 0)
       const lines: IndicatorLine[] = type.lines ?? [{ key: null }]
       const band = indicatorSeriesRef.current.get(seriesKey(ind.key, BAND_KEY))
-      band?.setData(bars.map((b) => ({ time: b.time, value: Math.max(...levelsOf(ind, settings.rsiLevels)) })) as never)
+      band?.setData(
+        bars.map((b) => ({ time: b.time, value: Math.max(...levelsOf(ind, settings.rsiLevels)) })) as never,
+      )
       lines.forEach((line) => {
         const series = indicatorSeriesRef.current.get(seriesKey(ind.key, line.key))
         if (!series) return
@@ -1633,6 +1653,7 @@ const ReplayChart = forwardRef(function ReplayChart(
           onMoveToBreakeven={onMoveToBreakeven}
           onCancelPending={onCancelPending}
           onAddAlert={onAddAlert}
+          onNewOrder={onNewOrder}
         />
       )}
     </div>
@@ -1806,7 +1827,8 @@ const ALERT_PILL =
 function AlertPills({ alert, onRemove }: { alert: ChartAlert; onRemove?: (id: number) => void }) {
   const tone = alert.active ? 'border-amber-500/70 text-amber-500' : 'border-dashed text-muted-foreground'
   const word =
-    CHART_ALERT_KINDS.find(([k]) => k === alert.condition)?.[1] ?? (alert.condition ?? 'crossing').replace(/_/g, ' ')
+    CHART_ALERT_KINDS.find(([k]) => k === alert.condition)?.[1] ??
+    (alert.condition ?? 'crossing').replace(/_/g, ' ')
   return (
     <>
       {(['price', 'price2'] as const).map((which) =>
@@ -1823,7 +1845,12 @@ function AlertPills({ alert, onRemove }: { alert: ChartAlert; onRemove?: (id: nu
               {!alert.active && ' · paused'}
             </span>
             {onRemove && (
-              <PillButton label="✕" title="Delete alert" onClick={() => onRemove(alert.id)} className="border-l" />
+              <PillButton
+                label="✕"
+                title="Delete alert"
+                onClick={() => onRemove(alert.id)}
+                className="border-l"
+              />
             )}
           </div>
         ),
@@ -1952,6 +1979,7 @@ function ContextMenu({
   onMoveToBreakeven,
   onCancelPending,
   onAddAlert,
+  onNewOrder,
 }: {
   /** Where the right-click landed, in container pixels, and the price under it. */
   x: number
@@ -1963,6 +1991,7 @@ function ContextMenu({
   onMoveToBreakeven?: (orderId: string) => void
   onCancelPending?: (orderId: string) => void
   onAddAlert?: (price: number, kind: ChartAlertKind) => void
+  onNewOrder?: (direction: 'long' | 'short', price: number | null) => void
 }) {
   useEffect(() => {
     const onKey = (e: any) => e.key === 'Escape' && onClose()
@@ -1981,7 +2010,7 @@ function ContextMenu({
   // A read-only chart passes no onPlaceLevel: its positions are a record, so no level actions
   const openOrders = onPlaceLevel ? orders.filter((o) => o.status === 'open') : []
   const pendingOrders = onPlaceLevel ? orders.filter((o) => o.status === 'pending') : []
-  const hasAny = openOrders.length + pendingOrders.length > 0 || !!onAddAlert
+  const hasAny = openOrders.length + pendingOrders.length > 0 || !!onAddAlert || !!onNewOrder
   if (!hasAny) return null
 
   const label = (o: ReplayOrder) => `${o.direction} ${o.quantity} @ ${inr(o.entryPrice)}`
@@ -1994,6 +2023,26 @@ function ContextMenu({
       onContextMenu={(e) => e.preventDefault()}
     >
       <div className="px-2 py-1 text-xs text-muted-foreground">At {inr(price)}</div>
+      {onNewOrder && (
+        // First: on a stock you don't hold, starting a trade is the reason to right-click at all.
+        <div className="border-t pt-1 first:border-t-0">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+            Trade here
+          </div>
+          <MenuItem onClick={() => (onNewOrder('long', price), onClose())}>
+            <span className="text-up">Buy limit</span> at {inr(price)}
+          </MenuItem>
+          <MenuItem onClick={() => (onNewOrder('short', price), onClose())}>
+            <span className="text-down">Sell limit</span> at {inr(price)}
+          </MenuItem>
+          <MenuItem onClick={() => (onNewOrder('long', null), onClose())}>
+            <span className="text-up">Buy</span> at market
+          </MenuItem>
+          <MenuItem onClick={() => (onNewOrder('short', null), onClose())}>
+            <span className="text-down">Sell</span> at market
+          </MenuItem>
+        </div>
+      )}
       {onAddAlert && (
         <div className="border-t pt-1 first:border-t-0">
           <div className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
@@ -2002,9 +2051,7 @@ function ContextMenu({
           {CHART_ALERT_KINDS.map(([kind, label]) => (
             <MenuItem key={kind} onClick={() => (onAddAlert(price, kind), onClose())}>
               {label}
-              {kind.endsWith('_channel') && (
-                <span className="ml-1.5 text-xs text-muted-foreground">±1%</span>
-              )}
+              {kind.endsWith('_channel') && <span className="ml-1.5 text-xs text-muted-foreground">±1%</span>}
             </MenuItem>
           ))}
         </div>

@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { inr } from '@/lib/format'
 import type { PaperPosition } from '@/services/api'
 import { closePaperPosition, modifyPaperPosition } from '@/services/api'
+import MoveToAccount from './MoveToAccount'
 
 // Flashes green/red for a moment whenever the price this cell shows actually changes, then fades.
 // Keyed on the value rather than on a refetch, so a poll that returned the same price doesn't
@@ -248,7 +249,7 @@ export default function PaperHoldings({
               <TableHead className="text-right">P&amp;L</TableHead>
               <TableHead>Stop loss</TableHead>
               <TableHead>Targets</TableHead>
-              <TableHead className="w-32" />
+              <TableHead className="w-48" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -315,6 +316,12 @@ export default function PaperHoldings({
                     >
                       Close
                     </Button>
+                    <MoveToAccount
+                      kind="position"
+                      id={p.id}
+                      symbol={p.symbol}
+                      currentAccountId={p.account_id}
+                    />
                   </div>
                 </TableCell>
               </TableRow>

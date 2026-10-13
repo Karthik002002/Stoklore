@@ -2344,7 +2344,7 @@ def update_paper_position(position_id, **fields):
     position after a partial exit and to fill a resting limit, both of which change two or three
     columns and must leave the rest alone."""
     allowed = {"status", "quantity", "entry_price", "stop_losses", "targets", "notes", "opened_at",
-               "initial_stop_loss"}
+               "initial_stop_loss", "account_id"}
     sets, params = [], []
     for key, value in fields.items():
         if key not in allowed:
@@ -2438,6 +2438,12 @@ def list_manual_trades():
 def get_manual_trade(trade_id):
     with connect() as conn:
         return conn.execute("SELECT * FROM manual_trades WHERE id = %s", (trade_id,)).fetchone()
+
+
+def set_manual_trade_account(trade_id, account_id):
+    """Re-file one trade under another account - by primary key, nothing else on the row changes."""
+    with connect() as conn:
+        conn.execute("UPDATE manual_trades SET account_id = %s WHERE id = %s", (account_id, trade_id))
 
 
 def update_manual_trade(trade_id, symbol, direction, quantity, entry_price, exit_price, stop_loss,

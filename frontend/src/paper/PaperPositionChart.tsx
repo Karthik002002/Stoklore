@@ -13,6 +13,8 @@ import type { ReplayBar, ReplayOrder } from '@/features/bar-replay/store'
 import type { PaperModifyRequest, PaperPosition } from '@/services/api'
 import ReplayChart from '@/features/bar-replay/ReplayChart'
 import { riskReward } from '@/features/bar-replay/orderEngine'
+import type { ChartMarker } from '@/features/bar-replay/ReplayChart'
+import { BUY_COLOR, SELL_COLOR, barOfFill } from '@/lib/entryMarker'
 import { useBarReplayStore } from '@/features/bar-replay/store'
 import { closePaperPosition, getLivePositions, getPaperPositions, modifyPaperPosition } from '@/services/api'
 import { ChartControls, TimeframeSelect, chartQuery } from '@/features/bar-replay/ChartControls'
@@ -101,6 +103,7 @@ export function PaperChart({
   onRangeChange,
   onClosed,
   live = false,
+  onNewOrder,
 }: {
   symbol: string
   /** Paper account whose positions are drawn; null = every account's. */
@@ -120,6 +123,8 @@ export function PaperChart({
   /** The Dhan account is picked (the chart modal): no paper positions on the chart, and the panel
    *  shows the live position in this stock instead. Its levels live on /live/$symbol. */
   live?: boolean
+  /** Right-click "Buy/Sell here" on the chart - the host fills its order ticket with it. */
+  onNewOrder?: (direction: 'long' | 'short', price: number | null) => void
 }) {
   const queryClient = useQueryClient()
   const [ownRange, setOwnRange] = useState('6mo')
@@ -144,7 +149,10 @@ export function PaperChart({
     refetchInterval: 10_000,
     enabled: !live,
   })
-  const mine = useMemo(() => (live ? [] : positions.filter((p) => p.symbol === symbol)), [positions, symbol, live])
+  const mine = useMemo(
+    () => (live ? [] : positions.filter((p) => p.symbol === symbol)),
+    [positions, symbol, live],
+  )
   const { data: livePositions = [] } = useQuery({
     queryKey: ['livePositions'],
     queryFn: getLivePositions,
@@ -157,7 +165,7 @@ export function PaperChart({
   // The chart endpoint sends a unix `time` and no `date`. ReplayChart only reads `date` for bars
   // whose time is a string (see its `stamp`), so these never reach that branch - hence the cast
   // rather than inventing a date field the API does not send.
-  const bars = (chart?.bars ?? []) as unknown as ReplayBar[]
+  const bars = useMemo(() => (chart?.bars ?? []) as unknown as ReplayBar[], [chart])
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['paperPositions'] })
 
@@ -238,6 +246,28 @@ export function PaperChart({
       ],
     })
   }
+
+  // An arrow on the bar each position filled on - the same mark the closed trade's page draws, so
+  // "when did I get in" reads off the chart instead of the panel. A resting limit has no fill yet.
+  const markers = useMemo(
+    () =>
+      mine.flatMap((p): ChartMarker[] => {
+        const bar = barOfFill(bars, p.opened_at)
+        if (!bar || p.status !== 'open') return []
+        const long = p.direction === 'long'
+        return [
+          {
+            time: bar.time,
+            position: long ? 'belowBar' : 'aboveBar',
+            shape: long ? 'arrowUp' : 'arrowDown',
+            // just the arrow: green for a buy, red for a sell - size and price are in the panel
+            color: long ? BUY_COLOR : SELL_COLOR,
+            size: 1.6,
+          },
+        ]
+      }),
+    [mine, bars],
+  )
 
   const position = mine[0] ?? null
   const rr = position ? riskReward(asOrder(position)).rr : null
@@ -380,6 +410,7 @@ export function PaperChart({
               bars={bars}
               indicators={indicators}
               orders={mine.map(asOrder)}
+              markers={markers}
               resetKey={`${symbol}-${range}`}
               settings={chartSettings}
               frame={chartFrame}
@@ -392,6 +423,7 @@ export function PaperChart({
               onPlaceLevel={placeLevel}
               onRequestClose={(order) => close.mutate(Number(order.id))}
               onCancelPending={(id) => close.mutate(Number(id))}
+              onNewOrder={onNewOrder}
             />
           )}
         </div>

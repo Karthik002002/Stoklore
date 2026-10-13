@@ -392,6 +392,11 @@ class PaperModifyRequest(BaseModel):
     targets: list[PaperLegRequest] = []
 
 
+class PaperMoveRequest(BaseModel):
+    """Move an open paper position or a closed paper trade to another paper account."""
+    account_id: int
+
+
 class PaperCloseRequest(BaseModel):
     quantity: float | None = None  # partial close; omitted = the whole remaining position
 

@@ -1,4 +1,8 @@
+import { useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
+import { SlidersHorizontalIcon } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import HomeCustomizeSheet from './HomeCustomizeSheet'
 import { Tabs, TabsIndicator, TabsList, TabsTab } from '@/components/ui/tabs'
 import HomeBoard from '@/dashboards/HomeBoard'
 import { useHomeBoard } from '@/dashboards/useHomeBoard'
@@ -23,6 +27,7 @@ export default function Home() {
   const navigate = useNavigate({ from: '/' })
   const search = useSearch({ from: '/' })
   const { items, isLoading } = useHomeBoard()
+  const [customizing, setCustomizing] = useState(false)
 
   const tab: HomeTab = search.tab ?? readLastTab() ?? (items.length ? 'board' : 'home')
   const setTab = (next: HomeTab) => {
@@ -39,13 +44,21 @@ export default function Home() {
 
   return (
     <div className="space-y-2">
-      <Tabs value={tab} onValueChange={(v) => setTab(v as HomeTab)} className="gap-0">
-        <TabsList>
-          <TabsIndicator />
-          <TabsTab value="home">Home</TabsTab>
-          <TabsTab value="board">My board{items.length ? ` · ${items.length}` : ''}</TabsTab>
-        </TabsList>
-      </Tabs>
+      <div className="flex items-center gap-2">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as HomeTab)} className="gap-0">
+          <TabsList>
+            <TabsIndicator />
+            <TabsTab value="home">Home</TabsTab>
+            <TabsTab value="board">My board{items.length ? ` · ${items.length}` : ''}</TabsTab>
+          </TabsList>
+        </Tabs>
+        {tab === 'home' && (
+          <Button size="sm" variant="outline" className="ml-auto" onClick={() => setCustomizing(true)}>
+            <SlidersHorizontalIcon className="size-3.5" /> Customize
+          </Button>
+        )}
+      </div>
+      <HomeCustomizeSheet open={customizing} onOpenChange={setCustomizing} />
       {tab === 'home' ? <StocksList /> : <HomeBoard />}
     </div>
   )

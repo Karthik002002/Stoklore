@@ -169,6 +169,11 @@ to guard rails you can see and control.
 ### `1` Live Dashboard & Watchlists
 
 - **NIFTY 50 / SENSEX** index cards with a live sparkline chart on the home page
+- **Customizable home** — **Customize** (beside the Home / My board tabs) opens a sheet from the
+  right: a switch per panel to show or hide it (the ticker tape and status bar too), **Edit layout**
+  to drag panels by their top bar and resize them from the corner on the same 12-column grid
+  Dashboards use, and **Reset to default**. Kept per browser in localStorage (`home.layout`, a
+  zustand store); a hidden panel comes back where it was
 - **Sector performance** (ET Markets, NSE or BSE, refreshed every 5 min) — all 67 sectors three
   ways: a heat map of tiles sized by market cap and coloured by the day's move; a sortable table
   with each sector's market cap and its change, a centred move bar, a five-way breadth bar (members
@@ -179,7 +184,10 @@ to guard rails you can see and control.
   sends no ticker, so each member is matched to the stocks master by name (exact after normalising
   case, punctuation, spacing, plurals, '&', 'Ltd', '(I)' - NSE first, else BSE; ~92% of NSE
   members, 198 of the 200 largest); a matched member's tile, strip segment or best/worst name opens
-  its chart, an unmatched one says so on hover rather than guessing
+  its chart, an unmatched one says so on hover rather than guessing. Hovering anything opens a card:
+  a company's price, move, market cap and share of its sector, volume, size and move rank and its
+  move against the sector; a sector's move, market cap change, the five-way breadth with counts and
+  its top 3 leaders and laggards; a breadth bar's bucket counts and shares
 - **Save any stock on the home page to a watchlist** — the bookmark is on every stock row: your
   watchlist, Top Gainers / Losers, Recent Events, Unusual Attention and Market Pulse. A stock you
   don't track yet (most of NSE's movers) is tracked first, so it shows up in the list you picked

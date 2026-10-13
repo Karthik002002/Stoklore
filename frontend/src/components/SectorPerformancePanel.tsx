@@ -11,6 +11,7 @@ import { Fragment, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRightIcon, RefreshCwIcon } from 'lucide-react'
 import { openChart } from '@/components/ChartModal'
+import SectorHoverCard, { BUCKETS, hideTip, hoverProps } from '@/components/SectorHoverCard'
 import TerminalPanel from '@/components/TerminalPanel'
 import SortTh from '@/components/SortTh'
 import { Button } from '@/components/ui/button'
@@ -28,23 +29,13 @@ const pctText = (v: number | null | undefined, digits = 2) =>
 const pctClass = (v: number | null | undefined) =>
   v == null || v === 0 ? 'text-muted-foreground' : v > 0 ? 'text-up' : 'text-down'
 
-// The five move buckets, worst to best - colours step from deep red to deep green, the same
-// reading as ET's own bar.
-const BUCKETS = [
-  { label: 'down more than 2%', color: 'rgb(220, 38, 38)' },
-  { label: 'down up to 2%', color: 'rgba(239, 68, 68, 0.55)' },
-  { label: 'unchanged', color: 'rgba(148, 163, 184, 0.5)' },
-  { label: 'up to 2%', color: 'rgba(34, 197, 94, 0.55)' },
-  { label: 'up more than 2%', color: 'rgb(22, 163, 74)' },
-]
-
 /** How many members fell hard, fell, held, rose, rose hard - as one stacked bar. */
-function BreadthBar({ buckets }: { buckets: number[] }) {
-  const shares = bucketShares(buckets)
+function BreadthBar({ s }: { s: Sector }) {
+  const shares = bucketShares(s.buckets)
   return (
     <div
       className="flex h-2.5 w-full overflow-hidden rounded-sm bg-muted"
-      title={BUCKETS.map((b, i) => `${buckets[i]} ${b.label}`).join('\n')}
+      {...hoverProps({ kind: 'breadth', s })}
     >
       {shares.map((w, i) =>
         w > 0 ? <div key={i} style={{ width: `${w}%`, background: BUCKETS[i].color }} /> : null,
@@ -72,23 +63,21 @@ function ChangeBar({ pct, max }: { pct: number | null; max: number }) {
   )
 }
 
-const memberTitle = (m: SectorMember) =>
-  `${m.name}${m.symbol ? ` (${m.symbol})` : ''}  ${pctText(m.change_pct)}\n₹${fmt(m.price)} · ${croreShort(m.mcap_cr)}${
-    m.volume_k != null ? ` · vol ${fmt(m.volume_k, 0)}k` : ''
-  }\n${m.symbol ? 'click to open the chart' : 'no NSE/BSE symbol matched'}`
-
 /** Opens a member's chart, when its name matched a symbol. Stops the click there, so a member
  *  inside a sector row doesn't also fold the row. */
 const chartOf = (m: SectorMember) => (e: React.MouseEvent) => {
   e.stopPropagation()
-  if (m.symbol) openChart(m.symbol)
+  if (!m.symbol) return
+  hideTip()
+  openChart(m.symbol)
 }
 
 /** A member's name - a link to its chart when it has a symbol, plain text when it doesn't. */
-function MemberName({ m }: { m: SectorMember }) {
-  if (!m.symbol) return <span title="no NSE/BSE symbol matched">{m.name}</span>
+function MemberName({ m, sector }: { m: SectorMember; sector: Sector }) {
+  const hover = hoverProps({ kind: 'member', m, sector })
+  if (!m.symbol) return <span {...hover}>{m.name}</span>
   return (
-    <button type="button" onClick={chartOf(m)} title={`Chart ${m.symbol}`} className="hover:underline">
+    <button type="button" onClick={chartOf(m)} className="hover:underline" {...hover}>
       {m.name}
     </button>
   )
@@ -97,14 +86,14 @@ function MemberName({ m }: { m: SectorMember }) {
 /** The members as one strip, each as wide as its share of the sector's market cap - so a sector
  *  carried by one giant reads differently from one that rose across the board. The long tail of
  *  tiny members is folded into the end of the strip. */
-function MemberStrip({ members }: { members: SectorMember[] }) {
-  const shown = members.slice(0, 40)
+function MemberStrip({ sector }: { sector: Sector }) {
+  const shown = sector.members.slice(0, 40)
   return (
     <div className="flex h-3 w-full gap-px overflow-hidden rounded-sm bg-muted/40">
       {shown.map((m) => (
         <div
           key={m.id ?? m.name}
-          title={memberTitle(m)}
+          {...hoverProps({ kind: 'member', m, sector })}
           onClick={chartOf(m)}
           className={cn(m.symbol && 'cursor-pointer hover:brightness-125')}
           style={{ flexGrow: Math.max(m.mcap_cr ?? 0, 1), flexBasis: 0, background: heatColor(m.change_pct) }}
@@ -116,7 +105,8 @@ function MemberStrip({ members }: { members: SectorMember[] }) {
 
 /** Every member of an opened sector as a tile, sized by market cap (square-rooted, so the giants
  *  don't crush the rest out of view) and coloured by its move. */
-function MemberTiles({ members }: { members: SectorMember[] }) {
+function MemberTiles({ sector }: { sector: Sector }) {
+  const members = sector.members
   const up = members.filter((m) => (m.change_pct ?? 0) > 0).length
   const down = members.filter((m) => (m.change_pct ?? 0) < 0).length
   const ranked = [...members]
@@ -150,10 +140,14 @@ function MemberTiles({ members }: { members: SectorMember[] }) {
           <button
             type="button"
             key={m.id ?? m.name}
-            title={memberTitle(m)}
-            disabled={!m.symbol}
+            {...hoverProps({ kind: 'member', m, sector })}
+            // not `disabled`: a disabled button fires no mouse events, so it would get no card
+            aria-disabled={!m.symbol}
             onClick={chartOf(m)}
-            className="min-w-[4.5rem] overflow-hidden rounded-sm px-1.5 py-1 text-left ring-foreground/70 enabled:hover:ring-1 disabled:cursor-default"
+            className={cn(
+              'min-w-[4.5rem] overflow-hidden rounded-sm px-1.5 py-1 text-left ring-foreground/70',
+              m.symbol ? 'hover:ring-1' : 'cursor-default',
+            )}
             style={{
               flexGrow: Math.sqrt(Math.max(m.mcap_cr ?? 0, 1)),
               flexBasis: `${Math.min(18, 4.5 + Math.sqrt(Math.max(m.mcap_cr ?? 0, 0)) / 40)}rem`,
@@ -299,7 +293,7 @@ export default function SectorPerformancePanel() {
                   key={s.id}
                   type="button"
                   onClick={() => toggle(s.id)}
-                  title={`${s.name}  ${pctText(s.change_pct)}\n${croreShort(s.mcap_cr)} · ${s.advance ?? 0} up / ${s.decline ?? 0} down`}
+                  {...hoverProps({ kind: 'sector', s })}
                   className={cn(
                     'min-w-[4rem] overflow-hidden rounded-sm px-1.5 py-1 text-left ring-foreground/60 hover:ring-1',
                     open.has(s.id) && 'ring-1',
@@ -355,6 +349,7 @@ export default function SectorPerformancePanel() {
           </div>
         </>
       )}
+      <SectorHoverCard />
     </TerminalPanel>
   )
 }
@@ -383,7 +378,9 @@ function SectorRow({
           <ChevronRightIcon className={cn('size-3.5 transition-transform', open && 'rotate-90')} />
         </td>
         <td className="px-2 py-1.5">
-          <span className="font-semibold">{s.name}</span>
+          <span className="font-semibold" {...hoverProps({ kind: 'sector', s })}>
+            {s.name}
+          </span>
           <span className="ml-1.5 text-[10px] text-muted-foreground">{s.members.length}</span>
         </td>
         <td className="px-2 py-1.5 text-right tabular-nums">{croreShort(s.mcap_cr)}</td>
@@ -399,7 +396,7 @@ function SectorRow({
           <ChangeBar pct={s.change_pct} max={maxMove} />
         </td>
         <td className="w-44 px-2 py-1.5">
-          <BreadthBar buckets={s.buckets} />
+          <BreadthBar s={s} />
           <p className="mt-0.5 text-[10px] tabular-nums">
             <span className="text-up">{s.advance ?? 0}▲</span>{' '}
             <span className="text-down">{s.decline ?? 0}▼</span>
@@ -407,18 +404,18 @@ function SectorRow({
           </p>
         </td>
         <td className="w-56 px-2 py-1.5">
-          <MemberStrip members={s.members} />
+          <MemberStrip sector={s} />
         </td>
         <td className="max-w-56 px-2 py-1.5 text-[10px]">
           {best && (
             <p className="truncate">
-              <span className="text-up">▲ {pctText(best.change_pct)}</span> <MemberName m={best} />
+              <span className="text-up">▲ {pctText(best.change_pct)}</span> <MemberName m={best} sector={s} />
             </p>
           )}
           {worst && (
             <p className="truncate">
               <span className={pctClass(worst.change_pct)}>▼ {pctText(worst.change_pct)}</span>{' '}
-              <MemberName m={worst} />
+              <MemberName m={worst} sector={s} />
             </p>
           )}
         </td>
@@ -426,7 +423,7 @@ function SectorRow({
       {open && (
         <tr className="border-b border-border/40 bg-muted/10">
           <td colSpan={9}>
-            <MemberTiles members={s.members} />
+            <MemberTiles sector={s} />
           </td>
         </tr>
       )}

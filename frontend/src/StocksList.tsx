@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  EyeOffIcon,
+  MoveIcon,
   PlusIcon,
   BookmarkIcon,
   EllipsisVerticalIcon,
@@ -37,6 +39,8 @@ import { usePageTitle } from '@/lib/usePageTitle'
 import { sortRows } from '@/lib/sortRows'
 import type { Sort } from '@/lib/sortRows'
 import SortTh from '@/components/SortTh'
+import { BoardGrid } from '@/dashboards/DashboardPage'
+import { HOME_PANELS, useHomeLayout } from '@/lib/homeLayout'
 import SectorPerformancePanel from '@/components/SectorPerformancePanel'
 import { cn } from '@/lib/utils'
 import {
@@ -1102,210 +1106,259 @@ export default function StocksList() {
     ? new Date(stocksQuery.dataUpdatedAt).toLocaleTimeString('en-GB')
     : null
 
-  return (
-    <div className="space-y-2">
-      <TickerTape indices={indicesQuery.data} />
+  const { layout, hidden, editing, setLayout, setHidden, setEditing } = useHomeLayout()
 
-      <div className="grid gap-2 lg:grid-cols-4">
-        <IndicesPanel
-          indices={indicesQuery.data}
-          isFetching={indicesQuery.isFetching}
-          onRefresh={() => indicesQuery.refetch()}
-        />
-
-        <TerminalPanel
-          className="lg:col-span-2"
-          title={`Watchlist · ${tab}`}
-          accent="text-primary"
-          actions={
-            <>
-              <AddStock onAdded={load} />
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                className="size-5"
-                aria-label="Events"
-                render={<Link to="/events" />}
-              >
-                <RadarIcon className="size-3" />
-              </Button>
-              <RefreshButton
-                busy={stocksQuery.isFetching}
-                onClick={() => stocksQuery.refetch()}
-                label="Refresh prices"
-              />
-            </>
-          }
-        >
-          <div className="flex flex-wrap items-center gap-0.5 border-b bg-muted/20 px-1.5 py-1">
-            {lists.length > 0 && (
-              <Button
-                variant={tab === 'All' ? 'secondary' : 'ghost'}
-                size="sm"
-                className="h-6 font-mono text-[11px]"
-                onClick={() => setTab('All')}
-              >
-                ALL
-              </Button>
-            )}
-            {lists.map((name) => (
-              <div
-                key={name}
-                draggable
-                onDragStart={() => setDragName(name)}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault()
-                  dropOn(name)
-                }}
-                onDragEnd={() => setDragName(null)}
-                className={`flex cursor-grab items-center rounded transition-opacity active:cursor-grabbing ${
-                  dragName === name ? 'opacity-40' : ''
-                }`}
-              >
-                <Button
-                  variant={tab === name ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="h-6 font-mono text-[11px] uppercase"
-                  onClick={() => setTab(name)}
-                >
-                  {name}
-                </Button>
-                <WatchlistTabMenu
-                  name={name}
-                  stockCount={stockCountOf(name)}
-                  onRenamed={(newName) => {
-                    load()
-                    setTab(newName)
-                  }}
-                  onDeleted={() => {
-                    load()
-                    setTab('All')
-                  }}
-                />
-              </div>
-            ))}
-            <CreateWatchlistDialog
-              onCreated={(name) => {
-                load()
-                setTab(name)
-              }}
+  // Every panel by id, placed by the grid below from the saved layout (lib/homeLayout.ts).
+  const panels: Record<string, React.ReactNode> = {
+    indices: (
+      <IndicesPanel
+        indices={indicesQuery.data}
+        isFetching={indicesQuery.isFetching}
+        onRefresh={() => indicesQuery.refetch()}
+      />
+    ),
+    watchlist: (
+      <TerminalPanel
+        title={`Watchlist · ${tab}`}
+        accent="text-primary"
+        actions={
+          <>
+            <AddStock onAdded={load} />
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              className="size-5"
+              aria-label="Events"
+              render={<Link to="/events" />}
+            >
+              <RadarIcon className="size-3" />
+            </Button>
+            <RefreshButton
+              busy={stocksQuery.isFetching}
+              onClick={() => stocksQuery.refetch()}
+              label="Refresh prices"
             />
-          </div>
-
-          {!stocks && <PanelLoading />}
-
-          {visible?.length === 0 && (
-            <PanelEmpty>
-              {tab === 'All'
-                ? 'No stocks tracked yet — add one above, or ask the chat about an NSE ticker.'
-                : `Nothing in ${tab} yet — save a stock to it with the bookmark button.`}
-            </PanelEmpty>
+          </>
+        }
+      >
+        <div className="flex flex-wrap items-center gap-0.5 border-b bg-muted/20 px-1.5 py-1">
+          {lists.length > 0 && (
+            <Button
+              variant={tab === 'All' ? 'secondary' : 'ghost'}
+              size="sm"
+              className="h-6 font-mono text-[11px]"
+              onClick={() => setTab('All')}
+            >
+              ALL
+            </Button>
           )}
-
-          {visible && visible.length > 0 && (
-            // Scrolls past 600px so a long list doesn't push the panels below off the screen; the
-            // header stays put so the sort controls are always in reach.
-            <div className="h-[400px] overflow-y-auto">
-              <table className="w-full font-mono text-xs">
-                <thead className="sticky top-0 z-10 bg-background">
-                  <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
-                    <th className="w-6 py-1 pl-1">
-                      <ScanButton
-                        symbols={sortedVisible.map((s) => s.symbol)}
-                        name={tab === 'All' ? 'All tracked stocks' : tab}
-                        source={tab === 'All' ? 'tracked' : `watchlist:${tab}`}
-                      />
-                    </th>
-                    <SortTh
-                      label="Symbol"
-                      k="symbol"
-                      sort={stockSort}
-                      onSort={setStockSort}
-                      align="left"
-                      first="asc"
-                    />
-                    <SortTh label="Price" k="price" sort={stockSort} onSort={setStockSort} />
-                    <SortTh label="Chg%" k="chg" sort={stockSort} onSort={setStockSort} />
-                    <SortTh label="Rpts" k="reports" sort={stockSort} onSort={setStockSort} />
-                    <SortTh label="Updated" k="updated" sort={stockSort} onSort={setStockSort} />
-                    <th className="w-16" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {sortedVisible.map((s) => (
-                    <tr
-                      key={s.symbol}
-                      className="cursor-pointer border-b border-border/40 last:border-0 hover:bg-muted/40"
-                      onClick={() =>
-                        navigate({
-                          to: '/stock/$exchange/$symbol',
-                          params: { exchange: 'NSE', symbol: s.symbol },
-                        })
-                      }
-                    >
-                      <td className="py-1 pl-1">
-                        <ChartButton symbol={s.symbol} />
-                      </td>
-                      <td className="px-2 py-1 font-semibold">{s.symbol}</td>
-                      <td className="px-2 py-1 text-right tabular-nums">{inr(s.price)}</td>
-                      <td className={`px-2 py-1 text-right tabular-nums ${pctClass(s.changePercent)}`}>
-                        {arrow(s.changePercent)} {signedPct(s.changePercent)}
-                      </td>
-                      <td className="px-2 py-1 text-right text-muted-foreground tabular-nums">
-                        {s.report_count}
-                      </td>
-                      <td className="px-2 py-1 text-right text-[10px] text-muted-foreground">
-                        {formatDate(s.last_scraped)}
-                      </td>
-                      <td className="px-1 py-1 text-right whitespace-nowrap">
-                        <WatchlistButton symbol={s.symbol} />
-                        <DeleteStockButton
-                          symbol={s.symbol}
-                          onDeleted={load}
-                          stopPropagation
-                          className="text-muted-foreground"
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {lists.map((name) => (
+            <div
+              key={name}
+              draggable
+              onDragStart={() => setDragName(name)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault()
+                dropOn(name)
+              }}
+              onDragEnd={() => setDragName(null)}
+              className={`flex cursor-grab items-center rounded transition-opacity active:cursor-grabbing ${
+                dragName === name ? 'opacity-40' : ''
+              }`}
+            >
+              <Button
+                variant={tab === name ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-6 font-mono text-[11px] uppercase"
+                onClick={() => setTab(name)}
+              >
+                {name}
+              </Button>
+              <WatchlistTabMenu
+                name={name}
+                stockCount={stockCountOf(name)}
+                onRenamed={(newName) => {
+                  load()
+                  setTab(newName)
+                }}
+                onDeleted={() => {
+                  load()
+                  setTab('All')
+                }}
+              />
             </div>
-          )}
-        </TerminalPanel>
+          ))}
+          <CreateWatchlistDialog
+            onCreated={(name) => {
+              load()
+              setTab(name)
+            }}
+          />
+        </div>
 
-        <MarketPulsePanel stocks={visible} />
-      </div>
+        {!stocks && <PanelLoading />}
 
-      <div className="grid gap-2 lg:grid-cols-3">
-        <AttentionPanel attention={attention} />
-        <EventsPanel events={events} />
-        <MoversPanel
-          data={moversQuery.data}
-          isFetching={moversQuery.isFetching}
-          onRefresh={async () => {
-            await getMarketMovers(true)
-            moversQuery.refetch()
-          }}
-        />
-      </div>
+        {visible?.length === 0 && (
+          <PanelEmpty>
+            {tab === 'All'
+              ? 'No stocks tracked yet — add one above, or ask the chat about an NSE ticker.'
+              : `Nothing in ${tab} yet — save a stock to it with the bookmark button.`}
+          </PanelEmpty>
+        )}
 
+        {visible && visible.length > 0 && (
+          // Scrolls past 600px so a long list doesn't push the panels below off the screen; the
+          // header stays put so the sort controls are always in reach.
+          <div className="h-[400px] overflow-y-auto">
+            <table className="w-full font-mono text-xs">
+              <thead className="sticky top-0 z-10 bg-background">
+                <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
+                  <th className="w-6 py-1 pl-1">
+                    <ScanButton
+                      symbols={sortedVisible.map((s) => s.symbol)}
+                      name={tab === 'All' ? 'All tracked stocks' : tab}
+                      source={tab === 'All' ? 'tracked' : `watchlist:${tab}`}
+                    />
+                  </th>
+                  <SortTh
+                    label="Symbol"
+                    k="symbol"
+                    sort={stockSort}
+                    onSort={setStockSort}
+                    align="left"
+                    first="asc"
+                  />
+                  <SortTh label="Price" k="price" sort={stockSort} onSort={setStockSort} />
+                  <SortTh label="Chg%" k="chg" sort={stockSort} onSort={setStockSort} />
+                  <SortTh label="Rpts" k="reports" sort={stockSort} onSort={setStockSort} />
+                  <SortTh label="Updated" k="updated" sort={stockSort} onSort={setStockSort} />
+                  <th className="w-16" />
+                </tr>
+              </thead>
+              <tbody>
+                {sortedVisible.map((s) => (
+                  <tr
+                    key={s.symbol}
+                    className="cursor-pointer border-b border-border/40 last:border-0 hover:bg-muted/40"
+                    onClick={() =>
+                      navigate({
+                        to: '/stock/$exchange/$symbol',
+                        params: { exchange: 'NSE', symbol: s.symbol },
+                      })
+                    }
+                  >
+                    <td className="py-1 pl-1">
+                      <ChartButton symbol={s.symbol} />
+                    </td>
+                    <td className="px-2 py-1 font-semibold">{s.symbol}</td>
+                    <td className="px-2 py-1 text-right tabular-nums">{inr(s.price)}</td>
+                    <td className={`px-2 py-1 text-right tabular-nums ${pctClass(s.changePercent)}`}>
+                      {arrow(s.changePercent)} {signedPct(s.changePercent)}
+                    </td>
+                    <td className="px-2 py-1 text-right text-muted-foreground tabular-nums">
+                      {s.report_count}
+                    </td>
+                    <td className="px-2 py-1 text-right text-[10px] text-muted-foreground">
+                      {formatDate(s.last_scraped)}
+                    </td>
+                    <td className="px-1 py-1 text-right whitespace-nowrap">
+                      <WatchlistButton symbol={s.symbol} />
+                      <DeleteStockButton
+                        symbol={s.symbol}
+                        onDeleted={load}
+                        stopPropagation
+                        className="text-muted-foreground"
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </TerminalPanel>
+    ),
+    pulse: <MarketPulsePanel stocks={visible} />,
+    attention: <AttentionPanel attention={attention} />,
+    events: <EventsPanel events={events} />,
+    movers: (
+      <MoversPanel
+        data={moversQuery.data}
+        isFetching={moversQuery.isFetching}
+        onRefresh={async () => {
+          await getMarketMovers(true)
+          moversQuery.refetch()
+        }}
+      />
+    ),
+    macro: (
       <MacroIndicesPanel
         data={macroQuery.data}
         isFetching={macroQuery.isFetching}
         onRefresh={() => macroQuery.refetch()}
       />
+    ),
+    sectors: <SectorPerformancePanel />,
+  }
+  const gridPanels = HOME_PANELS.filter((p) => p.layout && !hidden.includes(p.id))
 
-      <SectorPerformancePanel />
+  return (
+    <div className="space-y-2">
+      {editing && (
+        <div className="flex items-center gap-2 rounded-md border border-dashed border-primary/50 bg-primary/5 px-3 py-1.5 text-xs">
+          <MoveIcon className="size-3.5 text-primary" />
+          Editing the layout - drag a panel by its top bar, resize from its bottom-right corner.
+          <Button size="sm" className="ml-auto h-6 px-2 text-xs" onClick={() => setEditing(false)}>
+            Done
+          </Button>
+        </div>
+      )}
+      {!hidden.includes('ticker') && <TickerTape indices={indicesQuery.data} />}
 
-      <StatusBar
-        session={session}
-        latencyMs={latencyMs}
-        symbolCount={stocks?.length ?? 0}
-        stale={stocksQuery.isError || indicesQuery.isError}
-        lastUpdated={lastUpdated}
-      />
+      {gridPanels.length === 0 ? (
+        <PanelEmpty>Every panel is hidden - turn some back on from Customize.</PanelEmpty>
+      ) : (
+        <BoardGrid
+          panels={gridPanels.map((p) => ({ id: p.id, layout: layout[p.id] ?? p.layout! }))}
+          edit={editing}
+          // Only while editing: hiding a panel makes the grid close the gap, and that reflow must not
+          // overwrite where everything else was placed.
+          onLayoutChange={editing ? (next) => setLayout([...next]) : undefined}
+        >
+          {gridPanels.map((p) => (
+            // `*:h-full` makes the panel fill the cell the grid sized; its body scrolls inside it.
+            <div key={p.id} className="relative h-full *:h-full">
+              {editing && (
+                <div className="panel-drag absolute inset-x-0 top-0 z-20 flex h-8 cursor-move items-center gap-1.5 rounded-t-md border border-dashed border-primary/60 bg-primary/15 px-2 text-[11px] font-medium backdrop-blur-sm">
+                  <MoveIcon className="size-3" />
+                  {p.label}
+                  <button
+                    type="button"
+                    className="panel-action ml-auto rounded p-0.5 hover:bg-background/60"
+                    aria-label={`Hide ${p.label}`}
+                    title="Hide this panel"
+                    onClick={() => setHidden(p.id, true)}
+                  >
+                    <EyeOffIcon className="size-3.5" />
+                  </button>
+                </div>
+              )}
+              {panels[p.id]}
+            </div>
+          ))}
+        </BoardGrid>
+      )}
+
+      {!hidden.includes('status') && (
+        <StatusBar
+          session={session}
+          latencyMs={latencyMs}
+          symbolCount={stocks?.length ?? 0}
+          stale={stocksQuery.isError || indicesQuery.isError}
+          lastUpdated={lastUpdated}
+        />
+      )}
     </div>
   )
 }

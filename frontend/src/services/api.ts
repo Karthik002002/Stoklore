@@ -106,6 +106,9 @@ export type PaperPosition = {
   stop_losses: { id: string; price: number; qty: number }[]
   targets: { id: string; price: number; qty: number }[]
   notes: string | null
+  /** When it filled (ISO, IST); null while a limit order is still resting. */
+  opened_at: string | null
+  created_at: string
   /** Filled in by the positions endpoint from the quote cache, so it can be absent. */
   sector?: string | null
   current_price: number | null
@@ -1592,6 +1595,22 @@ export const modifyPaperPosition = (id: number, payload: PaperModifyRequest) =>
 
 /** What a close answers with: the price it went out at, and the journal rows it wrote. */
 export type PaperClosed = { closed_at: number; trade_ids: number[] }
+
+/** Move an open paper position to another paper account. */
+export const movePaperPosition = (id: number, accountId: number) =>
+  fetch(`/api/paper/positions/${id}/account`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account_id: accountId }),
+  }).then(json<{ ok: boolean; account: string }>)
+
+/** Move a closed paper trade to another paper account. */
+export const movePaperTrade = (id: number, accountId: number) =>
+  fetch(`/api/paper/trades/${id}/account`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account_id: accountId }),
+  }).then(json<{ ok: boolean; account: string }>)
 
 export const closePaperPosition = (id: number, quantity?: number | null) =>
   fetch(`/api/paper/positions/${id}/close`, {

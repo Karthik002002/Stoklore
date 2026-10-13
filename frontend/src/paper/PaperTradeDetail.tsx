@@ -26,6 +26,7 @@ import { accountFor, accountsById, tradeCosts, tradeNetPnl } from '@/lib/tradeCo
 import { excursionReading } from '@/lib/tradeContext'
 import ReplayChart from '@/features/bar-replay/ReplayChart'
 import { useBarReplayStore } from '@/features/bar-replay/store'
+import { BUY_COLOR, SELL_COLOR } from '@/lib/entryMarker'
 import type { ChartMarker } from '@/features/bar-replay/ReplayChart'
 import type { ReplayBar, ReplayOrder } from '@/features/bar-replay/store'
 import type { DailyBar, Trade } from '@/lib/types'
@@ -71,12 +72,10 @@ const asOrder = (trade: Trade): ReplayOrder => ({
   targets: trade.target == null ? [] : [{ id: 'target', price: trade.target, qty: trade.quantity }],
 })
 
-const ENTRY_COLOR = '#3b82f6'
-const EXIT_COLOR = '#a855f7'
-
 /** What an order cannot say: WHEN each end happened. Arrows on the entry and exit bars, the way a
- *  charting package marks a fill - the direction of the arrow is the side, and the label carries
- *  the size and the price so the exit needs no line of its own.
+ *  charting package marks a fill: a bare arrow, green for the buy and red for the sell, pointing
+ *  the way the trade went. No text - over the candles it only got in the way, and the size and
+ *  prices are in the panel.
  *
  *  The bar a trade landed on is the first one at or after its date: a trade dated on a holiday or
  *  a weekend has no bar of its own. */
@@ -97,8 +96,8 @@ const tradeMarkers = (trade: Trade, bars: ReplayBar[]): ChartMarker[] => {
       // labels on one candle.
       position: 'belowBar',
       shape: long ? 'arrowUp' : 'arrowDown',
-      color: ENTRY_COLOR,
-      text: `${long ? 'Buy' : 'Sell'} ${trade.quantity} @ ${inr(trade.entry_price)}`,
+      color: long ? BUY_COLOR : SELL_COLOR,
+      size: 1.6,
     })
   }
 
@@ -108,8 +107,8 @@ const tradeMarkers = (trade: Trade, bars: ReplayBar[]): ChartMarker[] => {
       time: exitBar.time,
       position: 'aboveBar',
       shape: long ? 'arrowDown' : 'arrowUp',
-      color: EXIT_COLOR,
-      text: `${long ? 'Sell' : 'Buy'} ${trade.quantity} @ ${inr(trade.exit_price)}`,
+      color: long ? SELL_COLOR : BUY_COLOR,
+      size: 1.6,
     })
   }
   return out

@@ -49,6 +49,14 @@ waiting out the poll interval.
   config Bar Replay edits - see [Chart templates](bar-replay.md#chart-templates)), and the position's numbers (current, value,
   unrealised, stop, target, R:R) float in the top-left under the OHLCV legend.
   Click its header to collapse it to one line - side, size @ entry, P&L.
+  An **entry arrow** marks the candle the position filled on - a bare arrow, green for a buy (below
+  the candle) and red for a sell (above it); size and fill price are in the panel. The closed
+  trade's page marks both ends the same way. A resting limit has none yet.
+- **Move** re-files a position under another paper account (a menu of your other paper accounts) -
+  for a trade placed on the wrong account. Nothing else about it changes; its cash counts against
+  the new account from then on. Closed trades on the Trades tab have the same **Move**, and their
+  P&L then counts toward the new account's balance and stats. Only paper accounts are offered:
+  a paper trade can't be moved into the journal or a live account.
 - **Modify** edits the ladder in place — add, retune, or remove levels on a
   live position.
 - **Close** exits the whole position at the current quote, immediately. A
@@ -64,8 +72,8 @@ drawdown, and an equity curve of realized P&L day by day.
   Bar Replay chart the open-position page uses, with your indicators and chart
   settings, so a trade doesn't look like a different instrument once it closed.
   The entry, stop and target are drawn as the order's own levels; the entry and
-  exit are **arrows on their own bars**, labelled with the side, the size and
-  the price — a level says where something happened but never when, which for a
+  exit are **arrows on their own bars** (green buy, red sell, no text over the
+  candles) — a level says where something happened but never when, which for a
   finished trade is half the story. The chart is
   read-only here — no dragging a level, no editing a leg's quantity, no
   right-click menu, and the pills carry no buttons. A closed trade is a record,
@@ -114,6 +122,10 @@ saved in Bar Replay. On it you get:
   Targets as collapsible ladders - each rung with its % from entry, a new rung pre-filled with the
   uncovered quantity - and a footer that stays in view with value, % of cash, risk (and % of
   wallet), reward and the ladder's weighted R. Paper orders go straight in, no confirmation.
+  **Right-click the chart → Trade here**: *Buy limit* / *Sell limit* at the price under the
+  pointer, or *Buy* / *Sell at market*. It fills the ticket (opening it if hidden) with the side,
+  type and price and puts the cursor in Quantity - the chart never sends an order by itself, and
+  a live one still asks for confirmation.
   The icon beside the picker hides the ticket. With Dhan credentials saved the picker
   also offers **Dhan · live**: the ticket becomes the real-money one (with a confirmation before
   sending - see [Live trading](live-trading.md#using-it)), the chart's corner shows your Dhan

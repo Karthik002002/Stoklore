@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import type { UseFormReturn } from 'react-hook-form'
 import { useFieldArray, useForm } from 'react-hook-form'
@@ -8,6 +8,7 @@ import { FileSpreadsheetIcon, PlusIcon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { F, Seg, TicketFooter } from '@/components/OrderTicketParts'
 import { cn } from '@/lib/utils'
+import MoveToAccount from './MoveToAccount'
 import SymbolCombobox from '@/components/SymbolCombobox'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -21,6 +22,7 @@ import { fmt, formatDateTime, inr } from '@/lib/format'
 import { tradePnl, tradeReturnPct } from '@/lib/manualTrades'
 import { accountFor, accountHasCosts, accountsById, tradeCosts, tradeNetPnl } from '@/lib/tradeCosts'
 import { paperOrderSchema } from '@/lib/schemas'
+import { consumePrefill, toTick, useTicketPrefill } from '@/lib/ticketPrefill'
 import { accountBalance, tradesForAccount } from '@/lib/tradeAccounts'
 import { riskReward } from '@/features/bar-replay/orderEngine'
 import type { z } from 'zod'
@@ -296,6 +298,19 @@ export function OrderPanel({
     'limitPrice',
   ])
   const f = useOrderFigures(form, accountId)
+
+  // A chart's right-click "Buy/Sell here": side, type and price filled in, the cursor in Quantity.
+  const prefill = useTicketPrefill((s) => s.prefill)
+  useEffect(() => {
+    if (!prefill || (symbol && prefill.symbol !== symbol)) return
+    if (!symbol) form.setValue('symbol', prefill.symbol)
+    form.setValue('direction', prefill.direction)
+    form.setValue('orderType', prefill.price == null ? 'market' : 'limit')
+    if (prefill.price != null) form.setValue('limitPrice', toTick(prefill.price))
+    consumePrefill()
+    // after the limit field has rendered
+    requestAnimationFrame(() => form.setFocus('quantity'))
+  }, [prefill, symbol, form])
   const errors = form.formState.errors
   const buy = direction === 'long'
   const shown = symbol ?? typedSymbol
@@ -571,6 +586,7 @@ function HistoryLog({ trades, accountId }: { trades: Trade[]; accountId: number 
                 </TableHead>
               )}
               <TableHead className="text-right">Return</TableHead>
+              <TableHead className="w-20" />
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -621,6 +637,14 @@ function HistoryLog({ trades, accountId }: { trades: Trade[]; accountId: number 
                     className={`text-right tabular-nums ${(ret ?? 0) >= 0 ? 'text-up' : 'text-down'}`}
                   >
                     {ret == null ? '—' : `${ret}%`}
+                  </TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <MoveToAccount
+                      kind="trade"
+                      id={t.id}
+                      symbol={t.symbol}
+                      currentAccountId={t.account_id ?? null}
+                    />
                   </TableCell>
                 </TableRow>
               )

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { AlertTriangleIcon, ChevronRightIcon } from 'lucide-react'
@@ -20,6 +20,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { fmt, inr } from '@/lib/format'
 import { positionSize, ticketErrors } from '@/lib/liveSizing'
 import { cn } from '@/lib/utils'
+import { consumePrefill, toTick, useTicketPrefill } from '@/lib/ticketPrefill'
 import { F, PriceField, Seg, TicketFooter, num } from '@/components/OrderTicketParts'
 import type { LiveOrderRequest } from '@/services/api'
 import { getLiveStatus, getStockDetail, placeLiveOrder, updateLiveSettings } from '@/services/api'
@@ -88,6 +89,20 @@ export default function LiveOrderTicket({
   const [target, setTarget] = useState('')
   const [trail, setTrail] = useState('')
   const [confirming, setConfirming] = useState<LiveOrderRequest | null>(null)
+  const qtyRef = useRef<HTMLInputElement>(null)
+
+  // A chart's right-click "Buy/Sell here": side, type and price filled in, the cursor in Quantity.
+  // Nothing is sent - the confirmation still comes after Review.
+  const prefill = useTicketPrefill((s) => s.prefill)
+  useEffect(() => {
+    if (!prefill || (fixed && prefill.symbol !== fixed)) return
+    if (!fixed) setPicked(prefill.symbol)
+    setDirection(prefill.direction)
+    setOrderType(prefill.price == null ? 'MARKET' : 'LIMIT')
+    if (prefill.price != null) setPrice(toTick(prefill.price))
+    consumePrefill()
+    requestAnimationFrame(() => qtyRef.current?.focus())
+  }, [prefill, fixed])
 
   const { data: detail } = useQuery({
     queryKey: ['stockDetail', symbol],
@@ -304,6 +319,7 @@ export default function LiveOrderTicket({
             step="1"
             inputMode="numeric"
             placeholder="0"
+            ref={qtyRef}
             value={qty}
             onChange={(e) => setQty(e.target.value)}
             className="h-8 tabular-nums"

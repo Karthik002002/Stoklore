@@ -8,6 +8,7 @@ from app.core import paper
 
 from app.core.config import DIRECTIONS, IST
 from app.schemas import (
+    PaperMoveRequest,
     PaperCloseRequest,
     PaperModifyRequest,
     PaperOrderRequest,
@@ -128,6 +129,43 @@ def modify_paper_position(position_id: int, req: PaperModifyRequest):
         fields["initial_stop_loss"] = paper.nearest_stop(stops, position["entry_price"])
     db.update_paper_position(position_id, **fields)
     return {"ok": True}
+
+
+def _paper_account(account_id):
+    """The paper account a move goes to - refused if it isn't one. A paper trade filed under a journal
+    or live account would turn practice into the record of real trading."""
+    account = next((a for a in db.list_trade_accounts("paper") if a["id"] == account_id), None)
+    if not account:
+        raise HTTPException(status_code=422, detail="that isn't a paper account")
+    return account
+
+
+@router.put("/api/paper/positions/{position_id}/account")
+def move_paper_position(position_id: int, req: PaperMoveRequest):
+    """Move an open (or resting) paper position to another paper account. Nothing about the position
+    changes but whose it is: its cash is committed against the new account from here on."""
+    position = db.get_paper_position(position_id)
+    if not position:
+        raise HTTPException(status_code=404, detail="no such paper position")
+    account = _paper_account(req.account_id)
+    if position["account_id"] != req.account_id:
+        db.update_paper_position(position_id, account_id=req.account_id)
+    return {"ok": True, "account": account["name"]}
+
+
+@router.put("/api/paper/trades/{trade_id}/account")
+def move_paper_trade(trade_id: int, req: PaperMoveRequest):
+    """Move a closed paper trade (a journal row tagged 'paper') to another paper account - its P&L
+    then counts toward that account's balance and stats instead."""
+    trade = db.get_manual_trade(trade_id)
+    if not trade:
+        raise HTTPException(status_code=404, detail="no such trade")
+    if "paper" not in (trade.get("tags") or []):
+        raise HTTPException(status_code=422, detail="only paper trades move between paper accounts")
+    account = _paper_account(req.account_id)
+    if trade["account_id"] != req.account_id:
+        db.set_manual_trade_account(trade_id, req.account_id)
+    return {"ok": True, "account": account["name"]}
 
 
 @router.post("/api/paper/positions/{position_id}/close")

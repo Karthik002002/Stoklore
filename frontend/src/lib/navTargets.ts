@@ -3,6 +3,7 @@ import {
   BellIcon,
   BotIcon,
   CandlestickChartIcon,
+  ChartLineIcon,
   ChartNoAxesCombinedIcon,
   CpuIcon,
   FlaskConicalIcon,
@@ -24,6 +25,7 @@ import {
 // from their own pages, or here by typing @SYMBOL.
 export const PAGES: { icon: typeof LayoutDashboardIcon; label: string; to: LinkProps['to'] }[] = [
   { icon: LayoutDashboardIcon, label: 'Stocks', to: '/' },
+  { icon: ChartLineIcon, label: 'Chart', to: '/chart' },
   { icon: SettingsIcon, label: 'Settings', to: '/settings' },
   { icon: NewspaperIcon, label: 'Events', to: '/events' },
   { icon: TrendingUpIcon, label: 'Top news', to: '/top-news' },

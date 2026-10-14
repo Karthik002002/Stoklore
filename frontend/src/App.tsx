@@ -1,7 +1,8 @@
-import { Link, Outlet } from '@tanstack/react-router'
+import { Link, Outlet, useRouterState } from '@tanstack/react-router'
 import {
   IconBolt,
   IconChartCandle,
+  IconChartLine,
   IconChevronRight,
   IconLayoutSidebarLeftCollapse,
   IconChartHistogram,
@@ -46,6 +47,7 @@ type NavItem = { to: LinkProps['to']; icon: ComponentType<{ className?: string }
 
 const NAV_ITEMS: NavItem[] = [
   { to: '/', icon: IconLayoutDashboard, label: 'Stocks' },
+  { to: '/chart', icon: IconChartLine, label: 'Chart' },
   { to: '/events', icon: IconNews, label: 'Events' },
   { to: '/top-news', icon: IconTrendingUp, label: 'Top news' },
   { to: '/holdings', icon: IconWallet, label: 'Holdings' },
@@ -152,7 +154,10 @@ function App() {
     queryFn: getEngineSettings,
     select: (s) => s.name,
   })
-  const isBarReplay = window.location.pathname.includes('/backtest/replay')
+  // Full-screen workspaces whose bottom-right corner is taken (Bar Replay's controls, the chart page's
+  // watchlist) get no floating chat button. Read from the router, so it follows navigation.
+  const pathname = useRouterState({ select: (st) => st.location.pathname })
+  const hideChat = pathname.includes('/backtest/replay') || pathname === '/chart'
   return (
     <TooltipProvider>
       <LoginGate>
@@ -206,7 +211,12 @@ function App() {
                 <SignOutButton />
               </TooltipIcon>
               <TooltipIcon label={`Hide sidebar (${sidebarKey})`}>
-                <Button variant="ghost" size="icon" aria-label="Hide sidebar" onClick={() => setSidebarHidden(true)}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="Hide sidebar"
+                  onClick={() => setSidebarHidden(true)}
+                >
                   <IconLayoutSidebarLeftCollapse className="size-4" />
                 </Button>
               </TooltipIcon>
@@ -224,7 +234,7 @@ function App() {
         </div>
 
         <ActivityTracker />
-        {!isBarReplay && <ChatWidget />}
+        {!hideChat && <ChatWidget />}
         <CommandPalette />
         <ChartModal />
         <VoiceCapture />

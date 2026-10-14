@@ -7,7 +7,7 @@
 //     fell hard / fell / held / rose / rose hard), the members as a cap-weighted heat strip, and
 //     its best and worst member;
 //  3. the row opened: every member as a tile, sized and coloured the same way.
-import { Fragment, useState } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRightIcon, RefreshCwIcon } from 'lucide-react'
 import { openChart } from '@/components/ChartModal'
@@ -17,6 +17,7 @@ import SortTh from '@/components/SortTh'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { fmt } from '@/lib/format'
+import { dockLayout } from '@/lib/dock'
 import { breadth, bucketShares, croreShort, heatColor, sectorSummary } from '@/lib/sectors'
 import { sortRows } from '@/lib/sortRows'
 import type { Sort } from '@/lib/sortRows'
@@ -182,17 +183,46 @@ function MemberName({ m, sector }: { m: SectorMember; sector: Sector }) {
 /** The members as one strip, each as wide as its share of the sector's market cap - so a sector
  *  carried by one giant reads differently from one that rose across the board. The long tail of
  *  tiny members is folded into the end of the strip. */
+// Dock magnification: segments near the pointer swell with a Gaussian falloff, so the slivers at
+// the tail of a strip become wide enough to see and hover. Pure: `dockLayout` in lib/dock.ts.
+const DOCK_HEIGHT = 10 // px added to the height at the pointer
+
 function MemberStrip({ sector }: { sector: Sector }) {
   const shown = sector.members.slice(0, 40)
+  const ref = useRef<HTMLDivElement>(null)
+  const [pointer, setPointer] = useState<{ x: number; width: number } | null>(null)
+
+  const weights = shown.map((m) => Math.max(m.mcap_cr ?? 0, 1))
+  const { widths, swell, focus } = dockLayout(weights, pointer?.x ?? null, pointer?.width ?? 0)
+
   return (
-    <div className="flex h-3 w-full gap-px overflow-hidden rounded-sm bg-muted/40">
-      {shown.map((m) => (
+    <div
+      ref={ref}
+      onMouseMove={(e) => {
+        const r = ref.current?.getBoundingClientRect()
+        if (r) setPointer({ x: e.clientX - r.left, width: r.width })
+      }}
+      onMouseLeave={() => setPointer(null)}
+      // no `gap`: it would take px the dock layout doesn't know about and shift every segment off
+      // the computed position; each segment draws its own 1px separator inside itself instead
+      className={cn('relative flex h-3 w-full items-center rounded-sm', pointer && 'z-20')}
+    >
+      {shown.map((m, i) => (
         <div
           key={m.id ?? m.name}
           {...hoverProps({ kind: 'member', m, sector })}
           onClick={chartOf(m)}
-          className={cn(m.symbol && 'cursor-pointer hover:brightness-125')}
-          style={{ flexGrow: Math.max(m.mcap_cr ?? 0, 1), flexBasis: 0, background: heatColor(m.change_pct) }}
+          className={cn(
+            'min-w-0 rounded-[2px] shadow-[inset_-1px_0_0_var(--background)] transition-[flex-grow,height] duration-75 ease-out',
+            m.symbol && 'cursor-pointer',
+            i === focus && 'ring-1 ring-foreground/60',
+          )}
+          style={{
+            flexGrow: widths[i],
+            flexBasis: 0,
+            height: 12 + swell[i] * DOCK_HEIGHT,
+            background: heatColor(m.change_pct),
+          }}
         />
       ))}
     </div>

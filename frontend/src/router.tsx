@@ -23,6 +23,7 @@ import BarReplay from './features/bar-replay'
 import EventsFeed from './EventsFeed'
 import Holdings from './Holdings'
 import PaperTrading from './paper/PaperTrading'
+import ChartPage from './ChartPage'
 import PaperPositionChart from './paper/PaperPositionChart'
 import PaperTradeDetail from './paper/PaperTradeDetail'
 import LiveTrading from './live/LiveTrading'
@@ -246,6 +247,18 @@ const paperPositionRoute = createRoute({
   path: '/paper/$symbol',
   validateSearch: (search): { account?: number } => ({ account: numeric(search.account) }),
   component: PaperPositionChart,
+})
+
+// A TradingView-style workspace: the chart with your watchlists in a sidebar (ChartPage). The
+// stock and the list ride in the URL so a reload, or a link, lands on the same chart.
+const chartRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/chart',
+  validateSearch: (search): { symbol?: string; list?: string } => ({
+    symbol: typeof search.symbol === 'string' && search.symbol ? search.symbol.toUpperCase() : undefined,
+    list: typeof search.list === 'string' && search.list ? search.list : undefined,
+  }),
+  component: ChartPage,
 })
 
 // One finished trade, on the bars it happened on. Keyed by the journal row's id, not by symbol:
@@ -575,6 +588,7 @@ const dashboardRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  chartRoute,
   settingsRoute,
   stockRoute,
   legacyStockRoute,

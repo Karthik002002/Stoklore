@@ -4,6 +4,9 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { HOME_PANELS, useHomeLayout } from '@/lib/homeLayout'
 import { cn } from '@/lib/utils'
 
+/** An on/off switch. Explicit size, padding and knob offsets - a <button> brings its own padding,
+ *  and an absolutely placed knob with no `left` lands wherever that padding leaves it. On, the track
+ *  takes the primary colour and the knob the colour drawn on primary, so it reads in both themes. */
 function Switch({
   checked,
   onChange,
@@ -19,16 +22,19 @@ function Switch({
       role="switch"
       aria-checked={checked}
       aria-label={label}
-      onClick={() => onChange(!checked)}
+      onClick={(e) => {
+        e.preventDefault() // inside a <label>: don't let it click us a second time
+        onChange(!checked)
+      }}
       className={cn(
-        'relative h-4 w-7 shrink-0 rounded-full transition-colors',
-        checked ? 'bg-primary' : 'bg-muted-foreground/30',
+        'relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border p-0 transition-colors',
+        checked ? 'border-primary bg-primary' : 'border-input bg-muted',
       )}
     >
       <span
         className={cn(
-          'absolute top-0.5 size-3 rounded-full bg-white shadow transition-transform',
-          checked ? 'translate-x-3.5' : 'translate-x-0.5',
+          'pointer-events-none absolute top-1/2 left-0.5 size-3.5 -translate-y-1/2 rounded-full shadow-sm transition-transform',
+          checked ? 'translate-x-4 bg-primary-foreground' : 'translate-x-0 bg-foreground/70',
         )}
       />
     </button>
@@ -64,21 +70,26 @@ export default function HomeCustomizeSheet({
         </div>
 
         <div className="border-b p-4">
-          <label className="flex items-start gap-3">
-            <Switch checked={editing} onChange={setEditing} label="Edit layout" />
-            <span className="text-sm">
+          <label
+            className={cn(
+              'flex cursor-pointer items-center gap-3 rounded-md border p-3 transition-colors',
+              editing ? 'border-primary/50 bg-primary/5' : 'hover:bg-muted/50',
+            )}
+          >
+            <span className="min-w-0 flex-1 text-sm">
               <span className="flex items-center gap-1.5 font-medium">
                 <MoveIcon className="size-3.5" /> Edit layout
               </span>
-              <span className="block text-xs text-muted-foreground">
-                Drag a panel by its top bar, resize it from the bottom-right corner. Turn off when done.
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                Drag a panel by its top bar, resize it from the bottom-right corner.
               </span>
             </span>
+            <Switch checked={editing} onChange={setEditing} label="Edit layout" />
           </label>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto p-2">
-          <p className="px-2 pt-1 pb-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+        <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
+          <p className="px-2 pb-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
             Panels
           </p>
           {HOME_PANELS.map((p) => {
@@ -86,15 +97,23 @@ export default function HomeCustomizeSheet({
             return (
               <label
                 key={p.id}
-                className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-2 hover:bg-muted/50"
+                className="flex cursor-pointer items-center gap-3 rounded-md px-2 py-2.5 hover:bg-muted/50"
               >
-                <Switch checked={on} onChange={(v) => setHidden(p.id, !v)} label={`Show ${p.label}`} />
-                <span className={cn('min-w-0 flex-1', !on && 'opacity-60')}>
-                  <span className="block text-sm font-medium">{p.label}</span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {p.layout ? p.hint : `${p.hint} · full-width strip`}
+                <span className={cn('min-w-0 flex-1 transition-opacity', !on && 'opacity-50')}>
+                  <span className="flex items-center gap-1.5 text-sm font-medium">
+                    {p.label}
+                    {!p.layout && (
+                      <span
+                        className="rounded border px-1 text-[10px] font-normal text-muted-foreground"
+                        title="A full-width strip outside the grid - it can be shown or hidden, not moved"
+                      >
+                        strip
+                      </span>
+                    )}
                   </span>
+                  <span className="block truncate text-xs text-muted-foreground">{p.hint}</span>
                 </span>
+                <Switch checked={on} onChange={(v) => setHidden(p.id, !v)} label={`Show ${p.label}`} />
               </label>
             )
           })}

@@ -169,6 +169,13 @@ to guard rails you can see and control.
 ### `1` Live Dashboard & Watchlists
 
 - **NIFTY 50 / SENSEX** index cards with a live sparkline chart on the home page
+- **Chart page** (`/chart`, the chart icon in the sidebar) — a TradingView-style workspace: the
+  shared chart (indicators, template, timeframe, alerts, your paper positions) fills the screen and
+  your watchlists sit in a sidebar on the right - pick a list, add a symbol (tracked first if it
+  isn't), remove one, sort by Last / Chg / Chg%, and click a row or press ↑ / ↓ to chart it. Under
+  the list, the selected stock's card: price and change, its 52-week range, previous close, volume
+  against its average, market cap and P/E. **Trade** (or right-click → Buy/Sell here) opens the
+  chart modal's order ticket. The stock and list are in the URL and remembered for next time
 - **Customizable home** — **Customize** (beside the Home / My board tabs) opens a sheet from the
   right: a switch per panel to show or hide it (the ticker tape and status bar too), **Edit layout**
   to drag panels by their top bar and resize them from the corner on the same 12-column grid
@@ -180,7 +187,10 @@ to guard rails you can see and control.
   down >2% / down / flat / up / up >2%), its members as a cap-weighted heat strip, and its best and
   worst member; and, on opening a row (or clicking its tile), every member company as a tile. The
   header line sums the day: sectors up/down, the cap-weighted market move, best and worst sector.
-  A filter finds a sector or a company in it. The table scrolls past 600px. ET names companies but
+  A filter finds a sector or a company in it. The table scrolls past 600px. A **Sort** menu orders
+  the sector map (market cap, change, breadth, members, name) and, separately, an opened sector's
+  member tiles (market cap, change, volume, price, name) - each either way, remembered per browser;
+  tile size stays market cap whatever the order. ET names companies but
   sends no ticker, so each member is matched to the stocks master by name (exact after normalising
   case, punctuation, spacing, plurals, '&', 'Ltd', '(I)' - NSE first, else BSE; ~92% of NSE
   members, 198 of the 200 largest); a matched member's tile, strip segment or best/worst name opens

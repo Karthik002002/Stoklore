@@ -1327,8 +1327,19 @@ export default function StocksList() {
           onLayoutChange={editing ? (next) => setLayout([...next]) : undefined}
         >
           {gridPanels.map((p) => (
-            // `*:h-full` makes the panel fill the cell the grid sized; its body scrolls inside it.
-            <div key={p.id} className="relative h-full *:h-full">
+            // The grid item. react-grid-layout appends its resize handle as a child of this div, so
+            // nothing here may style children wholesale - an earlier `*:h-full` stretched the handle
+            // and the drag bar over the whole panel. The handle is raised above the panel content.
+            <div
+              key={p.id}
+              className={cn(
+                'relative [&>.react-resizable-handle]:z-30',
+                // while editing: an outline round the cell and a visible corner to resize from -
+                // the library's own handle is a dark triangle that disappears on the dark theme
+                editing &&
+                  'rounded-md outline outline-dashed outline-1 outline-primary/50 [&>.react-resizable-handle]:size-5 [&>.react-resizable-handle]:rounded-tl-md [&>.react-resizable-handle]:bg-primary/70',
+              )}
+            >
               {editing && (
                 <div className="panel-drag absolute inset-x-0 top-0 z-20 flex h-8 cursor-move items-center gap-1.5 rounded-t-md border border-dashed border-primary/60 bg-primary/15 px-2 text-[11px] font-medium backdrop-blur-sm">
                   <MoveIcon className="size-3" />
@@ -1344,7 +1355,8 @@ export default function StocksList() {
                   </button>
                 </div>
               )}
-              {panels[p.id]}
+              {/* the panel fills the cell the grid sized; its body scrolls inside it */}
+              <div className="h-full *:h-full">{panels[p.id]}</div>
             </div>
           ))}
         </BoardGrid>

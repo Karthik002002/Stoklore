@@ -72,6 +72,102 @@ const chartOf = (m: SectorMember) => (e: React.MouseEvent) => {
   openChart(m.symbol)
 }
 
+// How tiles can be ordered: every field either way. The tile's SIZE stays market cap whatever the
+// order - only where it sits changes.
+type TileSort = { key: string; dir: 'asc' | 'desc' }
+const MEMBER_SORTS: [string, string][] = [
+  ['mcap:desc', 'Market cap · largest first'],
+  ['mcap:asc', 'Market cap · smallest first'],
+  ['change:desc', 'Change · top gainers first'],
+  ['change:asc', 'Change · top losers first'],
+  ['volume:desc', 'Volume · highest first'],
+  ['volume:asc', 'Volume · lowest first'],
+  ['price:desc', 'Price · highest first'],
+  ['price:asc', 'Price · lowest first'],
+  ['name:asc', 'Name · A → Z'],
+  ['name:desc', 'Name · Z → A'],
+]
+const SECTOR_SORTS: [string, string][] = [
+  ['mcap:desc', 'Market cap · largest first'],
+  ['mcap:asc', 'Market cap · smallest first'],
+  ['change:desc', 'Change · top gainers first'],
+  ['change:asc', 'Change · top losers first'],
+  ['breadth:desc', 'Breadth · most advancing first'],
+  ['breadth:asc', 'Breadth · most declining first'],
+  ['members:desc', 'Members · most first'],
+  ['members:asc', 'Members · fewest first'],
+  ['name:asc', 'Name · A → Z'],
+  ['name:desc', 'Name · Z → A'],
+]
+const MEMBER_FIELDS = {
+  mcap: (m: SectorMember) => m.mcap_cr,
+  change: (m: SectorMember) => m.change_pct,
+  volume: (m: SectorMember) => m.volume_k,
+  price: (m: SectorMember) => m.price,
+  name: (m: SectorMember) => m.name,
+}
+const SECTOR_FIELDS = {
+  mcap: (s: Sector) => s.mcap_cr,
+  change: (s: Sector) => s.change_pct,
+  breadth: (s: Sector) => breadth(s),
+  members: (s: Sector) => s.members.length,
+  name: (s: Sector) => s.name,
+}
+const parseSort = (v: string): TileSort => {
+  const [key, dir] = v.split(':')
+  return { key, dir: dir === 'asc' ? 'asc' : 'desc' }
+}
+
+/** A tile order, kept in this browser so the panel opens the way it was left. */
+function useTileSort(storageKey: string): [TileSort, (v: string) => void] {
+  const [value, setValue] = useState(() => {
+    try {
+      return localStorage.getItem(storageKey) ?? 'mcap:desc'
+    } catch {
+      return 'mcap:desc'
+    }
+  })
+  const set = (v: string) => {
+    setValue(v)
+    try {
+      localStorage.setItem(storageKey, v)
+    } catch {
+      // private window: kept for this visit
+    }
+  }
+  return [parseSort(value), set]
+}
+
+function SortSelect({
+  value,
+  options,
+  onChange,
+  label,
+}: {
+  value: TileSort
+  options: [string, string][]
+  onChange: (v: string) => void
+  label: string
+}) {
+  return (
+    <label className="flex items-center gap-1 normal-case" onClick={(e) => e.stopPropagation()}>
+      <span className="text-muted-foreground">Sort</span>
+      <select
+        value={`${value.key}:${value.dir}`}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={label}
+        className="h-6 rounded border bg-background px-1 font-mono text-[10px] text-foreground"
+      >
+        {options.map(([v, text]) => (
+          <option key={v} value={v}>
+            {text}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
+
 /** A member's name - a link to its chart when it has a symbol, plain text when it doesn't. */
 function MemberName({ m, sector }: { m: SectorMember; sector: Sector }) {
   const hover = hoverProps({ kind: 'member', m, sector })
@@ -105,8 +201,16 @@ function MemberStrip({ sector }: { sector: Sector }) {
 
 /** Every member of an opened sector as a tile, sized by market cap (square-rooted, so the giants
  *  don't crush the rest out of view) and coloured by its move. */
-function MemberTiles({ sector }: { sector: Sector }) {
-  const members = sector.members
+function MemberTiles({
+  sector,
+  sort,
+  onSort,
+}: {
+  sector: Sector
+  sort: TileSort
+  onSort: (v: string) => void
+}) {
+  const members = sortRows(sector.members, sort, MEMBER_FIELDS)
   const up = members.filter((m) => (m.change_pct ?? 0) > 0).length
   const down = members.filter((m) => (m.change_pct ?? 0) < 0).length
   const ranked = [...members]
@@ -131,8 +235,11 @@ function MemberTiles({ sector }: { sector: Sector }) {
             <span className={pctClass(ranked.at(-1)!.change_pct)}>{pctText(ranked.at(-1)!.change_pct)}</span>
           </span>
         )}
-        <span className="ml-auto normal-case">
-          tile size = market cap · colour = today's move · click a tile for its chart
+        <span className="ml-auto flex items-center gap-3 normal-case">
+          <span className="hidden xl:inline">
+            size = market cap · colour = today's move · click for chart
+          </span>
+          <SortSelect value={sort} options={MEMBER_SORTS} onChange={onSort} label="Sort members" />
         </span>
       </div>
       <div className="flex flex-wrap gap-0.5">
@@ -171,6 +278,9 @@ export default function SectorPerformancePanel() {
   const [sort, setSort] = useState<Sort>(null)
   const [open, setOpen] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState('')
+  // one order for every opened sector's members, one for the sector map - both remembered
+  const [memberSort, setMemberSort] = useTileSort('sectors.memberSort')
+  const [mapSort, setMapSort] = useTileSort('sectors.mapSort')
   const { data, isPending, isFetching, isError, error, refetch } = useQuery({
     queryKey: ['sectors', exchange],
     queryFn: () => getSectors(exchange),
@@ -285,31 +395,38 @@ export default function SectorPerformancePanel() {
           </div>
 
           {/* the map: every sector, sized by market cap, coloured by its day; click opens its row */}
+          <div className="flex items-center justify-between gap-2 px-2 pt-1.5 font-mono text-[10px] text-muted-foreground uppercase">
+            <span>Sector map · size = market cap</span>
+            <SortSelect
+              value={mapSort}
+              options={SECTOR_SORTS}
+              onChange={setMapSort}
+              label="Sort the sector map"
+            />
+          </div>
           <div className="flex flex-wrap gap-0.5 border-b p-1.5">
-            {[...sectors]
-              .sort((a, b) => (b.mcap_cr ?? 0) - (a.mcap_cr ?? 0))
-              .map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => toggle(s.id)}
-                  {...hoverProps({ kind: 'sector', s })}
-                  className={cn(
-                    'min-w-[4rem] overflow-hidden rounded-sm px-1.5 py-1 text-left ring-foreground/60 hover:ring-1',
-                    open.has(s.id) && 'ring-1',
-                  )}
-                  style={{
-                    flexGrow: Math.sqrt(Math.max(s.mcap_cr ?? 0, 1)),
-                    flexBasis: `${Math.min(14, 4 + Math.sqrt(Math.max(s.mcap_cr ?? 0, 0)) / 120)}rem`,
-                    background: heatColor(s.change_pct),
-                  }}
-                >
-                  <p className="truncate font-mono text-[10px] font-semibold text-foreground">{s.name}</p>
-                  <p className="font-mono text-[10px] text-foreground/80 tabular-nums">
-                    {pctText(s.change_pct)}
-                  </p>
-                </button>
-              ))}
+            {sortRows(sectors, mapSort, SECTOR_FIELDS).map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => toggle(s.id)}
+                {...hoverProps({ kind: 'sector', s })}
+                className={cn(
+                  'min-w-[4rem] overflow-hidden rounded-sm px-1.5 py-1 text-left ring-foreground/60 hover:ring-1',
+                  open.has(s.id) && 'ring-1',
+                )}
+                style={{
+                  flexGrow: Math.sqrt(Math.max(s.mcap_cr ?? 0, 1)),
+                  flexBasis: `${Math.min(14, 4 + Math.sqrt(Math.max(s.mcap_cr ?? 0, 0)) / 120)}rem`,
+                  background: heatColor(s.change_pct),
+                }}
+              >
+                <p className="truncate font-mono text-[10px] font-semibold text-foreground">{s.name}</p>
+                <p className="font-mono text-[10px] text-foreground/80 tabular-nums">
+                  {pctText(s.change_pct)}
+                </p>
+              </button>
+            ))}
           </div>
 
           <div className="max-h-[600px] overflow-auto">
@@ -342,6 +459,8 @@ export default function SectorPerformancePanel() {
                     maxMove={maxMove}
                     open={open.has(s.id)}
                     onToggle={() => toggle(s.id)}
+                    memberSort={memberSort}
+                    onMemberSort={setMemberSort}
                   />
                 ))}
               </tbody>
@@ -359,11 +478,15 @@ function SectorRow({
   maxMove,
   open,
   onToggle,
+  memberSort,
+  onMemberSort,
 }: {
   s: Sector
   maxMove: number
   open: boolean
   onToggle: () => void
+  memberSort: TileSort
+  onMemberSort: (v: string) => void
 }) {
   const ranked = s.members.filter((m) => m.change_pct != null).sort((a, b) => b.change_pct! - a.change_pct!)
   const best = ranked[0]
@@ -423,7 +546,7 @@ function SectorRow({
       {open && (
         <tr className="border-b border-border/40 bg-muted/10">
           <td colSpan={9}>
-            <MemberTiles sector={s} />
+            <MemberTiles sector={s} sort={memberSort} onSort={onMemberSort} />
           </td>
         </tr>
       )}

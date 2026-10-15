@@ -122,6 +122,13 @@ saved in Bar Replay. On it you get:
   Targets as collapsible ladders - each rung with its % from entry, a new rung pre-filled with the
   uncovered quantity - and a footer that stays in view with value, % of cash, risk (and % of
   wallet), reward and the ladder's weighted R. Paper orders go straight in, no confirmation.
+  **Build the order on the chart**: once the ticket has something to draw (a quantity, a limit
+  price or a level), the order appears on the candles as a dashed "Order N" line with its stops and
+  targets dotted. Drag the entry to make it a limit at that price; drag a stop or target to move
+  it; right-click for *Entry here (limit)*, *Add stop-loss here* and *Add target here*; a level's
+  pill removes or resizes it, and the order pill's ✕ clears the ticket. Every change lands in the
+  ticket's fields - the order is still placed from the ticket, and a live one still confirms. On a
+  Dhan order the stop and target are the Super Order's single pair.
   **Right-click the chart → Trade here**: *Buy limit* / *Sell limit* at the price under the
   pointer, or *Buy* / *Sell at market*. It fills the ticket (opening it if hidden) with the side,
   type and price and puts the cursor in Quantity - the chart never sends an order by itself, and

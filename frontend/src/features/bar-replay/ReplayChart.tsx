@@ -736,7 +736,8 @@ const ReplayChart = forwardRef(function ReplayChart(
           if (coord != null && Math.abs(coord - y) <= DRAG_HIT_PX)
             return { orderId: order.id, field: 'entry' }
         }
-        if (order.status !== 'open') continue
+        // a draft's legs move too: they are what the ticket will send
+        if (order.status !== 'open' && !order.draft) continue
         const sides: [Exclude<DragField, 'entry'>, ReplayLeg[]][] = [
           ['stopLoss', order.stopLosses ?? []],
           ['target', order.targets ?? []],
@@ -1654,6 +1655,7 @@ const ReplayChart = forwardRef(function ReplayChart(
           onCancelPending={onCancelPending}
           onAddAlert={onAddAlert}
           onNewOrder={onNewOrder}
+          onAdjustOrder={readOnly ? undefined : onAdjustOrder}
         />
       )}
     </div>
@@ -1898,7 +1900,11 @@ function PositionPills({
         className={`${PILL} ${pending ? 'border-dashed border-amber-500/70 text-amber-600' : 'border-primary/60'}`}
       >
         <span className="border-r px-1.5 py-0.5 font-medium">
-          {pending ? `Limit ${order.quantity}` : `${order.quantity}  ${pct(lastClose ?? 0)}`}
+          {order.draft
+            ? `Order${order.quantity ? ` ${order.quantity}` : ''}`
+            : pending
+              ? `Limit ${order.quantity}`
+              : `${order.quantity}  ${pct(lastClose ?? 0)}`}
         </span>
         {/* Move-to-breakeven only makes sense once the position has an SL to move. Absent for
             pending orders (nothing to move to what isn't entered yet) and for open positions
@@ -1921,7 +1927,9 @@ function PositionPills({
         {!readOnly && (
           <PillButton
             label="✕"
-            title={pending ? 'Cancel pending order' : 'Close position'}
+            title={
+              order.draft ? 'Clear the order ticket' : pending ? 'Cancel pending order' : 'Close position'
+            }
             className="border-l"
             onClick={() => (pending ? onCancelPending?.(order.id) : onRequestClose?.(order))}
           />
@@ -1980,6 +1988,7 @@ function ContextMenu({
   onCancelPending,
   onAddAlert,
   onNewOrder,
+  onAdjustOrder,
 }: {
   /** Where the right-click landed, in container pixels, and the price under it. */
   x: number
@@ -1992,6 +2001,12 @@ function ContextMenu({
   onCancelPending?: (orderId: string) => void
   onAddAlert?: (price: number, kind: ChartAlertKind) => void
   onNewOrder?: (direction: 'long' | 'short', price: number | null) => void
+  onAdjustOrder?: (
+    orderId: string,
+    field: 'entry' | 'stopLoss' | 'target',
+    price: number,
+    legId: string,
+  ) => void
 }) {
   useEffect(() => {
     const onKey = (e: any) => e.key === 'Escape' && onClose()
@@ -2008,8 +2023,9 @@ function ContextMenu({
   }, [onClose])
 
   // A read-only chart passes no onPlaceLevel: its positions are a record, so no level actions
-  const openOrders = onPlaceLevel ? orders.filter((o) => o.status === 'open') : []
-  const pendingOrders = onPlaceLevel ? orders.filter((o) => o.status === 'pending') : []
+  // a ticket's draft gets the same level actions as a position, plus "entry here"
+  const openOrders = onPlaceLevel ? orders.filter((o) => o.status === 'open' || o.draft) : []
+  const pendingOrders = onPlaceLevel ? orders.filter((o) => o.status === 'pending' && !o.draft) : []
   const hasAny = openOrders.length + pendingOrders.length > 0 || !!onAddAlert || !!onNewOrder
   if (!hasAny) return null
 
@@ -2058,14 +2074,23 @@ function ContextMenu({
       )}
       {openOrders.map((order: ReplayOrder) => (
         <div key={order.id} className="border-t pt-1 first:border-t-0">
-          <div className="px-2 py-0.5 text-[10px] uppercase text-muted-foreground">{label(order)}</div>
+          <div className="px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+            {order.draft
+              ? `New order · ${order.direction === 'long' ? 'buy' : 'sell'} (ticket)`
+              : label(order)}
+          </div>
+          {order.draft && onAdjustOrder && (
+            <MenuItem onClick={() => (onAdjustOrder(order.id, 'entry', price, ''), onClose())}>
+              Entry here (limit)
+            </MenuItem>
+          )}
           <MenuItem onClick={() => (onPlaceLevel?.(order.id, 'stopLoss', price), onClose())}>
             Add stop-loss here
           </MenuItem>
           <MenuItem onClick={() => (onPlaceLevel?.(order.id, 'target', price), onClose())}>
             Add target here
           </MenuItem>
-          {order.stopLosses?.length > 0 && (
+          {!order.draft && order.stopLosses?.length > 0 && (
             <MenuItem onClick={() => (onMoveToBreakeven?.(order.id), onClose())}>
               Move stop to breakeven
             </MenuItem>

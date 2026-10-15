@@ -23,6 +23,7 @@ import { tradePnl, tradeReturnPct } from '@/lib/manualTrades'
 import { accountFor, accountHasCosts, accountsById, tradeCosts, tradeNetPnl } from '@/lib/tradeCosts'
 import { paperOrderSchema } from '@/lib/schemas'
 import { consumePrefill, toTick, useTicketPrefill } from '@/lib/ticketPrefill'
+import { consumeEdit, publishDraft, useTicketDraft } from '@/lib/ticketDraft'
 import { accountBalance, tradesForAccount } from '@/lib/tradeAccounts'
 import { riskReward } from '@/features/bar-replay/orderEngine'
 import type { z } from 'zod'
@@ -311,6 +312,93 @@ export function OrderPanel({
     // after the limit field has rendered
     requestAnimationFrame(() => form.setFocus('quantity'))
   }, [prefill, symbol, form])
+
+  // The order as typed, drawn on the chart beside this ticket (lib/ticketDraft) - once there is
+  // something to draw: a size, a limit price or a level. Cleared when the ticket goes.
+  const [quantity, stopLegs, targetLegs] = form.watch(['quantity', 'stopLosses', 'targets'])
+  const draftSymbol = (symbol ?? typedSymbol ?? '').toUpperCase()
+  const legsOf = (legs: OrderInput['stopLosses'] | undefined) =>
+    (legs ?? []).map((l) => ({ id: l.id, price: Number(l.price) })).filter((l) => l.price > 0)
+  const draftKey = JSON.stringify([
+    draftSymbol,
+    direction,
+    orderType,
+    f.entry,
+    Number(quantity) || 0,
+    legsOf(stopLegs),
+    legsOf(targetLegs),
+  ])
+  useEffect(() => {
+    const qty = Number(quantity) || 0
+    const stops = legsOf(stopLegs)
+    const targets = legsOf(targetLegs)
+    const worth = qty > 0 || orderType === 'limit' || stops.length > 0 || targets.length > 0
+    publishDraft(
+      draftSymbol && f.entry && worth
+        ? {
+            symbol: draftSymbol,
+            direction,
+            entry: f.entry,
+            limit: orderType === 'limit',
+            quantity: qty,
+            stops,
+            targets,
+          }
+        : null,
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey])
+  useEffect(() => () => publishDraft(null), [])
+
+  // ...and edits made on that chart, applied to this form: a dragged line, a right-click level.
+  const edit = useTicketDraft((s) => s.edit)
+  useEffect(() => {
+    if (!edit) return
+    consumeEdit()
+    const name = 'side' in edit ? (edit.side === 'stop' ? 'stopLosses' : 'targets') : null
+    const legs = name ? (form.getValues(name) ?? []) : []
+    if (edit.kind === 'entry') {
+      form.setValue('orderType', 'limit')
+      form.setValue('limitPrice', toTick(edit.price))
+    } else if (edit.kind === 'leg' && name) {
+      form.setValue(
+        name,
+        legs.map((l) => (l.id === edit.id ? { ...l, price: toTick(edit.price) } : l)),
+      )
+    } else if (edit.kind === 'legQty' && name) {
+      form.setValue(
+        name,
+        legs.map((l) => (l.id === edit.id ? { ...l, qty: String(edit.qty) } : l)),
+      )
+    } else if (edit.kind === 'removeLeg' && name) {
+      form.setValue(
+        name,
+        legs.filter((l) => l.id !== edit.id),
+      )
+    } else if (edit.kind === 'addLeg' && name) {
+      // a new rung covers whatever the other rungs on that side don't yet
+      const qty = Number(form.getValues('quantity')) || 0
+      const covered = legs.reduce((t, l) => t + (Number(l.qty) || 0), 0)
+      form.setValue(name, [
+        ...legs,
+        {
+          id: crypto.randomUUID(),
+          price: toTick(edit.price),
+          qty: qty > covered ? String(qty - covered) : '',
+        },
+      ])
+    } else if (edit.kind === 'clear') {
+      form.reset({
+        ...form.getValues(),
+        orderType: 'market',
+        limitPrice: '',
+        quantity: '',
+        stopLosses: [],
+        targets: [],
+      })
+    }
+  }, [edit, form])
+
   const errors = form.formState.errors
   const buy = direction === 'long'
   const shown = symbol ?? typedSymbol

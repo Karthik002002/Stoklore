@@ -14,6 +14,7 @@ import type { PaperModifyRequest, PaperPosition } from '@/services/api'
 import ReplayChart from '@/features/bar-replay/ReplayChart'
 import { riskReward } from '@/features/bar-replay/orderEngine'
 import type { ChartMarker } from '@/features/bar-replay/ReplayChart'
+import { DRAFT_ID, editDraft, useTicketDraft } from '@/lib/ticketDraft'
 import { BUY_COLOR, SELL_COLOR, barOfFill } from '@/lib/entryMarker'
 import { useBarReplayStore } from '@/features/bar-replay/store'
 import { closePaperPosition, getLivePositions, getPaperPositions, modifyPaperPosition } from '@/services/api'
@@ -191,8 +192,35 @@ export function PaperChart({
   const legsOf = (p: PaperPosition) => ({ stop_losses: p.stop_losses ?? [], targets: p.targets ?? [] })
   const find = (id: string) => mine.find((p) => String(p.id) === id)
 
+  // The order being typed into the ticket beside this chart (the chart modal's), drawn as a
+  // not-yet-placed order. Every edit to it is sent back to the ticket rather than to the paper API.
+  const ticketDraft = useTicketDraft((st) => (st.draft?.symbol === symbol ? st.draft : null))
+  const draftOrder = useMemo<ReplayOrder | null>(
+    () =>
+      ticketDraft && {
+        id: DRAFT_ID,
+        draft: true,
+        direction: ticketDraft.direction,
+        status: 'pending',
+        entryPrice: ticketDraft.entry,
+        quantity: ticketDraft.quantity,
+        stopLosses: ticketDraft.stops.map((l) => ({ ...l, qty: 0 })),
+        targets: ticketDraft.targets.map((l) => ({ ...l, qty: 0 })),
+      },
+    [ticketDraft],
+  )
+  const legSide = (field: 'stopLoss' | 'target') => (field === 'stopLoss' ? 'stop' : 'target')
+
   // The handlers ReplayChart already calls, pointed at the paper API instead of the replay store.
   const adjustOrder = (id: string, field: 'entry' | 'stopLoss' | 'target', price: number, legId: string) => {
+    if (id === DRAFT_ID) {
+      editDraft(
+        field === 'entry'
+          ? { kind: 'entry', price }
+          : { kind: 'leg', side: legSide(field), id: legId, price },
+      )
+      return
+    }
     const p = find(id)
     if (!p) return
     const key = field === 'stopLoss' ? 'stop_losses' : 'targets'
@@ -204,6 +232,7 @@ export function PaperChart({
     })
   }
   const removeLevel = (id: string, field: 'stopLoss' | 'target', legId: string) => {
+    if (id === DRAFT_ID) return editDraft({ kind: 'removeLeg', side: legSide(field), id: legId })
     const p = find(id)
     if (!p) return
     const key = field === 'stopLoss' ? 'stop_losses' : 'targets'
@@ -211,6 +240,7 @@ export function PaperChart({
     modify.mutate({ id: p.id, ...legs, [key]: legs[key].filter((l) => l.id !== legId) })
   }
   const adjustLegQty = (id: string, field: 'stopLoss' | 'target', legId: string, qty: number) => {
+    if (id === DRAFT_ID) return editDraft({ kind: 'legQty', side: legSide(field), id: legId, qty })
     const p = find(id)
     if (!p || !(qty > 0)) return
     const key = field === 'stopLoss' ? 'stop_losses' : 'targets'
@@ -227,6 +257,7 @@ export function PaperChart({
     })
   }
   const placeLevel = (id: string, field: 'stopLoss' | 'target', price: number) => {
+    if (id === DRAFT_ID) return editDraft({ kind: 'addLeg', side: legSide(field), price })
     const p = find(id)
     if (!p) return
     const key = field === 'stopLoss' ? 'stop_losses' : 'targets'
@@ -409,7 +440,7 @@ export function PaperChart({
               {...chartAlerts}
               bars={bars}
               indicators={indicators}
-              orders={mine.map(asOrder)}
+              orders={draftOrder ? [...mine.map(asOrder), draftOrder] : mine.map(asOrder)}
               markers={markers}
               resetKey={`${symbol}-${range}`}
               settings={chartSettings}
@@ -422,7 +453,9 @@ export function PaperChart({
               onMoveToBreakeven={moveToBreakeven}
               onPlaceLevel={placeLevel}
               onRequestClose={(order) => close.mutate(Number(order.id))}
-              onCancelPending={(id) => close.mutate(Number(id))}
+              onCancelPending={(id) =>
+                id === DRAFT_ID ? editDraft({ kind: 'clear' }) : close.mutate(Number(id))
+              }
               onNewOrder={onNewOrder}
             />
           )}

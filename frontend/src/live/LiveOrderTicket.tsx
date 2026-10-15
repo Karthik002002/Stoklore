@@ -21,6 +21,7 @@ import { fmt, inr } from '@/lib/format'
 import { positionSize, ticketErrors } from '@/lib/liveSizing'
 import { cn } from '@/lib/utils'
 import { consumePrefill, toTick, useTicketPrefill } from '@/lib/ticketPrefill'
+import { consumeEdit, publishDraft, useTicketDraft } from '@/lib/ticketDraft'
 import { F, PriceField, Seg, TicketFooter, num } from '@/components/OrderTicketParts'
 import type { LiveOrderRequest } from '@/services/api'
 import { getLiveStatus, getStockDetail, placeLiveOrder, updateLiveSettings } from '@/services/api'
@@ -139,6 +140,67 @@ export default function LiveOrderTicket({
     reference_price: reference,
   }
   const errors = ticketErrors(order, superUsed)
+
+  // The order as typed, drawn on the chart beside this ticket (lib/ticketDraft). A Super Order has
+  // one stop and one target, so each side is at most one line here.
+  const draftKey = JSON.stringify([
+    symbol,
+    direction,
+    orderType,
+    reference,
+    order.quantity,
+    superUsed && stop,
+    superUsed && target,
+  ])
+  useEffect(() => {
+    const st = num(stop)
+    const tg = num(target)
+    const worth = order.quantity > 0 || orderType !== 'MARKET' || (superUsed && (st != null || tg != null))
+    publishDraft(
+      symbol && reference && worth
+        ? {
+            symbol,
+            direction,
+            entry: reference,
+            limit: orderType !== 'MARKET',
+            quantity: order.quantity,
+            stops: superUsed && st ? [{ id: 'stop', price: st }] : [],
+            targets: superUsed && tg ? [{ id: 'target', price: tg }] : [],
+          }
+        : null,
+    )
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftKey])
+  useEffect(() => () => publishDraft(null), [])
+
+  // ...and edits made on that chart: a dragged line or a right-click level lands in these fields.
+  const edit = useTicketDraft((st) => st.edit)
+  useEffect(() => {
+    if (!edit) return
+    consumeEdit()
+    const setLeg = (side: 'stop' | 'target', value: string) => (side === 'stop' ? setStop : setTarget)(value)
+    if (edit.kind === 'entry') {
+      // a stop order keeps its type and moves its trigger; anything else becomes a limit there
+      if (orderType === 'STOP_LOSS_MARKET') setTrigger(toTick(edit.price))
+      else {
+        if (orderType === 'MARKET') setOrderType('LIMIT')
+        setPrice(toTick(edit.price))
+      }
+    } else if (edit.kind === 'leg' || edit.kind === 'addLeg') {
+      setSuperOn(true)
+      setLeg(edit.side, toTick(edit.price))
+    } else if (edit.kind === 'removeLeg') {
+      setLeg(edit.side, '')
+    } else if (edit.kind === 'clear') {
+      setQty('')
+      setStop('')
+      setTarget('')
+      setTrail('')
+      setSuperOn(false)
+      setOrderType('MARKET')
+    }
+    // legQty: a Super Order's legs are the whole quantity, there is nothing to resize
+  }, [edit, orderType])
   const { value, pctOfWallet, warnings } = positionSize(
     order.quantity,
     reference,

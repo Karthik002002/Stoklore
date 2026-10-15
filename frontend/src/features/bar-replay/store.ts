@@ -34,6 +34,9 @@ export type ReplayOrder = {
   /** The tightest stop when the order was placed (or when its first stop was added) - what the
    *  journal records as the stop, whatever the live stop was moved or trailed to since. */
   initialStop?: number | null
+  /** An order still being typed into a ticket (lib/ticketDraft) - drawn like a pending order, and
+   *  its stop/target legs are draggable even though nothing is placed yet. */
+  draft?: boolean
   /** The order ticket's pre-trade checklist, if anything on it was ticked (lib/tradeReview CHECKS). */
   preTradeChecks?: Record<string, boolean> | null
 }

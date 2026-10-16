@@ -4,18 +4,28 @@
 //
 // Anything hoverable spreads `hoverProps(tip)`; <SectorHoverCard /> is rendered once and follows the
 // pointer, flipping to the other side near a window edge.
+import RsPill from '@/components/RsPill'
+import { useStrength } from '@/lib/useStrength'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { create } from 'zustand'
 import { compact, fmt } from '@/lib/format'
 import { bucketShares, croreShort, heatColor } from '@/lib/sectors'
 import { cn } from '@/lib/utils'
-import type { Sector, SectorMember } from '@/services/api'
+import type { RrgSector, Sector, SectorMember } from '@/services/api'
 
 export type Tip =
   | { kind: 'member'; m: SectorMember; sector?: Sector }
   | { kind: 'sector'; s: Sector }
   | { kind: 'breadth'; s: Sector }
+  /** A sector on the rotation graph/timeline; `at` = one period of it (a timeline cell). */
+  | {
+      kind: 'rotation'
+      s: RrgSector
+      at?: string
+      et?: Sector
+      leaders?: { symbol: string; rs: number; r3m: number }[]
+    }
 
 const useTip = create<{ tip: Tip | null; x: number; y: number }>(() => ({ tip: null, x: 0, y: 0 }))
 
@@ -94,6 +104,7 @@ function Breadth({ s }: { s: Sector }) {
 }
 
 function MemberCard({ m, sector }: { m: SectorMember; sector?: Sector }) {
+  const strength = useStrength().bySymbol.get(m.symbol ?? '')
   const members = sector?.members ?? []
   const share = sector?.mcap_cr && m.mcap_cr ? (m.mcap_cr / sector.mcap_cr) * 100 : null
   const bySize = members.indexOf(m) + 1
@@ -135,6 +146,13 @@ function MemberCard({ m, sector }: { m: SectorMember; sector?: Sector }) {
           value={m.volume_k == null ? '—' : compact(m.volume_k * 1000)}
           sub="shares today"
         />
+        {strength && (
+          <Stat
+            label="RS rating"
+            value={<RsPill rs={strength.rs} />}
+            sub={`${strength.template_score}/8 trend template · ${strength.from_high_pct}% from 52wH`}
+          />
+        )}
         {members.length > 0 && (
           <Stat label="Size rank" value={`#${bySize} of ${members.length}`} sub="by market cap" />
         )}
@@ -232,6 +250,110 @@ function BreadthCard({ s }: { s: Sector }) {
   )
 }
 
+const ROTATION = {
+  leading: { label: 'Leading', color: '#22c55e', note: 'beating NIFTY, and the lead is growing' },
+  weakening: { label: 'Weakening', color: '#eab308', note: 'still ahead of NIFTY, but the lead is fading' },
+  lagging: { label: 'Lagging', color: '#ef4444', note: 'behind NIFTY, and falling further behind' },
+  improving: { label: 'Improving', color: '#3b82f6', note: 'behind NIFTY, but catching up' },
+} as const
+const quadrantOf = (r: number, m: number) =>
+  r >= 100 ? (m >= 100 ? 'leading' : 'weakening') : m >= 100 ? 'improving' : 'lagging'
+
+function RotationCard({ tip }: { tip: Extract<Tip, { kind: 'rotation' }> }) {
+  const { s, et, leaders } = tip
+  const i = tip.at ? s.tail.findIndex((p) => p.date === tip.at) : s.tail.length - 1
+  const p = s.tail[i]
+  const prev = s.tail[i - 1]
+  const q = quadrantOf(p.ratio, p.momentum)
+  const meta = ROTATION[q]
+  const delta = (a: number, b?: number) => (b == null ? null : a - b)
+  const dr = delta(p.ratio, prev?.ratio)
+  const dm = delta(p.momentum, prev?.momentum)
+  const signed = (v: number | null) => (v == null ? '' : `${v >= 0 ? '▲' : '▼'} ${fmt(Math.abs(v), 2)}`)
+  return (
+    <>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold">{s.name}</p>
+          <p className="text-[11px] text-muted-foreground">
+            {tip.at ? p.date : `as of ${p.date}`} · {s.members} members
+          </p>
+        </div>
+        <span
+          className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold"
+          style={{ background: `${meta.color}26`, color: meta.color }}
+        >
+          {meta.label}
+        </span>
+      </div>
+      <p className="text-[11px] text-muted-foreground">{meta.note}</p>
+      <div className="grid grid-cols-2 gap-x-3 border-t pt-2">
+        <Stat
+          label="RS-Ratio"
+          value={fmt(p.ratio, 2)}
+          sub={dr == null ? undefined : <span className={tone(dr)}>{signed(dr)} vs prior</span>}
+        />
+        <Stat
+          label="RS-Momentum"
+          value={fmt(p.momentum, 2)}
+          sub={dm == null ? undefined : <span className={tone(dm)}>{signed(dm)} vs prior</span>}
+        />
+      </div>
+      <div className="border-t pt-2">
+        <p className="mb-1 text-[10px] tracking-wide text-muted-foreground uppercase">Path</p>
+        <div className="flex gap-0.5">
+          {s.tail.map((t, k) => {
+            const tq = quadrantOf(t.ratio, t.momentum)
+            return (
+              <div
+                key={t.date}
+                className={cn('h-2.5 flex-1 rounded-sm', k === i && 'ring-1 ring-foreground')}
+                style={{ background: ROTATION[tq].color, opacity: k === i ? 1 : 0.55 }}
+              />
+            )
+          })}
+        </div>
+        <p className="mt-0.5 flex justify-between text-[10px] text-muted-foreground">
+          <span>{s.tail[0].date}</span>
+          <span>{s.tail[s.tail.length - 1].date}</span>
+        </p>
+      </div>
+      {et && (
+        <div className="grid grid-cols-2 gap-x-3 border-t pt-2">
+          <Stat
+            label="Today"
+            value={<span className={tone(et.change_pct)}>{pct(et.change_pct)}</span>}
+            sub={croreShort(et.mcap_cr)}
+          />
+          <Stat
+            label="Breadth"
+            value={
+              <span>
+                <span className="text-up">{et.advance ?? 0}▲</span>{' '}
+                <span className="text-down">{et.decline ?? 0}▼</span>
+              </span>
+            }
+          />
+        </div>
+      )}
+      {leaders && leaders.length > 0 && (
+        <div className="space-y-1 border-t pt-2">
+          <p className="text-[10px] tracking-wide text-muted-foreground uppercase">Strongest members (RS)</p>
+          {leaders.map((l) => (
+            <div key={l.symbol} className="flex items-center gap-2 text-[11px]">
+              <span className="w-6 rounded bg-up/15 text-center font-semibold text-up tabular-nums">
+                {l.rs}
+              </span>
+              <span className="flex-1 truncate font-medium">{l.symbol}</span>
+              <span className={cn('tabular-nums', tone(l.r3m))}>{pct(l.r3m, 1)} 3M</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
+  )
+}
+
 const OFFSET = 14
 const WIDTH = 288 // w-72
 
@@ -258,6 +380,7 @@ export default function SectorHoverCard() {
       {tip.kind === 'member' && <MemberCard m={tip.m} sector={tip.sector} />}
       {tip.kind === 'sector' && <SectorCard s={tip.s} />}
       {tip.kind === 'breadth' && <BreadthCard s={tip.s} />}
+      {tip.kind === 'rotation' && <RotationCard tip={tip} />}
     </div>,
     document.body,
   )

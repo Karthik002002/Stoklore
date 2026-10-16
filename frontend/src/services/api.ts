@@ -412,6 +412,61 @@ export type Sector = {
   updated: string | null
 }
 
+/** One rated stock from GET /api/strength/stocks (app/core/strength.py). */
+export type StrengthStock = {
+  symbol: string
+  close: number
+  /** 1..99 - the share of the market this stock's 3/6/9/12-month performance beats. */
+  rs: number
+  r1m: number
+  r3m: number
+  r6m: number
+  r12m: number
+  vs_nifty_6m: number | null
+  high_52w: number
+  from_high_pct: number
+  /** Minervini's 8 trend-template checks; null = not enough history. */
+  template: Record<string, boolean | null>
+  template_score: number
+  avg_value_cr: number
+  /** Depths (%) of the latest run of successively shallower pullbacks, oldest first. */
+  contractions: number[]
+  pivot: number | null
+  to_pivot_pct: number | null
+  vol_ratio: number | null
+  tightening: boolean
+  volume_dry: boolean
+  near_pivot: boolean
+  vcp: boolean
+}
+export type StrengthStatus = {
+  days: number
+  first: string | null
+  last: string | null
+  missing: number
+  ready: boolean
+  /** Enough days to show partial results while the first backfill runs. */
+  partial_ready: boolean
+  sync: { running: boolean; done: number; total: number; errors: number; last_error: string | null }
+}
+export type RrgPoint = { date: string; ratio: number; momentum: number }
+export type RrgSector = {
+  id: string
+  name: string
+  members: number
+  mcap_cr: number | null
+  tail: RrgPoint[]
+  quadrant: 'leading' | 'weakening' | 'lagging' | 'improving'
+}
+
+export const getStrengthStatus = () => fetch('/api/strength/status').then(json<StrengthStatus>)
+export const getStrengthStocks = () =>
+  fetch('/api/strength/stocks').then(
+    json<{ as_of: string; days: number; partial: boolean; stocks: StrengthStock[]; skipped: string[] }>,
+  )
+export const getRrg = (tf: 'weekly' | 'daily') =>
+  fetch(`/api/strength/rrg?tf=${tf}`).then(json<{ as_of: string; tf: string; sectors: RrgSector[] }>)
+
 /** An upcoming results board meeting on NSE (GET /api/results-calendar). */
 export type ResultsMeeting = { symbol: string; date: string; purpose: string; detail: string | null }
 

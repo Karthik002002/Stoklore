@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import RsPill from '@/components/RsPill'
+import { useStrength } from '@/lib/useStrength'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -1081,11 +1083,13 @@ export default function StocksList() {
   const visible = tab === 'All' ? stocks : stocks?.filter((s) => membersOf.get(s.symbol)?.has(tab))
   // Kept across watchlist tabs: switching from All to a list should keep "by Chg%".
   const [stockSort, setStockSort] = useState<Sort>(null)
+  const { bySymbol: strengthOf } = useStrength()
   const sortedVisible = sortRows(visible ?? [], stockSort, {
     symbol: (s) => s.symbol,
     price: (s) => s.price,
     chg: (s) => s.changePercent,
     reports: (s) => s.report_count,
+    rs: (s) => strengthOf.get(s.symbol)?.rs,
     updated: (s) => s.last_scraped,
   })
 
@@ -1231,6 +1235,7 @@ export default function StocksList() {
                   />
                   <SortTh label="Price" k="price" sort={stockSort} onSort={setStockSort} />
                   <SortTh label="Chg%" k="chg" sort={stockSort} onSort={setStockSort} />
+                  <SortTh label="RS" k="rs" sort={stockSort} onSort={setStockSort} />
                   <SortTh label="Rpts" k="reports" sort={stockSort} onSort={setStockSort} />
                   <SortTh label="Updated" k="updated" sort={stockSort} onSort={setStockSort} />
                   <th className="w-16" />
@@ -1255,6 +1260,9 @@ export default function StocksList() {
                     <td className="px-2 py-1 text-right tabular-nums">{inr(s.price)}</td>
                     <td className={`px-2 py-1 text-right tabular-nums ${pctClass(s.changePercent)}`}>
                       {arrow(s.changePercent)} {signedPct(s.changePercent)}
+                    </td>
+                    <td className="px-2 py-1 text-right">
+                      <RsPill rs={strengthOf.get(s.symbol)?.rs} />
                     </td>
                     <td className="px-2 py-1 text-right text-muted-foreground tabular-nums">
                       {s.report_count}

@@ -1,6 +1,11 @@
 import { Link, Outlet, useRouterState } from '@tanstack/react-router'
 import {
   IconBolt,
+  IconCheck,
+  IconHistory,
+  IconBell,
+  IconScan,
+  IconTelescope,
   IconChartCandle,
   IconChartLine,
   IconChevronRight,
@@ -10,13 +15,13 @@ import {
   IconRobot,
   IconShieldHalf,
   IconSitemap,
-  IconFlask,
   IconLayoutDashboard,
   IconLayoutGrid,
   IconNews,
   IconPlayerTrackNext,
   IconRefresh,
   IconTrendingUp,
+  IconTrophy,
   IconUsersGroup,
   IconWallet,
   IconSettings,
@@ -50,46 +55,67 @@ type NavItem = { to: LinkProps['to']; icon: ComponentType<{ className?: string }
 
 // The rail shows one icon per group; hovering it opens the group's pages as a menu beside the rail
 // (like an admin sidebar's flyout), so the rail stays short however many pages there are.
-type NavGroup = { label: string; icon: ComponentType<{ className?: string }>; items: NavItem[] }
+type NavGroup = {
+  label: string
+  hint: string
+  icon: ComponentType<{ className?: string; stroke?: number }>
+  items: NavItem[]
+}
 
+// Grouped by what you are doing: finding ideas, reading up on a company, trading, looking back at
+// trades, and the automated side. The order inside a group is the order you'd usually use them.
 const NAV_GROUPS: NavGroup[] = [
   {
-    label: 'Markets',
-    icon: IconLayoutDashboard,
+    label: 'Discover',
+    hint: 'Find trade ideas',
+    icon: IconTelescope,
     items: [
       { to: '/', icon: IconLayoutDashboard, label: 'Stocks' },
+      { to: '/leaders', icon: IconTrophy, label: 'Leaders' },
       { to: '/chart', icon: IconChartLine, label: 'Chart' },
+      { to: '/scans', icon: IconScan, label: 'Scans' },
+    ],
+  },
+  {
+    label: 'Research',
+    hint: 'News, events and ownership',
+    icon: IconNews,
+    items: [
       { to: '/events', icon: IconNews, label: 'Events' },
       { to: '/top-news', icon: IconTrendingUp, label: 'Top news' },
       { to: '/shareholding', icon: IconUsersGroup, label: 'Shareholding' },
     ],
   },
   {
-    label: 'Trading',
+    label: 'Trade',
+    hint: 'Place and manage positions',
     icon: IconChartCandle,
     items: [
-      { to: '/holdings', icon: IconWallet, label: 'Holdings' },
       { to: '/paper', icon: IconChartCandle, label: 'Paper Trading' },
       { to: '/live', icon: IconBolt, label: 'Live Trading' },
+      { to: '/holdings', icon: IconWallet, label: 'Holdings' },
       { to: '/risk', icon: IconShieldHalf, label: 'Book risk' },
+      { to: '/alerts', icon: IconBell, label: 'Alerts' },
     ],
   },
   {
-    label: 'Practice',
-    icon: IconFlask,
+    label: 'Review',
+    hint: 'Journal, replay and practice',
+    icon: IconHistory,
     items: [
-      { to: '/backtesting', icon: IconFlask, label: 'Backtesting' },
+      { to: '/backtesting', icon: IconHistory, label: 'Backtesting' },
       { to: '/backtest/replay', icon: IconPlayerTrackNext, label: 'Bar Replay' },
       { to: '/simulation', icon: IconChartHistogram, label: 'Trade Simulation' },
     ],
   },
   {
-    label: 'Automation',
+    label: 'Automate',
+    hint: 'Algo engine, workflows and AI',
     icon: IconCpu,
     items: [
       { to: '/engine', icon: IconCpu, label: 'Algo engine' },
-      { to: '/agent', icon: IconRobot, label: 'Agent' },
       { to: '/workflows', icon: IconSitemap, label: 'Workflows' },
+      { to: '/agent', icon: IconRobot, label: 'Agent' },
       { to: '/dashboards', icon: IconLayoutGrid, label: 'Dashboards' },
     ],
   },
@@ -122,24 +148,27 @@ function NavGroupIcon({
         aria-label={group.label}
         className={cn(
           'relative flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
-          current && 'bg-primary/10 text-primary',
-          open && 'bg-muted text-foreground',
+          // the group of the page you're on stays lit, open or not - a hover must never hide it
+          current ? 'bg-foreground/15 text-foreground' : open && 'bg-muted text-foreground',
         )}
       >
-        <Icon className="size-5" />
-        {current && <span className="absolute -left-2 h-5 w-0.5 rounded-r bg-primary" />}
+        <Icon className="size-5" stroke={1.75} />
+        {current && <span className="absolute -left-[11px] h-5 w-[3px] rounded-r bg-foreground" />}
         {/* a small corner wedge inside the button, like a toolbar's "has a submenu" mark */}
         <span
           aria-hidden
           className={cn(
-            'pointer-events-none absolute right-[3px] bottom-[3px] size-0 border-b-[5px] border-l-[5px] border-b-current border-l-transparent',
-            open ? 'opacity-90' : 'opacity-45',
+            'pointer-events-none absolute right-1 bottom-1 size-0 border-b-[4px] border-l-[4px] border-b-current border-l-transparent',
+            open ? 'opacity-50' : 'opacity-30',
           )}
         />
       </PopoverTrigger>
       <PopoverContent side="right" align="start" sideOffset={10} className="w-52 gap-0 p-1">
         <p className="px-2 pt-1 pb-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
           {group.label}
+          <span className="block text-[10px] font-normal tracking-normal text-muted-foreground/80 normal-case">
+            {group.hint}
+          </span>
         </p>
         {group.items.map((item) => {
           const active = isActive(String(item.to), pathname)
@@ -150,11 +179,17 @@ function NavGroupIcon({
               onClick={() => setOpen(false)}
               className={cn(
                 'flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted',
-                active ? 'bg-primary/10 font-medium text-primary' : 'text-foreground',
+                active
+                  ? 'relative bg-foreground/10 font-semibold text-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
               )}
             >
+              {active && (
+                <span className="absolute top-1.5 bottom-1.5 left-0 w-[3px] rounded-r bg-foreground" />
+              )}
               <item.icon className="size-4 shrink-0" />
               {labelFor(item)}
+              {active && <IconCheck className="ml-auto size-3.5 opacity-70" />}
             </Link>
           )
         })}

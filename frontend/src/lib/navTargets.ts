@@ -14,6 +14,7 @@ import {
   SettingsIcon,
   ShieldIcon,
   TrendingUpIcon,
+  TrophyIcon,
   UsersIcon,
   WalletIcon,
   WorkflowIcon,
@@ -27,6 +28,7 @@ import {
 export const PAGES: { icon: typeof LayoutDashboardIcon; label: string; to: LinkProps['to'] }[] = [
   { icon: LayoutDashboardIcon, label: 'Stocks', to: '/' },
   { icon: ChartLineIcon, label: 'Chart', to: '/chart' },
+  { icon: TrophyIcon, label: 'Leaders', to: '/leaders' },
   { icon: SettingsIcon, label: 'Settings', to: '/settings' },
   { icon: NewspaperIcon, label: 'Events', to: '/events' },
   { icon: TrendingUpIcon, label: 'Top news', to: '/top-news' },

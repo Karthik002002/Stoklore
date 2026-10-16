@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import ResultsBadge from '@/components/ResultsBadge'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
 import { ArrowLeftIcon } from 'lucide-react'
@@ -27,7 +28,6 @@ import {
 // Order sitting at Dhan. Dragging the line here sends a modify to the broker - there is no local
 // copy to update, and if the modify is refused the line snaps back on the next poll, which is the
 // honest outcome.
-
 
 /** The live position plus its broker-side exits, in the shape the replay chart already draws.
  *  Ids are the broker's order ids, so a dragged line knows which leg to modify. */
@@ -211,6 +211,7 @@ export default function LivePositionChart() {
             <ArrowLeftIcon className="size-4" />
           </Button>
           <h1 className="text-lg font-semibold">{symbol}</h1>
+          <ResultsBadge symbol={symbol} />
           {position && (
             <span className="text-xs text-muted-foreground">
               {position.net_qty > 0 ? 'long' : 'short'} · {Math.abs(position.net_qty)} qty ·{' '}

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import ResultsBadge from '@/components/ResultsBadge'
 import { Link } from '@tanstack/react-router'
 import { AlertTriangleIcon, OctagonXIcon, RefreshCwIcon } from 'lucide-react'
 import { toast } from 'sonner'
@@ -246,14 +247,21 @@ export function LivePositionsTable() {
             open.map((p) => (
               <TableRow key={p.security_id}>
                 <TableCell>
-                  <Link to="/live/$symbol" params={{ symbol: p.symbol ?? '' }} className="font-medium hover:underline">
+                  <Link
+                    to="/live/$symbol"
+                    params={{ symbol: p.symbol ?? '' }}
+                    className="font-medium hover:underline"
+                  >
                     {p.symbol}
                   </Link>
+                  {p.symbol && <ResultsBadge symbol={p.symbol} className="ml-1.5" />}
                   <p className="text-xs text-muted-foreground">{p.product}</p>
                 </TableCell>
                 <TableCell className="tabular-nums">{p.net_qty}</TableCell>
                 <TableCell className="tabular-nums">{inr(p.net_qty > 0 ? p.buy_avg : p.sell_avg)}</TableCell>
-                <TableCell className="tabular-nums">{p.current_price == null ? '—' : inr(p.current_price)}</TableCell>
+                <TableCell className="tabular-nums">
+                  {p.current_price == null ? '—' : inr(p.current_price)}
+                </TableCell>
                 <TableCell className={`tabular-nums ${(p.mark_pnl ?? 0) >= 0 ? 'text-up' : 'text-down'}`}>
                   {p.mark_pnl == null ? '—' : inr(p.mark_pnl)}
                 </TableCell>
@@ -263,8 +271,9 @@ export function LivePositionsTable() {
                     size="sm"
                     variant="outline"
                     onClick={() =>
-                      window.confirm(`Close ${p.symbol} (${p.net_qty} shares) at market on your Dhan account?`) &&
-                      close.mutate(p.security_id)
+                      window.confirm(
+                        `Close ${p.symbol} (${p.net_qty} shares) at market on your Dhan account?`,
+                      ) && close.mutate(p.security_id)
                     }
                     disabled={close.isPending}
                   >
@@ -284,7 +293,10 @@ export function LivePositionsTable() {
  *  (the mirror is Dhan's whole book) - with a Super Order's legs as rows of their own. */
 export function LiveOrdersTable({ openOnly = false }: { openOnly?: boolean }) {
   const { orders: all } = useLiveBook()
-  const cancel = useLiveAction(([orderId, leg]: [string, string | null]) => cancelLiveOrder(orderId, leg), 'Cancelled')
+  const cancel = useLiveAction(
+    ([orderId, leg]: [string, string | null]) => cancelLiveOrder(orderId, leg),
+    'Cancelled',
+  )
   const orders = openOnly ? all.filter((o) => OPEN_STATUSES.includes(o.status)) : all
   return (
     <div className="overflow-x-auto rounded-xl border">

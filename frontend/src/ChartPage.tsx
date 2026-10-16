@@ -1,7 +1,9 @@
 // /chart - a TradingView-style workspace: the chart takes the screen, your watchlists sit in a
 // sidebar on the right, and picking a row (or ↑ / ↓) puts that stock on the chart. The chart is the
 // one every other screen uses (paper/PaperPositionChart's PaperChart): your indicators, template,
-// timeframe, alerts and paper positions come with it. Trading opens the chart modal's ticket.
+// timeframe, alerts and positions come with it. Trading happens here too: the account picker in
+// the top bar and the sidebar's Trade tab are the chart modal's (components/TradeAccount), so an
+// order never needs a second chart opened over this one.
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
@@ -14,7 +16,7 @@ import {
   XIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { openChart } from '@/components/ChartModal'
+import { AccountSelect, TradeTicket, useTradeAccount } from '@/components/TradeAccount'
 import SortTh from '@/components/SortTh'
 import SymbolCombobox from '@/components/SymbolCombobox'
 import { Button } from '@/components/ui/button'
@@ -138,6 +140,13 @@ export default function ChartPage() {
   const navigate = useNavigate({ from: '/chart' })
   const queryClient = useQueryClient()
   const [sidebar, setSidebar] = useState(true)
+  // the sidebar's two tabs: the watchlist, or the order ticket for the picked account
+  const [tab, setTab] = useState<'watchlist' | 'trade'>('watchlist')
+  const trade = useTradeAccount()
+  const openTicket = () => {
+    setSidebar(true)
+    setTab('trade')
+  }
   const [sort, setSort] = useState<Sort>(null)
 
   const { data: stocks = [], isPending } = useQuery({
@@ -223,134 +232,162 @@ export default function ChartPage() {
 
   const sidebarPanel = sidebar && (
     <aside className="flex w-80 shrink-0 flex-col border-l bg-background">
-      <div className="flex items-center gap-1.5 border-b p-2">
-        {/* the lists as round tabs, like TradingView's: initials in a circle, the full name on hover */}
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-          {[ALL, ...lists].map((l) => {
-            const active = l === list
-            const count = l === ALL ? stocks.length : watchlist.filter((w) => w.list_name === l).length
-            return (
-              <Tooltip key={l}>
-                <TooltipTrigger
-                  render={
-                    <button
-                      type="button"
-                      aria-label={`${l === ALL ? 'All tracked' : l} (${count})`}
-                      aria-pressed={active}
-                      onClick={() => go({ list: l })}
-                      className={cn(
-                        'flex size-8 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold transition-colors',
-                        active
-                          ? 'border-foreground bg-foreground text-background'
-                          : 'border-border text-muted-foreground hover:border-foreground/50 hover:text-foreground',
-                      )}
-                    />
-                  }
-                >
-                  {l === ALL ? <ListIcon className="size-3.5" /> : initials(l)}
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  {l === ALL ? 'All tracked' : l} · {count}
-                </TooltipContent>
-              </Tooltip>
-            )
-          })}
+      <div className="flex shrink-0 gap-0.5 border-b p-1">
+        {(['watchlist', 'trade'] as const).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setTab(t)}
+            aria-pressed={tab === t}
+            className={cn(
+              'flex-1 rounded-md py-1 text-xs font-medium capitalize',
+              tab === t ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            {t === 'trade' ? (trade.live ? 'Trade · live' : 'Trade') : 'Watchlist'}
+          </button>
+        ))}
+      </div>
+      {tab === 'trade' ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {symbol ? (
+            <TradeTicket trade={trade} symbol={symbol} />
+          ) : (
+            <p className="p-4 text-sm text-muted-foreground">Pick a stock to trade it.</p>
+          )}
         </div>
-        <span
-          className="shrink-0 text-[11px] text-muted-foreground tabular-nums"
-          title={list === ALL ? 'All tracked' : list}
-        >
-          {list === ALL ? 'All' : list} · {rows.length}
-        </span>
-      </div>
-      <div className="border-b p-2">
-        <SymbolCombobox
-          value=""
-          onChange={(sym) => sym && add.mutate(sym.toUpperCase())}
-          className="w-full"
-        />
-        {add.isPending && (
-          <p className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <Spinner className="size-3" /> Adding…
-          </p>
-        )}
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <table className="w-full font-mono text-xs">
-          <thead className="sticky top-0 z-10 bg-background">
-            <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
-              <SortTh label="Symbol" k="symbol" sort={sort} onSort={setSort} align="left" first="asc" />
-              <SortTh label="Last" k="last" sort={sort} onSort={setSort} />
-              <SortTh label="Chg" k="chg" sort={sort} onSort={setSort} />
-              <SortTh label="Chg%" k="pct" sort={sort} onSort={setSort} />
-            </tr>
-          </thead>
-          <tbody>
-            {isPending && (
-              <tr>
-                <td colSpan={4} className="py-6 text-center text-muted-foreground">
-                  <Spinner className="mx-auto size-4" />
-                </td>
-              </tr>
-            )}
-            {!isPending && rows.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground">
-                  {list === ALL ? 'No tracked stocks yet.' : `${list} is empty.`} Add one above.
-                </td>
-              </tr>
-            )}
-            {rows.map((s) => {
-              const active = s.symbol === symbol
-              const chg = absChange(s)
-              return (
-                <tr
-                  key={s.symbol}
-                  onClick={() => go({ symbol: s.symbol })}
-                  className={cn(
-                    'group cursor-pointer border-b border-border/40',
-                    active
-                      ? 'bg-primary/10 outline outline-1 -outline-offset-1 outline-primary/50'
-                      : 'hover:bg-muted/40',
-                  )}
-                >
-                  <td className="px-2 py-1.5 font-semibold">
-                    <span className="flex items-center gap-1">
-                      {s.symbol}
-                      {list !== ALL && (
+      ) : (
+        <>
+          <div className="flex items-center gap-1.5 border-b p-2">
+            {/* the lists as round tabs, like TradingView's: initials in a circle, the full name on hover */}
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+              {[ALL, ...lists].map((l) => {
+                const active = l === list
+                const count = l === ALL ? stocks.length : watchlist.filter((w) => w.list_name === l).length
+                return (
+                  <Tooltip key={l}>
+                    <TooltipTrigger
+                      render={
                         <button
                           type="button"
-                          aria-label={`Remove ${s.symbol} from ${list}`}
-                          title={`Remove from ${list}`}
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            remove.mutate(s.symbol)
-                          }}
-                          className="ml-auto rounded p-0.5 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
-                        >
-                          <XIcon className="size-3" />
-                        </button>
-                      )}
-                    </span>
-                  </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">
-                    {s.price == null ? '—' : fmt(s.price)}
-                  </td>
-                  <td className={cn('px-2 py-1.5 text-right tabular-nums', tone(chg))}>
-                    {chg == null ? '—' : `${chg >= 0 ? '+' : ''}${fmt(chg)}`}
-                  </td>
-                  <td className={cn('px-2 py-1.5 text-right tabular-nums', tone(s.changePercent))}>
-                    {pctText(s.changePercent)}
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+                          aria-label={`${l === ALL ? 'All tracked' : l} (${count})`}
+                          aria-pressed={active}
+                          onClick={() => go({ list: l })}
+                          className={cn(
+                            'flex size-8 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold transition-colors',
+                            active
+                              ? 'border-foreground bg-foreground text-background'
+                              : 'border-border text-muted-foreground hover:border-foreground/50 hover:text-foreground',
+                          )}
+                        />
+                      }
+                    >
+                      {l === ALL ? <ListIcon className="size-3.5" /> : initials(l)}
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom">
+                      {l === ALL ? 'All tracked' : l} · {count}
+                    </TooltipContent>
+                  </Tooltip>
+                )
+              })}
+            </div>
+            <span
+              className="shrink-0 text-[11px] text-muted-foreground tabular-nums"
+              title={list === ALL ? 'All tracked' : list}
+            >
+              {list === ALL ? 'All' : list} · {rows.length}
+            </span>
+          </div>
+          <div className="border-b p-2">
+            <SymbolCombobox
+              value=""
+              onChange={(sym) => sym && add.mutate(sym.toUpperCase())}
+              className="w-full"
+            />
+            {add.isPending && (
+              <p className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <Spinner className="size-3" /> Adding…
+              </p>
+            )}
+          </div>
 
-      {symbol && <DetailCard symbol={symbol} />}
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <table className="w-full font-mono text-xs">
+              <thead className="sticky top-0 z-10 bg-background">
+                <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
+                  <SortTh label="Symbol" k="symbol" sort={sort} onSort={setSort} align="left" first="asc" />
+                  <SortTh label="Last" k="last" sort={sort} onSort={setSort} />
+                  <SortTh label="Chg" k="chg" sort={sort} onSort={setSort} />
+                  <SortTh label="Chg%" k="pct" sort={sort} onSort={setSort} />
+                </tr>
+              </thead>
+              <tbody>
+                {isPending && (
+                  <tr>
+                    <td colSpan={4} className="py-6 text-center text-muted-foreground">
+                      <Spinner className="mx-auto size-4" />
+                    </td>
+                  </tr>
+                )}
+                {!isPending && rows.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground">
+                      {list === ALL ? 'No tracked stocks yet.' : `${list} is empty.`} Add one above.
+                    </td>
+                  </tr>
+                )}
+                {rows.map((s) => {
+                  const active = s.symbol === symbol
+                  const chg = absChange(s)
+                  return (
+                    <tr
+                      key={s.symbol}
+                      onClick={() => go({ symbol: s.symbol })}
+                      className={cn(
+                        'group cursor-pointer border-b border-border/40',
+                        active
+                          ? 'bg-primary/10 outline outline-1 -outline-offset-1 outline-primary/50'
+                          : 'hover:bg-muted/40',
+                      )}
+                    >
+                      <td className="px-2 py-1.5 font-semibold">
+                        <span className="flex items-center gap-1">
+                          {s.symbol}
+                          {list !== ALL && (
+                            <button
+                              type="button"
+                              aria-label={`Remove ${s.symbol} from ${list}`}
+                              title={`Remove from ${list}`}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                remove.mutate(s.symbol)
+                              }}
+                              className="ml-auto rounded p-0.5 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-foreground"
+                            >
+                              <XIcon className="size-3" />
+                            </button>
+                          )}
+                        </span>
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">
+                        {s.price == null ? '—' : fmt(s.price)}
+                      </td>
+                      <td className={cn('px-2 py-1.5 text-right tabular-nums', tone(chg))}>
+                        {chg == null ? '—' : `${chg >= 0 ? '+' : ''}${fmt(chg)}`}
+                      </td>
+                      <td className={cn('px-2 py-1.5 text-right tabular-nums', tone(s.changePercent))}>
+                        {pctText(s.changePercent)}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {symbol && <DetailCard symbol={symbol} />}
+        </>
+      )}
     </aside>
   )
 
@@ -361,22 +398,30 @@ export default function ChartPage() {
         <PaperChart
           key={symbol}
           symbol={symbol}
-          account={null}
-          // Right-click → Buy/Sell here opens the chart modal with its ticket ready.
+          // the picked account's positions on the chart, like the chart modal
+          account={trade.live ? null : trade.account}
+          live={trade.live}
+          // Right-click → Buy/Sell here: the sidebar's Trade tab, with the order filled in
           onNewOrder={(direction, price) => {
-            openChart(symbol)
+            openTicket()
             prefillTicket({ symbol, direction, price })
           }}
           trailing={
             <div className="flex items-center gap-1 border-l pl-2">
-              <Button size="sm" variant="outline" className="h-7 gap-1.5" onClick={() => openChart(symbol)}>
+              <AccountSelect trade={trade} />
+              <Button
+                size="sm"
+                variant={sidebar && tab === 'trade' ? 'secondary' : 'outline'}
+                className="h-7 gap-1.5"
+                onClick={openTicket}
+              >
                 <ShoppingCartIcon className="size-3.5" /> Trade
               </Button>
               <Button
                 size="icon-sm"
                 variant="ghost"
-                aria-label={sidebar ? 'Hide watchlist' : 'Show watchlist'}
-                title={sidebar ? 'Hide watchlist' : 'Show watchlist'}
+                aria-label={sidebar ? 'Hide sidebar' : 'Show sidebar'}
+                title={sidebar ? 'Hide sidebar' : 'Show sidebar'}
                 onClick={() => setSidebar((v) => !v)}
               >
                 {sidebar ? (

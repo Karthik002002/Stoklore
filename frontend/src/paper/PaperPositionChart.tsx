@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import ResultsBadge from '@/components/ResultsBadge'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { ArrowLeftIcon, ChevronDownIcon } from 'lucide-react'
@@ -412,6 +413,7 @@ export function PaperChart({
             {position.direction} · {position.quantity} qty · paper
           </span>
         )}
+        <ResultsBadge symbol={symbol} />
         <div className="ml-auto flex items-center gap-1 border-l pl-2">
           <ChartControls />
         </div>

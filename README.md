@@ -169,13 +169,24 @@ to guard rails you can see and control.
 ### `1` Live Dashboard & Watchlists
 
 - **NIFTY 50 / SENSEX** index cards with a live sparkline chart on the home page
+- **Book risk** (`/risk`, shield icon) — every open position across your paper accounts and Dhan:
+  what's **at risk to the stops** from here (per account, and as a % of its balance — Dhan's against
+  available cash), what booking every stop would leave against entry, positions with shares that
+  have **no stop**, risk by **sector**, pairs that **move together** (daily returns over 6 months,
+  r ≥ 0.7 — two positions that are one bet), and how many **report results within 7 days**
+- **Results guard** — NSE's board-meeting calendar (`/api/results-calendar`, cached 6h) puts a
+  "Results in 3d" badge on paper and live positions (holdings tables, position charts, Book risk):
+  amber within a week, red within two days, since a result can gap a swing past its stop
 - **Chart page** (`/chart`, the chart icon in the sidebar) — a TradingView-style workspace: the
   shared chart (indicators, template, timeframe, alerts, your paper positions) fills the screen and
   your watchlists sit in a sidebar on the right - pick a list, add a symbol (tracked first if it
   isn't), remove one, sort by Last / Chg / Chg%, and click a row or press ↑ / ↓ to chart it. Under
   the list, the selected stock's card: price and change, its 52-week range, previous close, volume
-  against its average, market cap and P/E. **Trade** (or right-click → Buy/Sell here) opens the
-  chart modal's order ticket. The stock and list are in the URL and remembered for next time
+  against its average, market cap and P/E. Trading happens on the page: pick the account in the
+  top bar (a paper account or **Dhan · live**, the same remembered choice as the chart modal) and
+  **Trade** - or right-click → Buy/Sell here - switches the sidebar to its **Trade** tab with the
+  order ticket, which draws the order on the chart like everywhere else. The stock and list are in
+  the URL and remembered for next time
 - **Customizable home** — **Customize** (beside the Home / My board tabs) opens a sheet from the
   right: a switch per panel to show or hide it (the ticker tape and status bar too), **Edit layout**
   to drag panels by their top bar and resize them from the corner on the same 12-column grid
@@ -210,9 +221,11 @@ to guard rails you can see and control.
   TTL cache (`stock_cache`) instead of hitting Yahoo Finance on every request
 - **Watchlists**: bookmark any tracked stock into named lists, move a stock
   between lists, filter the table by tab
-- A minimal icon-rail sidebar nav (hover tooltips, active-route highlight) —
-  Stocks dashboard, Events feed, Top news, Holdings, Backtesting, Bar Replay, Paper
-  Trading, Settings, theme toggle, and a **Reload** button that clears the
+- A short icon-rail sidebar: four groups - **Markets** (Stocks, Chart, Events, Top news,
+  Shareholding), **Trading** (Holdings, Paper, Live, Book risk), **Practice** (Backtesting, Bar
+  Replay, Trade Simulation), **Automation** (Algo engine, Agent, Workflows, Dashboards) - each
+  opening its pages in a menu on hover (or click); the group lights up, showing the open page's own
+  icon, when you're on one of its pages. At the foot: Settings, theme toggle, and a **Reload** button that clears the
   shared cache on demand. **Hide it** with the button at its foot or `⌘\` / `Ctrl+\`
   (rebindable in Settings › Shortcuts) - the full-screen charts take the room, a tab on the
   left edge brings it back, and the choice is remembered per browser

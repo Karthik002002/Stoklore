@@ -34,6 +34,16 @@ def index_chart(name: str, range: str = "1mo"):
     return _cached(name, f"index-chart:{range}", 15, lambda: scraper.get_index_chart(name, range))
 
 
+@router.get("/api/results-calendar")
+def results_calendar():
+    """Upcoming results board meetings on NSE (scraper.get_results_calendar), cached 6 hours - the
+    calendar changes a few times a day at most."""
+    try:
+        return _cached("NSE", "results-calendar", 360, lambda: {"results": scraper.get_results_calendar()})
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"NSE results calendar failed: {exc}") from exc
+
+
 def _with_symbols(sectors):
     """Each member gets the NSE (else BSE) symbol its name matches in the stocks master, or None.
     ET names companies but sends no ticker; the symbol is what lets a member open its chart."""

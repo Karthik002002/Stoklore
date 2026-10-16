@@ -8,6 +8,7 @@ import {
   IconChartHistogram,
   IconCpu,
   IconRobot,
+  IconShieldHalf,
   IconSitemap,
   IconFlask,
   IconLayoutDashboard,
@@ -28,6 +29,8 @@ import { Toaster } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { getEngineSettings } from '@/services/api'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { cn } from '@/lib/utils'
 import ActivityTracker from './ActivityTracker'
 import ChatWidget from './ChatWidget'
 import ChartModal from '@/components/ChartModal'
@@ -45,26 +48,123 @@ import SignOutButton from './SignOutButton'
 
 type NavItem = { to: LinkProps['to']; icon: ComponentType<{ className?: string }>; label: string }
 
-const NAV_ITEMS: NavItem[] = [
-  { to: '/', icon: IconLayoutDashboard, label: 'Stocks' },
-  { to: '/chart', icon: IconChartLine, label: 'Chart' },
-  { to: '/events', icon: IconNews, label: 'Events' },
-  { to: '/top-news', icon: IconTrendingUp, label: 'Top news' },
-  { to: '/holdings', icon: IconWallet, label: 'Holdings' },
-  { to: '/shareholding', icon: IconUsersGroup, label: 'Shareholding' },
-  { to: '/backtesting', icon: IconFlask, label: 'Backtesting' },
-  { to: '/backtest/replay', icon: IconPlayerTrackNext, label: 'Bar Replay' },
-  { to: '/paper', icon: IconChartCandle, label: 'Paper Trading' },
-  { to: '/live', icon: IconBolt, label: 'Live Trading' },
-  { to: '/engine', icon: IconCpu, label: 'Algo engine' },
-  { to: '/simulation', icon: IconChartHistogram, label: 'Trade Simulation' },
-  { to: '/agent', icon: IconRobot, label: 'Agent' },
-  { to: '/workflows', icon: IconSitemap, label: 'Workflows' },
-  { to: '/dashboards', icon: IconLayoutGrid, label: 'Dashboards' },
+// The rail shows one icon per group; hovering it opens the group's pages as a menu beside the rail
+// (like an admin sidebar's flyout), so the rail stays short however many pages there are.
+type NavGroup = { label: string; icon: ComponentType<{ className?: string }>; items: NavItem[] }
+
+const NAV_GROUPS: NavGroup[] = [
+  {
+    label: 'Markets',
+    icon: IconLayoutDashboard,
+    items: [
+      { to: '/', icon: IconLayoutDashboard, label: 'Stocks' },
+      { to: '/chart', icon: IconChartLine, label: 'Chart' },
+      { to: '/events', icon: IconNews, label: 'Events' },
+      { to: '/top-news', icon: IconTrendingUp, label: 'Top news' },
+      { to: '/shareholding', icon: IconUsersGroup, label: 'Shareholding' },
+    ],
+  },
+  {
+    label: 'Trading',
+    icon: IconChartCandle,
+    items: [
+      { to: '/holdings', icon: IconWallet, label: 'Holdings' },
+      { to: '/paper', icon: IconChartCandle, label: 'Paper Trading' },
+      { to: '/live', icon: IconBolt, label: 'Live Trading' },
+      { to: '/risk', icon: IconShieldHalf, label: 'Book risk' },
+    ],
+  },
+  {
+    label: 'Practice',
+    icon: IconFlask,
+    items: [
+      { to: '/backtesting', icon: IconFlask, label: 'Backtesting' },
+      { to: '/backtest/replay', icon: IconPlayerTrackNext, label: 'Bar Replay' },
+      { to: '/simulation', icon: IconChartHistogram, label: 'Trade Simulation' },
+    ],
+  },
+  {
+    label: 'Automation',
+    icon: IconCpu,
+    items: [
+      { to: '/engine', icon: IconCpu, label: 'Algo engine' },
+      { to: '/agent', icon: IconRobot, label: 'Agent' },
+      { to: '/workflows', icon: IconSitemap, label: 'Workflows' },
+      { to: '/dashboards', icon: IconLayoutGrid, label: 'Dashboards' },
+    ],
+  },
 ]
 
-// Icon-rail nav item: TanStack Router's Link auto-applies an "active" class on route match
-// (see the [&.active] selector), no route-matching hook needed.
+/** Is this page the one on screen (or a page under it)? "/" only matches itself. */
+const isActive = (to: string, pathname: string) =>
+  to === '/' ? pathname === '/' : pathname === to || pathname.startsWith(`${to}/`)
+
+/** One group on the rail: its icon (lit when a page in it is open), and on hover a menu of its
+ *  pages to the right. Clicking the icon opens the same menu, for touch. */
+function NavGroupIcon({
+  group,
+  pathname,
+  labelFor,
+}: {
+  group: NavGroup
+  pathname: string
+  labelFor: (i: NavItem) => string
+}) {
+  const [open, setOpen] = useState(false)
+  const current = group.items.find((i) => isActive(String(i.to), pathname))
+  const Icon = current?.icon ?? group.icon
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        openOnHover
+        delay={60}
+        closeDelay={120}
+        aria-label={group.label}
+        className={cn(
+          'relative flex size-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground',
+          current && 'bg-primary/10 text-primary',
+          open && 'bg-muted text-foreground',
+        )}
+      >
+        <Icon className="size-5" />
+        {current && <span className="absolute -left-2 h-5 w-0.5 rounded-r bg-primary" />}
+        {/* a small corner wedge inside the button, like a toolbar's "has a submenu" mark */}
+        <span
+          aria-hidden
+          className={cn(
+            'pointer-events-none absolute right-[3px] bottom-[3px] size-0 border-b-[5px] border-l-[5px] border-b-current border-l-transparent',
+            open ? 'opacity-90' : 'opacity-45',
+          )}
+        />
+      </PopoverTrigger>
+      <PopoverContent side="right" align="start" sideOffset={10} className="w-52 gap-0 p-1">
+        <p className="px-2 pt-1 pb-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+          {group.label}
+        </p>
+        {group.items.map((item) => {
+          const active = isActive(String(item.to), pathname)
+          return (
+            <Link
+              key={String(item.to)}
+              to={item.to}
+              onClick={() => setOpen(false)}
+              className={cn(
+                'flex items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-muted',
+                active ? 'bg-primary/10 font-medium text-primary' : 'text-foreground',
+              )}
+            >
+              <item.icon className="size-4 shrink-0" />
+              {labelFor(item)}
+            </Link>
+          )
+        })}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+// A single page on the rail (Settings, at the foot) - TanStack Router's Link adds an "active" class on
+// a route match (the [&.active] selector).
 function NavIcon({ to, icon: Icon, label }: NavItem) {
   return (
     <Tooltip>
@@ -187,11 +287,12 @@ function App() {
             </Link>
 
             <nav className="flex flex-col gap-1">
-              {NAV_ITEMS.map((item) => (
-                <NavIcon
-                  key={item.to}
-                  {...item}
-                  label={item.to === '/engine' ? (engineName ?? item.label) : item.label}
+              {NAV_GROUPS.map((group) => (
+                <NavGroupIcon
+                  key={group.label}
+                  group={group}
+                  pathname={pathname}
+                  labelFor={(item) => (item.to === '/engine' ? (engineName ?? item.label) : item.label)}
                 />
               ))}
             </nav>

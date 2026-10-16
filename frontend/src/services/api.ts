@@ -412,6 +412,11 @@ export type Sector = {
   updated: string | null
 }
 
+/** An upcoming results board meeting on NSE (GET /api/results-calendar). */
+export type ResultsMeeting = { symbol: string; date: string; purpose: string; detail: string | null }
+
+export const getResultsCalendar = () => fetch('/api/results-calendar').then(json<{ results: ResultsMeeting[] }>)
+
 export const getSectors = (exchange: 'NSE' | 'BSE' = 'NSE') =>
   fetch(`/api/sectors?exchange=${exchange}`).then(json<{ sectors: Sector[] }>)
 

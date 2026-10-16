@@ -52,6 +52,10 @@ waiting out the poll interval.
   An **entry arrow** marks the candle the position filled on - a bare arrow, green for a buy (below
   the candle) and red for a sell (above it); size and fill price are in the panel. The closed
   trade's page marks both ends the same way. A resting limit has none yet.
+- A **Results in N days** badge shows on any position whose company has a results board meeting
+  in the next two weeks (NSE's calendar) - amber within a week, red within two days. The same
+  badge is on the position page and in Book risk (`/risk`), which also totals open risk to stops,
+  unprotected positions, sector concentration and correlated pairs across every account.
 - **Move** re-files a position under another paper account (a menu of your other paper accounts) -
   for a trade placed on the wrong account. Nothing else about it changes; its cash counts against
   the new account from then on. Closed trades on the Trades tab have the same **Move**, and their

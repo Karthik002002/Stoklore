@@ -186,6 +186,25 @@ def _mover_row(row):
     }
 
 
+def get_results_calendar():
+    """NSE's board-meeting calendar, results meetings only: [{symbol, date "YYYY-MM-DD", purpose,
+    detail}], soonest first. One request covers every listed company for the next couple of weeks -
+    what a swing book needs to know before holding a position through a results day."""
+    rows = []
+    for r in _nse_json("/api/event-calendar") or []:
+        purpose = r.get("purpose") or ""
+        if "result" not in purpose.lower():
+            continue
+        try:
+            day = datetime.strptime(r["date"], "%d-%b-%Y").date().isoformat()
+        except (KeyError, ValueError):
+            continue
+        rows.append({"symbol": (r.get("symbol") or "").upper(), "date": day, "purpose": purpose,
+                     "detail": r.get("bm_desc")})
+    rows.sort(key=lambda x: x["date"])
+    return rows
+
+
 def get_top_movers():
     """NSE's top gainers and losers for every index bucket, in one payload.
 

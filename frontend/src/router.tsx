@@ -23,6 +23,7 @@ import BarReplay from './features/bar-replay'
 import EventsFeed from './EventsFeed'
 import Holdings from './Holdings'
 import PaperTrading from './paper/PaperTrading'
+import RiskPage from './RiskPage'
 import ChartPage from './ChartPage'
 import PaperPositionChart from './paper/PaperPositionChart'
 import PaperTradeDetail from './paper/PaperTradeDetail'
@@ -500,6 +501,14 @@ const engineRunRoute = createRoute({
   component: EngineRunPage,
 })
 
+// The swing book's risk across every account (RiskPage): open risk to stops, unprotected positions,
+// sector concentration, correlated pairs, results coming up.
+const riskRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/risk',
+  component: RiskPage,
+})
+
 const simulationRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/simulation',
@@ -589,6 +598,7 @@ const dashboardRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   indexRoute,
   chartRoute,
+  riskRoute,
   settingsRoute,
   stockRoute,
   legacyStockRoute,

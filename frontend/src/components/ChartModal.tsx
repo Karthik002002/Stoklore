@@ -8,7 +8,7 @@
 // one on screen A/B/C, so a swing trader can read fifty charts in a row without touching the symbol
 // box. Scans and their marks live in Postgres (app/routers/scans.py); /scans reviews them.
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
   CandlestickChartIcon,
@@ -28,12 +28,11 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { inr } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { OrderPanel } from '@/paper/PaperTrades'
 import { PaperChart } from '@/paper/PaperPositionChart'
 import { chartQuery } from '@/features/bar-replay/ChartControls'
-import LiveOrderTicket from '@/live/LiveOrderTicket'
+import { AccountSelect, TradeTicket, useTradeAccount } from '@/components/TradeAccount'
 import { prefillTicket } from '@/lib/ticketPrefill'
-import { createScan, getLiveStatus, getPaperAccounts, getScan, markScan, updateScan } from '@/services/api'
+import { createScan, getScan, markScan, updateScan } from '@/services/api'
 import type { Scan, ScanMark, ScanPriority } from '@/services/api'
 
 type ModalState = { symbol: string | null; scan: Scan | null; index: number }
@@ -123,9 +122,6 @@ export function ScanButton({
   )
 }
 
-const ACCOUNT_KEY = 'chartModal.account'
-// 1 when the last pick was the Dhan account rather than a paper one
-const LIVE_KEY = 'chartModal.live'
 const SECONDS_KEY = 'chartModal.scanSeconds'
 const SPEEDS = [2, 3, 5, 8, 12, 20]
 const read = (key: string) => {
@@ -154,22 +150,9 @@ const KEYS: Record<string, ScanPriority> = { '1': 'A', '2': 'B', '3': 'C' }
 export default function ChartModal() {
   const { symbol, scan, index } = useChartModal()
   const queryClient = useQueryClient()
-  const { data: accounts = [] } = useQuery({
-    queryKey: ['paperAccounts'],
-    queryFn: getPaperAccounts,
-    enabled: !!symbol,
-  })
-  // the paper account last traded from here, else the first one
-  const [picked, setPicked] = useState<number | null>(() => read(ACCOUNT_KEY))
-  const account = accounts.find((a) => a.id === picked)?.id ?? accounts[0]?.id ?? null
-  // The Dhan account is offered once credentials are in; picked, the ticket sends real orders.
-  const { data: liveStatus } = useQuery({
-    queryKey: ['liveStatus'],
-    queryFn: getLiveStatus,
-    enabled: !!symbol,
-  })
-  const [livePicked, setLivePicked] = useState(() => read(LIVE_KEY) === 1)
-  const live = livePicked && !!liveStatus?.configured
+  // the account the chart trades on - shared with the /chart page (components/TradeAccount)
+  const trade = useTradeAccount(!!symbol)
+  const { account, live } = trade
   const [ticket, setTicket] = useState(true)
   const [range, setRange] = useState('6mo')
 
@@ -281,14 +264,6 @@ export default function ChartModal() {
     return () => window.removeEventListener('keydown', onKey, true)
   }, [scan, index, done, go, mark])
 
-  const pick = (value: string) => {
-    const toLive = value === 'live'
-    setLivePicked(toLive)
-    write(LIVE_KEY, toLive ? 1 : 0)
-    if (toLive) return
-    setPicked(Number(value))
-    write(ACCOUNT_KEY, Number(value))
-  }
   const counts = Object.values(marks).reduce<Record<string, number>>(
     (c, m) => (m.priority ? { ...c, [m.priority]: (c[m.priority] ?? 0) + 1 } : c),
     {},
@@ -473,41 +448,7 @@ export default function ChartModal() {
               <>
                 {scanControls}
                 <div className="flex items-center gap-1 border-l pl-2">
-                  {(accounts.length > 0 || liveStatus?.configured) && (
-                    <Select value={live ? 'live' : String(account)} onValueChange={(v) => pick(v as string)}>
-                      <SelectTrigger
-                        size="sm"
-                        className={cn('w-44', live && 'border-down/60 text-down')}
-                        title={
-                          live
-                            ? 'Dhan: orders from the ticket are real'
-                            : 'Paper account: its positions show on the chart, orders go to it'
-                        }
-                      >
-                        <SelectValue>
-                          {(v: string) =>
-                            v === 'live'
-                              ? 'Dhan · live'
-                              : (accounts.find((a) => String(a.id) === v)?.name ?? v)
-                          }
-                        </SelectValue>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {accounts.map((a) => (
-                          <SelectItem key={a.id} value={String(a.id)}>
-                            {a.name}
-                          </SelectItem>
-                        ))}
-                        {liveStatus?.configured && (
-                          // Red text rather than a leading dot: a dot pushes this one label off the
-                          // left edge the paper accounts line up on.
-                          <SelectItem value="live" className="text-down">
-                            Dhan · live
-                          </SelectItem>
-                        )}
-                      </SelectContent>
-                    </Select>
-                  )}
+                  <AccountSelect trade={trade} />
                   <Button
                     size="icon-sm"
                     variant="ghost"
@@ -551,24 +492,7 @@ export default function ChartModal() {
             side={
               ticket && (
                 <aside className="w-80 shrink-0 overflow-y-auto border-l">
-                  {live ? (
-                    <LiveOrderTicket key={symbol} symbol={symbol} className="min-h-full bg-background p-4" />
-                  ) : account == null ? (
-                    <p className="p-4 text-sm text-muted-foreground">
-                      No paper account yet -{' '}
-                      <Link to="/paper" className="underline" onClick={closeChart}>
-                        create one
-                      </Link>{' '}
-                      to trade from the chart.
-                    </p>
-                  ) : (
-                    <OrderPanel
-                      key={`${symbol}-${account}`}
-                      accountId={account}
-                      symbol={symbol}
-                      className="min-h-full bg-background p-4"
-                    />
-                  )}
+                  <TradeTicket trade={trade} symbol={symbol} onNavigate={closeChart} />
                 </aside>
               )
             }

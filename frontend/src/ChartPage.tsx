@@ -4,6 +4,8 @@
 // timeframe, alerts and positions come with it. Trading happens here too: the account picker in
 // the top bar and the sidebar's Trade tab are the chart modal's (components/TradeAccount), so an
 // order never needs a second chart opened over this one.
+import RsPill from '@/components/RsPill'
+import { useStrength } from '@/lib/useStrength'
 import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
@@ -149,6 +151,7 @@ export default function ChartPage() {
   }
   const [sort, setSort] = useState<Sort>(null)
 
+  const { bySymbol: strengthOf } = useStrength()
   const { data: stocks = [], isPending } = useQuery({
     queryKey: ['stocks'],
     queryFn: getStocks,
@@ -168,8 +171,9 @@ export default function ChartPage() {
       last: (s) => s.price,
       chg: (s) => absChange(s),
       pct: (s) => s.changePercent,
+      rs: (s) => strengthOf.get(s.symbol)?.rs,
     })
-  }, [stocks, watchlist, list, sort])
+  }, [stocks, watchlist, list, sort, strengthOf])
   const symbol = (search.symbol ?? last.symbol ?? rows[0]?.symbol ?? '').toUpperCase()
   usePageTitle(symbol ? `${symbol} · Chart` : 'Chart')
 
@@ -319,19 +323,20 @@ export default function ChartPage() {
                   <SortTh label="Last" k="last" sort={sort} onSort={setSort} />
                   <SortTh label="Chg" k="chg" sort={sort} onSort={setSort} />
                   <SortTh label="Chg%" k="pct" sort={sort} onSort={setSort} />
+                  <SortTh label="RS" k="rs" sort={sort} onSort={setSort} />
                 </tr>
               </thead>
               <tbody>
                 {isPending && (
                   <tr>
-                    <td colSpan={4} className="py-6 text-center text-muted-foreground">
+                    <td colSpan={5} className="py-6 text-center text-muted-foreground">
                       <Spinner className="mx-auto size-4" />
                     </td>
                   </tr>
                 )}
                 {!isPending && rows.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-3 py-6 text-center text-muted-foreground">
+                    <td colSpan={5} className="px-3 py-6 text-center text-muted-foreground">
                       {list === ALL ? 'No tracked stocks yet.' : `${list} is empty.`} Add one above.
                     </td>
                   </tr>
@@ -377,6 +382,9 @@ export default function ChartPage() {
                       </td>
                       <td className={cn('px-2 py-1.5 text-right tabular-nums', tone(s.changePercent))}>
                         {pctText(s.changePercent)}
+                      </td>
+                      <td className="px-1.5 py-1.5 text-right">
+                        <RsPill rs={strengthOf.get(s.symbol)?.rs} />
                       </td>
                     </tr>
                   )

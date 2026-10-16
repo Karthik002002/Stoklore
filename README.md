@@ -169,6 +169,18 @@ to guard rails you can see and control.
 ### `1` Live Dashboard & Watchlists
 
 - **NIFTY 50 / SENSEX** index cards with a live sparkline chart on the home page
+- **Leaders** (`/leaders`, Markets menu) — the strongest stocks in the strongest sectors across
+  the NSE main board, from NSE's daily **bhavcopy** (one file per day for every stock: a year
+  backfilled once in the background, ~280 throttled requests, then one file each evening; cached in
+  `local_data/bhavcopy/`, never the database). See [docs/leaders.md](docs/leaders.md).
+  - **RS rating 1-99** — the share of the market a stock's 3/6/9/12-month performance beats (latest
+    quarter weighted double). Also a sortable column on the home watchlist and the Chart page, and in
+    the sector hover card
+  - **Scan** — RS, Minervini's 8-point trend template, distance from the 52-week high, liquidity, a
+    **VCP** read (successively shallower pullbacks, volume drying up, price near the pivot), and
+    optionally only sectors that are leading or improving — then **Scan N** into the slideshow
+  - **Sector rotation** — a Relative Rotation Graph of the ET sectors (rebuilt from their members,
+    cap-weighted) against NIFTY 50, weekly or daily, with each sector's recent tail
 - **Book risk** (`/risk`, shield icon) — every open position across your paper accounts and Dhan:
   what's **at risk to the stops** from here (per account, and as a % of its balance — Dhan's against
   available cash), what booking every stop would leave against entry, positions with shares that
@@ -221,11 +233,11 @@ to guard rails you can see and control.
   TTL cache (`stock_cache`) instead of hitting Yahoo Finance on every request
 - **Watchlists**: bookmark any tracked stock into named lists, move a stock
   between lists, filter the table by tab
-- A short icon-rail sidebar: four groups - **Markets** (Stocks, Chart, Events, Top news,
-  Shareholding), **Trading** (Holdings, Paper, Live, Book risk), **Practice** (Backtesting, Bar
-  Replay, Trade Simulation), **Automation** (Algo engine, Agent, Workflows, Dashboards) - each
-  opening its pages in a menu on hover (or click); the group lights up, showing the open page's own
-  icon, when you're on one of its pages. At the foot: Settings, theme toggle, and a **Reload** button that clears the
+- A short icon-rail sidebar, grouped by what you're doing - **Discover** (Stocks, Leaders, Chart,
+  Scans), **Research** (Events, Top news, Shareholding), **Trade** (Paper, Live, Holdings, Book risk,
+  Alerts), **Review** (Backtesting, Bar Replay, Trade Simulation), **Automate** (Algo engine,
+  Workflows, Agent, Dashboards) - each opening its pages in a menu on hover (or click); the group
+  lights up, showing the open page's own icon, when you're on one of its pages. At the foot: Settings, theme toggle, and a **Reload** button that clears the
   shared cache on demand. **Hide it** with the button at its foot or `⌘\` / `Ctrl+\`
   (rebindable in Settings › Shortcuts) - the full-screen charts take the room, a tab on the
   left edge brings it back, and the choice is remembered per browser

@@ -111,9 +111,12 @@ const settingsRoute = createRoute({
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  validateSearch: (search): { list?: string; tab?: 'home' | 'board' } => ({
+  // `sector` (an ET sector id) opens that sector in the home Sector Performance panel - how the
+  // Leaders page's rotation view links a sector to its stocks.
+  validateSearch: (search): { list?: string; tab?: 'home' | 'board'; sector?: string } => ({
     list: typeof search.list === 'string' && search.list ? search.list : undefined,
     tab: search.tab === 'home' || search.tab === 'board' ? search.tab : undefined,
+    sector: search.sector != null && search.sector !== '' ? String(search.sector) : undefined,
   }),
   component: Home,
 })
@@ -509,6 +512,14 @@ const engineRunRoute = createRoute({
 const leadersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/leaders',
+  // the tab and the rotation view live in the URL, so coming back (or reloading) lands where you were
+  validateSearch: (
+    search,
+  ): { tab?: 'scan' | 'rotation' | 'rs'; tf?: 'weekly' | 'daily'; view?: 'graph' | 'timeline' } => ({
+    tab: search.tab === 'rotation' || search.tab === 'rs' ? search.tab : undefined,
+    tf: search.tf === 'daily' ? 'daily' : undefined,
+    view: search.view === 'timeline' ? 'timeline' : undefined,
+  }),
   component: LeadersPage,
 })
 

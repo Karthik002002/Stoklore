@@ -7,7 +7,9 @@
 //     fell hard / fell / held / rose / rose hard), the members as a cap-weighted heat strip, and
 //     its best and worst member;
 //  3. the row opened: every member as a tile, sized and coloured the same way.
-import { Fragment, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
+import { useNavigate, useSearch } from '@tanstack/react-router'
+import { useHomeLayout } from '@/lib/homeLayout'
 import { useQuery } from '@tanstack/react-query'
 import { ChevronRightIcon, RefreshCwIcon } from 'lucide-react'
 import { openChart } from '@/components/ChartModal'
@@ -307,6 +309,10 @@ export default function SectorPerformancePanel() {
   const [exchange, setExchange] = useState<'NSE' | 'BSE'>('NSE')
   const [sort, setSort] = useState<Sort>(null)
   const [open, setOpen] = useState<Set<string>>(new Set())
+  // ?sector=<id> (a link from Leaders' sector rotation): open that sector, unhide the panel if it was
+  // hidden on this home layout, and scroll its row into view once the data is in.
+  const { sector: linked } = useSearch({ strict: false }) as { sector?: string }
+  const navigate = useNavigate()
   const [filter, setFilter] = useState('')
   // one order for every opened sector's members, one for the sector map - both remembered
   const [memberSort, setMemberSort] = useTileSort('sectors.memberSort')
@@ -339,6 +345,23 @@ export default function SectorPerformancePanel() {
       members: (s) => s.members.length,
     },
   )
+  useEffect(() => {
+    if (!linked || !data) return
+    useHomeLayout.getState().setHidden('sectors', false)
+    setFilter('')
+    setOpen((prev) => new Set(prev).add(linked))
+    const t = setTimeout(() => {
+      document.getElementById(`sector-row-${linked}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      // applied once: off the URL, so a refetch or a reload doesn't scroll back here
+      navigate({
+        to: '/',
+        search: (prev: Record<string, unknown>) => ({ ...prev, sector: undefined }),
+        replace: true,
+      } as never)
+    }, 150)
+    return () => clearTimeout(t)
+  }, [linked, data, navigate])
+
   const toggle = (id: string) =>
     setOpen((prev) => {
       const next = new Set(prev)
@@ -524,7 +547,11 @@ function SectorRow({
   return (
     <Fragment>
       <tr
-        className={cn('cursor-pointer border-b border-border/40 hover:bg-muted/40', open && 'bg-muted/30')}
+        id={`sector-row-${s.id}`}
+        className={cn(
+          'cursor-pointer scroll-mt-10 border-b border-border/40 hover:bg-muted/40',
+          open && 'bg-muted/30',
+        )}
         onClick={onToggle}
       >
         <td className="pl-1 text-muted-foreground">

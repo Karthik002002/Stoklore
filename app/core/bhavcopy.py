@@ -10,12 +10,15 @@ Files land in local_data/bhavcopy/ (gitignored - fetched data, not code), one sm
 the equity rows per day. A day NSE has no file for (a holiday, a weekend) leaves an empty marker so
 it's never asked for again. Nothing here writes to the database.
 
-Prices are as traded - NOT adjusted for splits and bonuses. strength.py drops a stock with a
-split-like gap in its window rather than reporting a fake crash.
+Prices are back-adjusted for the splits and bonuses in NSE's corporate-actions list (one request a
+day, cached as corp_actions.json). Anything that list misses still shows as a gap, and strength.py
+drops a stock with a split-like gap rather than reporting a fake crash.
 """
 import csv
 import gzip
 import io
+import json
+import re
 import threading
 import time
 import zipfile
@@ -141,6 +144,71 @@ def sync():
         return state
 
 
+CORP_ACTIONS = CACHE_DIR / "corp_actions.json"
+CA_PATH = "/api/corporates-corporateActions?index=equities&from_date={a:%d-%m-%Y}&to_date={b:%d-%m-%Y}"
+
+
+def ca_factor(subject):
+    """Price divisor for one corporate action's subject line, or None if it isn't a split/bonus.
+    'Bonus 1:4' (1 new per 4 held) -> 1.25; 'Face Value Split From Rs 10/- To Rs 2/-' -> 5."""
+    s = (subject or "").lower()
+    m = re.search(r"bonus\D*?(\d+)\s*:\s*(\d+)", s)
+    if m and int(m[2]):
+        return (int(m[1]) + int(m[2])) / int(m[2])
+    if "split" in s or "splt" in s or "sub-division" in s:
+        m = re.search(r"r[se]\.?\s*(\d+(?:\.\d+)?)\D+?r[se]\.?\s*(\d+(?:\.\d+)?)", s)
+        if m and float(m[2]):
+            return float(m[1]) / float(m[2])
+    return None
+
+
+def corp_actions():
+    """{symbol: [(ex_date, factor), ...]} for the history window, refetched once a day. A failed
+    fetch falls back to yesterday's copy (or nothing) - unadjusted stocks are caught by split_gap."""
+    today = datetime.now(IST).date()
+    cached = None
+    if CORP_ACTIONS.exists():
+        cached = json.loads(CORP_ACTIONS.read_text())
+        if cached.get("fetched") == today.isoformat():
+            return _ca_map(cached["rows"])
+    try:
+        rows = scraper._nse_json(CA_PATH.format(a=today - timedelta(days=HISTORY_DAYS), b=today)) or []
+        rows = [{"symbol": r.get("symbol"), "subject": r.get("subject"), "exDate": r.get("exDate")} for r in rows]
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        CORP_ACTIONS.write_text(json.dumps({"fetched": today.isoformat(), "rows": rows}))
+    except Exception:
+        rows = (cached or {}).get("rows", [])
+    return _ca_map(rows)
+
+
+def _ca_map(rows):
+    out = {}
+    for r in rows:
+        f = ca_factor(r.get("subject"))
+        try:
+            d = datetime.strptime(r.get("exDate") or "", "%d-%b-%Y").date()
+        except ValueError:
+            continue
+        if f and f > 1 and r.get("symbol"):
+            out.setdefault(r["symbol"], []).append((d, f))
+    return out
+
+
+def adjust(rows, actions):
+    """Back-adjust one symbol's bars: prices before each ex-date divided by its factor, volume
+    multiplied. Rows are (date, o, h, l, c, v) ascending."""
+    if not actions:
+        return rows
+    out = []
+    for r in rows:
+        f = 1.0
+        for d, k in actions:
+            if r[0] < d:
+                f *= k
+        out.append(r if f == 1 else (r[0], r[1] / f, r[2] / f, r[3] / f, r[4] / f, int(r[5] * f)))
+    return out
+
+
 def load():
     """The cache as {symbol: [(date, open, high, low, close, volume), ...]} ascending, plus the list of
     trading days. Read fresh each call; strength.py caches what it derives from it."""
@@ -150,4 +218,7 @@ def load():
         text = gzip.decompress(_path(d).read_bytes()).decode()
         for sym, o, h, low, c, v, _val in csv.reader(io.StringIO(text)):
             bars.setdefault(sym, []).append((d, float(o), float(h), float(low), float(c), int(v)))
+    for sym, acts in corp_actions().items():
+        if sym in bars:
+            bars[sym] = adjust(bars[sym], acts)
     return bars, days

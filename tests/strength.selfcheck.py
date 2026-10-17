@@ -70,4 +70,15 @@ assert s.rrg(weak, bench)[-1]["ratio"] < 100
 assert s.quadrant(101, 99) == "weakening" and s.quadrant(99, 101) == "improving"
 assert s.rrg(strong[:5], bench) == [], "too short"
 
-print("ok - strength: split gaps, RS ratings, trend template, VCP, sector index, RRG")
+# corporate actions: subject lines -> price divisor, and back-adjustment across the ex-date
+from app.core import bhavcopy as bc
+assert bc.ca_factor("Bonus 1:4") == 1.25 and bc.ca_factor("Bonus 1:1") == 2
+assert bc.ca_factor("Face Value Split (Sub-Division) - From Rs 10/- Per Share To Rs 2/- Per Share") == 5
+assert bc.ca_factor("Fv Splt Frm Rs10 To Re1") == 10
+assert bc.ca_factor("Dividend - Rs 5 Per Share") is None
+rows = [(dates[0], 100, 100, 100, 100, 10), (dates[1], 50, 50, 50, 50, 20)]
+adj = bc.adjust(rows, [(dates[1], 2.0)])
+assert adj[0][4] == 50 and adj[0][5] == 20 and adj[1] == rows[1], adj
+assert not s.split_gap([r[4] for r in adj])
+
+print("ok - strength: corporate actions, split gaps, RS ratings, trend template, VCP, sector index, RRG")

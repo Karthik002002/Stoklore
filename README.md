@@ -172,7 +172,9 @@ to guard rails you can see and control.
 - **Leaders** (`/leaders`, Markets menu) — the strongest stocks in the strongest sectors across
   the NSE main board, from NSE's daily **bhavcopy** (one file per day for every stock: a year
   backfilled once in the background, ~280 throttled requests, then one file each evening; cached in
-  `local_data/bhavcopy/`, never the database). See [docs/leaders.md](docs/leaders.md).
+  `local_data/bhavcopy/`, never the database). Prices back-adjusted for splits/bonuses from NSE's
+  corporate-actions list; a stock newly passing the VCP read writes an entry to the Alerts feed.
+  See [docs/leaders.md](docs/leaders.md).
   - **RS rating 1-99** — the share of the market a stock's 3/6/9/12-month performance beats (latest
     quarter weighted double). Also a sortable column on the home watchlist and the Chart page, and in
     the sector hover card

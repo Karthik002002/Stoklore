@@ -19,6 +19,7 @@ from app.core import paper
 
 from app.core.config import UPLOAD_DIR
 from app.routers import router
+from app.routers import strength as strength_router
 from app.services import engine_jobs
 from app.services.jobs import (
     _auto_event_scan_loop,
@@ -62,6 +63,9 @@ def _startup():
     # interrupted) and the bar cache's 2-week sliding TTL - see engine_jobs.py and minute_data.py.
     engine_jobs.start()
     minute_data.start_ttl_sweeper()
+    # Pulls each evening's bhavcopy and alerts on stocks newly passing the VCP read - see
+    # app/routers/strength.py.
+    strength_router.start()
 
 
 # --- the login gate ------------------------------------------------------------------------------

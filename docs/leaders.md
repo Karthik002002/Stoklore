@@ -26,7 +26,12 @@
   - **Timeline** shows the same thing as rows: one per sector, one cell per week (or day) coloured
     by the quadrant it was in, deeper the further from 100 - the rotation reads left to right.
   - The 20 largest sectors by market cap by default; tick **All sectors** for every one.
+  - **Stocks ↗** beside each sector (timeline rows and the side list) opens the home page with that
+    sector expanded in the Sector Performance panel - its member stocks, scrolled into view (the
+    panel is un-hidden if you'd hidden it on the home layout).
 - **RS ranking** - every rated stock, sortable, with a symbol search.
+
+The open tab, Weekly/Daily and Graph/Timeline are kept in the URL (`?tab=rotation&tf=daily&view=timeline`; defaults are left out), so going back, reloading or sharing the link returns to the same view.
 
 RS also appears as a column on the home watchlist and the Chart page sidebar, and in the sector panel's
 hover card (with the template score and distance from the 52-week high).
@@ -37,7 +42,7 @@ hover card (with the template score and distance from the 52-week high).
 and traded value of every NSE security, so a year of history for the whole market is ~280 requests,
 not one per stock - per-stock downloads hit rate limits. The first request to `/api/strength/*` starts
 a background backfill (one file every ~2.5s, ~15-20 minutes, once, **newest day first**); after that each evening's file
-(published after 18:30 IST) is fetched on the next visit. Files are cached as gzipped CSV in
+(published after 18:30 IST) is pulled by a background tick every 15 minutes, whether or not the page is open. Files are cached as gzipped CSV in
 `local_data/bhavcopy/` - gitignored, never the database. A holiday leaves an empty marker so it is
 not asked for again; a day already on disk is never fetched twice. Only EQ and BE series rows are
 kept, and only symbols in the NSE stocks master are rated - the bhavcopy files ETFs under EQ too.
@@ -47,11 +52,18 @@ on the history so far, under a progress bar, re-rated every 10 more days. Becaus
 first, those partial ratings are current; what needs the full year (the 12-month return, the 200-day
 average and the template checks built on it) fills in as it completes.
 
-**Splits and bonuses.** Bhavcopy prices are as traded, not adjusted. A stock whose last year contains
-an overnight **fall** matching a split/bonus ratio (1.5×, 2×, 3×, 4×, 5×, 10×, ±4%) is left out of
-every reading rather than shown with a fake crash - the page says how many. 1:3 and 1:4 bonuses
-(1.33×, 1.25×) aren't caught on purpose: a 20% lower circuit looks the same, and dropping a genuine
-faller would be worse.
+**Splits and bonuses.** Bhavcopy prices are as traded. NSE's corporate-actions list (one request a
+day, cached as `local_data/bhavcopy/corp_actions.json`) gives each split and bonus with its ex-date;
+prices before it are divided by the factor (bonus a:b → (a+b)/b, split Rs X → Rs Y → X/Y) and volume
+multiplied, so those stocks are rated on their real moves - 1:3 and 1:4 bonuses included. As a
+backstop, a stock whose adjusted year still contains an overnight **fall** matching a split ratio
+(1.5×, 2×, 3×, 4×, 5×, 10×, ±4%) is left out rather than shown with a fake crash - the page says how many.
+
+**VCP alerts.** When a new day lands (full year only, not partial ratings), every stock that passes
+the VCP read today but didn't on the previous day checked - and trades at least ₹1 Cr a day - gets an
+entry in the Alerts feed (kind `scan`): symbol, RS, pivot and distance to it. The first run only
+records the current set, so switching it on doesn't flood the feed. Seen set:
+`local_data/bhavcopy/vcp_seen.json`.
 
 **RS rating** (`app/core/strength.py`): `0.4·r3m + 0.2·r6m + 0.2·r9m + 0.2·r12m` per stock, then the
 percentile across every rated stock, 1-99. Stocks with under 200 bars are not rated. "6M vs Nifty" is

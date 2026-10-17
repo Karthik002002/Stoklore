@@ -242,7 +242,7 @@ export type AlertTrigger = 'once' | 'once_per_day' | 'every_time'
 /** A price condition the user armed, or something the broker did - one feed, two kinds. */
 export type Alert = {
   id: number
-  kind: 'price' | 'order' | 'workflow'
+  kind: 'price' | 'order' | 'workflow' | 'scan'
   symbol: string | null
   condition: AlertCondition | null
   /** The level, the first channel bound, or the size of the move. */

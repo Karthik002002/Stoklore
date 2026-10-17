@@ -169,6 +169,9 @@ to guard rails you can see and control.
 ### `1` Live Dashboard & Watchlists
 
 - **NIFTY 50 / SENSEX** index cards with a live sparkline chart on the home page
+- **Earnings** (`/earnings`, Research menu) — results board meetings on NSE for the next ~two weeks,
+  grouped by day; "Only mine" narrows it to watchlists and open paper/live positions. See
+  [docs/earnings.md](docs/earnings.md).
 - **Leaders** (`/leaders`, Markets menu) — the strongest stocks in the strongest sectors across
   the NSE main board, from NSE's daily **bhavcopy** (one file per day for every stock: a year
   backfilled once in the background, ~280 throttled requests, then one file each evening; cached in

@@ -23,6 +23,7 @@ import BarReplay from './features/bar-replay'
 import EventsFeed from './EventsFeed'
 import Holdings from './Holdings'
 import PaperTrading from './paper/PaperTrading'
+import EarningsPage from './EarningsPage'
 import LeadersPage from './LeadersPage'
 import RiskPage from './RiskPage'
 import ChartPage from './ChartPage'
@@ -507,6 +508,13 @@ const engineRunRoute = createRoute({
 
 // The swing book's risk across every account (RiskPage): open risk to stops, unprotected positions,
 // sector concentration, correlated pairs, results coming up.
+// Upcoming results board meetings (EarningsPage), narrowed to what you track or hold.
+const earningsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/earnings',
+  component: EarningsPage,
+})
+
 // Strongest stocks in the strongest sectors (LeadersPage): RS rating, trend template, VCP scan and
 // sector rotation over the NSE bhavcopy history.
 const leadersRoute = createRoute({
@@ -620,6 +628,7 @@ const routeTree = rootRoute.addChildren([
   chartRoute,
   riskRoute,
   leadersRoute,
+  earningsRoute,
   settingsRoute,
   stockRoute,
   legacyStockRoute,

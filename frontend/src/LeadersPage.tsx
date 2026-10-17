@@ -10,7 +10,8 @@
 // here says buy; the chart is still where the decision is made.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { PlayIcon } from 'lucide-react'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
+import { ArrowUpRightIcon, PlayIcon } from 'lucide-react'
 import { ChartButton, startScan } from '@/components/ChartModal'
 import RsPill from '@/components/RsPill'
 import SectorHoverCard, { hoverProps } from '@/components/SectorHoverCard'
@@ -182,7 +183,10 @@ function StockTable({ rows, sectorOf }: { rows: StrengthStock[]; sectorOf: Map<s
         </tbody>
       </table>
       {shown < sorted.length && (
-        <div ref={sentinelRef} className="flex items-center justify-center gap-2 p-3 text-xs text-muted-foreground">
+        <div
+          ref={sentinelRef}
+          className="flex items-center justify-center gap-2 p-3 text-xs text-muted-foreground"
+        >
           <Spinner className="size-3.5" /> {shown} of {sorted.length}
         </div>
       )}
@@ -388,8 +392,13 @@ function RrgTimeline({
                   (focus === s.id || pinned.has(s.id)) && 'bg-muted/50',
                 )}
               >
-                <td className="max-w-48 truncate px-2 py-0.5" {...hover(s)}>
-                  {s.name}
+                <td className="max-w-56 px-2 py-0.5">
+                  <span className="flex items-center gap-1">
+                    <span className="min-w-0 flex-1 truncate" {...hover(s)}>
+                      {s.name}
+                    </span>
+                    <SectorStocksLink id={s.id} name={s.name} />
+                  </span>
                 </td>
                 {s.tail.map((p) => {
                   const q = strengthQuadrant(p.ratio, p.momentum)
@@ -417,6 +426,23 @@ function RrgTimeline({
   )
 }
 
+/** Opens the home page with this sector expanded in the Sector Performance panel - its stocks. */
+function SectorStocksLink({ id, name }: { id: string; name: string }) {
+  return (
+    <Link
+      to="/"
+      search={{ tab: 'home', sector: id }}
+      onClick={(e) => e.stopPropagation()}
+      title={`Open ${name} on the home page - its stocks`}
+      aria-label={`${name} stocks`}
+      className="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+    >
+      Stocks
+      <ArrowUpRightIcon className="size-3" />
+    </Link>
+  )
+}
+
 type Hover = (
   s: RrgSector,
   at?: string,
@@ -431,13 +457,22 @@ const strengthQuadrant = (ratio: number, momentum: number): RrgSector['quadrant'
 
 export default function LeadersPage() {
   usePageTitle('Leaders')
-  const [tab, setTab] = useState<'scan' | 'rotation' | 'rs'>('scan')
+  // tab, timeframe and rotation view come from the URL (router.tsx leadersRoute); defaults are left out
+  const url = useSearch({ from: '/leaders' })
+  const navigate = useNavigate({ from: '/leaders' })
+  const tab = url.tab ?? 'scan'
+  const setTab = (t: 'scan' | 'rotation' | 'rs') =>
+    navigate({ search: (p) => ({ ...p, tab: t === 'scan' ? undefined : t }), replace: true })
   const { status, table, bySymbol } = useStrength()
   const { data: sectorData } = useQuery({ queryKey: ['sectors', 'NSE'], queryFn: () => getSectors('NSE') })
-  const [tf, setTf] = useState<'weekly' | 'daily'>('weekly')
+  const tf = url.tf ?? 'weekly'
+  const setTf = (v: 'weekly' | 'daily') =>
+    navigate({ search: (p) => ({ ...p, tf: v === 'weekly' ? undefined : v }), replace: true })
   const [focus, setFocus] = useState<string | null>(null)
   const [pinned, setPinned] = useState<Set<string>>(new Set())
-  const [rrgView, setRrgView] = useState<'graph' | 'timeline'>('graph')
+  const rrgView = url.view ?? 'graph'
+  const setRrgView = (v: 'graph' | 'timeline') =>
+    navigate({ search: (p) => ({ ...p, view: v === 'graph' ? undefined : v }), replace: true })
   const [rrgAll, setRrgAll] = useState(false)
   const hover: Hover = (sec, at) => {
     const et = sectorData?.sectors.find((x) => x.id === sec.id)
@@ -698,21 +733,9 @@ export default function LeadersPage() {
                 <div className="grid h-[calc(100vh-16rem)] min-h-[420px] gap-4 lg:grid-cols-[1fr_18rem]">
                   <div className="min-h-0 rounded-xl border bg-card p-2">
                     {rrgView === 'graph' ? (
-                      <RrgChart
-                        sectors={shown}
-                        focus={focus}
-                        pinned={pinned}
-                        hover={hover}
-                        onPin={pin}
-                      />
+                      <RrgChart sectors={shown} focus={focus} pinned={pinned} hover={hover} onPin={pin} />
                     ) : (
-                      <RrgTimeline
-                        sectors={shown}
-                        focus={focus}
-                        pinned={pinned}
-                        hover={hover}
-                        onPin={pin}
-                      />
+                      <RrgTimeline sectors={shown} focus={focus} pinned={pinned} hover={hover} onPin={pin} />
                     )}
                   </div>
                   <div className="min-h-0 space-y-3 overflow-y-auto rounded-xl border bg-card p-2">
@@ -729,24 +752,26 @@ export default function LeadersPage() {
                           {list.map((s) => {
                             const last = s.tail[s.tail.length - 1]
                             return (
-                              <button
-                                key={s.id}
-                                type="button"
-                                {...hover(s)}
-                                onClick={() => pin(s.id)}
-                                className={cn(
-                                  'flex w-full items-center gap-2 rounded px-1.5 py-0.5 text-left text-xs hover:bg-muted',
-                                  (focus === s.id || pinned.has(s.id)) && 'bg-muted',
-                                )}
-                              >
-                                {pinned.has(s.id) && (
-                                  <span className="size-1.5 shrink-0 rounded-full bg-primary" />
-                                )}
-                                <span className="min-w-0 flex-1 truncate">{s.name}</span>
-                                <span className="shrink-0 text-muted-foreground tabular-nums">
-                                  {fmt(last.ratio, 1)} / {fmt(last.momentum, 1)}
-                                </span>
-                              </button>
+                              <div key={s.id} className="flex items-center">
+                                <button
+                                  type="button"
+                                  {...hover(s)}
+                                  onClick={() => pin(s.id)}
+                                  className={cn(
+                                    'flex w-full items-center gap-2 rounded px-1.5 py-0.5 text-left text-xs hover:bg-muted',
+                                    (focus === s.id || pinned.has(s.id)) && 'bg-muted',
+                                  )}
+                                >
+                                  {pinned.has(s.id) && (
+                                    <span className="size-1.5 shrink-0 rounded-full bg-primary" />
+                                  )}
+                                  <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                                  <span className="shrink-0 text-muted-foreground tabular-nums">
+                                    {fmt(last.ratio, 1)} / {fmt(last.momentum, 1)}
+                                  </span>
+                                </button>
+                                <SectorStocksLink id={s.id} name={s.name} />
+                              </div>
                             )
                           })}
                         </div>

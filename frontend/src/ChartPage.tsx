@@ -6,7 +6,7 @@
 // order never needs a second chart opened over this one.
 import RsPill from '@/components/RsPill'
 import { useStrength } from '@/lib/useStrength'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import {
@@ -46,6 +46,11 @@ const readLast = (): { symbol?: string; list?: string } => {
 
 /** A list's badge: the first letters of its first two words - "Small Cap" SC, "Screener Stocks" SS,
  *  "Test" T - so lists starting with the same letter still tell apart. */
+const SIDEBAR_KEY = 'chart.sidebarWidth'
+const SIDEBAR_DEFAULT = 320
+const SIDEBAR_MIN = 260
+const SIDEBAR_MAX = 640
+
 const initials = (name: string) =>
   name
     .split(/\s+/)
@@ -205,6 +210,45 @@ export default function ChartPage() {
     return () => window.removeEventListener('keydown', onKey)
   })
 
+  const [width, setWidth] = useState(() => {
+    try {
+      return Number(localStorage.getItem(SIDEBAR_KEY)) || SIDEBAR_DEFAULT
+    } catch {
+      return SIDEBAR_DEFAULT
+    }
+  })
+  const saveWidth = (w: number) => {
+    setWidth(w)
+    try {
+      localStorage.setItem(SIDEBAR_KEY, String(w))
+    } catch {}
+  }
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault()
+    const x0 = e.clientX
+    const w0 = width
+    let w = w0
+    const move = (ev: PointerEvent) => {
+      w = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, w0 + x0 - ev.clientX))
+      setWidth(w)
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      document.body.style.cursor = ''
+      saveWidth(w)
+    }
+    document.body.style.cursor = 'col-resize'
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
+  // keep the selected list's tab in view when there are more lists than fit
+  const listsRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    listsRef.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }, [list])
+
   const refresh = () =>
     ['stocks', 'watchlist', 'watchlists'].forEach((key) => queryClient.invalidateQueries({ queryKey: [key] }))
   const add = useMutation({
@@ -235,7 +279,16 @@ export default function ChartPage() {
   })
 
   const sidebarPanel = sidebar && (
-    <aside className="flex w-80 shrink-0 flex-col border-l bg-background">
+    <aside style={{ width }} className="relative flex shrink-0 flex-col border-l bg-background">
+      {/* drag the left edge to resize; double-click resets. Width remembered per browser. */}
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize watchlist"
+        onPointerDown={startResize}
+        onDoubleClick={() => saveWidth(SIDEBAR_DEFAULT)}
+        className="absolute inset-y-0 -left-1 z-10 w-2 cursor-col-resize hover:bg-foreground/20 active:bg-foreground/30"
+      />
       <div className="flex shrink-0 gap-0.5 border-b p-1">
         {(['watchlist', 'trade'] as const).map((t) => (
           <button
@@ -263,8 +316,16 @@ export default function ChartPage() {
       ) : (
         <>
           <div className="flex items-center gap-1.5 border-b p-2">
-            {/* the lists as round tabs, like TradingView's: initials in a circle, the full name on hover */}
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+            {/* the lists as round tabs, like TradingView's: initials in a circle, the full name on hover.
+                One row however many lists: it scrolls sideways (wheel works too), edges fade, and the
+                active list is scrolled into view. */}
+            <div
+              ref={listsRef}
+              onWheel={(e) => {
+                if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) e.currentTarget.scrollLeft += e.deltaY
+              }}
+              className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [mask-image:linear-gradient(to_right,transparent,black_12px,black_calc(100%-12px),transparent)] px-1 [scrollbar-width:none]"
+            >
               {[ALL, ...lists].map((l) => {
                 const active = l === list
                 const count = l === ALL ? stocks.length : watchlist.filter((w) => w.list_name === l).length
@@ -295,12 +356,7 @@ export default function ChartPage() {
                 )
               })}
             </div>
-            <span
-              className="shrink-0 text-[11px] text-muted-foreground tabular-nums"
-              title={list === ALL ? 'All tracked' : list}
-            >
-              {list === ALL ? 'All' : list} · {rows.length}
-            </span>
+           
           </div>
           <div className="border-b p-2">
             <SymbolCombobox

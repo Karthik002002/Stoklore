@@ -1020,3 +1020,63 @@ def get_financials(symbol):
     if financials.get("marketCap") is not None:
         financials["marketCap"] = f"₹{financials['marketCap']:,}"
     return financials
+
+
+# --- research links -------------------------------------------------------------------------------
+# Moneycontrol, ET, Tickertape and Trendlyne key stock pages by their own ids, not the NSE symbol, so
+# a link has to be looked up through each site's autosuggest. Each resolver returns the stock's page
+# or None; RESEARCH_FALLBACK is where a failed lookup lands instead of a 404.
+
+def _mc_page(rows, symbol):
+    # pdt_dis_nm reads "Avro India&nbsp;<span>INE652Z01025, AVROIND, 543512</span>"; the search is fuzzy
+    for r in rows or []:
+        if f", {symbol}," in (r.get("pdt_dis_nm") or "") + ",":
+            return r.get("link_src")
+    return None
+
+
+def _research_moneycontrol(s):
+    rows = netfetch.get_json(
+        f"https://www.moneycontrol.com/mccode/common/autosuggestion_solr.php?classic=true&query={s}&type=1&format=json"
+    )
+    return _mc_page(rows, s)
+
+
+def _research_et(s):
+    rows = netfetch.get_json(
+        f"https://etsearch.indiatimes.com/etspeeds/ethome.ep?ticker={s}&matchCompanyName=true&outputtype=json"
+    )
+    for r in rows or []:
+        if r.get("symbol") == s and r.get("tagSeoName") and r.get("tagId"):
+            return f"https://economictimes.indiatimes.com/{r['tagSeoName']}/stocks/companyid-{r['tagId']}.cms"
+    return None
+
+
+def _research_tickertape(s):
+    data = netfetch.get_json(f"https://api.tickertape.in/search?text={s}&types=stock")
+    for r in (data or {}).get("data", {}).get("stocks", []):
+        if r.get("ticker") == s and r.get("slug"):
+            return f"https://www.tickertape.in{r['slug']}"
+    return None
+
+
+def _research_trendlyne(s):
+    rows = netfetch.get_json(f"https://trendlyne.com/equity/api/ac_snames/stock/?term={s}")
+    for r in rows or []:
+        if r.get("value") == s and r.get("pageurl"):
+            return r["pageurl"]
+    return None
+
+
+RESEARCH_RESOLVERS = {
+    "moneycontrol": _research_moneycontrol,
+    "et": _research_et,
+    "tickertape": _research_tickertape,
+    "trendlyne": _research_trendlyne,
+}
+RESEARCH_FALLBACK = {
+    "moneycontrol": "https://www.moneycontrol.com/stocks/cptmarket/compsearchnew.php?topsearch_type=1&search_str={s}",
+    "et": "https://economictimes.indiatimes.com/markets/stocks",
+    "tickertape": "https://www.tickertape.in/",
+    "trendlyne": "https://trendlyne.com/",
+}

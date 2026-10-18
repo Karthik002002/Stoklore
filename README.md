@@ -204,6 +204,12 @@ to guard rails you can see and control.
   **Trade** - or right-click → Buy/Sell here - switches the sidebar to its **Trade** tab with the
   order ticket, which draws the order on the chart like everywhere else. The stock and list are in
   the URL and remembered for next time
+  - **Research elsewhere** — a globe button beside the symbol (chart page and chart modal) opens a
+    popover of Screener, Moneycontrol, ET Markets, TradingView, NSE, Tickertape, Trendlyne and Google
+    Finance for that stock, each in a new tab (`components/StockLinks.tsx`). Moneycontrol, ET,
+    Tickertape and Trendlyne key pages by their own ids, so those go through
+    `GET /api/research-link/{site}/{symbol}`, which resolves the exact page from the site's
+    autosuggest and redirects (a failed lookup lands on the site's search or home).
 - **Customizable home** — **Customize** (beside the Home / My board tabs) opens a sheet from the
   right: a switch per panel to show or hide it (the ticker tape and status bar too), **Edit layout**
   to drag panels by their top bar and resize them from the corner on the same 12-column grid

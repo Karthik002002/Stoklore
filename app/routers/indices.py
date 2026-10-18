@@ -3,6 +3,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter
 from fastapi import HTTPException
+from fastapi.responses import RedirectResponse
 
 from app.core import db, scraper, stocks_master
 
@@ -23,6 +24,27 @@ def indices():
             quote = {"price": None, "changePercent": None}
         result.append({"name": name, **quote})
     return result
+
+
+_research_links = {}  # (site, symbol) -> resolved page; only hits are kept, a miss is retried next time
+
+
+@router.get("/api/research-link/{site}/{symbol}")
+def research_link(site: str, symbol: str):
+    """Redirect to a stock's page on a site that keys pages by its own id (the chart's globe popover).
+    Looked up through the site's autosuggest; a failed lookup lands on the site's search or home."""
+    if site not in scraper.RESEARCH_RESOLVERS:
+        raise HTTPException(status_code=404, detail=f"Unknown site '{site}'")
+    s = symbol.upper()
+    url = _research_links.get((site, s))
+    if not url:
+        try:
+            url = scraper.RESEARCH_RESOLVERS[site](s)
+        except Exception:
+            url = None
+        if url:
+            _research_links[(site, s)] = url
+    return RedirectResponse(url or scraper.RESEARCH_FALLBACK[site].format(s=s), status_code=302)
 
 
 @router.get("/api/indices/{name}/chart")

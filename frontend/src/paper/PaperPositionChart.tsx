@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import StockLinks from '@/components/StockLinks'
 import ResultsBadge from '@/components/ResultsBadge'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
@@ -408,6 +409,7 @@ export function PaperChart({
       <div className="flex h-10 shrink-0 items-center gap-2 border-b px-2">
         {leading}
         <h1 className="text-sm font-semibold">{symbol}</h1>
+        <StockLinks symbol={symbol} />
         {position && (
           <span className="text-xs whitespace-nowrap text-muted-foreground capitalize">
             {position.direction} · {position.quantity} qty · paper

@@ -177,6 +177,7 @@ to guard rails you can see and control.
   backfilled once in the background, ~280 throttled requests, then one file each evening; cached in
   `local_data/bhavcopy/`, never the database). Prices back-adjusted for splits/bonuses from NSE's
   corporate-actions list; a stock newly passing the VCP read writes an entry to the Alerts feed.
+  Money flow: CMF and up/down volume per stock, and net sector money flow (Rotation › Flow).
   See [docs/leaders.md](docs/leaders.md).
   - **RS rating 1-99** — the share of the market a stock's 3/6/9/12-month performance beats (latest
     quarter weighted double). Also a sortable column on the home watchlist and the Chart page, and in

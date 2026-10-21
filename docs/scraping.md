@@ -72,7 +72,10 @@ this (it hands out edge cookies on the homepage and `403`s API calls without
 them); it also happens to be what a real visitor's request order looks like.
 
 **Politeness throttle + jitter** — per-host, implemented in `netfetch`. Per-host
-so a screener.in fetch doesn't make an unrelated NSE call wait.
+so a screener.in fetch doesn't make an unrelated NSE call wait. Each host has its
+own lock: a single shared one used to make every request sit through every other
+host's sleeps. One click on a research link (the chart's globe popover) waited
+10s+ behind the background NSE/yfinance polls.
 
 **429-aware backoff** — exponential (1s, 2s, 4s…) with jitter, but a server's own
 `Retry-After` wins when present. Retries cover `429`, `5xx`, and `403` — the

@@ -523,10 +523,10 @@ const leadersRoute = createRoute({
   // the tab and the rotation view live in the URL, so coming back (or reloading) lands where you were
   validateSearch: (
     search,
-  ): { tab?: 'scan' | 'rotation' | 'rs'; tf?: 'weekly' | 'daily'; view?: 'graph' | 'timeline' } => ({
+  ): { tab?: 'scan' | 'rotation' | 'rs'; tf?: 'weekly' | 'daily'; view?: 'graph' | 'timeline' | 'flow' } => ({
     tab: search.tab === 'rotation' || search.tab === 'rs' ? search.tab : undefined,
     tf: search.tf === 'daily' ? 'daily' : undefined,
-    view: search.view === 'timeline' ? 'timeline' : undefined,
+    view: search.view === 'timeline' || search.view === 'flow' ? search.view : undefined,
   }),
   component: LeadersPage,
 })

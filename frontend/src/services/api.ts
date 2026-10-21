@@ -434,6 +434,10 @@ export type StrengthStock = {
   pivot: number | null
   to_pivot_pct: number | null
   vol_ratio: number | null
+  /** Chaikin Money Flow, 21 days: volume-weighted close location, -1..+1. */
+  cmf: number | null
+  /** Volume on up days / volume on down days, 50 days. */
+  ud_ratio: number | null
   tightening: boolean
   volume_dry: boolean
   near_pivot: boolean
@@ -464,13 +468,27 @@ export const getStrengthStocks = () =>
   fetch('/api/strength/stocks').then(
     json<{ as_of: string; days: number; partial: boolean; stocks: StrengthStock[]; skipped: string[] }>,
   )
+/** One sector's money flow (GET /api/strength/flows): turnover signed by close location. */
+export type SectorFlow = {
+  id: string
+  name: string
+  members: number
+  series: { date: string; net_cr: number; pct: number }[]
+  net_cr: number
+  pct: number
+}
+export const getSectorFlows = (tf: 'weekly' | 'daily') =>
+  fetch(`/api/strength/flows?tf=${tf}`).then(
+    json<{ as_of: string; tf: string; recent: number; sectors: SectorFlow[] }>,
+  )
 export const getRrg = (tf: 'weekly' | 'daily') =>
   fetch(`/api/strength/rrg?tf=${tf}`).then(json<{ as_of: string; tf: string; sectors: RrgSector[] }>)
 
 /** An upcoming results board meeting on NSE (GET /api/results-calendar). */
 export type ResultsMeeting = { symbol: string; date: string; purpose: string; detail: string | null }
 
-export const getResultsCalendar = () => fetch('/api/results-calendar').then(json<{ results: ResultsMeeting[] }>)
+export const getResultsCalendar = () =>
+  fetch('/api/results-calendar').then(json<{ results: ResultsMeeting[] }>)
 
 export const getSectors = (exchange: 'NSE' | 'BSE' = 'NSE') =>
   fetch(`/api/sectors?exchange=${exchange}`).then(json<{ sectors: Sector[] }>)
@@ -2351,7 +2369,10 @@ export type EngineAutotuneEvent =
 
 /** Streams the walk (NDJSON, one event a line) into `onEvent` as each stock finishes; resolves on
  *  `done`. A refused request throws like any other call; a stream cut short throws too. */
-export async function runEngineAutotune(req: EngineAutotuneRequest, onEvent: (e: EngineAutotuneEvent) => void) {
+export async function runEngineAutotune(
+  req: EngineAutotuneRequest,
+  onEvent: (e: EngineAutotuneEvent) => void,
+) {
   const res = await fetch('/api/engine/autotune', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2434,7 +2455,8 @@ export const retryEngineJob = (id: number) => jobPost<EngineJob>(`/api/engine/jo
 export const setEngineJobPriority = (id: number, priority: number) =>
   jobPost<EngineJob>(`/api/engine/jobs/${id}`, { priority }, 'PATCH')
 export const deleteEngineJob = (id: number) => jobPost(`/api/engine/jobs/${id}`, undefined, 'DELETE')
-export const getEngineJobsConfig = () => fetch('/api/engine/jobs/config').then(json<{ workers: number; max: number }>)
+export const getEngineJobsConfig = () =>
+  fetch('/api/engine/jobs/config').then(json<{ workers: number; max: number }>)
 export const setEngineJobsConfig = (workers: number) =>
   jobPost<{ workers: number; max: number }>('/api/engine/jobs/config', { workers }, 'PUT')
 
@@ -2442,7 +2464,13 @@ export const setEngineJobsConfig = (workers: number) =>
 // A list of stocks flipped through in the chart modal's slideshow, each marked A/B/C as it goes.
 
 export type ScanPriority = 'A' | 'B' | 'C'
-export type ScanMark = { symbol: string; priority: ScanPriority | null; note: string | null; price: number | null; marked_at: string }
+export type ScanMark = {
+  symbol: string
+  priority: ScanPriority | null
+  note: string | null
+  price: number | null
+  marked_at: string
+}
 export type Scan = {
   id: number
   name: string
@@ -2468,8 +2496,14 @@ export const getScans = () => fetch('/api/scans').then(json<ScanRow[]>)
 export const getScan = (id: number) => fetch(`/api/scans/${id}`).then(json<Scan>)
 export const updateScan = (id: number, patch: { position?: number; finished?: boolean }) =>
   scanSend<Scan>(`/api/scans/${id}`, 'PATCH', patch)
-export const markScan = (id: number, symbol: string, mark: { priority: ScanPriority | null; note?: string | null; price?: number | null }) =>
-  scanSend<{ mark: ScanMark | null }>(`/api/scans/${id}/marks/${encodeURIComponent(symbol)}`, 'PUT', mark)
+export const markScan = (
+  id: number,
+  symbol: string,
+  mark: { priority: ScanPriority | null; note?: string | null; price?: number | null },
+) => scanSend<{ mark: ScanMark | null }>(`/api/scans/${id}/marks/${encodeURIComponent(symbol)}`, 'PUT', mark)
 export const scanToWatchlist = (id: number, priorities: ScanPriority[], list_name: string) =>
-  scanSend<{ list_name: string; added: number }>(`/api/scans/${id}/watchlist`, 'POST', { priorities, list_name })
+  scanSend<{ list_name: string; added: number }>(`/api/scans/${id}/watchlist`, 'POST', {
+    priorities,
+    list_name,
+  })
 export const deleteScan = (id: number) => scanSend<{ ok: boolean }>(`/api/scans/${id}`, 'DELETE')

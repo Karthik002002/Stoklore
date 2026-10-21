@@ -50,17 +50,22 @@ MAX_BACKOFF = float(os.environ.get("SCRAPER_MAX_BACKOFF", "30"))
 
 _ROTATOR = ProxyRotator(PROXIES) if PROXIES else None
 
-_throttle_lock = threading.Lock()
+_host_locks_lock = threading.Lock()  # guards _host_locks only, never held while sleeping
+_host_locks = {}  # host -> Lock
 _last_request_at = {}  # host -> monotonic timestamp of the last request sent
 
 
 def _throttle(url):
     """Block until this host's politeness interval has elapsed, then jitter.
 
-    Held under one short lock so concurrent scrape threads (api.py runs several) queue behind each
-    other for the same host instead of all firing at once the moment the interval passes."""
+    One lock per host, held across the sleep, so concurrent scrape threads queue behind each other
+    for the same host instead of all firing at once the moment the interval passes. Per host because
+    a single shared lock made every fetch wait out every other host's sleeps too - a one-off
+    Moneycontrol lookup sat 10s+ behind the background NSE/yfinance polls."""
     host = urlparse(url).netloc
-    with _throttle_lock:
+    with _host_locks_lock:
+        lock = _host_locks.setdefault(host, threading.Lock())
+    with lock:
         wait = MIN_INTERVAL - (time.monotonic() - _last_request_at.get(host, 0.0))
         if wait > 0:
             time.sleep(wait)

@@ -75,6 +75,18 @@ of successively shallower pullbacks counts if it has 2+ of them and the last is 
 "drying up" when the 10-day average is ≤ 75% of the 50-day; "near pivot" is within 5% under the last
 pullback's high or up to 3% through it. All three = VCP. These are readings, not signals.
 
+**Money flow** (`strength.close_location`, `cmf`, `up_down_volume`). A bar can't say who bought -
+every trade has both sides - but it says where the day closed in its range: −1 on the low, +1 on the
+high. Weighting volume or turnover by that gives buying vs selling *pressure*:
+- **CMF** (Scan and RS ranking columns) - Chaikin Money Flow over 21 days, −1..+1. Above +0.1 is
+  steady accumulation (green), below −0.1 distribution (red).
+- **Up/Dn vol** - volume on up days ÷ volume on down days over 50 days. 1.25×+ green, 0.8× or less red.
+- **Sector money flow** (Rotation › **Flow**, `GET /api/strength/flows?tf=weekly|daily`) - every
+  member's daily turnover signed by close location, summed per ET sector. Shows the top five sectors
+  money is flowing into and out of, then each sector's net flow as a % of its turnover over the last
+  4 weeks / 5 days (so a small sector with one-sided buying reads as strongly as a big one), ₹ Cr, and
+  a bar per week (12) or day (20). Same 20-largest / All sectors scope as the graph.
+
 **Sector rotation**: Yahoo has full history for only four NSE sector indices, so each ET sector
 (the 67 in the home Sector panel) is rebuilt from its members: each day, the market-cap-weighted
 average of the members' daily returns, compounded. Members with a split gap are left out; sectors with
@@ -82,7 +94,7 @@ fewer than 3 clean members are skipped. The RRG maths is an open approximation o
 RS-Ratio/RS-Momentum: `RS = sector / NIFTY`, `RS-Ratio = 100 · RS / mean(RS, 10 bars)`,
 `RS-Momentum = 100 · RS-Ratio / RS-Ratio 5 bars ago`; the last 8 points are drawn as the tail.
 
-Endpoints: `GET /api/strength/status`, `POST /api/strength/sync`, `GET /api/strength/stocks`,
+Endpoints: `GET /api/strength/flows`, `GET /api/strength/status`, `POST /api/strength/sync`, `GET /api/strength/stocks`,
 `GET /api/strength/rrg?tf=weekly|daily`. Results are computed once per cached day and held in memory.
 
 Self-check: `.venv/bin/python tests/strength.selfcheck.py`.

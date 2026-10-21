@@ -23,7 +23,7 @@ router = APIRouter(tags=["strength"])
 # collected so far and flagged `partial` - the page fills in instead of sitting on a spinner.
 PARTIAL_MIN = 20
 
-_memo = {"key": None, "bars": None, "stocks": None, "rrg": {}}
+_memo = {"key": None, "bars": None, "stocks": None, "rrg": {}, "flows": {}}
 _memo_lock = threading.Lock()
 
 
@@ -38,7 +38,7 @@ def _bars():
             companies = {r["symbol"] for r in db.stocks_master_names() if r["exchange"] == "NSE"}
             if companies:
                 bars = {s: rows for s, rows in bars.items() if s in companies}
-            _memo.update(key=key, bars=bars, stocks=None, rrg={})
+            _memo.update(key=key, bars=bars, stocks=None, rrg={}, flows={})
         return _memo["bars"], key
 
 
@@ -138,6 +138,60 @@ def rrg(tf: str = "weekly"):
     result = {"as_of": key[1], "tf": tf, "sectors": out}
     with _memo_lock:
         _memo["rrg"][tf] = result
+    return result
+
+
+FLOW_BUCKETS = {"weekly": 12, "daily": 20}  # how many weeks / days of flow a sector shows
+FLOW_RECENT = {"weekly": 4, "daily": 5}  # the summary window: last month / last week
+
+
+@router.get("/api/strength/flows")
+def flows(tf: str = "weekly"):
+    """Sector money flow: each day, every member's turnover signed by where it closed in its range
+    (strength.daily_flow), summed per ET sector and bucketed by week or day. `net_cr` is ₹ Cr;
+    `pct` is net flow as a share of the sector's total turnover, so a small sector with one-sided
+    buying reads as strongly as a big one."""
+    if tf not in FLOW_BUCKETS:
+        raise HTTPException(status_code=400, detail="tf must be weekly or daily")
+    bars, key = _bars()
+    if key[0] < PARTIAL_MIN:
+        raise HTTPException(status_code=409, detail="Price history is still being collected")
+    with _memo_lock:
+        if tf in _memo["flows"]:
+            return _memo["flows"][tf]
+    n, recent = FLOW_BUCKETS[tf], FLOW_RECENT[tf]
+    bucket = (lambda d: d.isocalendar()[:2]) if tf == "weekly" else (lambda d: d)
+    out = []
+    for sec in et_sectors("NSE")["sectors"]:
+        net, gross, last_day = {}, {}, {}
+        members = 0
+        for m in sec["members"]:
+            rows = bars.get(m.get("symbol") or "")
+            if not rows:
+                continue
+            members += 1
+            for r in rows[-(n * 5 + 5 if tf == "weekly" else n):]:
+                b = bucket(r[0])
+                turnover = (r[2] + r[3] + r[4]) / 3 * r[5]
+                net[b] = net.get(b, 0) + strength.close_location(r[2], r[3], r[4]) * turnover
+                gross[b] = gross.get(b, 0) + turnover
+                last_day[b] = max(last_day.get(b, r[0]), r[0])
+        if members < 3:
+            continue
+        keys = sorted(net)[-n:]
+        series = [{"date": str(last_day[k]), "net_cr": round(net[k] / 1e7, 2),
+                   "pct": round(100 * net[k] / gross[k], 2) if gross[k] else 0} for k in keys]
+        rk = keys[-recent:]
+        g = sum(gross[k] for k in rk)
+        out.append({
+            "id": sec["id"], "name": sec["name"], "members": members, "series": series,
+            "net_cr": round(sum(net[k] for k in rk) / 1e7, 2),
+            "pct": round(100 * sum(net[k] for k in rk) / g, 2) if g else 0,
+        })
+    out.sort(key=lambda x: -x["pct"])
+    result = {"as_of": key[1], "tf": tf, "recent": recent, "sectors": out}
+    with _memo_lock:
+        _memo["flows"][tf] = result
     return result
 
 

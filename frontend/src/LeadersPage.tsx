@@ -26,8 +26,8 @@ import type { Sort } from '@/lib/sortRows'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { useStrength } from '@/lib/useStrength'
 import { cn } from '@/lib/utils'
-import type { RrgSector, StrengthStock } from '@/services/api'
-import { getRrg, getSectors } from '@/services/api'
+import type { RrgSector, SectorFlow, StrengthStock } from '@/services/api'
+import { getRrg, getSectorFlows, getSectors } from '@/services/api'
 
 const TEMPLATE_LABELS: Record<string, string> = {
   above_150_200: 'Price above the 150- and 200-day averages',
@@ -78,6 +78,134 @@ function TemplateScore({ s }: { s: StrengthStock }) {
 /** Rows rendered per batch; the next batch loads as the table is scrolled near its end. */
 const BATCH = 50
 
+/** CMF as a small diverging bar around zero plus the number: green buying, red selling. */
+function FlowBar({ v }: { v: number | null }) {
+  if (v == null) return <span className="text-muted-foreground">—</span>
+  const w = Math.min(1, Math.abs(v) / 0.4) * 50
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="relative h-1.5 w-12 rounded-full bg-foreground/10">
+        <span className="absolute inset-y-0 left-1/2 w-px bg-foreground/30" />
+        <span
+          className={cn('absolute inset-y-0 rounded-full', v >= 0 ? 'left-1/2 bg-up' : 'right-1/2 bg-down')}
+          style={{ width: `${w}%` }}
+        />
+      </span>
+      <span className={cn('w-10 tabular-nums', Math.abs(v) >= 0.1 && tone(v))}>
+        {v >= 0 ? '+' : ''}
+        {fmt(v, 2)}
+      </span>
+    </span>
+  )
+}
+
+/** Sector money flow: net flow as a share of turnover over the recent window, diverging from zero,
+ *  with each period's flow as small bars - where money has been going, at a glance. */
+function SectorFlowView({ sectors, recent, tf }: { sectors: SectorFlow[]; recent: number; tf: string }) {
+  const peak = Math.max(1, ...sectors.map((s) => Math.abs(s.pct)))
+  const inflow = sectors.filter((s) => s.pct > 0).slice(0, 5)
+  const outflow = [...sectors]
+    .reverse()
+    .filter((s) => s.pct < 0)
+    .slice(0, 5)
+  const unit = tf === 'weekly' ? 'week' : 'day'
+  return (
+    <div className="space-y-3">
+      <div className="grid gap-2 sm:grid-cols-2">
+        {(
+          [
+            ['Money flowing in', inflow, 'border-up/40 bg-up/5 text-up'],
+            ['Money flowing out', outflow, 'border-down/40 bg-down/5 text-down'],
+          ] as const
+        ).map(([label, list, cls]) => (
+          <div key={label} className={cn('rounded-xl border p-3', cls)}>
+            <p className="text-xs font-semibold">
+              {label} · last {recent} {unit}s
+            </p>
+            <p className="mt-1 text-sm text-foreground">
+              {list.length ? list.map((s) => s.name).join(' · ') : '—'}
+            </p>
+          </div>
+        ))}
+      </div>
+      <div className="overflow-hidden rounded-xl border bg-card">
+        <div className="grid grid-cols-[minmax(8rem,14rem)_1fr_6rem_minmax(8rem,12rem)_1.5rem] items-center gap-3 border-b px-3 py-1.5 text-[10px] tracking-widest text-muted-foreground uppercase">
+          <span>Sector</span>
+          <span className="text-center">Net flow, % of turnover</span>
+          <span className="text-right">₹ Cr</span>
+          <span>Each {unit}</span>
+          <span />
+        </div>
+        <div className="max-h-[calc(100vh-24rem)] min-h-[300px] overflow-y-auto">
+          {sectors.map((s) => {
+            const sp = Math.max(1, ...s.series.map((p) => Math.abs(p.pct)))
+            return (
+              <div
+                key={s.id}
+                className="grid grid-cols-[minmax(8rem,14rem)_1fr_6rem_minmax(8rem,12rem)_1.5rem] items-center gap-3 border-b border-border/40 px-3 py-1 text-xs hover:bg-muted/40"
+              >
+                <span className="truncate" title={`${s.name} · ${s.members} stocks`}>
+                  {s.name}
+                </span>
+                <span className="relative h-3">
+                  <span className="absolute inset-y-0 left-1/2 w-px bg-foreground/30" />
+                  <span
+                    className={cn(
+                      'absolute inset-y-0.5 rounded-sm',
+                      s.pct >= 0 ? 'left-1/2 bg-up/70' : 'right-1/2 bg-down/70',
+                    )}
+                    style={{ width: `${(Math.abs(s.pct) / peak) * 50}%` }}
+                  />
+                  <span
+                    className={cn(
+                      'absolute top-1/2 -translate-y-1/2 text-[10px] tabular-nums',
+                      s.pct >= 0 ? 'right-[calc(50%+4px)]' : 'left-[calc(50%+4px)]',
+                      tone(s.pct),
+                    )}
+                  >
+                    {pct(s.pct)}
+                  </span>
+                </span>
+                <span className={cn('text-right tabular-nums', tone(s.net_cr))}>
+                  {s.net_cr >= 0 ? '+' : ''}
+                  {fmt(s.net_cr, 0)}
+                </span>
+                <span className="flex h-5 items-center gap-px">
+                  {s.series.map((p) => (
+                    <span
+                      key={p.date}
+                      title={`${p.date}: ${pct(p.pct)} · ₹${fmt(p.net_cr, 0)} Cr`}
+                      className="flex h-full flex-1 flex-col justify-center"
+                    >
+                      <span
+                        className={cn(
+                          'w-full rounded-[1px]',
+                          p.pct >= 0 ? 'self-end bg-up/70' : 'bg-down/70',
+                        )}
+                        style={{
+                          height: `${(Math.abs(p.pct) / sp) * 50}%`,
+                          minHeight: 1,
+                          transform: p.pct >= 0 ? 'translateY(-50%)' : 'translateY(50%)',
+                        }}
+                      />
+                    </span>
+                  ))}
+                </span>
+                <SectorStocksLink id={s.id} name={s.name} />
+              </div>
+            )
+          })}
+        </div>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Each stock's daily turnover counted as buying when it closed near the day's high and selling near the
+        low (close location), summed over the sector's members. It reads pressure, not who traded - every
+        trade has a buyer and a seller.
+      </p>
+    </div>
+  )
+}
+
 function StockTable({ rows, sectorOf }: { rows: StrengthStock[]; sectorOf: Map<string, string> }) {
   const [sort, setSort] = useState<Sort>(null)
   // infinite scroll: a sentinel row under the last one; when it scrolls into view, 50 more render.
@@ -111,6 +239,8 @@ function StockTable({ rows, sectorOf }: { rows: StrengthStock[]; sectorOf: Map<s
     pivot: (s) => s.to_pivot_pct,
     vol: (s) => s.vol_ratio,
     value: (s) => s.avg_value_cr,
+    cmf: (s) => s.cmf,
+    ud: (s) => s.ud_ratio,
   })
   return (
     <div ref={scrollRef} className="max-h-[70vh] overflow-auto rounded-xl border bg-card">
@@ -128,13 +258,15 @@ function StockTable({ rows, sectorOf }: { rows: StrengthStock[]; sectorOf: Map<s
             <th className="px-2 py-1 text-right font-medium">Contractions</th>
             <SortTh label="Vol 10/50" k="vol" sort={sort} onSort={setSort} />
             <SortTh label="To pivot" k="pivot" sort={sort} onSort={setSort} />
+            <SortTh label="CMF" k="cmf" sort={sort} onSort={setSort} />
+            <SortTh label="Up/Dn vol" k="ud" sort={sort} onSort={setSort} />
             <SortTh label="₹Cr/day" k="value" sort={sort} onSort={setSort} />
           </tr>
         </thead>
         <tbody>
           {sorted.length === 0 && (
             <tr>
-              <td colSpan={12} className="py-8 text-center text-muted-foreground">
+              <td colSpan={14} className="py-8 text-center text-muted-foreground">
                 Nothing passes these filters.
               </td>
             </tr>
@@ -174,6 +306,22 @@ function StockTable({ rows, sectorOf }: { rows: StrengthStock[]; sectorOf: Map<s
               </td>
               <td className={cn('px-2 py-1 text-right tabular-nums', s.near_pivot && 'text-up')}>
                 {pct(s.to_pivot_pct)}
+              </td>
+              <td
+                className="px-2 py-1 text-right"
+                title="Chaikin Money Flow (21d): above +0.1 steady buying, below -0.1 steady selling"
+              >
+                <FlowBar v={s.cmf} />
+              </td>
+              <td
+                className={cn(
+                  'px-2 py-1 text-right tabular-nums',
+                  s.ud_ratio != null &&
+                    (s.ud_ratio >= 1.25 ? 'text-up' : s.ud_ratio <= 0.8 ? 'text-down' : ''),
+                )}
+                title="Volume on up days / down days (50d): above 1 demand outweighs supply"
+              >
+                {s.ud_ratio == null ? '—' : `${fmt(s.ud_ratio, 2)}×`}
               </td>
               <td className="px-2 py-1 text-right text-muted-foreground tabular-nums">
                 {fmt(s.avg_value_cr, 1)}
@@ -471,7 +619,7 @@ export default function LeadersPage() {
   const [focus, setFocus] = useState<string | null>(null)
   const [pinned, setPinned] = useState<Set<string>>(new Set())
   const rrgView = url.view ?? 'graph'
-  const setRrgView = (v: 'graph' | 'timeline') =>
+  const setRrgView = (v: 'graph' | 'timeline' | 'flow') =>
     navigate({ search: (p) => ({ ...p, view: v === 'graph' ? undefined : v }), replace: true })
   const [rrgAll, setRrgAll] = useState(false)
   const hover: Hover = (sec, at) => {
@@ -507,6 +655,12 @@ export default function LeadersPage() {
     queryKey: ['rrg', tf, status?.last],
     queryFn: () => getRrg(tf),
     enabled: ready,
+    staleTime: 3_600_000,
+  })
+  const flows = useQuery({
+    queryKey: ['sectorFlows', tf, status?.last],
+    queryFn: () => getSectorFlows(tf),
+    enabled: ready && rrgView === 'flow',
     staleTime: 3_600_000,
   })
 
@@ -677,7 +831,7 @@ export default function LeadersPage() {
             {(
               [
                 [tf, setTf, ['weekly', 'daily']],
-                [rrgView, setRrgView, ['graph', 'timeline']],
+                [rrgView, setRrgView, ['graph', 'timeline', 'flow']],
               ] as const
             ).map(([value, set, opts], k) => (
               <div key={k} className="flex gap-0.5 rounded-lg bg-muted/50 p-0.5">
@@ -719,7 +873,25 @@ export default function LeadersPage() {
               (cap-weighted) against NIFTY 50.
             </p>
           </div>
-          {rrg.isPending ? (
+          {rrgView === 'flow' ? (
+            flows.isPending ? (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Spinner className="size-4" /> Adding up sector money flow…
+              </p>
+            ) : (
+              (() => {
+                // same scope as the graph: the 20 largest sectors unless "All sectors"
+                const big = new Set(
+                  [...(rrg.data?.sectors ?? [])]
+                    .sort((a, b) => (b.mcap_cr ?? 0) - (a.mcap_cr ?? 0))
+                    .slice(0, 20)
+                    .map((s) => s.id),
+                )
+                const list = (flows.data?.sectors ?? []).filter((s) => rrgAll || !big.size || big.has(s.id))
+                return <SectorFlowView sectors={list} recent={flows.data?.recent ?? 4} tf={tf} />
+              })()
+            )
+          ) : rrg.isPending ? (
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <Spinner className="size-4" /> Building sector history…
             </p>

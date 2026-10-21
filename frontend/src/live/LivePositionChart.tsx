@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import ResultsBadge from '@/components/ResultsBadge'
+import StockLinks from '@/components/StockLinks'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
 import { ArrowLeftIcon } from 'lucide-react'
@@ -211,6 +212,7 @@ export default function LivePositionChart() {
             <ArrowLeftIcon className="size-4" />
           </Button>
           <h1 className="text-lg font-semibold">{symbol}</h1>
+          <StockLinks symbol={symbol} />
           <ResultsBadge symbol={symbol} />
           {position && (
             <span className="text-xs text-muted-foreground">

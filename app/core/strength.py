@@ -144,6 +144,48 @@ def vcp(highs, lows, closes, volumes):
     }
 
 
+# --- money flow ---------------------------------------------------------------------------------
+# A bar can't say who bought - every trade has both sides. What it can say is where the day closed in
+# its range: near the high on heavy volume, buyers were pushing; near the low, sellers. These weigh
+# volume (or turnover) by that close location.
+
+
+def close_location(h, low, c):
+    """-1 (closed on the low) .. +1 (closed on the high); 0 for a bar with no range."""
+    return ((c - low) - (h - c)) / (h - low) if h > low else 0.0
+
+
+def cmf(highs, lows, closes, volumes, n=21):
+    """Chaikin Money Flow over `n` bars: volume-weighted close location, -1..+1. Above ~0.1 is
+    steady accumulation, below ~-0.1 distribution."""
+    if len(closes) < n:
+        return None
+    v = sum(volumes[-n:])
+    if not v:
+        return None
+    return sum(close_location(h, lo, c) * vol for h, lo, c, vol in
+               zip(highs[-n:], lows[-n:], closes[-n:], volumes[-n:])) / v
+
+
+def up_down_volume(closes, volumes, n=50):
+    """Volume on up days / volume on down days over `n` bars. Above 1 = demand outweighs supply."""
+    if len(closes) < n + 1:
+        return None
+    up = down = 0
+    for i in range(len(closes) - n, len(closes)):
+        if closes[i] > closes[i - 1]:
+            up += volumes[i]
+        elif closes[i] < closes[i - 1]:
+            down += volumes[i]
+    return up / down if down else None
+
+
+def daily_flow(rows):
+    """{date: net ₹ flow} for one stock: each day's turnover (typical price x volume) signed by its
+    close location. Rows are (date, o, h, l, c, v)."""
+    return {r[0]: close_location(r[2], r[3], r[4]) * (r[2] + r[3] + r[4]) / 3 * r[5] for r in rows}
+
+
 def stock_table(bars, nifty_closes=None, min_bars=MIN_BARS):
     """Every stock with enough clean history: RS rating, returns, 52-week position, trend template
     and VCP read. `bars` = {symbol: [(date, o, h, l, c, v), ...]}. Stocks with a split-like gap in the
@@ -182,6 +224,8 @@ def stock_table(bars, nifty_closes=None, min_bars=MIN_BARS):
             "template": tt,
             "template_score": sum(1 for v in tt.values() if v),
             "avg_value_cr": round(mean(c * v for c, v in zip(closes[-20:], vols[-20:])) / 1e7, 2),
+            "cmf": _r(cmf(highs, lows, closes, vols), 3),
+            "ud_ratio": _r(up_down_volume(closes, vols), 2),
             **vcp(highs, lows, closes, vols),
         })
     out.sort(key=lambda r: -r["rs"])
@@ -247,6 +291,10 @@ def weekly(series):
         y, w, _ = d.isocalendar()
         out[(y, w)] = (d, v)
     return [out[k] for k in sorted(out)]
+
+
+def _r(x, n):
+    return None if x is None else round(x, n)
 
 
 def safe(x):

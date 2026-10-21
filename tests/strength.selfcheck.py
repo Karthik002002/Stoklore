@@ -81,4 +81,14 @@ adj = bc.adjust(rows, [(dates[1], 2.0)])
 assert adj[0][4] == 50 and adj[0][5] == 20 and adj[1] == rows[1], adj
 assert not s.split_gap([r[4] for r in adj])
 
-print("ok - strength: corporate actions, split gaps, RS ratings, trend template, VCP, sector index, RRG")
+# money flow: closing on the high every day is +1 CMF; volume on up days outweighs down days
+assert s.close_location(10, 8, 10) == 1 and s.close_location(10, 8, 8) == -1 and s.close_location(9, 9, 9) == 0
+assert s.cmf([10] * 21, [8] * 21, [10] * 21, [100] * 21) == 1
+assert s.cmf([10] * 5, [8] * 5, [10] * 5, [1] * 5) is None, "too short"
+cl = [100 + (i % 2) for i in range(51)]  # alternating up/down
+vol = [300 if i % 2 else 100 for i in range(51)]  # heavy on the up days
+assert s.up_down_volume(cl, vol) == 3
+f = s.daily_flow([(dates[0], 9, 10, 8, 10, 100)])
+assert f[dates[0]] == (10 + 8 + 10) / 3 * 100
+
+print("ok - strength: money flow, corporate actions, split gaps, RS ratings, trend template, VCP, sector index, RRG")

@@ -14,6 +14,7 @@ import {
   ListIcon,
   PanelRightCloseIcon,
   PanelRightOpenIcon,
+  SearchIcon,
   ShoppingCartIcon,
   XIcon,
 } from 'lucide-react'
@@ -27,7 +28,9 @@ import { Spinner } from '@/components/ui/spinner'
 import { compact, fmt } from '@/lib/format'
 import { sortRows } from '@/lib/sortRows'
 import type { Sort } from '@/lib/sortRows'
+import { useShortcut, useShortcutLabel } from '@/lib/shortcuts'
 import { prefillTicket } from '@/lib/ticketPrefill'
+import ReplayCommandDialog from '@/features/bar-replay/ReplayCommandDialog'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { cn } from '@/lib/utils'
 import { PaperChart } from '@/paper/PaperPositionChart'
@@ -192,6 +195,12 @@ export default function ChartPage() {
     navigate({ search: target, replace: true })
   }
 
+  // "/" charts any listed stock, watchlisted or not - same quick-switcher and binding as Bar Replay.
+  // Picking one only charts it; adding it to a list is still the sidebar's "Select symbol" box.
+  const [searching, setSearching] = useState(false)
+  useShortcut('replay.symbol', () => setSearching(true))
+  const searchKey = useShortcutLabel('replay.symbol')
+
   // ↑ / ↓ walk the list, like TradingView - never while typing, and not under an open dialog.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -270,6 +279,16 @@ export default function ChartPage() {
       go({ symbol: sym })
     },
     onError: (e) => toast.error(e.message),
+  })
+  // "w" adds the charted stock to the sidebar's list (or tracks it, on All); a no-op toast if it's in.
+  useShortcut('chart.addToList', () => {
+    if (!symbol || add.isPending) return
+    const inList =
+      list === ALL
+        ? stocks.some((s) => s.symbol === symbol)
+        : watchlist.some((w) => w.list_name === list && w.symbol === symbol)
+    if (inList) toast.info(list === ALL ? `${symbol} is already tracked` : `${symbol} is already in ${list}`)
+    else add.mutate(symbol)
   })
   const remove = useMutation({
     mutationFn: (sym: string) =>
@@ -472,6 +491,15 @@ export default function ChartPage() {
           }}
           trailing={
             <div className="flex items-center gap-1 border-l pl-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1.5"
+                title={searchKey ? `Search any stock (${searchKey})` : 'Search any stock'}
+                onClick={() => setSearching(true)}
+              >
+                <SearchIcon className="size-3.5" /> {symbol}
+              </Button>
               <AccountSelect trade={trade} />
               <Button
                 size="sm"
@@ -501,11 +529,22 @@ export default function ChartPage() {
       ) : (
         <div className="flex flex-1">
           <div className="flex flex-1 items-center justify-center p-8 text-center text-sm text-muted-foreground">
-            {isPending ? <Spinner className="size-4" /> : 'Add a stock to the watchlist to chart it.'}
+            {isPending ? (
+              <Spinner className="size-4" />
+            ) : (
+              `Press ${searchKey || 'the search button'} to chart any stock, or add one to the watchlist.`
+            )}
           </div>
           {sidebarPanel}
         </div>
       )}
+      <ReplayCommandDialog
+        mode={searching ? 'symbol' : null}
+        onOpenChange={setSearching}
+        timeframe=""
+        onSymbol={(sym) => go({ symbol: sym })}
+        onTimeframe={() => {}}
+      />
     </div>
   )
 }

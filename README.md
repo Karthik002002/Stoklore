@@ -198,7 +198,11 @@ to guard rails you can see and control.
 - **Chart page** (`/chart`, the chart icon in the sidebar) — a TradingView-style workspace: the
   shared chart (indicators, template, timeframe, alerts, your paper positions) fills the screen and
   your watchlists sit in a sidebar on the right - pick a list, add a symbol (tracked first if it
-  isn't), remove one, sort by Last / Chg / Chg%, and click a row or press ↑ / ↓ to chart it. Under
+  isn't), remove one, sort by Last / Chg / Chg%, and click a row or press ↑ / ↓ to chart it. To
+  chart **any** listed NSE stock (main board or SME) without adding it to a list, press `/` or the
+  symbol button in the top bar. It's the same search as Bar Replay's, on the same rebindable
+  shortcut (Settings › Shortcuts). `w` adds the charted stock to the list open in the sidebar
+  (tracks it on All), or says so if it's already there. Under
   the list, the selected stock's card: price and change, its 52-week range, previous close, volume
   against its average, market cap and P/E. Trading happens on the page: pick the account in the
   top bar (a paper account or **Dhan · live**, the same remembered choice as the chart modal) and

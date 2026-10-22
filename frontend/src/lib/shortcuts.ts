@@ -53,7 +53,11 @@ export const SHORTCUTS = [
     label: 'Sell at market (skips the ticket)',
     default: 'shift+s',
   },
-  { id: 'replay.symbol', scope: 'Bar Replay', label: 'Change symbol', default: '/' },
+  // Shared by /chart and Bar Replay - one binding, so the id stays 'replay.symbol' (renaming it
+  // would reset anyone who rebound it) and the two pages can't end up conflicting on '/'.
+  { id: 'replay.symbol', scope: 'Bar Replay', label: 'Search symbol (Chart & Bar Replay)', default: '/' },
+  // Not Mod+W: browsers keep that for closing the tab and never hand it to the page.
+  { id: 'chart.addToList', scope: 'Chart', label: "Add the charted stock to the sidebar's list", default: 'w' },
   { id: 'replay.timeframe', scope: 'Bar Replay', label: 'Change timeframe', default: 't' },
   { id: 'replay.playPause', scope: 'Bar Replay', label: 'Play / pause', default: 'shift+down' },
   { id: 'replay.step', scope: 'Bar Replay', label: 'Step one bar forward', default: 'shift+right' },

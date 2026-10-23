@@ -187,6 +187,13 @@ to guard rails you can see and control.
     optionally only sectors that are leading or improving — then **Scan N** into the slideshow
   - **Sector rotation** — a Relative Rotation Graph of the ET sectors (rebuilt from their members,
     cap-weighted) against NIFTY 50, weekly or daily, with each sector's recent tail
+- **Microcaps** (`/microcaps`, Discover menu) — every company between ₹100 and ₹2,000 Cr market cap,
+  pulled weekly from one screener.in query (needs your session cookie in Settings › Screener) and
+  joined with Leaders' RS/liquidity and NSE shareholding. Sortable table with filters and presets,
+  objective red flags (pledge, promoter selling, cash flow below profit, debt, capital-change
+  filings, illiquid), a detail drawer with 10+ years of statements, side-by-side compare, and a
+  **long-term list**: a thesis note plus limits (ROCE, P/E, promoter drop) re-checked after every
+  pull, with breaches and new results quarters sent to Alerts. See [docs/microcaps.md](docs/microcaps.md).
 - **Book risk** (`/risk`, shield icon) — every open position across your paper accounts and Dhan:
   what's **at risk to the stops** from here (per account, and as a % of its balance — Dhan's against
   available cash), what booking every stop would leave against entry, positions with shares that

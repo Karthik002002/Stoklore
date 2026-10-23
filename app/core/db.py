@@ -674,6 +674,31 @@ CREATE TABLE IF NOT EXISTS market_movers (
   fetched_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- The microcap universe as of one weekly pull (see app/core/microcap.py): screener.in fundamentals
+-- joined with bhavcopy strength and NSE shareholding, one blob per day like market_movers. Old
+-- snapshots stay, so a later quarter can be diffed against an earlier one.
+CREATE TABLE IF NOT EXISTS microcap_snapshots (
+  as_of DATE PRIMARY KEY,
+  payload JSONB NOT NULL,
+  fetched_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- A long-term thesis on one microcap: why you're watching it, and the numbers that would break it.
+-- Every weekly pull re-checks these against the fresh snapshot (microcap.thesis_breaches) and writes
+-- an alert for a breach it hasn't reported yet. `key` is the NSE symbol, or the BSE code for a
+-- BSE-only company. `baseline` is the stock's snapshot row when the thesis was written.
+CREATE TABLE IF NOT EXISTS microcap_theses (
+  key TEXT PRIMARY KEY,
+  note TEXT NOT NULL DEFAULT '',
+  min_roce REAL,
+  max_pe REAL,
+  max_promoter_drop REAL,
+  baseline JSONB,
+  last_breaches JSONB NOT NULL DEFAULT '[]',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 ALTER TABLE stocks_master ADD COLUMN IF NOT EXISTS board TEXT NOT NULL DEFAULT 'MAIN';
 
 -- Which exchange this row's `symbol` is a symbol ON, and its BSE scrip code when it has one.
@@ -2715,6 +2740,52 @@ def save_movers(trade_date, payload):
             "fetched_at = excluded.fetched_at",
             (trade_date, Jsonb(payload)),
         )
+
+
+def get_latest_microcaps():
+    """The newest microcap snapshot as {as_of, payload, fetched_at}, or None."""
+    with connect() as conn:
+        return conn.execute(
+            "SELECT as_of, payload, fetched_at FROM microcap_snapshots ORDER BY as_of DESC LIMIT 1"
+        ).fetchone()
+
+
+def save_microcaps(as_of, payload):
+    """Upsert one day's snapshot - a second pull the same day replaces it."""
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO microcap_snapshots (as_of, payload, fetched_at) VALUES (%s, %s, now()) "
+            "ON CONFLICT (as_of) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at",
+            (as_of, Jsonb(payload)),
+        )
+
+
+def list_microcap_theses():
+    with connect() as conn:
+        return conn.execute("SELECT * FROM microcap_theses ORDER BY created_at").fetchall()
+
+
+def save_microcap_thesis(key, note, min_roce, max_pe, max_promoter_drop, baseline):
+    """Create or edit a thesis. `baseline` is only written on create - editing the note or the limits
+    keeps the numbers you started from."""
+    with connect() as conn:
+        return conn.execute(
+            "INSERT INTO microcap_theses (key, note, min_roce, max_pe, max_promoter_drop, baseline) "
+            "VALUES (%s, %s, %s, %s, %s, %s) ON CONFLICT (key) DO UPDATE SET note = excluded.note, "
+            "min_roce = excluded.min_roce, max_pe = excluded.max_pe, "
+            "max_promoter_drop = excluded.max_promoter_drop, updated_at = now() RETURNING *",
+            (key, note, min_roce, max_pe, max_promoter_drop, Jsonb(baseline) if baseline else None),
+        ).fetchone()
+
+
+def set_microcap_thesis_breaches(key, breaches):
+    with connect() as conn:
+        conn.execute("UPDATE microcap_theses SET last_breaches = %s WHERE key = %s", (Jsonb(breaches), key))
+
+
+def delete_microcap_thesis(key):
+    with connect() as conn:
+        conn.execute("DELETE FROM microcap_theses WHERE key = %s", (key,))
 
 
 def upsert_stocks_master(rows):

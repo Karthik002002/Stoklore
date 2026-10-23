@@ -25,6 +25,7 @@ import Holdings from './Holdings'
 import PaperTrading from './paper/PaperTrading'
 import EarningsPage from './EarningsPage'
 import LeadersPage from './LeadersPage'
+import MicrocapsPage from './MicrocapsPage'
 import RiskPage from './RiskPage'
 import ChartPage from './ChartPage'
 import PaperPositionChart from './paper/PaperPositionChart'
@@ -531,6 +532,14 @@ const leadersRoute = createRoute({
   component: LeadersPage,
 })
 
+// Every company between ₹100 and ₹2,000 Cr (MicrocapsPage): fundamentals, strength, ownership, red
+// flags and your long-term theses, from the weekly microcap snapshot.
+const microcapsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/microcaps',
+  component: MicrocapsPage,
+})
+
 const riskRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/risk',
@@ -628,6 +637,7 @@ const routeTree = rootRoute.addChildren([
   chartRoute,
   riskRoute,
   leadersRoute,
+  microcapsRoute,
   earningsRoute,
   settingsRoute,
   stockRoute,

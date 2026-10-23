@@ -484,6 +484,92 @@ export const getSectorFlows = (tf: 'weekly' | 'daily') =>
 export const getRrg = (tf: 'weekly' | 'daily') =>
   fetch(`/api/strength/rrg?tf=${tf}`).then(json<{ as_of: string; tf: string; sectors: RrgSector[] }>)
 
+/** One company in the microcap snapshot (GET /api/microcaps, app/core/microcap.py). Fundamentals
+ *  are whatever columns the screener.in account has switched on, so any of them can be null. */
+export type Microcap = {
+  key: string
+  symbol: string | null
+  bse_code: string | null
+  name: string
+  screener_url: string
+  price: number | null
+  mcap_cr: number | null
+  pe: number | null
+  pb: number | null
+  roce: number | null
+  roe: number | null
+  opm: number | null
+  div_yield: number | null
+  sales_qtr_cr: number | null
+  np_qtr_cr: number | null
+  qtr_sales_yoy: number | null
+  qtr_profit_yoy: number | null
+  sales_cr: number | null
+  profit_cr: number | null
+  sales_cagr_3y: number | null
+  profit_cagr_3y: number | null
+  sales_cagr_5y: number | null
+  profit_cagr_5y: number | null
+  debt_equity: number | null
+  pledge_pct: number | null
+  cfo_cr: number | null
+  np_last_year_cr: number | null
+  fii_pct: number | null
+  fii_chg_qtr: number | null
+  fii_chg_3y: number | null
+  promoter_pct: number | null
+  promoter_chg_qtr: number | null
+  promoter_chg_4q: number | null
+  off_cycle_2y: number
+  rs: number | null
+  r3m: number | null
+  r12m: number | null
+  from_high_pct: number | null
+  avg_value_cr: number | null
+  template_score: number | null
+  flags: string[]
+}
+export type MicrocapSnapshot = {
+  as_of: string
+  fetched_at: string
+  band_cr: [number, number]
+  count: number
+  stocks: Microcap[]
+}
+export type MicrocapStatus = {
+  running: boolean
+  error: string | null
+  as_of: string | null
+  has_cookie: boolean
+}
+/** A long-term thesis (microcap_theses): the note, the limits that would break it, and how the
+ *  stock has moved since (`since`: field -> [at thesis, now]). */
+export type MicrocapThesis = {
+  key: string
+  note: string
+  min_roce: number | null
+  max_pe: number | null
+  max_promoter_drop: number | null
+  created_at: string
+  breaches: string[]
+  since: Record<string, [number | null, number | null]>
+}
+export type MicrocapThesisIn = Pick<MicrocapThesis, 'note' | 'min_roce' | 'max_pe' | 'max_promoter_drop'>
+
+export const getMicrocaps = () => fetch('/api/microcaps').then(json<MicrocapSnapshot>)
+export const getMicrocapStatus = () => fetch('/api/microcaps/status').then(json<MicrocapStatus>)
+export const refreshMicrocaps = () =>
+  fetch('/api/microcaps/refresh', { method: 'POST' }).then(json<{ started: boolean }>)
+export const getMicrocapTheses = () => fetch('/api/microcaps/theses').then(json<MicrocapThesis[]>)
+export const saveMicrocapThesis = (key: string, body: MicrocapThesisIn) =>
+  fetch(`/api/microcaps/theses/${encodeURIComponent(key)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(json)
+export const deleteMicrocapThesis = (key: string) =>
+  fetch(`/api/microcaps/theses/${encodeURIComponent(key)}`, { method: 'DELETE' }).then(json)
+
 /** An upcoming results board meeting on NSE (GET /api/results-calendar). */
 export type ResultsMeeting = { symbol: string; date: string; purpose: string; detail: string | null }
 

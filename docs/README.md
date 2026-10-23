@@ -18,6 +18,7 @@ why it exists, see the main [README](../README.md) — these docs are the
 - [Top News](top-news.md)
 - [Holdings](holdings.md)
 - [Promoter shareholding](shareholding.md)
+- [Microcap universe](microcaps.md)
 - [Backtesting — Auto](backtesting-auto.md) *(currently disabled, see the doc)*
 - [Backtesting — Manual (Trade Journal)](backtesting-manual.md)
 - [Bar Replay](bar-replay.md)

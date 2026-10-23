@@ -22,6 +22,7 @@ import {
   IconRefresh,
   IconTrendingUp,
   IconTrophy,
+  IconDiamond,
   IconCalendarEvent,
   IconUsersGroup,
   IconWallet,
@@ -73,6 +74,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: '/', icon: IconLayoutDashboard, label: 'Stocks' },
       { to: '/leaders', icon: IconTrophy, label: 'Leaders' },
+      { to: '/microcaps', icon: IconDiamond, label: 'Microcaps' },
       { to: '/chart', icon: IconChartLine, label: 'Chart' },
       { to: '/scans', icon: IconScan, label: 'Scans' },
     ],

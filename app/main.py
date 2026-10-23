@@ -19,6 +19,7 @@ from app.core import paper
 
 from app.core.config import UPLOAD_DIR
 from app.routers import router
+from app.routers import microcaps as microcaps_router
 from app.routers import strength as strength_router
 from app.services import engine_jobs
 from app.services.jobs import (
@@ -66,6 +67,9 @@ def _startup():
     # Pulls each evening's bhavcopy and alerts on stocks newly passing the VCP read - see
     # app/routers/strength.py.
     strength_router.start()
+    # Weekly microcap universe pull (screener fundamentals + strength + shareholding) - see
+    # app/routers/microcaps.py. Idle without a screener.in session cookie.
+    microcaps_router.start()
 
 
 # --- the login gate ------------------------------------------------------------------------------

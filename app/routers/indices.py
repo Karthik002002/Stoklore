@@ -5,7 +5,7 @@ from fastapi import APIRouter
 from fastapi import HTTPException
 from fastapi.responses import RedirectResponse
 
-from app.core import db, scraper, stocks_master
+from app.core import db, prices, scraper, stocks_master
 
 from app.deps import _cached
 
@@ -53,6 +53,8 @@ def index_chart(name: str, range: str = "1mo"):
         raise HTTPException(status_code=404, detail=f"Unknown index '{name}'")
     if range not in scraper.CHART_RANGES:
         raise HTTPException(status_code=400, detail=f"range must be one of {list(scraper.CHART_RANGES)}")
+    if range in ("W", "M"):
+        return prices.resample(index_chart(name, "D"), range)
     return _cached(name, f"index-chart:{range}", 15, lambda: scraper.get_index_chart(name, range))
 
 

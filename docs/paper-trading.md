@@ -44,8 +44,10 @@ waiting out the poll interval.
   "where is this actually sitting" doesn't mean opening the stock page and
   re-plotting the levels by hand. Laid out like a charting package: the chart
   takes the whole screen beside the nav rail, under a thin bar with the symbol
-  a timeframe dropdown (`1m`/`5m`/`15m`/`1H`/`4H` intraday bars, then the 1D/5D/1MO/6MO/YTD/1Y/5Y/MAX
-  ranges), **Indicators**, the **chart template** picker and the chart **settings** cog (the same
+  a timeframe dropdown of candle sizes like TradingView's (`1m`/`5m`/`15m`/`1H`/`4H` from the minute
+  dataset, then `1D`/`1W`/`1M`: the stock's whole history as official daily OHLC — never built from
+  minutes — with W and M rolled up from those days; the chart opens on the latest 200 candles and
+  scrolls back from there), **Indicators**, the **chart template** picker and the chart **settings** cog (the same
   config Bar Replay edits - see [Chart templates](bar-replay.md#chart-templates)), and the position's numbers (current, value,
   unrealised, stop, target, R:R) float in the top-left under the OHLCV legend.
   Click its header to collapse it to one line - side, size @ entry, P&L.

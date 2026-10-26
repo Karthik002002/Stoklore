@@ -154,7 +154,7 @@ export default function ChartModal() {
   const trade = useTradeAccount(!!symbol)
   const { account, live } = trade
   const [ticket, setTicket] = useState(true)
-  const [range, setRange] = useState('6mo')
+  const [range, setRange] = useState('D')
 
   // --- scan state ----------------------------------------------------------------------------
   const [playing, setPlaying] = useState(false)

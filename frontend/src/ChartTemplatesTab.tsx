@@ -28,7 +28,7 @@ export default function ChartTemplatesTab() {
 
   const [styleOpen, setStyleOpen] = useState(false)
   const [symbol, setSymbol] = useState('RELIANCE')
-  const [tf, setTf] = useState('6mo')
+  const [tf, setTf] = useState('D')
   const { data, isPending, isError } = useQuery({ ...chartQuery(symbol, tf), enabled: !!symbol })
   const bars = (data?.bars ?? []) as unknown as ReplayBar[]
   const draftSettings = { ...DEFAULT_CHART_SETTINGS, ...draft?.style }

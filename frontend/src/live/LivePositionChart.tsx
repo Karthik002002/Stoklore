@@ -85,7 +85,7 @@ function Metric({
 export default function LivePositionChart() {
   const { symbol } = useParams({ from: '/live/$symbol' })
   const queryClient = useQueryClient()
-  const [range, setRange] = useState('6mo')
+  const [range, setRange] = useState('D')
   const indicators = useBarReplayStore((st) => st.indicators)
   const chartSettings = useBarReplayStore((st) => st.settings)
   usePageTitle(`${symbol} · Live position`)

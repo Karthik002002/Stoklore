@@ -142,6 +142,24 @@ def top_up_daily(symbol, chart):
     return {**chart, "bars": merge_recent_daily(bars, fresh)}
 
 
+def resample(chart, unit):
+    """A daily chart rolled up into weekly ("W", ISO weeks) or monthly ("M") candles: first open,
+    highest high, lowest low, last close, summed volume, stamped with the bucket's first session -
+    what TradingView draws for 1W/1M."""
+    out, key_of = [], {}
+    for b in (chart or {}).get("bars") or []:
+        d = datetime.utcfromtimestamp(b["time"] + _IST_SECONDS).date()  # the IST session, see _session
+        key = d.isocalendar()[:2] if unit == "W" else (d.year, d.month)
+        if key in key_of:
+            c = out[key_of[key]]
+            c["high"], c["low"] = max(c["high"], b["high"]), min(c["low"], b["low"])
+            c["close"], c["volume"] = b["close"], c["volume"] + b["volume"]
+        else:
+            key_of[key] = len(out)
+            out.append(dict(b))
+    return {**chart, "bars": out, "interval": "1wk" if unit == "W" else "1mo"}
+
+
 def ema_crossover(symbol, short=20, long=50):
     """Returns {crossover: 'bullish'|'bearish'|None, shortEma, longEma, lastCrossoverDate} from
     stored closes - 'bullish' = short EMA crossed above long EMA on the latest bar (golden

@@ -795,6 +795,12 @@ CHART_RANGES = {
     "1y": ("1y", "1d"),
     "5y": ("5y", "1wk"),
     "max": ("max", "1mo"),
+    # Candle timeframes, TradingView's 1D/1W/1M: every session of the stock's history at that candle
+    # size, the chart opening on the latest few hundred. W and M are rolled up from D (see
+    # prices.resample), so they carry the same moneycontrol-topped-up latest session.
+    "D": ("max", "1d"),
+    "W": ("max", "1d"),
+    "M": ("max", "1d"),
 }
 
 # How far back each range reaches, in calendar days ("ytd" is handled separately below).

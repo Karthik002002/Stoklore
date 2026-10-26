@@ -27,23 +27,20 @@ import SettingsDialog from './SettingsDialog'
 import { useChartTemplate } from './chartTemplates'
 import { useBarReplayStore } from './store'
 
-// Every timeframe a stock chart can show, fine -> coarse. The intraday ones are Bar Replay's
-// (minute dataset, GET /api/prices/{symbol}/intraday); the rest are the chart endpoint's ranges
-// (scraper.CHART_RANGES - 1d/5d are intraday bars, 5y weekly, max monthly).
+// Every candle size a stock chart can show, fine -> coarse, like TradingView: a timeframe is the
+// candle, the chart holds the stock's history at that size and opens on the latest 200. Intraday
+// ones are Bar Replay's (minute dataset, GET /api/prices/{symbol}/intraday). 1D/1W/1M are official
+// daily OHLC (Yahoo, newest sessions topped up from moneycontrol - prices.top_up_daily), never built
+// from minutes; W and M are rolled up from those days (prices.resample).
 export const CHART_TIMEFRAMES = [
   { value: '1m', label: '1m', intraday: true },
   { value: '5m', label: '5m', intraday: true },
   { value: '15m', label: '15m', intraday: true },
   { value: '1H', label: '1H', intraday: true },
   { value: '4H', label: '4H', intraday: true },
-  { value: '1d', label: '1D' },
-  { value: '5d', label: '5D' },
-  { value: '1mo', label: '1MO' },
-  { value: '6mo', label: '6MO' },
-  { value: 'ytd', label: 'YTD' },
-  { value: '1y', label: '1Y' },
-  { value: '5y', label: '5Y' },
-  { value: 'max', label: 'MAX' },
+  { value: 'D', label: '1D' },
+  { value: 'W', label: '1W' },
+  { value: 'M', label: '1M' },
 ]
 
 /** The query for one stock at one timeframe - shared so a host can prefetch or read the same cache
@@ -55,7 +52,7 @@ export const chartQuery = (symbol: string, tf: string) =>
 
 const TF_GROUPS = [
   { label: 'Intraday bars', items: CHART_TIMEFRAMES.filter((t) => t.intraday) },
-  { label: 'Range', items: CHART_TIMEFRAMES.filter((t) => !t.intraday) },
+  { label: 'Daily and up', items: CHART_TIMEFRAMES.filter((t) => !t.intraday) },
 ]
 
 /** The timeframe picker: one dropdown, intraday bar sizes and look-back ranges in two groups. */

@@ -130,7 +130,7 @@ export function PaperChart({
   onNewOrder?: (direction: 'long' | 'short', price: number | null) => void
 }) {
   const queryClient = useQueryClient()
-  const [ownRange, setOwnRange] = useState('6mo')
+  const [ownRange, setOwnRange] = useState('D')
   const range = rangeProp ?? ownRange
   const setRange = onRangeChange ?? setOwnRange
   // The position panel sits on the candles; collapsed, it's one line - the summary is still there.

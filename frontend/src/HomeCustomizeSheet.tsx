@@ -51,7 +51,7 @@ export default function HomeCustomizeSheet({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
-  const { hidden, editing, setHidden, setEditing, reset } = useHomeLayout()
+  const { hidden, setHidden, reset } = useHomeLayout()
   const shown = HOME_PANELS.length - hidden.length
 
   return (
@@ -69,24 +69,10 @@ export default function HomeCustomizeSheet({
           </DialogDescription>
         </div>
 
-        <div className="border-b p-4">
-          <label
-            className={cn(
-              'flex cursor-pointer items-center gap-3 rounded-md border p-3 transition-colors',
-              editing ? 'border-primary/50 bg-primary/5' : 'hover:bg-muted/50',
-            )}
-          >
-            <span className="min-w-0 flex-1 text-sm">
-              <span className="flex items-center gap-1.5 font-medium">
-                <MoveIcon className="size-3.5" /> Edit layout
-              </span>
-              <span className="mt-0.5 block text-xs text-muted-foreground">
-                Drag a panel by its top bar, resize it from the bottom-right corner.
-              </span>
-            </span>
-            <Switch checked={editing} onChange={setEditing} label="Edit layout" />
-          </label>
-        </div>
+        <p className="flex items-center gap-1.5 border-b p-4 text-xs text-muted-foreground">
+          <MoveIcon className="size-3.5 shrink-0" />
+          Hover a panel: drag it by the grip at its top, resize it from the bottom-right corner.
+        </p>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
           <p className="px-2 pb-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">

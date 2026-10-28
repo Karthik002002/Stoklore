@@ -1110,7 +1110,7 @@ export default function StocksList() {
     ? new Date(stocksQuery.dataUpdatedAt).toLocaleTimeString('en-GB')
     : null
 
-  const { layout, hidden, editing, setLayout, setHidden, setEditing } = useHomeLayout()
+  const { layout, hidden, setLayout, setHidden } = useHomeLayout()
 
   // Every panel by id, placed by the grid below from the saved layout (lib/homeLayout.ts).
   const panels: Record<string, React.ReactNode> = {
@@ -1313,15 +1313,6 @@ export default function StocksList() {
 
   return (
     <div className="space-y-2">
-      {editing && (
-        <div className="flex items-center gap-2 rounded-md border border-dashed border-primary/50 bg-primary/5 px-3 py-1.5 text-xs">
-          <MoveIcon className="size-3.5 text-primary" />
-          Editing the layout - drag a panel by its top bar, resize from its bottom-right corner.
-          <Button size="sm" className="ml-auto h-6 px-2 text-xs" onClick={() => setEditing(false)}>
-            Done
-          </Button>
-        </div>
-      )}
       {!hidden.includes('ticker') && <TickerTape indices={indicesQuery.data} />}
 
       {gridPanels.length === 0 ? (
@@ -1329,10 +1320,11 @@ export default function StocksList() {
       ) : (
         <BoardGrid
           panels={gridPanels.map((p) => ({ id: p.id, layout: layout[p.id] ?? p.layout! }))}
-          edit={editing}
-          // Only while editing: hiding a panel makes the grid close the gap, and that reflow must not
-          // overwrite where everything else was placed.
-          onLayoutChange={editing ? (next) => setLayout([...next]) : undefined}
+          // Always movable and resizable, no edit mode. Saved only when a drag or resize ends:
+          // hiding a panel makes the grid close the gap, and that reflow must not overwrite where
+          // everything else was placed.
+          edit
+          onCommit={(next) => setLayout([...next])}
         >
           {gridPanels.map((p) => (
             // The grid item. react-grid-layout appends its resize handle as a child of this div, so
@@ -1341,28 +1333,27 @@ export default function StocksList() {
             <div
               key={p.id}
               className={cn(
-                'relative [&>.react-resizable-handle]:z-30',
-                // while editing: an outline round the cell and a visible corner to resize from -
-                // the library's own handle is a dark triangle that disappears on the dark theme
-                editing &&
-                  'rounded-md outline outline-dashed outline-1 outline-primary/50 [&>.react-resizable-handle]:size-5 [&>.react-resizable-handle]:rounded-tl-md [&>.react-resizable-handle]:bg-primary/70',
+                'group/cell relative [&>.react-resizable-handle]:z-30',
+                // A corner to resize from, shown on hover - the library's own handle is a dark
+                // triangle that disappears on the dark theme
+                '[&>.react-resizable-handle]:size-4 [&>.react-resizable-handle]:rounded-tl-md [&>.react-resizable-handle]:opacity-0 [&>.react-resizable-handle]:transition-opacity hover:[&>.react-resizable-handle]:bg-primary/60 hover:[&>.react-resizable-handle]:opacity-100',
               )}
             >
-              {editing && (
-                <div className="panel-drag absolute inset-x-0 top-0 z-20 flex h-8 cursor-move items-center gap-1.5 rounded-t-md border border-dashed border-primary/60 bg-primary/15 px-2 text-[11px] font-medium backdrop-blur-sm">
-                  <MoveIcon className="size-3" />
-                  {p.label}
-                  <button
-                    type="button"
-                    className="panel-action ml-auto rounded p-0.5 hover:bg-background/60"
-                    aria-label={`Hide ${p.label}`}
-                    title="Hide this panel"
-                    onClick={() => setHidden(p.id, true)}
-                  >
-                    <EyeOffIcon className="size-3.5" />
-                  </button>
-                </div>
-              )}
+              {/* Drag grip: a small pill at the top centre on hover, so it never covers the panel's
+                  own header buttons the way a full-width bar did. */}
+              <div className="panel-drag absolute top-0 left-1/2 z-20 flex h-5 -translate-x-1/2 cursor-move items-center gap-1 rounded-b-md border border-t-0 border-primary/40 bg-primary/15 px-2 text-[10px] font-medium opacity-0 backdrop-blur-sm transition-opacity group-hover/cell:opacity-100">
+                <MoveIcon className="size-3" />
+                {p.label}
+                <button
+                  type="button"
+                  className="panel-action ml-1 rounded p-0.5 hover:bg-background/60"
+                  aria-label={`Hide ${p.label}`}
+                  title="Hide this panel"
+                  onClick={() => setHidden(p.id, true)}
+                >
+                  <EyeOffIcon className="size-3" />
+                </button>
+              </div>
               {/* the panel fills the cell the grid sized; its body scrolls inside it */}
               <div className="h-full *:h-full">{panels[p.id]}</div>
             </div>

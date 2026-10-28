@@ -243,11 +243,15 @@ export function BoardGrid({
   panels,
   edit,
   onLayoutChange,
+  onCommit,
   children,
 }: {
   panels: { id: string; layout: DashboardPanel['layout'] }[]
   edit: boolean
   onLayoutChange?: (layout: Layout) => void
+  /** Only when the user finishes a drag or resize - not the grid's own reflows (a panel hidden or
+   *  shown), which onLayoutChange also reports. */
+  onCommit?: (layout: Layout) => void
   children: React.ReactNode
 }) {
   const { width, containerRef, mounted } = useContainerWidth()
@@ -265,6 +269,8 @@ export function BoardGrid({
           dragConfig={{ enabled: edit, handle: '.panel-drag', cancel: '.panel-action' }}
           resizeConfig={{ enabled: edit, handles: ['se'] }}
           onLayoutChange={onLayoutChange}
+          onDragStop={onCommit && ((l) => onCommit(l))}
+          onResizeStop={onCommit && ((l) => onCommit(l))}
         >
           {children}
         </GridLayout>

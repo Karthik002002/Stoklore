@@ -223,10 +223,11 @@ to guard rails you can see and control.
     `GET /api/research-link/{site}/{symbol}`, which resolves the exact page from the site's
     autosuggest and redirects (a failed lookup lands on the site's search or home).
 - **Customizable home** — **Customize** (beside the Home / My board tabs) opens a sheet from the
-  right: a switch per panel to show or hide it (the ticker tape and status bar too), **Edit layout**
-  to drag panels by their top bar and resize them from the corner on the same 12-column grid
-  Dashboards use, and **Reset to default**. Kept per browser in localStorage (`home.layout`, a
-  zustand store); a hidden panel comes back where it was
+  right: a switch per panel to show or hide it (the ticker tape and status bar too) and **Reset to
+  default**. Panels are always movable and resizable, no edit mode: hover one for a grip at its top
+  (drag it, or hide the panel) and a resize corner at the bottom right, on the same 12-column grid
+  Dashboards use. Kept per browser in localStorage (`home.layout`, a zustand store), saved when a
+  drag or resize ends; a hidden panel comes back where it was
 - **Sector performance** (ET Markets, NSE or BSE, refreshed every 5 min) — all 67 sectors three
   ways: a heat map of tiles sized by market cap and coloured by the day's move; a sortable table
   with each sector's market cap and its change, a centred move bar, a five-way breadth bar (members

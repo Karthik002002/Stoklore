@@ -70,11 +70,8 @@ export const DEFAULT_LAYOUT: Record<string, PanelLayout> = Object.fromEntries(
 type HomeLayoutState = {
   layout: Record<string, PanelLayout>
   hidden: string[]
-  /** Drag/resize mode. Not persisted: a reload always comes back to a fixed page. */
-  editing: boolean
   setLayout: (items: { i: string; x: number; y: number; w: number; h: number }[]) => void
   setHidden: (id: string, hidden: boolean) => void
-  setEditing: (editing: boolean) => void
   reset: () => void
 }
 
@@ -83,7 +80,6 @@ export const useHomeLayout = create<HomeLayoutState>()(
     (set) => ({
       layout: DEFAULT_LAYOUT,
       hidden: [],
-      editing: false,
       // Merged, not replaced: the grid only reports the panels on screen, and a hidden one has to
       // come back where it was.
       // Only when something actually moved: the grid reports its layout on every render, and a fresh
@@ -104,7 +100,6 @@ export const useHomeLayout = create<HomeLayoutState>()(
         }),
       setHidden: (id, hidden) =>
         set((s) => ({ hidden: hidden ? [...new Set([...s.hidden, id])] : s.hidden.filter((h) => h !== id) })),
-      setEditing: (editing) => set({ editing }),
       reset: () => set({ layout: DEFAULT_LAYOUT, hidden: [] }),
     }),
     {

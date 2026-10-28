@@ -1,4 +1,4 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 import type * as React from 'react'
 import type { ReactNode } from 'react'
 import { BellIcon } from 'lucide-react'
@@ -2022,6 +2022,29 @@ function ContextMenu({
     }
   }, [onClose])
 
+  // Keep the menu inside the chart: measured after it renders (its height depends on which
+  // sections apply), it opens up and/or left of the pointer when there's no room below/right, like
+  // a native menu, and is clamped to a 4px margin. Taller than the chart, it scrolls. Hidden until
+  // placed so it never flashes at the unclamped spot.
+  const ref = useRef<HTMLDivElement>(null)
+  const [pos, setPos] = useState<{ left: number; top: number; maxHeight: number } | null>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    const box = el?.offsetParent as HTMLElement | null
+    if (!el || !box) return
+    const M = 4
+    const maxHeight = box.clientHeight - 2 * M
+    const w = el.offsetWidth
+    const h = Math.min(el.scrollHeight, maxHeight)
+    const left = x + w + M > box.clientWidth ? x - w : x
+    const top = y + h + M > box.clientHeight ? y - h : y
+    setPos({
+      left: Math.max(M, Math.min(left, box.clientWidth - w - M)),
+      top: Math.max(M, Math.min(top, box.clientHeight - h - M)),
+      maxHeight,
+    })
+  }, [x, y])
+
   // A read-only chart passes no onPlaceLevel: its positions are a record, so no level actions
   // a ticket's draft gets the same level actions as a position, plus "entry here"
   const openOrders = onPlaceLevel ? orders.filter((o) => o.status === 'open' || o.draft) : []
@@ -2032,8 +2055,13 @@ function ContextMenu({
   const label = (o: ReplayOrder) => `${o.direction} ${o.quantity} @ ${inr(o.entryPrice)}`
   return (
     <div
-      className="absolute z-30 min-w-56 rounded-md border bg-popover p-1 text-sm shadow-md"
-      style={{ left: x, top: y }}
+      ref={ref}
+      className="absolute z-30 min-w-56 overflow-y-auto rounded-md border bg-popover p-1 text-sm shadow-md"
+      style={
+        pos
+          ? { left: pos.left, top: pos.top, maxHeight: pos.maxHeight }
+          : { left: x, top: y, visibility: 'hidden' }
+      }
       // Stop propagation so a click on the menu itself doesn't fire the outside-click dismisser.
       onClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.preventDefault()}

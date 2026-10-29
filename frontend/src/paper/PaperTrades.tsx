@@ -600,6 +600,7 @@ export function OrderPanel({
         rr={f.rr}
         riskNote={f.riskOfWallet == null ? undefined : `${fmt(f.riskOfWallet, 2)}% of wallet`}
         warnings={f.warnings}
+        symbol={symbol ?? typedSymbol}
       >
         <Button
           type="submit"

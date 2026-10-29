@@ -10,9 +10,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ExternalLinkIcon, RefreshCwIcon, Trash2Icon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { ChartButton } from '@/components/ChartModal'
+import DelivCell from '@/components/DelivCell'
 import RsPill from '@/components/RsPill'
 import SortTh from '@/components/SortTh'
 import StockLinks from '@/components/StockLinks'
+import SurveillanceBadge from '@/components/SurveillanceBadge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -215,6 +217,7 @@ function Table({
     r12: (r) => r.r12m,
     high: (r) => r.from_high_pct,
     value: (r) => r.avg_value_cr,
+    deliv: (r) => r.deliv_pct,
     flags: (r) => r.flags.length,
   })
   const th = (label: string, k: string) => <SortTh label={label} k={k} sort={sort} onSort={setSort} />
@@ -239,13 +242,14 @@ function Table({
             {th('12M', 'r12')}
             {th('From 52wH', 'high')}
             {th('₹Cr/day', 'value')}
+            {th('Deliv %', 'deliv')}
             {th('Flags', 'flags')}
           </tr>
         </thead>
         <tbody>
           {sorted.length === 0 && (
             <tr>
-              <td colSpan={17} className="py-8 text-center text-muted-foreground">
+              <td colSpan={18} className="py-8 text-center text-muted-foreground">
                 Nothing passes these filters.
               </td>
             </tr>
@@ -277,6 +281,7 @@ function Table({
                     THESIS
                   </span>
                 )}
+                {r.symbol && <SurveillanceBadge symbol={r.symbol} className="ml-1.5 py-0 text-[9px]" />}
                 <span className="block truncate font-sans text-[11px] text-muted-foreground">{r.name}</span>
               </td>
               <td className="px-2 py-1 text-right tabular-nums">{num(r.mcap_cr, 0)}</td>
@@ -309,6 +314,7 @@ function Table({
               <td className="px-2 py-1 text-right text-muted-foreground tabular-nums">
                 {num(r.avg_value_cr, 2)}
               </td>
+              <DelivCell pct={r.deliv_pct} avg={r.deliv_avg20} />
               <td className="max-w-64 px-2 py-1">
                 <Flags flags={r.flags} />
               </td>
@@ -356,6 +362,8 @@ const FIELDS: { k: keyof Microcap; label: string; f?: (v: number) => string }[] 
   { k: 'r12m', label: '12M return %' },
   { k: 'from_high_pct', label: 'From 52-week high %' },
   { k: 'avg_value_cr', label: '₹Cr traded / day', f: (v) => fmt(v, 2) },
+  { k: 'deliv_pct', label: 'Delivery % (latest)' },
+  { k: 'deliv_avg20', label: 'Delivery % (20d avg)' },
 ]
 const show = (r: Microcap, fd: (typeof FIELDS)[number]) => {
   const v = r[fd.k] as number | null
@@ -463,6 +471,7 @@ function Drawer({ row, thesis, onClose }: { row: Microcap; thesis?: MicrocapThes
           <p className="flex items-center gap-2 text-sm font-semibold">
             {row.symbol ?? row.bse_code}
             {row.symbol && <ChartButton symbol={row.symbol} />}
+            {row.symbol && <SurveillanceBadge symbol={row.symbol} />}
           </p>
           <p className="truncate text-xs text-muted-foreground">{row.name}</p>
         </div>

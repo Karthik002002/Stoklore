@@ -8,6 +8,7 @@ import { useQueries, useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { AlertTriangleIcon, ShieldAlertIcon } from 'lucide-react'
 import ResultsBadge, { useNextResults } from '@/components/ResultsBadge'
+import SurveillanceBadge from '@/components/SurveillanceBadge'
 import { Spinner } from '@/components/ui/spinner'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { chartQuery } from '@/features/bar-replay/ChartControls'
@@ -359,6 +360,7 @@ export default function RiskPage() {
                             {p.direction}
                           </span>
                           <ResultsBadge symbol={p.symbol} className="ml-1.5" />
+                          <SurveillanceBadge symbol={p.symbol} className="ml-1.5" />
                           {r.uncoveredQty > 0 && (
                             <span className="ml-1.5 inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
                               <ShieldAlertIcon className="size-3" />

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import ResultsBadge from '@/components/ResultsBadge'
+import SurveillanceBadge from '@/components/SurveillanceBadge'
 import StockLinks from '@/components/StockLinks'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
@@ -214,6 +215,7 @@ export default function LivePositionChart() {
           <h1 className="text-lg font-semibold">{symbol}</h1>
           <StockLinks symbol={symbol} />
           <ResultsBadge symbol={symbol} />
+          <SurveillanceBadge symbol={symbol} />
           {position && (
             <span className="text-xs text-muted-foreground">
               {position.net_qty > 0 ? 'long' : 'short'} · {Math.abs(position.net_qty)} qty ·{' '}

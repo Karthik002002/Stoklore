@@ -76,8 +76,10 @@ Things to look into, not reasons to reject. Missing data never raises a flag.
 | `D/E N` | debt to equity above 1 |
 | `N capital change filing(s) in 2y` | off-cycle shareholding filings. SEBI requires one only after a capital change over 2% (preferential allotment, QIP, warrants), so they point at dilution |
 | `illiquid` | 20-day average turnover under ₹50 L a day |
+| `LT-ASM Stage I`, `GSM …` | on NSE's ASM or GSM surveillance list at the time of the pull (see [Leaders › Surveillance](leaders.md#surveillance-asm--gsm)). The badge beside the symbol is live; this flag is from the weekly snapshot |
+| `delivery N% (20d)` | 20-day average delivery % under 20: trading is mostly intraday churn |
 
-Not covered yet: ASM/GSM surveillance lists and auditor or rating changes.
+Not covered yet: auditor or rating changes.
 
 ## Refresh
 
@@ -101,7 +103,7 @@ Not covered yet: ASM/GSM surveillance lists and auditor or rating changes.
 
 `key` is the NSE symbol, or the BSE code for a BSE-only company. Each stock also carries `symbol`
 (null for BSE-only), `bse_code`, `name`, `screener_url`, the fundamentals above, `rs`, `r3m`, `r12m`,
-`from_high_pct`, `avg_value_cr`, `template_score`, `promoter_pct`, `promoter_chg_4q`, `off_cycle_2y`
+`from_high_pct`, `avg_value_cr`, `template_score`, `deliv_pct`, `deliv_avg20`, `surveillance`, `promoter_pct`, `promoter_chg_4q`, `off_cycle_2y`
 and `flags[]`. Sorted by RS, unrated last.
 
 Self-check: `python tests/microcap.selfcheck.py`.

@@ -306,6 +306,21 @@ export default function SettingsDialog({
                 </span>
               </span>
             </label>
+            <label className="flex items-start gap-2 rounded-lg border p-3 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={draft.openWarning !== false}
+                onChange={(e) => set('openWarning')(e.target.checked)}
+              />
+              <span>
+                <span className="font-medium">Warn in the first 15 minutes</span>
+                <span className="block text-xs text-muted-foreground">
+                  A caution on the paper and live order tickets from 9:15 to 9:30 IST, when the open's wide
+                  spreads and gaps make fills least like the price on the chart.
+                </span>
+              </span>
+            </label>
           </TabsPanel>
         </Tabs>
 

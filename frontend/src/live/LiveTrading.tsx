@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import ResultsBadge from '@/components/ResultsBadge'
+import SurveillanceBadge from '@/components/SurveillanceBadge'
 import { Link } from '@tanstack/react-router'
 import { AlertTriangleIcon, OctagonXIcon, RefreshCwIcon } from 'lucide-react'
 import { toast } from 'sonner'
@@ -255,6 +256,7 @@ export function LivePositionsTable() {
                     {p.symbol}
                   </Link>
                   {p.symbol && <ResultsBadge symbol={p.symbol} className="ml-1.5" />}
+                  {p.symbol && <SurveillanceBadge symbol={p.symbol} className="ml-1.5" />}
                   <p className="text-xs text-muted-foreground">{p.product}</p>
                 </TableCell>
                 <TableCell className="tabular-nums">{p.net_qty}</TableCell>

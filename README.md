@@ -202,6 +202,11 @@ to guard rails you can see and control.
 - **Results guard** — NSE's board-meeting calendar (`/api/results-calendar`, cached 6h) puts a
   "Results in 3d" badge on paper and live positions (holdings tables, position charts, Book risk):
   amber within a week, red within two days, since a result can gap a swing past its stop
+- **Surveillance guard** — NSE's ASM/GSM lists (fetched once a day) put a red `LT-ASM Stage I` /
+  `GSM …` badge on the chart header, holdings, positions, Book risk, Leaders and Microcaps, and a
+  caution on the paper and live tickets. The tickets also warn in the first 15 minutes of the session
+  (switchable in chart Settings › Preferences). **Delivery %** (latest day vs its 20-day average, from
+  NSE's `sec_bhavdata_full`) is a column on Leaders and Microcaps. See [docs/leaders.md](docs/leaders.md#surveillance-asm--gsm).
 - **Chart page** (`/chart`, the chart icon in the sidebar) — a TradingView-style workspace: the
   shared chart (indicators, template, timeframe, alerts, your paper positions) fills the screen and
   your watchlists sit in a sidebar on the right - pick a list, add a symbol (tracked first if it

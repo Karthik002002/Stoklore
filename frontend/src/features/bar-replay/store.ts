@@ -142,6 +142,9 @@ export const DEFAULT_CHART_SETTINGS = {
   // Blind replay: no dates on the axis, legend, jump field or toasts, and the symbol masked, so
   // what's on the chart can't be matched to what you remember happening next.
   blind: false,
+  // A caution on the paper and live tickets between 9:15 and 9:30 IST, when the open's spreads and
+  // gaps make fills the least like the price on screen.
+  openWarning: true,
 }
 
 const DEFAULT_INDICATORS: IndicatorConfig[] = [{ key: 'default-ema20', type: 'ema', period: 20 }]

@@ -115,6 +115,16 @@ The daily loss stop also trips **by itself**: every sweep sums realised P&L, and
 halts trading and writes an alert. Realised only — an open position moving against you is not yet a
 loss, and halting on unrealised P&L means halting on a wick.
 
+### Market cautions on the ticket
+
+Above the order button, the live ticket (and the paper one) also shows, as warnings rather than blocks:
+
+- **NSE surveillance** - the stock is on today's ASM or GSM list: higher margins, a tighter price band
+  or trade-for-trade can make it hard to exit. See [Leaders › Surveillance](leaders.md#surveillance-asm--gsm).
+- **The first 15 minutes** - 9:15 to 9:30 IST on a weekday, when the open's spreads and gaps make fills
+  least like the price on the chart. Turn it off in the chart settings (cog) › Preferences › *Warn in
+  the first 15 minutes*.
+
 ### Timeouts, and why nothing is retried
 
 A `POST` that times out may have placed an order. Sending it again is how one intention becomes two

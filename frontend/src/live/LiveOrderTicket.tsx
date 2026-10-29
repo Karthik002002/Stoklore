@@ -509,6 +509,7 @@ export default function LiveOrderTicket({
         risk={risk}
         reward={reward}
         warnings={warnings}
+        symbol={symbol}
       >
         <Button
           type="submit"

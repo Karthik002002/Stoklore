@@ -31,6 +31,16 @@
     panel is un-hidden if you'd hidden it on the home layout).
 - **RS ranking** - every rated stock, sortable, with a symbol search.
 
+Both stock tables also carry:
+
+- **Deliv %** - the share of the latest day's traded quantity that settled as delivery rather than
+  squaring off intraday, from NSE's `sec_bhavdata_full` file. Green when it's 15+ points above the
+  stock's own 20-day average (holders buying), red when 15+ below (a day of churn); hover for the
+  average. Only the last 25 days are fetched (~25 requests the first time, then one each evening,
+  cached as `local_data/bhavcopy/delivery-*.json`).
+- **A surveillance tag** beside the symbol (`LT-ASM Stage I`, `GSM LVIII`, ...) when NSE has the
+  stock on its ASM or GSM list today - see below.
+
 The open tab, Weekly/Daily and Graph/Timeline are kept in the URL (`?tab=rotation&tf=daily&view=timeline`; defaults are left out), so going back, reloading or sharing the link returns to the same view.
 
 RS also appears as a column on the home watchlist and the Chart page sidebar, and in the sector panel's
@@ -98,3 +108,18 @@ Endpoints: `GET /api/strength/flows`, `GET /api/strength/status`, `POST /api/str
 `GET /api/strength/rrg?tf=weekly|daily`. Results are computed once per cached day and held in memory.
 
 Self-check: `.venv/bin/python tests/strength.selfcheck.py`.
+
+## Surveillance (ASM / GSM)
+
+NSE puts stocks on **ASM** (Additional Surveillance Measure, long- or short-term) for unusual price or
+volume moves, and on **GSM** (Graded Surveillance Measure) for weak fundamentals with speculative
+trading. While a stock is on a list the exchange raises its margin, narrows its price band or moves it
+to trade-for-trade, which can make a position hard to exit. It's a fact to know before entering, not
+a verdict: the lists change daily.
+
+- Source: NSE's `/api/reportASM` and `/api/reportGSM`, fetched once per IST day and cached in
+  `local_data/surveillance.json` (`app/core/surveillance.py`). If NSE can't be reached, the last copy is
+  served. `GET /api/surveillance` returns `{as_of, stocks: {symbol: [{kind, stage, desc}]}}`.
+- Shown as a red badge on the chart header, paper and live holdings, live positions, Book risk,
+  Leaders, and Microcaps (table and drawer), and as a red flag in the Microcaps snapshot.
+- The paper and live order tickets warn when the stock is on a list (a caution, never a block).

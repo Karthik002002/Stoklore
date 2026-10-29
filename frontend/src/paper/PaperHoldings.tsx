@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import ResultsBadge from '@/components/ResultsBadge'
+import SurveillanceBadge from '@/components/SurveillanceBadge'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { XIcon } from 'lucide-react'
@@ -272,6 +273,7 @@ export default function PaperHoldings({
                     {p.direction}
                   </Badge>
                   <ResultsBadge symbol={p.symbol} className="ml-1.5" />
+                  <SurveillanceBadge symbol={p.symbol} className="ml-1.5" />
                   {p.status === 'pending' && (
                     <Badge variant="outline" className="ml-1">
                       Limit resting

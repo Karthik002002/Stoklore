@@ -70,6 +70,7 @@ LIQUID_MIN_CR = 0.5  # ₹50L median daily turnover
 PROMOTER_DROP = 2.0  # percentage points over the last four quarterly filings
 DEBT_EQUITY_MAX = 1.0
 CFO_TO_PROFIT_MIN = 0.5
+LOW_DELIVERY = 20.0  # 20-day average delivery %: below it, trading is mostly intraday churn
 
 
 def fetch_universe(session_cookie, max_pages=MAX_PAGES):
@@ -140,15 +141,20 @@ def red_flags(r):
         flags.append(f"{r['off_cycle_2y']} capital change filing(s) in 2y")
     if r.get("avg_value_cr") is not None and r["avg_value_cr"] < LIQUID_MIN_CR:
         flags.append("illiquid")
+    if r.get("surveillance"):
+        flags.append(r["surveillance"])
+    if r.get("deliv_avg20") is not None and r["deliv_avg20"] < LOW_DELIVERY:
+        flags.append(f"delivery {r['deliv_avg20']:g}% (20d)")
     return flags
 
 
-STRENGTH_FIELDS = ("rs", "r3m", "r12m", "from_high_pct", "avg_value_cr", "template_score")
+STRENGTH_FIELDS = ("rs", "r3m", "r12m", "from_high_pct", "avg_value_cr", "template_score", "deliv_pct", "deliv_avg20")
 
 
-def build(screener_rows, strength_rows, own):
+def build(screener_rows, strength_rows, own, surv=None):
     """Joined, flagged rows, biggest RS first (unrated last). `strength_rows` = stock_table's
-    `stocks`; `own` = ownership(). Rows without an NSE symbol (BSE-only) keep their fundamentals."""
+    `stocks`; `own` = ownership(); `surv` = {symbol: surveillance label} (any board, SME too). Rows
+    without an NSE symbol (BSE-only) keep their fundamentals."""
     strength_by = {s["symbol"]: s for s in strength_rows}
     out = []
     for raw in screener_rows:
@@ -159,6 +165,7 @@ def build(screener_rows, strength_rows, own):
         r["promoter_pct"] = o.get("promoter_pct", r["promoter_pct_screener"])
         r["promoter_chg_4q"] = o.get("promoter_chg_4q")
         r["off_cycle_2y"] = o.get("off_cycle_2y", 0)
+        r["surveillance"] = (surv or {}).get(r["symbol"])
         r["flags"] = red_flags(r)
         r["key"] = r["symbol"] or r["bse_code"]
         out.append(r)

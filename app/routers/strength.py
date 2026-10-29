@@ -12,7 +12,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 
-from app.core import alerts, bhavcopy, db, scraper, strength
+from app.core import alerts, bhavcopy, db, scraper, strength, surveillance
 from app.core.config import IST
 from app.deps import _cached
 from app.routers.indices import sectors as et_sectors
@@ -96,7 +96,45 @@ def _table(bars, days):
             closes = [c for _, c in _nifty()]
             # partial history: rate everything that has (nearly) all the days collected so far
             _memo["stocks"] = strength.stock_table(bars, closes, min_bars=min(strength.MIN_BARS, max(2, days - 2)))
-        return _memo["stocks"]
+        table = _memo["stocks"]
+    # Merged on every read, not baked into the memo: delivery files land after the bars do (the
+    # loop syncs them second) and the surveillance lists change every morning.
+    deliv = _delivery()
+    surv = _surveillance()
+    for r in table["stocks"]:
+        r.update(deliv.get(r["symbol"]) or NO_DELIVERY)
+        r["surveillance"] = surveillance.label(surv[r["symbol"]]) if r["symbol"] in surv else None
+    return table
+
+
+NO_DELIVERY = {"deliv_pct": None, "deliv_avg20": None}
+_deliv_memo = {"key": None, "data": {}}
+
+
+def _delivery():
+    """bhavcopy.load_delivery(), re-read only when a delivery file is added."""
+    files = sorted(bhavcopy.CACHE_DIR.glob("delivery-*.json"))
+    key = (len(files), files[-1].name if files else None)
+    if _deliv_memo["key"] != key:
+        _deliv_memo.update(key=key, data=bhavcopy.load_delivery())
+    return _deliv_memo["data"]
+
+
+def _surveillance():
+    """Today's ASM/GSM entries by symbol, or {} when NSE can't be reached and nothing is cached."""
+    try:
+        return surveillance.current()["stocks"]
+    except Exception:  # noqa: BLE001 - the table is still worth serving without the badge
+        return {}
+
+
+@router.get("/api/surveillance")
+def surveillance_lists():
+    """NSE's ASM (long/short term) and GSM lists: {as_of, stocks: {symbol: [{kind, stage, desc}]}}."""
+    try:
+        return surveillance.current()
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"NSE surveillance lists failed: {exc}") from exc
 
 
 @router.get("/api/strength/rrg")
@@ -237,6 +275,7 @@ def _loop():
                 bhavcopy.sync()
             while bhavcopy.state["running"]:
                 time.sleep(30)
+            bhavcopy.sync_delivery()
             _vcp_alerts()
         except Exception:  # noqa: BLE001 - a bad tick must not kill the loop; next tick retries
             pass

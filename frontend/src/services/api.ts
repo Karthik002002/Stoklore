@@ -442,7 +442,16 @@ export type StrengthStock = {
   volume_dry: boolean
   near_pivot: boolean
   vcp: boolean
+  /** Latest day's delivery % (NSE sec_bhavdata_full), and the mean of the 20 days before it. */
+  deliv_pct: number | null
+  deliv_avg20: number | null
+  /** NSE surveillance stage(s) today, e.g. "ST-ASM Stage II"; null when on no list. */
+  surveillance: string | null
 }
+/** One stock's entries on NSE's surveillance lists (GET /api/surveillance, app/core/surveillance.py). */
+export type SurveillanceEntry = { kind: 'GSM' | 'LTASM' | 'STASM'; stage: string | null; desc: string | null }
+export const getSurveillance = () =>
+  fetch('/api/surveillance').then(json<{ as_of: string; stocks: Record<string, SurveillanceEntry[]> }>)
 export type StrengthStatus = {
   days: number
   first: string | null
@@ -527,6 +536,9 @@ export type Microcap = {
   from_high_pct: number | null
   avg_value_cr: number | null
   template_score: number | null
+  deliv_pct: number | null
+  deliv_avg20: number | null
+  surveillance: string | null
   flags: string[]
 }
 export type MicrocapSnapshot = {

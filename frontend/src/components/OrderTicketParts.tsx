@@ -5,6 +5,7 @@
 import { AlertTriangleIcon } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { fmt, inr } from '@/lib/format'
+import { useTicketCautions } from '@/lib/surveillance'
 import { cn } from '@/lib/utils'
 
 export const num = (s: string) => (s.trim() === '' ? null : Number(s))
@@ -132,6 +133,7 @@ export function TicketFooter({
   riskNote,
   rr,
   warnings = [],
+  symbol,
   children,
 }: {
   quantity: number
@@ -147,8 +149,11 @@ export function TicketFooter({
   /** R:R when it isn't reward / risk - a laddered exit's weighted R. */
   rr?: number | null
   warnings?: string[]
+  /** The ticket's stock - adds its market cautions (NSE surveillance, the opening 15 minutes). */
+  symbol?: string | null
   children: React.ReactNode
 }) {
+  const cautions = useTicketCautions(symbol)
   return (
     <div className="sticky bottom-0 -mx-1 mt-auto space-y-2 bg-[inherit] px-1 pt-2">
       <div className="flex items-baseline justify-between gap-2 border-t pt-2 text-xs">
@@ -181,7 +186,7 @@ export function TicketFooter({
           {reward != null && risk > 0 && <span className="font-medium">{fmt(rr ?? reward / risk, 2)}R</span>}
         </div>
       )}
-      {warnings.map((w) => (
+      {[...cautions, ...warnings].map((w) => (
         <p key={w} className="flex gap-1.5 text-[11px] text-amber-600 dark:text-amber-400">
           <AlertTriangleIcon className="mt-0.5 size-3 shrink-0" />
           {w}

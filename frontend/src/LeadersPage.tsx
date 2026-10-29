@@ -13,6 +13,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { ArrowUpRightIcon, PlayIcon } from 'lucide-react'
 import { ChartButton, startScan } from '@/components/ChartModal'
+import DelivCell from '@/components/DelivCell'
 import RsPill from '@/components/RsPill'
 import SectorHoverCard, { hoverProps } from '@/components/SectorHoverCard'
 import SortTh from '@/components/SortTh'
@@ -241,6 +242,7 @@ function StockTable({ rows, sectorOf }: { rows: StrengthStock[]; sectorOf: Map<s
     value: (s) => s.avg_value_cr,
     cmf: (s) => s.cmf,
     ud: (s) => s.ud_ratio,
+    deliv: (s) => s.deliv_pct,
   })
   return (
     <div ref={scrollRef} className="max-h-[70vh] overflow-auto rounded-xl border bg-card">
@@ -261,12 +263,13 @@ function StockTable({ rows, sectorOf }: { rows: StrengthStock[]; sectorOf: Map<s
             <SortTh label="CMF" k="cmf" sort={sort} onSort={setSort} />
             <SortTh label="Up/Dn vol" k="ud" sort={sort} onSort={setSort} />
             <SortTh label="₹Cr/day" k="value" sort={sort} onSort={setSort} />
+            <SortTh label="Deliv %" k="deliv" sort={sort} onSort={setSort} />
           </tr>
         </thead>
         <tbody>
           {sorted.length === 0 && (
             <tr>
-              <td colSpan={14} className="py-8 text-center text-muted-foreground">
+              <td colSpan={15} className="py-8 text-center text-muted-foreground">
                 Nothing passes these filters.
               </td>
             </tr>
@@ -281,6 +284,14 @@ function StockTable({ rows, sectorOf }: { rows: StrengthStock[]; sectorOf: Map<s
                 {s.vcp && (
                   <span className="ml-1.5 rounded border border-primary/50 px-1 text-[9px] text-primary">
                     VCP
+                  </span>
+                )}
+                {s.surveillance && (
+                  <span
+                    className="ml-1.5 rounded border border-down/50 px-1 text-[9px] text-down"
+                    title="Under NSE surveillance today - higher margins, a tighter band or trade-for-trade"
+                  >
+                    {s.surveillance}
                   </span>
                 )}
               </td>
@@ -326,6 +337,7 @@ function StockTable({ rows, sectorOf }: { rows: StrengthStock[]; sectorOf: Map<s
               <td className="px-2 py-1 text-right text-muted-foreground tabular-nums">
                 {fmt(s.avg_value_cr, 1)}
               </td>
+              <DelivCell pct={s.deliv_pct} avg={s.deliv_avg20} />
             </tr>
           ))}
         </tbody>

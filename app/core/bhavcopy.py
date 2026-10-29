@@ -222,3 +222,75 @@ def load():
         if sym in bars:
             bars[sym] = adjust(bars[sym], acts)
     return bars, days
+
+
+# --- delivery % ----------------------------------------------------------------------------------
+# The CM bhavcopy above has no delivery column; NSE's older "full" file (sec_bhavdata_full) does -
+# DELIV_PER, the share of the day's traded quantity that settled as delivery rather than squaring
+# off intraday. High delivery on a rise is investors holding; a spike on low delivery is mostly
+# churn. Only the last DELIVERY_DAYS are kept (today's figure + a 20-day norm), so a first sync is
+# ~25 requests, then one a day - same cache directory, its own file per day.
+
+DELIVERY_URL = "https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_{d:%d%m%Y}.csv"
+DELIVERY_DAYS = 25
+
+
+def _dpath(d):
+    return CACHE_DIR / f"delivery-{d:%Y-%m-%d}.json"
+
+
+def parse_delivery(raw_csv):
+    """{symbol: delivery %} for the EQ/BE rows of one sec_bhavdata_full file. BE (trade-for-trade)
+    stocks are 100% delivery by rule - kept, since that's what their number honestly is."""
+    out = {}
+    for r in csv.DictReader(io.StringIO(raw_csv), skipinitialspace=True):
+        if (r.get("SERIES") or "").strip() not in SERIES:
+            continue
+        try:
+            out[r["SYMBOL"].strip()] = float(r["DELIV_PER"])
+        except (KeyError, ValueError, TypeError):
+            continue  # "-" when nothing traded
+    return out
+
+
+def _fetch_delivery(d):
+    res = netfetch.request(DELIVERY_URL.format(d=d), pool="nse", prime=scraper.NSE_BASE)
+    if res.status == 404:
+        _dpath(d).write_text("{}")
+        return
+    if res.status != 200:
+        raise RuntimeError(f"delivery {d}: HTTP {res.status}")
+    body = res.body.decode() if isinstance(res.body, bytes) else res.body
+    _dpath(d).write_text(json.dumps(parse_delivery(body)))
+
+
+def sync_delivery():
+    """Fetch the missing delivery files among the trading days the bhavcopy has, newest
+    DELIVERY_DAYS only. Blocking; called from the strength loop's background thread."""
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    for d in cached_days()[-DELIVERY_DAYS:]:
+        if not _dpath(d).exists():
+            try:
+                _fetch_delivery(d)
+            except Exception as e:  # noqa: BLE001 - next tick retries the day
+                state["last_error"] = str(e)
+            time.sleep(PAUSE)
+
+
+def delivery_stats(series):
+    """{deliv_pct, deliv_avg20} from one stock's delivery % per day, oldest first: the latest day,
+    and the mean of up to 20 days before it. None where there's nothing to say."""
+    if not series:
+        return {"deliv_pct": None, "deliv_avg20": None}
+    prior = series[-21:-1]
+    return {"deliv_pct": round(series[-1], 1), "deliv_avg20": round(sum(prior) / len(prior), 1) if prior else None}
+
+
+def load_delivery():
+    """{symbol: {deliv_pct, deliv_avg20}} from the cached files of the last DELIVERY_DAYS days."""
+    series = {}
+    for d in cached_days()[-DELIVERY_DAYS:]:
+        if _dpath(d).exists():
+            for sym, pct in json.loads(_dpath(d).read_text()).items():
+                series.setdefault(sym, []).append(pct)
+    return {sym: delivery_stats(s) for sym, s in series.items()}

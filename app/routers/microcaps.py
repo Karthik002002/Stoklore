@@ -7,7 +7,7 @@ from datetime import date, timedelta
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from app.core import alerts, db, microcap
+from app.core import alerts, db, microcap, surveillance
 from app.routers import strength as strength_router
 
 router = APIRouter(tags=["microcaps"])
@@ -37,7 +37,8 @@ def run():
         if not rows:
             raise ValueError("screener.in returned no companies for the microcap query")
         own = microcap.ownership(db.list_shareholding_filings(since=date.today() - timedelta(days=800)))
-        stocks = microcap.build(rows, _strength_rows(), own)
+        surv = {k: surveillance.label(v) for k, v in strength_router._surveillance().items()}
+        stocks = microcap.build(rows, _strength_rows(), own, surv)
         prev = db.get_latest_microcaps()
         db.save_microcaps(date.today(), {
             "band_cr": [microcap.MCAP_MIN_CR, microcap.MCAP_MAX_CR],

@@ -1415,6 +1415,51 @@ export const uploadManualTradeImage = (id: number, file: File | Blob, kind: 'exi
   return fetch(`/api/manual-trades/${id}/image?kind=${kind}`, { method: 'POST', body: form }).then(json)
 }
 
+/** One round trip a broker tradebook import would write (app/core/tradebook.py). */
+export type TradebookTrade = {
+  symbol: string
+  direction: 'long' | 'short'
+  quantity: number
+  entry_price: number
+  exit_price: number | null
+  entried_at: string
+  exited_at: string | null
+  fills: number
+  remaining?: number
+}
+/** A fill the import won't guess about, with why. */
+export type TradebookAmbiguous = {
+  symbol: string
+  side?: 'buy' | 'sell'
+  direction?: 'long' | 'short'
+  quantity: number
+  price?: number
+  at?: string
+  entried_at?: string
+  reason: string
+}
+export type TradebookPreview = {
+  broker: string
+  fills: number
+  skipped: Record<string, number>
+  trades: TradebookTrade[]
+  duplicates: number
+  open: TradebookTrade[]
+  ambiguous: TradebookAmbiguous[]
+}
+const tradebookPost = (path: string, csv: string, accountId: number | null) =>
+  fetch(`/api/manual-trades/import/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ csv, account_id: accountId }),
+  })
+export const previewTradebook = (csv: string, accountId: number | null) =>
+  tradebookPost('preview', csv, accountId).then(json<TradebookPreview>)
+export const commitTradebook = (csv: string, accountId: number | null) =>
+  tradebookPost('commit', csv, accountId).then(
+    json<{ created: number; ids: number[]; duplicates: number; open: number; ambiguous: number }>,
+  )
+
 export const analyzeBulkTradeImage = (file: File, model?: string) => {
   const form = new FormData()
   form.append('file', file)

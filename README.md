@@ -752,6 +752,11 @@ OHLCV, no backend execution involved:
   date it takes effect. Each review compares the trades before that date with
   the trades after it (up to the next change, so two changes never get credit
   for each other)
+- **Broker tradebook import** — a Zerodha (Console), Groww, Upstox or Angel One tradebook CSV
+  becomes journal trades: partial fills merge into one round trip, a preview shows what will be added
+  and what the file can't settle (a sell with no buy before it, a reversing fill, positions still
+  open), and re-importing an overlapping range adds nothing twice (fill fingerprints in
+  `tradebook_fills`). Cash equity only. See [docs/backtesting-manual.md](docs/backtesting-manual.md#importing-a-broker-tradebook)
 - **Bulk Trades** — add several trades at once from screenshots
   (`BulkTradesDialog`, backed by `POST /api/manual-trades/bulk/analyze`)
 - **Bulk edit** — select trades via row checkboxes, then set a setup and/or

@@ -11,11 +11,13 @@ from typing import Literal
 
 from fastapi import File, HTTPException, Request, UploadFile
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 
 from app.core import classifier
 from app.core import db
 from app.core import llm
 from app.core import trade_context
+from app.core import tradebook
 
 from app.core.config import DIRECTIONS, IST, RESULTS, UPLOAD_DIR
 from app.schemas import (
@@ -174,6 +176,63 @@ def delete_manual_trade(trade_id: int):
 
 
 ALLOWED_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+
+
+class TradebookRequest(BaseModel):
+    csv: str = Field(max_length=5_000_000)
+    account_id: int | None = None
+
+
+def _analyse_tradebook(text):
+    """Parse + match a tradebook and split the round trips into new / already imported / partly
+    imported, by fill fingerprint. Matching runs over EVERY fill (not just the new ones), so a trade
+    whose entry came in last time still pairs with its exit now - and is then reported as partly
+    imported instead of being written a second time."""
+    try:
+        broker, fills, skipped = tradebook.parse(text)
+    except tradebook.TradebookError as e:
+        raise HTTPException(status_code=422, detail=f"Not a tradebook this can read: {e}") from e
+    trades, open_, ambiguous = tradebook.match(fills)
+    known = db.imported_fill_fingerprints({f["fingerprint"] for f in fills})
+    new, duplicates, partial = [], [], []
+    for t in trades:
+        seen = sum(fp in known for fp in t["fingerprints"])
+        (new if seen == 0 else duplicates if seen == len(t["fingerprints"]) else partial).append(t)
+    for t in partial:
+        ambiguous.append({**t, "reason": "some of this trade's fills were imported before - "
+                          "check the journal, then log the difference by hand"})
+    return {"broker": broker, "fills": len(fills), "skipped": skipped, "trades": new,
+            "duplicates": len(duplicates), "open": open_, "ambiguous": ambiguous}
+
+
+@router.post("/api/manual-trades/import/preview")
+def preview_tradebook(req: TradebookRequest):
+    """What an import would do, without writing anything."""
+    return _analyse_tradebook(req.csv)
+
+
+@router.post("/api/manual-trades/import/commit")
+def commit_tradebook(req: TradebookRequest):
+    """Write the new closed round trips through the same create path as the trade form (validation,
+    balance-at-trade, market-context snapshot), then remember their fills. Re-analysed here, never
+    trusted from the client, so committing the same file twice writes nothing the second time."""
+    plan = _analyse_tradebook(req.csv)
+    broker_name = {"zerodha": "Zerodha", "groww": "Groww", "upstox": "Upstox", "angelone": "Angel One"}.get(
+        plan["broker"], "broker")
+    ids = []
+    for t in plan["trades"]:
+        trade_id = create_manual_trade(ManualTradeRequest(
+            symbol=t["symbol"], direction=t["direction"], quantity=t["quantity"],
+            entry_price=t["entry_price"], exit_price=t["exit_price"], is_open=False,
+            tags=["imported", plan["broker"]],
+            notes=f"Imported from {broker_name} tradebook ({t['fills']} fills)",
+            traded_at=t["entried_at"].isoformat(), entried_at=t["entried_at"].isoformat(),
+            exited_at=t["exited_at"].isoformat(), account_id=req.account_id,
+        ))["id"]
+        db.record_tradebook_fills(trade_id, t["fingerprints"], plan["broker"])
+        ids.append(trade_id)
+    return {"created": len(ids), "ids": ids, "duplicates": plan["duplicates"],
+            "open": len(plan["open"]), "ambiguous": len(plan["ambiguous"])}
 
 
 @router.post("/api/manual-trades/{trade_id}/image")

@@ -62,6 +62,36 @@
   URL (`?account=3`), so a per-strategy view is shareable and survives a
   reload. Accounts themselves are managed in **Settings › Trade accounts**.
 
+### Importing a broker tradebook
+
+**Import** (top right, beside *Add Trade*) reads a broker tradebook CSV into the journal:
+Zerodha Console › Reports › Tradebook, or the trade-history export from Groww, Upstox or Angel One.
+
+- **Fills become trades.** A tradebook is execution rows: one order filled in five pieces is five
+  rows. Per symbol, oldest first, a position opens from flat, adds and partial exits fold into
+  quantity-weighted averages, and it's one journal trade once it's flat again. Entered at the
+  first fill, exited at the last, tagged `imported` + the broker, with the fill count in the notes.
+- **Preview before anything is written.** The dialog lists the trades it will add, then:
+  - *Not imported, the file doesn't say what happened*: a sell with no buy before it (most likely
+    closing a position bought before the file starts; a sell is only read as a short when buys later
+    the same day cover it), one fill that both closes and reverses a position, or a trade some of
+    whose fills were imported before. Import a range that covers the entry, or log those by hand.
+  - *Still open*: positions held at the end of the file. They come in on a later import, once the
+    file covers their exit.
+  - *Skipped*: F&O, currency and commodity rows (cash equity only for now), and unreadable rows.
+- **Re-importing adds nothing twice.** Every imported fill is remembered by its fingerprint (the
+  broker's trade id, or a hash of the row) in `tradebook_fills`, so an overlapping date range only
+  adds what's new. Delete an imported trade and its fills become importable again.
+- **Same path as a typed trade.** Each one goes through the trade form's own create
+  (`create_manual_trade`): balance at trade, the market-context snapshot and MAE/MFE when the
+  symbol has local bars. Pick the journal account to file them under in the dialog.
+- Columns are found by header name, not position, so a broker reordering its export doesn't break it.
+  A file whose headers don't cover symbol, side, quantity, price and a time is refused, with the
+  headers it did find. Zerodha's format is the reference; Groww, Upstox and Angel One are matched by
+  header aliases (`app/core/tradebook.py`). A real export that doesn't parse is a one-line fix there.
+- API: `POST /api/manual-trades/import/preview` and `/import/commit`, both `{csv, account_id}`.
+  Commit re-analyses on the server and never trusts the client's preview.
+
 ### On a dashboard
 
 The journal is also a dashboard source (*Trade journal*), with a **Trading

@@ -8,6 +8,7 @@ import {
   CopyIcon,
   DownloadIcon,
   FileSpreadsheetIcon,
+  FileUpIcon,
   PlusIcon,
   Trash2Icon,
 } from 'lucide-react'
@@ -66,6 +67,7 @@ import ManualOverview from './ManualOverview'
 import ManualReviews from './ManualReviews'
 import ManualStatistics from './ManualStatistics'
 import TradeDetailDialog from './TradeDetailDialog'
+import TradebookImportDialog from './TradebookImportDialog'
 
 function emptyForm(accountId: number | null = null): TradeInput {
   return {
@@ -896,6 +898,7 @@ export default function ManualBacktesting() {
   const [detailTrade, setDetailTrade] = useState<Trade | null>(null)
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [selected, setSelected] = useState<Set<number>>(() => new Set())
   const queryClient = useQueryClient()
 
@@ -1014,6 +1017,10 @@ export default function ManualBacktesting() {
               Bar Replay
             </Button>
             <FilterButton filters={filters} onOpen={() => setFilterOpen(true)} />
+            <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} title="Import a broker tradebook CSV">
+              <FileUpIcon className="size-4" />
+              Import
+            </Button>
             <Button size="sm" onClick={openAdd}>
               <PlusIcon className="size-4" />
               Add Trade
@@ -1120,6 +1127,12 @@ export default function ManualBacktesting() {
         defaultAccountId={account}
         trades={allTrades}
         onSaved={() => queryClient.invalidateQueries({ queryKey: ['manualTrades'] })}
+      />
+      <TradebookImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        accounts={accounts}
+        defaultAccount={account ?? null}
       />
       <BulkEditDialog
         open={bulkEditOpen}

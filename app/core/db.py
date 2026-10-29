@@ -683,6 +683,16 @@ CREATE TABLE IF NOT EXISTS microcap_snapshots (
   fetched_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Every broker-tradebook fill already turned into a journal trade (app/core/tradebook.py), keyed by
+-- the fill's fingerprint, so re-importing an overlapping date range adds nothing twice. Cascades
+-- with its trade: delete the journal row and its fills become importable again.
+CREATE TABLE IF NOT EXISTS tradebook_fills (
+  fingerprint TEXT PRIMARY KEY,
+  manual_trade_id INTEGER NOT NULL REFERENCES manual_trades(id) ON DELETE CASCADE,
+  broker TEXT NOT NULL,
+  imported_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- A long-term thesis on one microcap: why you're watching it, and the numbers that would break it.
 -- Every weekly pull re-checks these against the fresh snapshot (microcap.thesis_breaches) and writes
 -- an alert for a breach it hasn't reported yet. `key` is the NSE symbol, or the BSE code for a
@@ -2757,6 +2767,26 @@ def save_microcaps(as_of, payload):
             "INSERT INTO microcap_snapshots (as_of, payload, fetched_at) VALUES (%s, %s, now()) "
             "ON CONFLICT (as_of) DO UPDATE SET payload = excluded.payload, fetched_at = excluded.fetched_at",
             (as_of, Jsonb(payload)),
+        )
+
+
+def imported_fill_fingerprints(fingerprints):
+    """The subset of `fingerprints` already imported into the journal."""
+    if not fingerprints:
+        return set()
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT fingerprint FROM tradebook_fills WHERE fingerprint = ANY(%s)", (list(fingerprints),)
+        ).fetchall()
+    return {r["fingerprint"] for r in rows}
+
+
+def record_tradebook_fills(manual_trade_id, fingerprints, broker):
+    with connect() as conn:
+        conn.cursor().executemany(
+            "INSERT INTO tradebook_fills (fingerprint, manual_trade_id, broker) VALUES (%s, %s, %s) "
+            "ON CONFLICT (fingerprint) DO NOTHING",
+            [(fp, manual_trade_id, broker) for fp in fingerprints],
         )
 
 

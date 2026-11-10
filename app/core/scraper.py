@@ -84,8 +84,8 @@ def get_movers(count=25):
         movers[row["symbol"]] = {
             "symbol": row["symbol"],
             "changePercent": row.get("perChange", 0.0),
-            "volume": row.get("trade_quantity", 0),
-            "avgVolume": row.get("trade_quantity", 0) or 1,
+            "volume": _nse_amount(row.get("trade_quantity")) or 0,
+            "avgVolume": _nse_amount(row.get("trade_quantity")) or 1,
         }
 
     volume_gainers = _nse_json("/api/live-analysis-volume-gainers")
@@ -167,7 +167,22 @@ def get_sector_performance(exchange="NSE"):
 # `legends` in the payload maps bucket key -> display label, which is what the UI's selector shows;
 # reading it from the response rather than hardcoding means a bucket NSE adds or renames follows
 # automatically.
-MOVER_FIELDS = ("symbol", "series", "ltp", "prev_price", "perChange", "trade_quantity", "turnover")
+MOVER_FIELDS = ("symbol", "series", "ltp", "prev_price", "perChange")
+
+_NSE_SCALE = {"": 1, "K": 1e3, "L": 1e5, "CR": 1e7}
+
+
+def _nse_amount(value, unit=1):
+    """NSE's movers feed sends quantity and turnover as display text ('171.99 L', '431.65 Cr')
+    where it used to send plain numbers. Returns the amount divided by `unit`, a number passed in
+    unchanged (the old feed), and None for anything unreadable rather than a string the UI can't
+    do arithmetic on."""
+    if value is None or isinstance(value, (int, float)):
+        return value
+    m = re.fullmatch(r"\s*([\d,]*\.?\d+)\s*([A-Za-z]*)\s*", str(value))
+    if not m or m[2].upper() not in _NSE_SCALE:
+        return None
+    return round(float(m[1].replace(",", "")) * _NSE_SCALE[m[2].upper()] / unit, 2)
 
 
 def _mover_row(row):
@@ -178,6 +193,9 @@ def _mover_row(row):
     ca = (row.get("ca_purpose") or "").strip()
     return {
         **{k: row.get(k) for k in MOVER_FIELDS},
+        "trade_quantity": _nse_amount(row.get("trade_quantity")),
+        # The UI reads turnover in ₹ lakh, the unit the old numeric feed used.
+        "turnover": _nse_amount(row.get("turnover"), 1e5),
         "change": round(ltp - prev, 2) if ltp is not None and prev is not None else None,
         # '-' is NSE's own "nothing here"; keep only a real corporate action, which is often the
         # whole explanation for a name sitting at the top or bottom of the table.

@@ -256,7 +256,9 @@ to guard rails you can see and control.
 - **Every home-page table sorts by any column** — Indices, your watchlist, Top Gainers / Losers and
   Macro Indices: click a header for highest-first (A-Z for names), again to flip, a third time for
   the original order. Blanks always sit last. Movers sort across the whole bucket before the top 12
-  are shown, so *Vol* gives the heaviest-traded movers
+  are shown, so *Vol* gives the heaviest-traded movers. NSE sends movers' volume and turnover as text
+  (`171.99 L`, `431.65 Cr`); the scraper turns them into numbers, so *Vol* and *₹Cr* show and sort
+  as amounts (`python tests/movers.selfcheck.py`)
 - Tracked-stocks table (every scraped symbol plus everything on a watchlist,
   report or not) with live price + day change, refreshed via a shared
   TTL cache (`stock_cache`) instead of hitting Yahoo Finance on every request

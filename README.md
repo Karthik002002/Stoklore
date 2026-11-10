@@ -1301,6 +1301,18 @@ it once per clone with:
 git config core.hooksPath .githooks
 ```
 
+The same hook blocks a commit when:
+
+- **malware patterns** are staged — the ones this repo was attacked with: a file named
+  `init` run from npm scripts, a `.orc` "font", a `.vscode/tasks.json`, code hidden past a long
+  run of spaces or in obfuscator-style loops, or `.env` dropped from `.gitignore`
+- **`npm audit`** finds a high/critical advisory in `frontend/` (every commit, ~1s, needs network)
+- **`pip-audit`** finds a vulnerable Python package — only when `requirements.txt` is staged,
+  since it takes about a minute. Install it once with `.venv/bin/pip install pip-audit`; without
+  it the check is skipped with a warning
+
+`git commit --no-verify` skips the hook for one commit (offline, or an emergency).
+
 <div align="right">
 
 [![][back-to-top]](#readme-top)

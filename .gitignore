@@ -23,6 +23,7 @@ config/litellm.config.yaml
 tests/test_guardrails.py
 
 
+.env
 
 # graphify - generated knowledge-graph output (graph.json, GRAPH_REPORT.md, HTML viz, Obsidian
 # vault, cost tracker) - regenerable from source, never committed
@@ -39,5 +40,3 @@ local_data/
 .mcp.json
 
 .claude/bar-replay-features.md
-config.bat
-node_modules

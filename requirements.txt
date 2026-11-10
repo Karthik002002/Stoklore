@@ -28,9 +28,10 @@ torch==2.13.0
 laya==0.3.5
 
 # LiteLLM proxy CLI - optional, only needed for the litellm/* model backend (see Settings > LiteLLM)
-litellm[proxy]==1.93.0
+# 1.100.4: first release past the 1.93.0 advisories that still caps langfuse <3 and mcp <2.
+litellm[proxy]==1.100.4
 # LiteLLM's Langfuse logging callback (litellm_settings.success_callback in litellm.config.yaml)
 # imports this directly - optional, only needed if that callback is enabled.
-# Pinned <3: litellm 1.93.0's callback reads langfuse.version.__version__, a submodule the SDK
+# Pinned <3: litellm 1.100.4's callback reads langfuse.version.__version__, a submodule the SDK
 # removed in its v3 OTel-based rewrite, so 3.x/4.x break the callback outright.
 langfuse==2.60.9

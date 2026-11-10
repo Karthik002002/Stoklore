@@ -1,8 +1,41 @@
 #!/bin/bash
-# Formats + lints staged frontend files before commit. Installed via:
+# Blocks malware patterns and vulnerable dependencies, then formats + lints staged frontend
+# files. Installed via:
 #   git config core.hooksPath .githooks
+# Skip once (offline, emergency) with `git commit --no-verify`.
 set -e
 
+fail() { printf 'pre-commit: %b\n' "$1" >&2; exit 1; }
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+
+# --- Malware: what the Oct/Nov 2026 compromise of this repo used. A file named `init` run by
+# `node init` in npm scripts, a fake font `fa-brand-400.orc`, a VS Code task that runs on folder
+# open, and obfuscated code hidden past hundreds of spaces at the end of a normal line.
+bad=$(grep -E '(^|/)init$|\.orc$|(^|/)\.vscode/tasks\.json$' <<<"$staged" || true)
+[ -z "$bad" ] || fail "known malware file names staged:\n$bad"
+# The hook and the docs name these patterns themselves, so they're left out of the scan.
+hidden=$(git diff --cached -U0 -- . ':!*.svg' ':!*package-lock.json' ':!graphify-out' ':!.githooks' ':!*.md' \
+  | grep -nE '^\+.*( {200,}[^ ]|while\(!!\[\]\)\{try\{|node init)' | cut -c1-120 || true)
+[ -z "$hidden" ] || fail "hidden or obfuscated code in the staged diff:\n$hidden"
+if grep -qx '.gitignore' <<<"$staged"; then
+  git show :.gitignore | grep -qE '^\.env\*?$' || fail ".gitignore no longer ignores .env"
+fi
+
+# --- npm: high/critical advisories in frontend dependencies (~1s, needs network).
+(cd frontend && npm audit --audit-level=high >/dev/null 2>&1) \
+  || fail "npm audit found high/critical vulnerabilities - run 'cd frontend && npm audit' to see them"
+
+# --- Python: pip-audit takes about a minute, so only when requirements.txt changes.
+if grep -qx 'requirements.txt' <<<"$staged"; then
+  if [ -x .venv/bin/pip-audit ]; then
+    .venv/bin/pip-audit --progress-spinner off \
+      || fail "pip-audit found vulnerable Python packages (fix versions are listed above)"
+  else
+    echo "pre-commit: pip-audit not installed, Python check skipped (.venv/bin/pip install pip-audit)" >&2
+  fi
+fi
+
+# --- Format + lint staged frontend JS
 staged_js=$(git diff --cached --name-only --diff-filter=ACM -- 'frontend/src/*.js' 'frontend/src/*.jsx')
 [ -z "$staged_js" ] && exit 0
 

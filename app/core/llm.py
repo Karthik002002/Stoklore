@@ -2,11 +2,15 @@
 chat/generation. Embeddings always stay on local Ollama - see embed() for why.
 """
 import json
+import os
 import re
 import urllib.error
 import urllib.request
 
-OLLAMA_BASE = "http://localhost:11434"
+_raw_ollama = os.environ.get("OLLAMA_BASE_URL", os.environ.get("OLLAMA_HOST", "http://localhost:11434"))
+if not _raw_ollama.startswith(("http://", "https://")):
+    _raw_ollama = f"http://{_raw_ollama}"
+OLLAMA_BASE = _raw_ollama.rstrip("/")
 DEFAULT_OMNIROUTE_BASE = "http://localhost:20128/v1"
 EMBED_MODEL = "nomic-embed-text"
 DEFAULT_MODEL = "ollama/hf.co/empero-ai/Qwythos-9B-Claude-Mythos-5-1M-GGUF:Q4_K_M"

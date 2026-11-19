@@ -1,0 +1,46 @@
+# Stoklore + Postgres (with pgvector). `docker compose up -d`, then open http://localhost:8010.
+# Uses the published image; `docker compose up -d --build` builds it from this checkout instead.
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: stoklore
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stoklore}
+      POSTGRES_DB: stoklore
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stoklore -d stoklore"]
+      interval: 5s
+      retries: 10
+    restart: unless-stopped
+
+  app:
+    image: ghcr.io/karthik002002/stoklore:latest
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://stoklore:${POSTGRES_PASSWORD:-stoklore}@db:5432/stoklore
+      # Ollama running on the host (optional - only the AI features need it).
+      OLLAMA_BASE: http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Bound to this machine only. Reaching it from elsewhere should go through a tunnel or proxy,
+    # which the app already treats as the exposed case (see app/core/auth.py).
+    ports:
+      - "127.0.0.1:8010:8010"
+    volumes:
+      - uploads:/app/uploads
+      - backups:/app/backups
+      - local_data:/app/local_data
+      - hf:/data/hf
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  uploads:
+  backups:
+  local_data:
+  hf:

@@ -6,6 +6,7 @@ why it exists, see the main [README](../README.md) — these docs are the
 
 - [Login](authentication.md) — the account, the session, and what the gate covers
 - [Installation](installation.md) — prerequisites, setup and per-OS commands
+- [Docker](docker.md) — run with `docker compose`, publish the image to GitHub
 - [Dashboard & Watchlists](dashboard.md)
 - [Chat Agent](chat-agent.md)
 - [Voice Capture](voice.md) — hold a key, talk; local Whisper

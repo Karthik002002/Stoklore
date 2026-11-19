@@ -7,8 +7,13 @@ import re
 import urllib.error
 import urllib.request
 
-# Overridable for Docker, where the host's Ollama is http://host.docker.internal:11434.
-OLLAMA_BASE = os.environ.get("OLLAMA_BASE", "http://localhost:11434")
+# Overridable for Docker: the host's Ollama is http://host.docker.internal:11434, a compose-run one
+# http://ollama:11434. OLLAMA_HOST is Ollama's own variable and may be a bare host:port.
+_raw_ollama = (os.environ.get("OLLAMA_BASE_URL") or os.environ.get("OLLAMA_BASE")
+               or os.environ.get("OLLAMA_HOST") or "http://localhost:11434")
+if not _raw_ollama.startswith(("http://", "https://")):
+    _raw_ollama = f"http://{_raw_ollama}"
+OLLAMA_BASE = _raw_ollama.rstrip("/")
 DEFAULT_OMNIROUTE_BASE = "http://localhost:20128/v1"
 EMBED_MODEL = "nomic-embed-text"
 DEFAULT_MODEL = "ollama/hf.co/empero-ai/Qwythos-9B-Claude-Mythos-5-1M-GGUF:Q4_K_M"

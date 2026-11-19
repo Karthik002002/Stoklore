@@ -37,4 +37,7 @@ ENV PYTHONUNBUFFERED=1 \
     FRONTEND_URL=http://localhost:8010
 
 EXPOSE 8010
+# /api/auth/status is open before login, so it answers whether or not an account exists yet.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8010/api/auth/status', timeout=4)"
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8010"]

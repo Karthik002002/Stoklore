@@ -1588,11 +1588,11 @@ def set_last_event_scan_date(iso_date):
 
 
 def get_litellm_base_url():
-    return _get_setting("litellm_base_url")
+    return _get_setting("litellm_base_url") or os.environ.get("LITELLM_BASE_URL")
 
 
 def get_litellm_api_key():
-    return _get_setting("litellm_api_key")
+    return _get_setting("litellm_api_key") or os.environ.get("LITELLM_API_KEY")
 
 
 def set_litellm_config(base_url, api_key=None):

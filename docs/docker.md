@@ -3,18 +3,21 @@
 [← Back to index](README.md)
 
 Stoklore as two containers: the app (API plus the built frontend, on one port) and Postgres with
-pgvector. Nothing else to install on the machine except Docker.
+pgvector. Ollama, a LiteLLM proxy and self-hosted Langfuse are optional extras, each behind a
+compose profile. Nothing else to install on the machine except Docker (Engine 24+, Compose 2.20+).
 
 ---
 
 ## Run it
 
 ```bash
+cp .env.example .env     # then set POSTGRES_PASSWORD in it - compose refuses to start without one
 docker compose up -d
 ```
 
 Open <http://localhost:8010>. The first screen is *Create your login*, the same as a native
-install. The port is bound to `127.0.0.1`, so only this machine can reach it.
+install. The port is bound to `127.0.0.1`, so only this machine can reach it; `PORT=...` in `.env`
+moves it.
 
 `docker compose up -d` pulls the published image from `ghcr.io/karthik002002/stoklore`. To build
 from your own checkout instead:
@@ -24,7 +27,7 @@ docker compose up -d --build
 ```
 
 Stop with `docker compose down`. Your data stays in Docker volumes until you run
-`docker compose down -v`, **which deletes the database**.
+`docker compose down -v`, **which deletes the database**. Logs: `docker compose logs -f app`.
 
 ## What lives where
 
@@ -36,14 +39,49 @@ Stop with `docker compose down`. Your data stays in Docker volumes until you run
 | `local_data` | Downloaded minute-data cache |
 | `hf` | Hugging Face models (the Laya classifier, Whisper) |
 
-Set a real database password before the first start by putting `POSTGRES_PASSWORD=...` in `.env`.
-It is only read when the database volume is created.
+`POSTGRES_PASSWORD` is only read when the database volume is first created; changing it later
+means changing it inside Postgres too.
+
+## Optional services
+
+| Profile | Adds | Reach it at |
+|---|---|---|
+| *(none)* | `app`, `db` | <http://localhost:8010> |
+| `ollama` | Ollama in a container | inside compose only, as `http://ollama:11434` |
+| `litellm` | LiteLLM proxy for cloud models | <http://localhost:4000> |
+| `tracing` | Langfuse: web, worker, Postgres, ClickHouse, MinIO, Redis | <http://localhost:3000> |
+| `all` | everything above | |
+
+```bash
+docker compose --profile litellm up -d
+```
+
+Every published port is on `127.0.0.1`. Langfuse's own databases have no host port at all.
+
+- **LiteLLM** reads `config/litellm.config.yaml` (`cp config/litellm.config.example.yaml
+  config/litellm.config.yaml`) and the API keys in `.env`. Set `LITELLM_BASE_URL=http://litellm:4000`
+  in `.env` so the app uses it, or point **Settings › LiteLLM** there.
+- **Langfuse** ships placeholder secrets. Set the `LANGFUSE_*` secrets in `.env` (see
+  `.env.example`) before its first start, then create a project at <http://localhost:3000> and copy
+  its keys into `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`.
 
 ## Ollama and the AI features
 
-The container reaches Ollama on the host at `http://host.docker.internal:11434` (set by
-`OLLAMA_BASE` in `docker-compose.yml`). Run `ollama serve` on the host as usual. Without it, only
-the AI features are unavailable.
+By default the container uses Ollama on the host, at `http://host.docker.internal:11434`. Run
+`ollama serve` on the host as usual. On a Mac this is the fast option: a container can't use the
+Apple Silicon GPU. Without Ollama, only the AI features are unavailable.
+
+To run Ollama in a container instead, set `OLLAMA_BASE_URL=http://ollama:11434` in `.env`, then:
+
+```bash
+docker compose --profile ollama up -d
+docker compose exec ollama ollama pull nomic-embed-text
+```
+
+**Linux host Ollama:** it listens on `127.0.0.1` only, which a container can't reach. Use the
+`ollama` profile, or make the host's Ollama listen on the Docker bridge address
+(`OLLAMA_HOST=172.17.0.1` in its systemd unit) rather than `0.0.0.0`, which would open it to your
+whole network.
 
 ## Moving an existing journal in
 
@@ -84,3 +122,6 @@ your profile → Packages → stoklore → Package settings**, or log in before 
 ```bash
 echo <a token with read:packages> | docker login ghcr.io -u Karthik002002 --password-stdin
 ```
+
+To build both architectures locally: `docker buildx build --platform linux/amd64,linux/arm64 -t
+stoklore .`

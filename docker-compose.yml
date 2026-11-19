@@ -1,16 +1,21 @@
-# Stoklore + Postgres (with pgvector). `docker compose up -d`, then open http://localhost:8010.
+# Stoklore + Postgres (with pgvector). `cp .env.example .env`, set POSTGRES_PASSWORD, then
+# `docker compose up -d` and open http://localhost:8010.
 # Uses the published image; `docker compose up -d --build` builds it from this checkout instead.
+#
+# Optional services, off unless their profile is named: `--profile ollama`, `--profile litellm`,
+# `--profile tracing` (Langfuse), or `--profile all`. Every published port is bound to 127.0.0.1;
+# reaching any of this from another machine should go through a tunnel or proxy.
 services:
   db:
     image: pgvector/pgvector:pg17
     environment:
-      POSTGRES_USER: stoklore
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stoklore}
-      POSTGRES_DB: stoklore
+      POSTGRES_USER: ${POSTGRES_USER:-stoklore}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (cp .env.example .env)}
+      POSTGRES_DB: ${POSTGRES_DB:-stoklore}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U stoklore -d stoklore"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       retries: 10
     restart: unless-stopped
@@ -22,20 +27,170 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://stoklore:${POSTGRES_PASSWORD:-stoklore}@db:5432/stoklore
-      # Ollama running on the host (optional - only the AI features need it).
-      OLLAMA_BASE: http://host.docker.internal:11434
+      DATABASE_URL: postgresql://${POSTGRES_USER:-stoklore}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-stoklore}
+      # The host's Ollama by default; http://ollama:11434 with --profile ollama.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      # Empty unless set: http://litellm:4000 with --profile litellm. Settings > LiteLLM overrides it.
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-}
+      LITELLM_API_KEY: ${LITELLM_MASTER_KEY:-}
+      FRONTEND_URL: http://localhost:${PORT:-8010}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # Bound to this machine only. Reaching it from elsewhere should go through a tunnel or proxy,
-    # which the app already treats as the exposed case (see app/core/auth.py).
     ports:
-      - "127.0.0.1:8010:8010"
+      - "127.0.0.1:${PORT:-8010}:8010"
     volumes:
       - uploads:/app/uploads
       - backups:/app/backups
       - local_data:/app/local_data
       - hf:/data/hf
+    restart: unless-stopped
+
+  # --- optional: Ollama in a container (no host port; the app reaches it as http://ollama:11434)
+  ollama:
+    image: ollama/ollama:latest
+    profiles: [ollama, all]
+    volumes:
+      - ollama:/root/.ollama
+    restart: unless-stopped
+
+  # --- optional: LiteLLM proxy for cloud models, configured by config/litellm.config.yaml
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    profiles: [litellm, all]
+    command: ["--config", "/app/config.yaml", "--port", "4000"]
+    volumes:
+      - ./config/litellm.config.yaml:/app/config.yaml:ro
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      NVIDIA_NIM_API_KEY: ${NVIDIA_NIM_API_KEY:-}
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_HOST: ${LANGFUSE_HOST:-http://langfuse-web:3000}
+    ports:
+      - "127.0.0.1:4000:4000"
+    restart: unless-stopped
+
+  # --- optional: self-hosted Langfuse (web, worker and its own Postgres, ClickHouse, MinIO, Redis).
+  # Only the web UI (3000) and MinIO's upload endpoint (9090) are published, both on 127.0.0.1;
+  # everything else is reachable only inside this compose network. Set the LANGFUSE_* secrets in
+  # .env before the first start - the defaults below are placeholders.
+  langfuse-worker:
+    image: docker.io/langfuse/langfuse-worker:3
+    profiles: [tracing, all]
+    depends_on: &langfuse-deps
+      langfuse-postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    environment: &langfuse-env
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      DATABASE_URL: postgresql://postgres:${LANGFUSE_DB_PASSWORD:-postgres}@langfuse-postgres:5432/postgres
+      SALT: ${LANGFUSE_SALT:-mysalt}
+      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000}
+      TELEMETRY_ENABLED: "false"
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse}
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_PASSWORD:-miniosecret}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${LANGFUSE_MINIO_PASSWORD:-miniosecret}
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://localhost:9090
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_AUTH: ${LANGFUSE_REDIS_PASSWORD:-myredissecret}
+    restart: unless-stopped
+
+  langfuse-web:
+    image: docker.io/langfuse/langfuse:3
+    profiles: [tracing, all]
+    depends_on: *langfuse-deps
+    environment:
+      <<: *langfuse-env
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-mysecret}
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+
+  clickhouse:
+    image: docker.io/clickhouse/clickhouse-server:25.12
+    profiles: [tracing, all]
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD:-clickhouse}
+    volumes:
+      - langfuse_clickhouse:/var/lib/clickhouse
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  minio:
+    image: cgr.dev/chainguard/minio
+    profiles: [tracing, all]
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: ${LANGFUSE_MINIO_PASSWORD:-miniosecret}
+    ports:
+      - "127.0.0.1:9090:9000"
+    volumes:
+      - langfuse_minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: docker.io/redis:7
+    profiles: [tracing, all]
+    command: ["--requirepass", "${LANGFUSE_REDIS_PASSWORD:-myredissecret}", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - langfuse_redis:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${LANGFUSE_REDIS_PASSWORD:-myredissecret}
+    restart: unless-stopped
+
+  langfuse-postgres:
+    image: docker.io/postgres:17
+    profiles: [tracing, all]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:-postgres}
+      POSTGRES_DB: postgres
+    volumes:
+      - langfuse_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
 volumes:
@@ -44,3 +199,8 @@ volumes:
   backups:
   local_data:
   hf:
+  ollama:
+  langfuse_postgres:
+  langfuse_clickhouse:
+  langfuse_minio:
+  langfuse_redis:

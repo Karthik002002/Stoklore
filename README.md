@@ -1215,8 +1215,9 @@ Full details: [docs/engine.md](docs/engine.md).
 Postgres versions, the virtualenv, `createdb crawler`, `npm ci`, and per-OS commands (macOS,
 Ubuntu/Debian, Windows via WSL). The steps below assume that's done.
 
-**Rather use Docker?** `docker compose up -d` runs the app and Postgres with nothing else
-installed, at <http://localhost:8010>. A `v*` tag publishes the image to
+**Rather use Docker?** `cp .env.example .env`, set `POSTGRES_PASSWORD`, then `docker compose up -d`
+runs the app and Postgres with nothing else installed, at <http://localhost:8010>. Ollama, LiteLLM
+and Langfuse are optional compose profiles. A `v*` tag publishes the image to
 `ghcr.io/karthik002002/stoklore` through GitHub Actions — see [docs/docker.md](docs/docker.md).
 
 ```bash

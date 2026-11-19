@@ -1,6 +1,13 @@
 # Only app/, requirements.txt and frontend/ are copied in; the rest is kept out of the build context
 # so secrets and local data can never end up in a published image.
 .git
+.githooks
+.github
+.vscode
+.obsidian
+.DS_Store
+*.dump
+*.part
 .env
 .env.*
 !.env.example

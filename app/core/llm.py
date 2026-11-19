@@ -7,7 +7,10 @@ import re
 import urllib.error
 import urllib.request
 
-_raw_ollama = os.environ.get("OLLAMA_BASE_URL", os.environ.get("OLLAMA_HOST", "http://localhost:11434"))
+# Overridable for Docker: the host's Ollama is http://host.docker.internal:11434, a compose-run one
+# http://ollama:11434. OLLAMA_HOST is Ollama's own variable and may be a bare host:port.
+_raw_ollama = (os.environ.get("OLLAMA_BASE_URL") or os.environ.get("OLLAMA_BASE")
+               or os.environ.get("OLLAMA_HOST") or "http://localhost:11434")
 if not _raw_ollama.startswith(("http://", "https://")):
     _raw_ollama = f"http://{_raw_ollama}"
 OLLAMA_BASE = _raw_ollama.rstrip("/")

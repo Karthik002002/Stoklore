@@ -1,33 +1,26 @@
+# Only app/, requirements.txt and frontend/ are copied in; the rest is kept out of the build context
+# so secrets and local data can never end up in a published image.
 .git
 .githooks
 .github
 .vscode
-.claude
 .obsidian
-graphify-out
 .DS_Store
-
-# Virtual environments & dependencies
-.venv
-__pycache__/
-*.py[cod]
-*$py.class
-node_modules
-frontend/node_modules
-frontend/dist
-
-# Data, uploads & backups
-uploads/
-backups/
-local_data/
 *.dump
 *.part
-
-# Environment & local credentials
 .env
 .env.*
 !.env.example
+.venv
+**/__pycache__
+**/node_modules
+frontend/dist
+config/litellm.config.yaml
+uploads
+backups
+local_data
+graphify-out
+.claude
 .mcp.json
-
-# Documentation and tests
-docs/
+tests
+docs

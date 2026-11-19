@@ -2,11 +2,13 @@
 chat/generation. Embeddings always stay on local Ollama - see embed() for why.
 """
 import json
+import os
 import re
 import urllib.error
 import urllib.request
 
-OLLAMA_BASE = "http://localhost:11434"
+# Overridable for Docker, where the host's Ollama is http://host.docker.internal:11434.
+OLLAMA_BASE = os.environ.get("OLLAMA_BASE", "http://localhost:11434")
 DEFAULT_OMNIROUTE_BASE = "http://localhost:20128/v1"
 EMBED_MODEL = "nomic-embed-text"
 DEFAULT_MODEL = "ollama/hf.co/empero-ai/Qwythos-9B-Claude-Mythos-5-1M-GGUF:Q4_K_M"

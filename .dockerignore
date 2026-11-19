@@ -1,0 +1,19 @@
+# Only app/, requirements.txt and frontend/ are copied in; the rest is kept out of the build context
+# so secrets and local data can never end up in a published image.
+.git
+.env
+.env.*
+!.env.example
+.venv
+**/__pycache__
+**/node_modules
+frontend/dist
+config/litellm.config.yaml
+uploads
+backups
+local_data
+graphify-out
+.claude
+.mcp.json
+tests
+docs

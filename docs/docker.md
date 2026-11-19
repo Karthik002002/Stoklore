@@ -99,21 +99,24 @@ container, never after.
 
 ## Publishing the image
 
-`.github/workflows/docker.yml` builds the image on GitHub Actions for `linux/amd64` and
-`linux/arm64`:
+`.github/workflows/docker.yml` builds the image on GitHub Actions only when you ask — an ordinary
+commit or push never starts it:
 
-- every push to `main` builds it, as a check, without publishing
-- a version tag publishes it to `ghcr.io/karthik002002/stoklore`:
+- **a version tag** builds for `linux/amd64` and `linux/arm64` and publishes to
+  `ghcr.io/karthik002002/stoklore` as `:1.0.0`, `:1.0` and `:latest`:
 
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
+  ```bash
+  git tag v1.0.0
+  git push origin v1.0.0
+  ```
 
-That tag publishes `:1.0.0`, `:1.0` and `:latest`. **Actions → docker → Run workflow** publishes
-the current commit as `:sha-<commit>`.
+- **Actions → docker → Run workflow** builds the current commit for `linux/amd64` as a check.
+  Tick *publish* to build both architectures and push it as `:sha-<commit>`.
 
-Publishing only from a tag is deliberate: this repo's `main` has been overwritten with malware
+The arm64 half runs under emulation on GitHub's amd64 runners, so a publishing build takes
+noticeably longer than a check.
+
+Publishing only on request is deliberate: this repo's `main` has been overwritten with malware
 before, and an image built from every push would have shipped it.
 
 The first publish creates the package as **private**. Either make it public under **GitHub →

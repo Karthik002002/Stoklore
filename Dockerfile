@@ -2,7 +2,9 @@
 # instance is one process on one port. Postgres runs beside it - see docker-compose.yml.
 
 # --- frontend: build once, only dist/ is kept ---
-FROM node:22-slim AS frontend
+# Always on the build machine's own architecture: dist/ is the same files for every platform, so a
+# multi-arch build reuses one native frontend build instead of redoing it under emulation.
+FROM --platform=$BUILDPLATFORM node:22-slim AS frontend
 WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci

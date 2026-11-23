@@ -52,6 +52,7 @@ leaving your laptop unless you tell it to.
 - [⌨️ CLI Scan](#️-cli-scan)
 - [🧹 Formatting & Pre-commit](#-formatting--pre-commit)
 - [✨ Credits](#-credits)
+- [📄 License](#-license)
 
 ####
 
@@ -1368,6 +1369,18 @@ I review, refactor, and test AI-generated code before it ships — not blindly c
 - [Dhan](https://dhanhq.co/) & [Kite Connect](https://kite.trade/) — broker holdings sync
 - [Postgres](https://www.postgresql.org/) + [pgvector](https://github.com/pgvector/pgvector) — storage and RAG retrieval
 - [Biome](https://biomejs.dev/) & [oxlint](https://oxc.rs/docs/guide/usage/linter.html) — frontend formatting/linting
+
+<div align="right">
+
+[![][back-to-top]](#readme-top)
+
+</div>
+
+## 📄 License
+
+[MIT](LICENSE) © 2026 Karthik. You're free to use, modify and host Stoklore, as long as copies keep
+the copyright and license notice. If you run your own instance, a credit linking back to
+[github.com/Karthik002002/Stoklore](https://github.com/Karthik002002/Stoklore) is appreciated.
 
 <div align="right">
 

@@ -167,7 +167,7 @@ export default function ScreenerPanel({ symbol }: { symbol: string }) {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center gap-2 rounded-xl border bg-card py-16 text-muted-foreground">
+      <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
         <Spinner className="size-4" /> Loading screener data…
       </div>
     )
@@ -175,7 +175,7 @@ export default function ScreenerPanel({ symbol }: { symbol: string }) {
 
   if (error || !data) {
     return (
-      <p className="rounded-xl border bg-card py-16 text-center text-sm text-muted-foreground">
+      <p className="py-12 text-center text-muted-foreground">
         No screener.in page for {symbol}.
       </p>
     )

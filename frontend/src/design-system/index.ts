@@ -68,12 +68,20 @@ export {
   Command,
   CommandDialog,
   CommandInput,
+  CommandScopes,
+  CommandChips,
   CommandList,
   CommandEmpty,
+  CommandLoading,
   CommandGroup,
   CommandItem,
+  CommandItemMedia,
+  CommandItemText,
+  CommandItemMeta,
   CommandShortcut,
   CommandSeparator,
+  CommandFooter,
+  CommandHint,
 } from './components/command'
 export { Toaster, toast } from './components/toast'
 export {
@@ -176,5 +184,7 @@ export type { ProgressProps } from './components/display'
 export { ThemeSelector, ThemeModeToggle } from './theme/ThemeSelector'
 export { ThemeCustomizer } from './theme/ThemeCustomizer'
 export { useTheme, themeStore, applyTheme } from './theme/store'
+export { useChartColors, currentChartColors, toRgb, withAlpha } from './theme/chartColors'
+export type { ChartColors } from './theme/chartColors'
 export { THEMES, COLOR_TOKENS, DEFAULT_THEME_ID } from './tokens/themes'
 export type { ThemePreset, ThemeColors, ColorToken, Density } from './tokens/themes'

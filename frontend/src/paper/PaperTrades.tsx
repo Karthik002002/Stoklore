@@ -460,8 +460,8 @@ export function OrderPanel({
             cash {f.available == null ? '—' : inr(f.available)}
           </p>
         </div>
-        <span className="flex max-w-36 shrink-0 items-center gap-1.5 truncate rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-600 dark:text-sky-400">
-          <span className="size-1.5 shrink-0 rounded-full bg-sky-500" />
+        <span className="flex max-w-36 shrink-0 items-center gap-1.5 truncate rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
+          <span className="size-1.5 shrink-0 rounded-full bg-accent" />
           <span className="truncate">Paper · {f.account?.name ?? 'account'}</span>
         </span>
       </div>

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useChartColors } from '@/design-system'
 import { LineSeries, createChart } from 'lightweight-charts'
 import type { ISeriesApi, UTCTimestamp } from 'lightweight-charts'
 import type { Dataset } from './colors'
@@ -14,7 +15,6 @@ import { cn } from '@/lib/utils'
 // out; it shows the values under the crosshair, or the latest ones.
 
 // Same axis/grid colours as the journal's charts (ManualOverview), so the app reads as one thing.
-const CHART = { text: '#9ca3af', grid: 'rgba(148, 163, 184, 0.15)' }
 
 const faded = (hex: string) =>
   `rgba(${Number.parseInt(hex.slice(1, 3), 16)}, ${Number.parseInt(hex.slice(3, 5), 16)}, ${Number.parseInt(hex.slice(5, 7), 16)}, 0.2)`
@@ -32,6 +32,7 @@ export default function SeriesChart({
   /** A click on the chart: the line nearest the pointer, and the time under it. */
   onPointClick?: (key: string, time: UTCTimestamp) => void
 }) {
+  const CHART = useChartColors()
   const containerRef = useRef<HTMLDivElement>(null)
   const seriesRef = useRef(new Map<string, ISeriesApi<'Line'>>())
   const clickRef = useRef(onPointClick)
@@ -49,7 +50,7 @@ export default function SeriesChart({
     if (!containerRef.current || !datasets.length) return
     const chart = createChart(containerRef.current, {
       autoSize: true,
-      layout: { background: { color: 'transparent' }, textColor: CHART.text, attributionLogo: false },
+      layout: { background: { color: 'transparent' }, textColor: CHART.mutedText, attributionLogo: false },
       grid: { vertLines: { visible: false }, horzLines: { color: CHART.grid } },
       timeScale: { borderVisible: false, timeVisible: true, secondsVisible: false },
       rightPriceScale: { borderVisible: false },
@@ -104,7 +105,7 @@ export default function SeriesChart({
       chart.remove()
       seriesRef.current = new Map()
     }
-  }, [datasets])
+  }, [datasets, CHART])
 
   useEffect(() => {
     datasets.forEach((d) => {

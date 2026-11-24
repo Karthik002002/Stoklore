@@ -93,8 +93,8 @@ const KIND_TINT: Record<string, string> = {
   trigger: 'border-primary/50 bg-primary/5',
   tool: 'border-border bg-card',
   agent: 'border-up/40 bg-up/5',
-  condition: 'border-amber-500/50 bg-amber-500/5',
-  collect: 'border-sky-500/50 bg-sky-500/5',
+  condition: 'border-warning/50 bg-warning/5',
+  collect: 'border-accent/50 bg-accent/5',
   output: 'border-down/40 bg-down/5',
 }
 
@@ -468,7 +468,7 @@ export default function WorkflowEditor() {
               />
               {dirty && (
                 <span
-                  className="absolute top-1/2 right-2 size-2 -translate-y-1/2 rounded-full bg-amber-500"
+                  className="absolute top-1/2 right-2 size-2 -translate-y-1/2 rounded-full bg-warning"
                   title="Unsaved changes"
                 />
               )}

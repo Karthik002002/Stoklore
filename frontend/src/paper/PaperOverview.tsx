@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { useChartColors } from '@/design-system'
 import { useQuery } from '@tanstack/react-query'
 import { AreaSeries, createChart } from 'lightweight-charts'
 import { useEffect, useRef } from 'react'
@@ -8,8 +9,6 @@ import { tradePnl, underwaterSeries } from '@/lib/manualTrades'
 import type { PaperPosition } from '@/services/api'
 import type { Trade, TradeAccount } from '@/lib/types'
 import { getBalanceAdjustments } from '@/services/api'
-
-const COLORS = { up: '#22c55e', down: '#ef4444', text: '#9ca3af', grid: 'rgba(148, 163, 184, 0.15)' }
 
 function Metric({
   label,
@@ -34,12 +33,13 @@ function Metric({
 // The equity curve. Same lightweight-charts area series the journal's Overview uses - this is a
 // real date-indexed series, so unlike the Statistics tab's hand-rolled SVGs it fits the library.
 function EquityCurve({ data }: { data: { time: string; value: number }[] }) {
+  const COLORS = useChartColors()
   const containerRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!data.length || !containerRef.current) return
     const chart = createChart(containerRef.current, {
       autoSize: true,
-      layout: { background: { color: 'transparent' }, textColor: COLORS.text, attributionLogo: false },
+      layout: { background: { color: 'transparent' }, textColor: COLORS.mutedText, attributionLogo: false },
       grid: { vertLines: { visible: false }, horzLines: { color: COLORS.grid } },
       timeScale: { borderVisible: false },
       rightPriceScale: { borderVisible: false },
@@ -50,13 +50,13 @@ function EquityCurve({ data }: { data: { time: string; value: number }[] }) {
       .addSeries(AreaSeries, {
         lineColor: rising ? COLORS.up : COLORS.down,
         lineWidth: 2,
-        topColor: rising ? 'rgba(34, 197, 94, 0.25)' : 'rgba(239, 68, 68, 0.25)',
+        topColor: COLORS.alpha(rising ? COLORS.up : COLORS.down, 0.25),
         bottomColor: 'rgba(0, 0, 0, 0)',
       })
       .setData(data)
     chart.timeScale().fitContent()
     return () => chart.remove()
-  }, [data])
+  }, [data, COLORS])
 
   return (
     <div className="relative h-64">

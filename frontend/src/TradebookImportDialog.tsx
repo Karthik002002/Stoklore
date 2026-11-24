@@ -206,7 +206,7 @@ export default function TradebookImportDialog({
               {p.duplicates > 0 && ` · ${p.duplicates} already in the journal`}
               {p.open.length > 0 && ` · ${p.open.length} still open`}
               {p.ambiguous.length > 0 && (
-                <span className="text-amber-600 dark:text-amber-400"> · {p.ambiguous.length} need you</span>
+                <span className="text-warning"> · {p.ambiguous.length} need you</span>
               )}
               {skipped.map(([why, n]) => ` · ${n} skipped (${why})`)}
             </p>
@@ -221,7 +221,7 @@ export default function TradebookImportDialog({
             )}
             {p.ambiguous.length > 0 && (
               <section>
-                <h3 className="mb-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                <h3 className="mb-1 text-xs font-semibold text-warning">
                   Not imported - the file doesn't say what happened
                 </h3>
                 <ul className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2 text-xs">

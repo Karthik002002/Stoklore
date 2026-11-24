@@ -225,7 +225,7 @@ export function ChecksReadout({ trade }: { trade: Trade }) {
         return (
           <div
             key={c.key}
-            className={`grid grid-cols-[1fr_auto_auto] gap-x-4 px-3 py-1 ${drifted ? 'bg-amber-500/10' : ''}`}
+            className={`grid grid-cols-[1fr_auto_auto] gap-x-4 px-3 py-1 ${drifted ? 'bg-warning/10' : ''}`}
           >
             <span>{c.label}</span>
             <span className="w-14 text-center">{pre ? mark(pre[c.key]) : ''}</span>

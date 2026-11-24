@@ -175,7 +175,7 @@ export default function PanelEditor({
                     onClick={() => changeType(type)}
                     className={cn(
                       'flex flex-col items-center gap-1 rounded-md border px-1 py-1.5 text-[10px] transition-colors hover:bg-muted',
-                      panel.type === type && 'border-sky-500 bg-sky-500/10',
+                      panel.type === type && 'border-accent bg-accent/10',
                     )}
                   >
                     <meta.icon className="size-4" />

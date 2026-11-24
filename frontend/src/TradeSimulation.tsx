@@ -454,8 +454,8 @@ function SlippagePanel({ config, set, pool }: { config: PresetConfig; set: SetCo
   const drag = config.slip * config.length
   const winsEaten = pool?.avgWin ? drag / pool.avgWin : null
   return (
-    <div className="rounded-xl border-2 border-amber-500/60 bg-amber-500/[0.06] p-4">
-      <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">Human friction & slippage</p>
+    <div className="rounded-xl border-2 border-warning/60 bg-warning/[0.06] p-4">
+      <p className="text-sm font-semibold text-warning">Human friction & slippage</p>
       <p className="mt-0.5 text-xs text-muted-foreground">
         Charged on every simulated trade, winners included. This is the number that usually explains the gap
         between a paper account and a funded one.
@@ -488,9 +488,9 @@ function SlippagePanel({ config, set, pool }: { config: PresetConfig; set: SetCo
         className="mt-2 h-8"
       />
 
-      <p className="mt-3 border-t border-amber-500/30 pt-2 text-xs">
+      <p className="mt-3 border-t border-warning/30 pt-2 text-xs">
         Over {config.length} trades that is{' '}
-        <span className="font-semibold text-amber-600 tabular-nums dark:text-amber-400">{inr(drag)}</span> of
+        <span className="font-semibold text-warning tabular-nums">{inr(drag)}</span> of
         drag
         {winsEaten != null && (
           <>
@@ -502,7 +502,7 @@ function SlippagePanel({ config, set, pool }: { config: PresetConfig; set: SetCo
         .
       </p>
 
-      <label className="mt-3 flex cursor-pointer items-start gap-2 border-t border-amber-500/30 pt-3 text-xs">
+      <label className="mt-3 flex cursor-pointer items-start gap-2 border-t border-warning/30 pt-3 text-xs">
         <input
           type="checkbox"
           checked={config.removeTopWins}
@@ -916,7 +916,7 @@ function SimulationResults({ result, config }: { result: SimulationResult; confi
               <span className="w-8 shrink-0 text-xs font-medium tabular-nums">{b.label}</span>
               <div className="h-4 flex-1 overflow-hidden rounded bg-muted">
                 <div
-                  className={`h-full ${b.streak >= 7 ? 'bg-down' : b.streak >= 4 ? 'bg-amber-500' : 'bg-up'}`}
+                  className={`h-full ${b.streak >= 7 ? 'bg-down' : b.streak >= 4 ? 'bg-warning' : 'bg-up'}`}
                   style={{ width: `${b.pct}%` }}
                 />
               </div>

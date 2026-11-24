@@ -11,13 +11,13 @@ function tierMessage(daysMissed: number, bestStreak: number) {
   if (daysMissed <= 0) return null
   if (daysMissed === 1) {
     return {
-      tone: 'border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300',
+      tone: 'border-warning/40 bg-warning/10 text-warning',
       text: `You skipped yesterday. Log a trade, run an analysis, or review your watchlist today - your best streak so far is ${bestStreak} day${bestStreak === 1 ? '' : 's'}.`,
     }
   }
   if (daysMissed === 2) {
     return {
-      tone: 'border-orange-500/50 bg-orange-500/10 text-orange-800 dark:text-orange-300',
+      tone: 'border-warning/50 bg-warning/10 text-warning',
       text: "Two days missed in a row. Whatever streak you had is already gone - the longer this goes, the more you're giving up.",
     }
   }

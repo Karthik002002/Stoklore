@@ -644,7 +644,7 @@ export default function MicrocapsPage() {
         </Button>
       </div>
       {st && !st.has_cookie && (
-        <p className="rounded-lg border border-amber-500/40 p-2 text-xs">
+        <p className="rounded-lg border border-warning/40 p-2 text-xs">
           Paste your screener.in <code>sessionid</code> cookie in Settings › Screener - the universe comes
           from one screener.in query that needs you signed in.
         </p>

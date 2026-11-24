@@ -34,7 +34,7 @@ export function StockBadges({
       {sme && (
         <Badge
           variant="outline"
-          className="border-amber-500/60 px-1 py-0 text-[10px] text-amber-600 dark:text-amber-400"
+          className="border-warning/60 px-1 py-0 text-[10px] text-warning"
         >
           SME
         </Badge>

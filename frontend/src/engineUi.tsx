@@ -15,6 +15,7 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
+  useChartColors,
 } from '@/design-system'
 import { coverageNotes, focusRange, historyText, istTime, markerRange, tradeMarkers } from '@/lib/engine'
 import type { RunTrade } from '@/lib/engine'
@@ -25,8 +26,6 @@ import { cn } from '@/lib/utils'
 import type { Help } from '@/lib/engineHelp'
 import { getIntradayBars } from '@/services/api'
 import type { EngineCoverage, EngineHistory, EngineRun, EngineRunRow, EngineSkipped } from '@/services/api'
-
-export const COLORS = { text: '#9ca3af', grid: 'rgba(148, 163, 184, 0.15)', up: '#22c55e', down: '#ef4444' }
 
 //: How many markers (two per trade) the executions chart frames when it opens - see ExecutionsChart.
 export const OPENING_MARKERS = 40
@@ -186,12 +185,13 @@ export function HistoryLine({
 }
 
 export function DailyBars({ daily }: { daily: [number, number][] }) {
+  const COLORS = useChartColors()
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!ref.current || !daily.length) return
     const chart = createChart(ref.current, {
       autoSize: true,
-      layout: { background: { color: 'transparent' }, textColor: COLORS.text, attributionLogo: false },
+      layout: { background: { color: 'transparent' }, textColor: COLORS.mutedText, attributionLogo: false },
       grid: { vertLines: { visible: false }, horzLines: { color: COLORS.grid } },
       timeScale: { borderVisible: false },
       rightPriceScale: { borderVisible: false },
@@ -206,7 +206,7 @@ export function DailyBars({ daily }: { daily: [number, number][] }) {
     )
     chart.timeScale().fitContent()
     return () => chart.remove()
-  }, [daily])
+  }, [daily, COLORS])
   return <div ref={ref} className="h-44" />
 }
 
@@ -217,6 +217,7 @@ export function DailyBars({ daily }: { daily: [number, number][] }) {
  *  with. Entry prices in the trade list are that bar's open, which is what makes this worth looking
  *  at: you can see what the strategy saw. */
 export function ExecutionsChart({ run, focus }: { run: EngineRun; focus: RunTrade | null }) {
+  const COLORS = useChartColors()
   const [symbol, setSymbol] = useState(run.symbols[0] ?? '')
   // the run's own dates: a backtest on an old range would otherwise get today's newest bars, and
   // its arrows would land on candles that were never loaded
@@ -238,7 +239,7 @@ export function ExecutionsChart({ run, focus }: { run: EngineRun; focus: RunTrad
     if (focus) setSymbol(focus[0])
   }, [focus])
 
-  const markers = useMemo(() => tradeMarkers(run.trades, symbol, COLORS), [run.trades, symbol])
+  const markers = useMemo(() => tradeMarkers(run.trades, symbol, COLORS), [run.trades, symbol, COLORS])
   const total = useMemo(() => run.trades.filter((t) => t[0] === symbol).length, [run.trades, symbol])
 
   useEffect(() => {
@@ -246,7 +247,7 @@ export function ExecutionsChart({ run, focus }: { run: EngineRun; focus: RunTrad
     if (!ref.current || !rows?.length) return
     const chart = createChart(ref.current, {
       autoSize: true,
-      layout: { background: { color: 'transparent' }, textColor: COLORS.text, attributionLogo: false },
+      layout: { background: { color: 'transparent' }, textColor: COLORS.mutedText, attributionLogo: false },
       grid: { vertLines: { visible: false }, horzLines: { color: COLORS.grid } },
       // Bar times are already IST-shifted (see minute_data.py) and the chart renders UTC, so the
       // axis reads as market-local time.
@@ -284,7 +285,7 @@ export function ExecutionsChart({ run, focus }: { run: EngineRun; focus: RunTrad
       chart.timeScale().fitContent()
     }
     return () => chart.remove()
-  }, [bars, markers, focus, symbol, run.interval])
+  }, [bars, markers, focus, symbol, run.interval, COLORS])
 
   if (!run.symbols.length) return null
   return (

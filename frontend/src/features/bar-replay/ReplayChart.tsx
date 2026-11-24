@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
+import { currentChartColors, useChartColors } from '@/design-system'
 import type * as React from 'react'
 import type { ReactNode } from 'react'
 import { BellIcon } from 'lucide-react'
@@ -32,7 +33,22 @@ import { riskReward } from './orderEngine'
 import { DEFAULT_CHART_SETTINGS } from './store'
 import type { ChartFrame } from './store'
 
-const COLORS = { up: '#22c55e', down: '#ef4444', text: '#9ca3af', grid: 'rgba(148, 163, 184, 0.15)' }
+// Theme colors, read fresh on each access (currentChartColors is cached per theme). The chart
+// re-applies its options when useChartColors() changes - see the options effect below.
+const COLORS = {
+  get up() {
+    return currentChartColors().up
+  },
+  get down() {
+    return currentChartColors().down
+  },
+  get text() {
+    return currentChartColors().mutedText
+  },
+  get grid() {
+    return currentChartColors().grid
+  },
+}
 
 // Volume bars are tinted with the same up/down colors as the candles (settings.bodyUpColor/
 // bodyDownColor), just faded - so a user who customizes candle colors gets matching volume
@@ -443,6 +459,8 @@ const ReplayChart = forwardRef(function ReplayChart(
   }: ReplayChartProps,
   ref: React.Ref<ReplayChartHandle>,
 ) {
+  // subscribes to the theme so the options effect below re-applies colors when it changes
+  const themeColors = useChartColors()
   const containerRef = useRef<HTMLDivElement | null>(null)
   const overlayRef = useRef<HTMLDivElement | null>(null)
   const drawLayerRef = useRef<SVGSVGElement | null>(null)
@@ -666,7 +684,7 @@ const ReplayChart = forwardRef(function ReplayChart(
       },
     })
     volumeSeriesRef.current?.applyOptions({ visible: settings.volumeVisible !== false })
-  }, [settings, resetKey])
+  }, [settings, resetKey, themeColors])
 
   // Blind replay: the time axis and the crosshair's date label go, so nothing on the chart says
   // when this is. resetKey is a dependency because a symbol/timeframe change recreates the chart.
@@ -1827,7 +1845,7 @@ const ALERT_PILL =
 
 /** A pill on each alert level: what it watches, and ✕ to delete it. Drag the line to move it. */
 function AlertPills({ alert, onRemove }: { alert: ChartAlert; onRemove?: (id: number) => void }) {
-  const tone = alert.active ? 'border-amber-500/70 text-amber-500' : 'border-dashed text-muted-foreground'
+  const tone = alert.active ? 'border-warning/70 text-warning' : 'border-dashed text-muted-foreground'
   const word =
     CHART_ALERT_KINDS.find(([k]) => k === alert.condition)?.[1] ??
     (alert.condition ?? 'crossing').replace(/_/g, ' ')
@@ -1897,7 +1915,7 @@ function PositionPills({
           entry line's dashed amber; filled positions get the neutral one. */}
       <div
         data-price={order.entryPrice}
-        className={`${PILL} ${pending ? 'border-dashed border-amber-500/70 text-amber-600' : 'border-primary/60'}`}
+        className={`${PILL} ${pending ? 'border-dashed border-warning/70 text-warning' : 'border-primary/60'}`}
       >
         <span className="border-r px-1.5 py-0.5 font-medium">
           {order.draft

@@ -38,7 +38,7 @@ const heatFor = (pct: number | null | undefined) => {
   if (pct == null) return 'bg-muted/30 text-muted-foreground'
   if (pct >= 100) return 'bg-up/25'
   if (pct >= 60) return 'bg-up/10'
-  if (pct >= 30) return 'bg-amber-500/15'
+  if (pct >= 30) return 'bg-warning/15'
   return 'bg-down/20'
 }
 

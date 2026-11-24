@@ -349,7 +349,7 @@ function TradeFormDialog({
             />
 
             {warnings.map((w) => (
-              <p key={w} className="rounded-md bg-amber-500/10 px-2 py-1.5 text-xs text-amber-600">
+              <p key={w} className="rounded-md bg-warning/10 px-2 py-1.5 text-xs text-warning">
                 {w}
               </p>
             ))}

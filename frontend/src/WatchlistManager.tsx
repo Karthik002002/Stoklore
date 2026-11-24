@@ -65,7 +65,7 @@ const StockActions = createContext<{ remove: (symbol: string, list: string) => v
 })
 
 const pctClass = (v: number | null | undefined) =>
-  v == null ? 'text-muted-foreground' : v > 0 ? 'text-green-500' : v < 0 ? 'text-red-500' : ''
+  v == null ? 'text-muted-foreground' : v > 0 ? 'text-up' : v < 0 ? 'text-down' : ''
 
 function StockNode({ data, selected }: NodeProps<Node<StockNodeData>>) {
   const { symbol, stock, list } = data

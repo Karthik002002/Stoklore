@@ -131,7 +131,7 @@ Pure trading math is self-checked: `node src/design-system/components/marketMath
 | 4 | Layout & data: panel (header/title/body/section/footer), card (compat), stat strip + stat, empty state, table (+ `TableSortHead`), data-table (+ `selectedRowId` / `onRowClick`), pagination, calendar, date picker / range picker (+ presets) | done |
 | 5 | Trading: change, tick price (flash), quote, RS pill, delivery, results & surveillance badges, sparkline, 52W range, index card, ticker strip (tape), watchlist row, meter, order ticket (risk sizing, R:R, warnings), side toggle, market depth, P&L calendar, treemap | done |
 | 6 | Page stories built only from design-system parts (`src/design-system/pages/`): trading workspace, home, stock detail, holdings, book risk, trade simulation, agent, Settings › Appearance | done |
-| 7 | Migration — see below | steps 1–3 done; 4–5 next |
+| 7 | Migration — see below | steps 1–3 and 5 done, charts and colors themed; step 4 (pages) in progress |
 
 ## Page stories (`src/design-system/pages/`)
 
@@ -170,10 +170,32 @@ Stories set `parameters.fullBleed` to drop the canvas padding.
    file; `DelivCell` stays as a `<td>` around `Delivery`. `components.json`'s `ui` alias points at
    `src/design-system/components`, so `shadcn add` lands there.
 
-   **Not yet themed:** charts drawn by lightweight-charts (`PriceChart`, `ReplayChart`, `IndexCard`
-   sparklines) keep their own hardcoded colors and only follow light/dark, not presets or edits.
+   **Charts:** canvas charts (lightweight-charts: `PriceChart`, `ReplayChart`, `IndexCard`,
+   `SeriesChart`, engine and paper/journal mini charts) read `useChartColors()` - the theme as
+   rgb strings, recomputed on every theme change - and rebuild/re-apply when it changes. SVG and
+   DOM charts (journal stats, heatmaps, engine P&L cells) use `var(--up)` / `color-mix()` directly.
+   Bar Replay's candle colors stay user settings; only its text/grid/markers follow the theme.
+
+   **Palette classes:** 138 hardcoded Tailwind hue classes in 36 files (`text-amber-600 dark:text-amber-400`,
+   `bg-sky-500/10`…) became tokens - amber/yellow/orange → `warning`, sky/blue/cyan → `accent`,
+   emerald/green → `up`, red/rose → `down`, violet/purple → `chart-5` - so every status color follows
+   the theme and the customizer.
 4. ⏳ **Pages:** hand-rolled panels, stat tiles and empty states become `Panel` / `StatStrip` /
-   `EmptyState`, page by page, each a separate commit.
-5. ⏳ **Command palette:** rebuild `CommandPalette.tsx` on the new parts (remove the invented demo
-   shortcuts or wire them in `lib/shortcuts.ts`), keeping `lib/navTargets.ts` as its index.
+   `EmptyState`, page by page.
+   *Done:* Stock detail (header + fundamentals strip, every section a panel, events/reports as rows),
+   Holdings (stat strip, panels, empty states), Book risk, `PriceChart` / `StockChart` (a panel with
+   range and EMA controls in its header), `AllocationDonut`.
+   *Next, by how many hand-rolled cards they have:* ManualOverview, TradeSimulation, LeadersPage,
+   FinancePage, LiveTrading, dashboards, ManualGoals, paper pages, Scans, workflows.
+5. ✅ **Command palette:** `CommandPalette.tsx` is the Storybook palette on real data, keeping
+   `lib/navTargets.ts` as its index: source tabs (All · Stocks · Pages · Page tabs · Actions ·
+   Settings · Theme; Tab cycles), stock filter chips (Watchlist, Held, Gainers, Losers, Results
+   soon, Surveillance) with clear-filters and sort-by-change, recents (last 5, per browser),
+   tracked stocks with price/change and held / surveillance / results badges (from `/api/stocks`,
+   the watchlist, paper positions, the results calendar and NSE surveillance - queries the app
+   already caches), every page with a one-line hint and its route, page tabs and settings with
+   breadcrumbs, quick actions with real shortcuts from `lib/shortcuts.ts`, every theme preset with
+   a swatch tile, "Ask the agent" (`askInChat`), and a footer whose keys work: ⌘↵ opens the
+   highlighted item in a new tab, ⌘L copies its link, the gear opens Settings › Shortcuts.
+   `@SYMBOL` searches every tracked stock and verifies an unknown symbol on NSE before opening.
 

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { useChartColors } from '@/design-system'
 import { useQuery } from '@tanstack/react-query'
 import { AreaSeries, createChart } from 'lightweight-charts'
 import { TrendingDownIcon, TrendingUpIcon } from 'lucide-react'
@@ -9,11 +10,12 @@ import { getIndexChart, getIndices } from '@/services/api'
 const LABELS: Record<string, string> = { NIFTY: 'NIFTY 50', SENSEX: 'SENSEX' }
 
 function Sparkline({ bars, up }: { bars?: Bar[]; up: boolean }) {
+  const COLORS = useChartColors()
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!bars?.length || !containerRef.current) return
-    const color = up ? '#22c55e' : '#ef4444'
+    const color = up ? COLORS.up : COLORS.down
     const chart = createChart(containerRef.current, {
       autoSize: true,
       layout: { background: { color: 'transparent' }, attributionLogo: false },
@@ -27,7 +29,7 @@ function Sparkline({ bars, up }: { bars?: Bar[]; up: boolean }) {
       .addSeries(AreaSeries, {
         lineColor: color,
         lineWidth: 2,
-        topColor: up ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
+        topColor: COLORS.alpha(color, 0.2),
         bottomColor: 'rgba(0, 0, 0, 0)',
         crosshairMarkerVisible: false,
         lastValueVisible: false,
@@ -38,7 +40,7 @@ function Sparkline({ bars, up }: { bars?: Bar[]; up: boolean }) {
       .setData(bars.map((b) => ({ time: b.time, value: b.close })) as never)
     chart.timeScale().fitContent()
     return () => chart.remove()
-  }, [bars, up])
+  }, [bars, up, COLORS])
 
   return <div ref={containerRef} className="h-16 w-28 shrink-0" />
 }

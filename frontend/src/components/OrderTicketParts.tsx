@@ -187,7 +187,7 @@ export function TicketFooter({
         </div>
       )}
       {[...cautions, ...warnings].map((w) => (
-        <p key={w} className="flex gap-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+        <p key={w} className="flex gap-1.5 text-[11px] text-warning">
           <AlertTriangleIcon className="mt-0.5 size-3 shrink-0" />
           {w}
         </p>

@@ -153,7 +153,7 @@ export function ReturnsHeatmap({ a }: { a: RunAnalytics }) {
         key={key}
         className="rounded p-1 text-center tabular-nums"
         style={{
-          background: `rgba(${pnl >= 0 ? '34,197,94' : '239,68,68'},${0.12 + (0.6 * Math.abs(pnl)) / max})`,
+          background: `color-mix(in oklab, var(--${pnl >= 0 ? 'up' : 'down'}) ${Math.round((0.12 + (0.6 * Math.abs(pnl)) / max) * 100)}%, transparent)`,
         }}
         title={inr(pnl)}
       >

@@ -2,16 +2,25 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Streamdown } from 'streamdown'
-import {
-  ArrowLeftIcon,
-  DatabaseIcon,
-  FlaskConicalIcon,
-  Trash2Icon,
-  TrendingDownIcon,
-  TrendingUpIcon,
-} from 'lucide-react'
+import { ArrowLeftIcon, DatabaseIcon, FlaskConicalIcon, Trash2Icon } from 'lucide-react'
 import SourceSelect from '@/components/SourceSelect'
-import { Badge, Button, Input, Spinner, Tooltip, TooltipContent, TooltipTrigger } from '@/design-system'
+import {
+  Badge,
+  Button,
+  Change,
+  EmptyState,
+  Input,
+  Panel,
+  PanelBody,
+  PanelHeader,
+  PanelTitle,
+  Spinner,
+  Stat,
+  StatStrip,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/design-system'
 import { compact, fmt, formatDateTime, inr, timeAgo } from '@/lib/format'
 import { useMaxHistoryCollector } from '@/lib/useMaxHistoryCollector'
 import { usePageTitle } from '@/lib/usePageTitle'
@@ -28,7 +37,7 @@ import StockFinancials from './StockFinancials'
 
 // Reuses PriceChart (candles/line toggle, EMA overlays, volume pane, tooltip) - same as the
 // range-picker chart above, just fed the full collected history instead of a fetched range.
-function MaxHistoryChart({ rows }: { rows: DailyBar[] }) {
+function MaxHistoryChart({ rows, controls }: { rows: DailyBar[]; controls: React.ReactNode }) {
   const data = useMemo(
     () => ({
       interval: '1d',
@@ -46,7 +55,13 @@ function MaxHistoryChart({ rows }: { rows: DailyBar[] }) {
   )
 
   return (
-    <PriceChart data={data} isLoading={false} leftControls={null} emptyMessage="No history collected yet." />
+    <PriceChart
+      data={data}
+      isLoading={false}
+      title="Full price history"
+      leftControls={controls}
+      emptyMessage="No history collected yet."
+    />
   )
 }
 
@@ -61,43 +76,52 @@ function MaxHistorySection({ symbol }: { symbol: string }) {
     collect,
   } = useMaxHistoryCollector(symbol)
 
+  const controls = (
+    <div className="flex items-center gap-1.5">
+      <SourceSelect sources={sources} value={source} onChange={setSource} />
+      <Tooltip>
+        {/* disabled <button>s can swallow hover in some browsers - a wrapping span keeps the
+            tooltip working regardless of the button's disabled state. */}
+        <TooltipTrigger render={<span className="inline-flex" />}>
+          <Button
+            size="xs"
+            variant="outline"
+            onClick={() => collect.mutate()}
+            disabled={status?.running || alreadyCollected}
+          >
+            {status?.running ? <Spinner className="size-3" /> : <DatabaseIcon />}
+            Collect max history
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="left">
+          {status?.running
+            ? 'Collecting full history…'
+            : alreadyCollected
+              ? 'Max data is already available'
+              : 'Fetch this stock’s entire price history'}
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  )
+
+  if (history && history.length > 0) return <MaxHistoryChart rows={history} controls={controls} />
   return (
-    <section>
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-medium text-muted-foreground">Full price history</h2>
-        <div className="flex items-center gap-2">
-          <SourceSelect sources={sources} value={source} onChange={setSource} />
-          <Tooltip>
-            {/* disabled <button>s can swallow hover in some browsers - a wrapping span keeps the
-                tooltip working regardless of the button's disabled state, same trick as App.jsx's
-                TooltipIcon. */}
-            <TooltipTrigger render={<span className="inline-flex" />}>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => collect.mutate()}
-                disabled={status?.running || alreadyCollected}
-              >
-                {status?.running ? <Spinner className="size-4" /> : <DatabaseIcon className="size-4" />}
-                Collect max history
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="left">
-              {status?.running
-                ? 'Collecting full history…'
-                : alreadyCollected
-                  ? 'Max data is already available'
-                  : 'Fetch this stock’s entire price history'}
-            </TooltipContent>
-          </Tooltip>
-        </div>
-      </div>
-      {status?.running && (
-        <p className="mb-3 text-sm text-muted-foreground">Collecting full history… this can take a moment.</p>
-      )}
-      {status?.error && <p className="mb-3 text-sm text-destructive">{status.error}</p>}
-      {history && history.length > 0 && <MaxHistoryChart rows={history} />}
-    </section>
+    <Panel>
+      <PanelHeader>
+        <PanelTitle>Full price history</PanelTitle>
+        <span className="flex-1" />
+        {controls}
+      </PanelHeader>
+      <PanelBody className="text-muted-foreground">
+        {status?.running ? (
+          'Collecting full history… this can take a moment.'
+        ) : status?.error ? (
+          <span className="text-down">{status.error}</span>
+        ) : (
+          'Not collected yet - collect it to chart this stock’s whole history.'
+        )}
+      </PanelBody>
+    </Panel>
   )
 }
 
@@ -120,82 +144,88 @@ function EmaCrossover({ symbol }: { symbol: string }) {
   })
 
   return (
-    <div className="rounded-xl border bg-card p-4">
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          type="number"
-          min="1"
-          value={short}
-          onChange={(e) => setShort(Number(e.target.value))}
-          className="h-8 w-20"
-          aria-label="Short EMA period"
-        />
-        <span className="text-sm text-muted-foreground">vs</span>
-        <Input
-          type="number"
-          min="2"
-          value={long}
-          onChange={(e) => setLong(Number(e.target.value))}
-          className="h-8 w-20"
-          aria-label="Long EMA period"
-        />
-        <span className="text-sm text-muted-foreground">day EMA</span>
-        {isFetching && <Spinner className="size-4" />}
-        <div className="ml-auto flex gap-1">
-          {EMA_PRESETS.map(([s, l]) => (
-            <Button
-              key={`${s}-${l}`}
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-xs"
-              onClick={() => {
-                setShort(s)
-                setLong(l)
-              }}
-            >
-              {s}/{l}
-            </Button>
-          ))}
+    <Panel>
+      <PanelHeader>
+        <PanelTitle>EMA crossover</PanelTitle>
+      </PanelHeader>
+      <PanelBody>
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            type="number"
+            min="1"
+            value={short}
+            onChange={(e) => setShort(Number(e.target.value))}
+            numeric
+            className="w-20"
+            aria-label="Short EMA period"
+          />
+          <span className="text-sm text-muted-foreground">vs</span>
+          <Input
+            type="number"
+            min="2"
+            value={long}
+            onChange={(e) => setLong(Number(e.target.value))}
+            numeric
+            className="w-20"
+            aria-label="Long EMA period"
+          />
+          <span className="text-sm text-muted-foreground">day EMA</span>
+          {isFetching && <Spinner className="size-4" />}
+          <div className="ml-auto flex gap-1">
+            {EMA_PRESETS.map(([s, l]) => (
+              <Button
+                key={`${s}-${l}`}
+                variant="ghost"
+                size="xs"
+                onClick={() => {
+                  setShort(s)
+                  setLong(l)
+                }}
+              >
+                {s}/{l}
+              </Button>
+            ))}
+          </div>
         </div>
-      </div>
 
-      {!valid && (
-        <p className="mt-2 text-sm text-destructive">Short period must be less than the long period.</p>
-      )}
-      {valid && error && (
-        <p className="mt-2 text-sm text-muted-foreground">
-          Not enough synced price history yet — run a price sync first.
-        </p>
-      )}
-      {valid && data && (
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          {data.crossover ? (
-            <Badge variant={data.crossover === 'bullish' ? 'default' : 'destructive'}>
-              {data.crossover === 'bullish' ? 'Golden cross' : 'Death cross'}
-            </Badge>
-          ) : (
-            (() => {
-              const pct = ((data.shortEma - data.longEma) / data.longEma) * 100
-              const above = pct >= 0
-              return (
-                <Badge variant="secondary" className={above ? 'text-up' : 'text-down'}>
-                  {above ? '+' : ''}
-                  {fmt(pct)}% {above ? 'above' : 'below'}
-                </Badge>
-              )
-            })()
-          )}
-          <span className="text-sm text-muted-foreground tabular-nums">
-            EMA{short}: {inr(data.shortEma)} · EMA{long}: {inr(data.longEma)}
-          </span>
-          {data.lastCrossoverDate && (
-            <span className="text-sm text-muted-foreground">
-              Last crossover: {timeAgo(data.lastCrossoverDate)}
+        {!valid && (
+          <p className="mt-2 text-sm text-destructive">Short period must be less than the long period.</p>
+        )}
+        {valid && error && (
+          <p className="mt-2 text-sm text-muted-foreground">
+            Not enough synced price history yet — run a price sync first.
+          </p>
+        )}
+        {valid && data && (
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            {data.crossover ? (
+              <Badge variant={data.crossover === 'bullish' ? 'success' : 'destructive'}>
+                {data.crossover === 'bullish' ? 'Golden cross' : 'Death cross'}
+              </Badge>
+            ) : (
+              (() => {
+                const pct = ((data.shortEma - data.longEma) / data.longEma) * 100
+                const above = pct >= 0
+                return (
+                  <Badge variant="secondary" className={above ? 'text-up' : 'text-down'}>
+                    {above ? '+' : ''}
+                    {fmt(pct)}% {above ? 'above' : 'below'}
+                  </Badge>
+                )
+              })()
+            )}
+            <span className="text-sm text-muted-foreground tabular-nums">
+              EMA{short}: {inr(data.shortEma)} · EMA{long}: {inr(data.longEma)}
             </span>
-          )}
-        </div>
-      )}
-    </div>
+            {data.lastCrossoverDate && (
+              <span className="text-sm text-muted-foreground">
+                Last crossover: {timeAgo(data.lastCrossoverDate)}
+              </span>
+            )}
+          </div>
+        )}
+      </PanelBody>
+    </Panel>
   )
 }
 
@@ -207,44 +237,37 @@ function BacktestSummary({ symbol }: { symbol: string }) {
   const latest = backtests?.[0]
 
   return (
-    <section>
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-medium text-muted-foreground">Backtest summary</h2>
-        <Button variant="outline" size="sm" render={<Link to="/backtesting" />}>
-          <FlaskConicalIcon className="size-4" /> Backtesting
+    <Panel>
+      <PanelHeader>
+        <PanelTitle>Backtest summary</PanelTitle>
+        <span className="flex-1" />
+        <Button variant="ghost" size="xs" render={<Link to="/backtesting" />}>
+          <FlaskConicalIcon /> Backtesting
         </Button>
-      </div>
-      {!latest && (
-        <p className="text-sm text-muted-foreground">
-          No saved backtest for {symbol} yet — run one from the Backtesting tab.
-        </p>
-      )}
-      {latest && (
-        <div className="rounded-xl border bg-card p-4">
-          <div className="flex flex-wrap items-center gap-3">
-            {(() => {
-              const up = (latest.total_return_pct ?? 0) >= 0
-              const Icon = up ? TrendingUpIcon : TrendingDownIcon
-              return (
-                <Badge variant={up ? 'default' : 'destructive'} className="gap-1">
-                  <Icon className="size-3" />
-                  {up ? '+' : ''}
-                  {fmt(latest.total_return_pct)}%
-                </Badge>
-              )
-            })()}
-            <span className="text-sm text-muted-foreground">
-              EMA{latest.short_period}/{latest.long_period} · {latest.num_trades} trade
-              {latest.num_trades === 1 ? '' : 's'} · {latest.win_rate}% win rate
-            </span>
-            <span className="ml-auto text-xs text-muted-foreground">{timeAgo(latest.created_at)}</span>
-          </div>
-          {latest.lessons && (
-            <p className="mt-3 border-t pt-3 text-sm text-muted-foreground">{latest.lessons}</p>
-          )}
-        </div>
-      )}
-    </section>
+      </PanelHeader>
+      <PanelBody>
+        {!latest && (
+          <p className="text-muted-foreground">
+            No saved backtest for {symbol} yet — run one from the Backtesting tab.
+          </p>
+        )}
+        {latest && (
+          <>
+            <div className="flex flex-wrap items-center gap-3">
+              <Change value={latest.total_return_pct} variant="pill" />
+              <span className="text-muted-foreground">
+                EMA{latest.short_period}/{latest.long_period} · {latest.num_trades} trade
+                {latest.num_trades === 1 ? '' : 's'} · {latest.win_rate}% win rate
+              </span>
+              <span className="ml-auto text-2xs text-muted-foreground">{timeAgo(latest.created_at)}</span>
+            </div>
+            {latest.lessons && (
+              <p className="mt-2 border-t border-border pt-2 text-muted-foreground">{latest.lessons}</p>
+            )}
+          </>
+        )}
+      </PanelBody>
+    </Panel>
   )
 }
 
@@ -294,99 +317,100 @@ export default function StockDetail() {
 
   const { quote, news, reports } = data
   const change = quote.regularMarketChangePercent
-  const up = change != null && change >= 0
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2 text-muted-foreground">
-          <ArrowLeftIcon className="size-4" /> All stocks
+        <Button variant="ghost" size="sm" onClick={onBack} className="-ml-1 text-muted-foreground">
+          <ArrowLeftIcon /> All stocks
         </Button>
         <DeleteStockButton symbol={symbol} onDeleted={onBack} className="text-muted-foreground" />
       </div>
 
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-semibold tracking-tight">{symbol}</h1>
-            {/* Which listing this URL names. Every number below is sourced NSE-side whichever it
-                says - see the note under the price. */}
-            <Badge variant="outline">{exchange}</Badge>
-            {quote.sector && <Badge variant="secondary">{quote.sector}</Badge>}
-          </div>
-          <p className="mt-1 text-muted-foreground">{quote.shortName ?? '—'}</p>
-        </div>
-        <div className="text-right">
-          <p className="text-3xl font-semibold tabular-nums">{inr(quote.currentPrice)}</p>
-          {change != null && (
-            <p className={`font-medium tabular-nums ${up ? 'text-up' : 'text-down'}`}>
-              {up ? '+' : ''}
-              {fmt(change)}% today
-            </p>
-          )}
-          {exchange === 'BSE' && (
-            <p className="mt-0.5 text-xs text-muted-foreground">Quoted from the NSE listing</p>
-          )}
-        </div>
-      </div>
-
-      <section>
-        <h2 className="mb-3 text-sm font-medium text-muted-foreground">Fundamentals</h2>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
-          {STAT_FIELDS.filter(([, key]) => quote[key] != null).map(([label, key, format]) => (
-            <div key={key} className="rounded-xl border bg-card p-4">
-              <p className="text-xs text-muted-foreground">{label}</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums">{format(quote[key] as never)}</p>
+      <Panel>
+        <div className="flex flex-wrap items-end justify-between gap-4 p-3">
+          <div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <h1 className="text-xl font-bold tracking-tight normal-case">{symbol}</h1>
+              {/* Which listing this URL names. Every number below is sourced NSE-side whichever it
+                  says - see the note under the price. */}
+              <Badge variant="outline">{exchange}</Badge>
+              {quote.sector && <Badge variant="secondary">{quote.sector}</Badge>}
             </div>
-          ))}
+            <p className="mt-0.5 text-muted-foreground">{quote.shortName ?? '—'}</p>
+          </div>
+          <div className="flex flex-col items-end gap-0.5">
+            <span className="tabular text-2xl">{inr(quote.currentPrice)}</span>
+            {change != null && (
+              <span>
+                <Change value={change} /> <span className="text-muted-foreground">today</span>
+              </span>
+            )}
+            {exchange === 'BSE' && (
+              <span className="text-2xs text-muted-foreground">Quoted from the NSE listing</span>
+            )}
+          </div>
         </div>
-      </section>
+        {STAT_FIELDS.some(([, key]) => quote[key] != null) && (
+          <StatStrip className="border-t border-border">
+            {STAT_FIELDS.filter(([, key]) => quote[key] != null).map(([label, key, format]) => (
+              <Stat key={key} label={label} value={format(quote[key] as never)} />
+            ))}
+          </StatStrip>
+        )}
+      </Panel>
 
-      <section>
-        <h2 className="mb-3 text-sm font-medium text-muted-foreground">Price chart</h2>
-        <StockChart symbol={symbol} />
-      </section>
+      <StockChart symbol={symbol} title="Price chart" />
 
       <MaxHistorySection symbol={symbol} />
 
-      <section>
-        <h2 className="mb-3 text-sm font-medium text-muted-foreground">EMA crossover</h2>
+      <div className="grid gap-2 lg:grid-cols-2">
         <EmaCrossover symbol={symbol} />
-      </section>
+        <BacktestSummary symbol={symbol} />
+      </div>
 
-      <BacktestSummary symbol={symbol} />
-
-      <section>
-        <h2 className="mb-3 text-sm font-medium text-muted-foreground">Financials (quarterly)</h2>
+      <Panel>
+        <PanelHeader>
+          <PanelTitle>Financials (quarterly)</PanelTitle>
+        </PanelHeader>
         <StockFinancials symbol={symbol} />
-      </section>
+      </Panel>
 
-      <section>
-        <h2 className="mb-3 text-sm font-medium text-muted-foreground">
-          Screener.in — fundamentals, statements &amp; filings
-        </h2>
-        <ScreenerPanel symbol={symbol} />
-      </section>
+      <Panel>
+        <PanelHeader>
+          <PanelTitle>Screener.in — fundamentals, statements &amp; filings</PanelTitle>
+        </PanelHeader>
+        <PanelBody>
+          <ScreenerPanel symbol={symbol} />
+        </PanelBody>
+      </Panel>
 
-      <section>
-        <h2 className="mb-3 text-sm font-medium text-muted-foreground">Latest events</h2>
-        {news.length === 0 && <p className="text-sm text-muted-foreground">No recent news.</p>}
-        <ul className="space-y-2">
+      <Panel>
+        <PanelHeader>
+          <PanelTitle>Latest events</PanelTitle>
+        </PanelHeader>
+        {news.length === 0 && (
+          <EmptyState
+            title="No recent news"
+            description="Events for this stock show up here as they are scraped."
+          />
+        )}
+        <ul>
           {news.map((n, i) => (
-            <li key={i} className="rounded-xl border bg-card p-4">
+            // biome-ignore lint/suspicious/noArrayIndexKey: news items have no stable id
+            <li key={i} className="border-b border-border/60 px-3 py-2 last:border-0">
               <div className="flex items-start justify-between gap-2">
                 <span className="font-medium">{n.title}</span>
                 <div className="flex shrink-0 items-center gap-1">
                   <NewsTagBadges tags={n.laya_tags} />
                   {n.sentiment_label && (
                     <Badge
-                      variant="secondary"
-                      className={
+                      variant={
                         n.sentiment_label.toLowerCase() === 'positive'
-                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                          ? 'success'
                           : n.sentiment_label.toLowerCase() === 'negative'
-                            ? 'bg-red-500/15 text-red-600 dark:text-red-400'
-                            : 'text-muted-foreground'
+                            ? 'destructive'
+                            : 'outline'
                       }
                     >
                       {n.sentiment_label}
@@ -395,47 +419,46 @@ export default function StockDetail() {
                   <EventActionsMenu url={n.url} label={n.title} />
                 </div>
               </div>
-              {n.summary && <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{n.summary}</p>}
+              {n.summary && <p className="mt-0.5 line-clamp-2 text-muted-foreground">{n.summary}</p>}
               {(n.source || n.published_at || n.origin) && (
-                <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <p className="mt-1 flex items-center gap-1.5 text-2xs text-muted-foreground">
                   {n.source}
                   {n.source && n.published_at && ' · '}
                   {n.published_at && <time>{formatDateTime(n.published_at)}</time>}
-                  {n.origin && (
-                    <Badge variant="outline" className="text-[10px] text-muted-foreground">
-                      {ORIGIN_LABELS[n.origin] ?? n.origin}
-                    </Badge>
-                  )}
+                  {n.origin && <Badge variant="outline">{ORIGIN_LABELS[n.origin] ?? n.origin}</Badge>}
                 </p>
               )}
             </li>
           ))}
         </ul>
-      </section>
+      </Panel>
 
-      <section>
-        <h2 className="mb-3 text-sm font-medium text-muted-foreground">AI reports</h2>
+      <Panel>
+        <PanelHeader>
+          <PanelTitle>AI reports</PanelTitle>
+        </PanelHeader>
         {reports.length === 0 && (
-          <p className="text-sm text-muted-foreground">No stored reports for this stock.</p>
+          <EmptyState
+            title="No stored reports"
+            description="Ask the agent for a report on this stock and it lands here."
+          />
         )}
-        <div className="space-y-4">
-          {reports.map((r) => (
-            <article key={r.id} className="relative rounded-xl border bg-card p-5">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Delete report"
-                className="absolute top-3 right-3 text-muted-foreground"
-                onClick={() => deleteReport(r.id)}
-              >
-                <Trash2Icon className="size-4" />
-              </Button>
-              <Streamdown className="text-sm">{r.content_markdown}</Streamdown>
-              <time className="mt-3 block text-xs text-muted-foreground">{formatDateTime(r.scraped_at)}</time>
-            </article>
-          ))}
-        </div>
-      </section>
+        {reports.map((r) => (
+          <article key={r.id} className="relative border-b border-border/60 p-3 last:border-0">
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              aria-label="Delete report"
+              className="absolute top-2 right-2 text-muted-foreground"
+              onClick={() => deleteReport(r.id)}
+            >
+              <Trash2Icon />
+            </Button>
+            <Streamdown className="text-xs">{r.content_markdown}</Streamdown>
+            <time className="mt-2 block text-2xs text-muted-foreground">{formatDateTime(r.scraped_at)}</time>
+          </article>
+        ))}
+      </Panel>
     </div>
   )
 }

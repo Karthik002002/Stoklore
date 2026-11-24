@@ -480,7 +480,7 @@ export default function DashboardPage() {
         ) : (
           <h2 className="max-w-[36ch] truncate font-medium">{draft.name}</h2>
         )}
-        {dirty && <span className="size-2 shrink-0 rounded-full bg-amber-500" title="Unsaved changes" />}
+        {dirty && <span className="size-2 shrink-0 rounded-full bg-warning" title="Unsaved changes" />}
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {draft.variables.map((variable) => (

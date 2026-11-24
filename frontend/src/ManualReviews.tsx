@@ -24,19 +24,19 @@ import { deleteTradeReview, getTradeReviews, saveTradeReview } from '@/services/
 // to the next change, so two changes never get credit for each other.
 
 const PROMPTS = [
-  { key: 'keep', label: 'Keep', hint: 'What works?', tone: 'border-emerald-500/40 bg-emerald-500/[0.06]' },
-  { key: 'stop', label: 'Stop', hint: 'What hurts results?', tone: 'border-red-500/40 bg-red-500/[0.06]' },
+  { key: 'keep', label: 'Keep', hint: 'What works?', tone: 'border-up/40 bg-up/[0.06]' },
+  { key: 'stop', label: 'Stop', hint: 'What hurts results?', tone: 'border-down/40 bg-down/[0.06]' },
   {
     key: 'improve',
     label: 'Improve',
     hint: 'What can be executed better?',
-    tone: 'border-sky-500/40 bg-sky-500/[0.06]',
+    tone: 'border-accent/40 bg-accent/[0.06]',
   },
   {
     key: 'test',
     label: 'Test',
     hint: 'What deserves study?',
-    tone: 'border-violet-500/40 bg-violet-500/[0.06]',
+    tone: 'border-chart-5/40 bg-chart-5/[0.06]',
   },
 ] as const
 

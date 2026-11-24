@@ -150,8 +150,8 @@ const write = (key: string, v: number) => {
 
 export const PRIORITY: Record<ScanPriority, { label: string; className: string }> = {
   A: { label: 'act now', className: 'bg-up/20 text-up border-up/50' },
-  B: { label: 'watch closely', className: 'bg-amber-500/20 text-amber-500 border-amber-500/50' },
-  C: { label: 'maybe later', className: 'bg-sky-500/20 text-sky-500 border-sky-500/50' },
+  B: { label: 'watch closely', className: 'bg-warning/20 text-warning border-warning/50' },
+  C: { label: 'maybe later', className: 'bg-accent/20 text-accent border-accent/50' },
 }
 const KEYS: Record<string, ScanPriority> = { '1': 'A', '2': 'B', '3': 'C' }
 

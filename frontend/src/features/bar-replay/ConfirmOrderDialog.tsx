@@ -33,7 +33,7 @@ export default function ConfirmOrderDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <AlertTriangleIcon className="size-4 text-amber-500" />
+            <AlertTriangleIcon className="size-4 text-warning" />
             Check this position
           </DialogTitle>
         </DialogHeader>
@@ -50,7 +50,7 @@ export default function ConfirmOrderDialog({
 
           <ul className="space-y-1.5">
             {warnings.map((w) => (
-              <li key={w} className="flex gap-2 text-sm text-amber-600 dark:text-amber-400">
+              <li key={w} className="flex gap-2 text-sm text-warning">
                 <span aria-hidden="true">•</span>
                 <span>{w}</span>
               </li>

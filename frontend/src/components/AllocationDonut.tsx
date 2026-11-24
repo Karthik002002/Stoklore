@@ -1,4 +1,5 @@
 import { Group } from '@visx/group'
+import { Panel, PanelBody, PanelHeader, PanelTitle } from '@/design-system'
 import { Pie } from '@visx/shape'
 import { localPoint } from '@visx/event'
 import { defaultStyles, TooltipWithBounds, useTooltip } from '@visx/tooltip'
@@ -41,65 +42,66 @@ export default function AllocationDonut({
   const total = sorted.reduce((sum, s) => sum + s.value, 0)
 
   return (
-    <div className="relative rounded-xl border bg-card p-4">
-      <div className="mb-3 flex items-baseline justify-between gap-2">
-        <p className="text-sm font-medium">{title}</p>
-        {note && <p className="text-xs text-muted-foreground">{note}</p>}
-      </div>
-      {total <= 0 ? (
-        <p className="py-8 text-center text-sm text-muted-foreground">Nothing allocated yet.</p>
-      ) : (
-        <div className="flex items-center gap-6">
-          <svg width={DONUT_SIZE} height={DONUT_SIZE} className="shrink-0">
-            <Group top={DONUT_RADIUS} left={DONUT_RADIUS}>
-              <Pie
-                data={shown}
-                pieValue={(d: Slice) => d.value}
-                outerRadius={DONUT_RADIUS}
-                innerRadius={DONUT_RADIUS - 20}
-                padAngle={0.01}
-              >
-                {(pie) =>
-                  pie.arcs.map((arc, i) => (
-                    <path
-                      key={arc.data.label}
-                      // visx types the path builder as possibly returning null; an arc always
-                      // has one, and an empty `d` is the correct nothing anyway.
-                      d={pie.path(arc) ?? undefined}
-                      fill={color(i)}
-                      onMouseMove={(e) => {
-                        const point = localPoint(e) ?? { x: 0, y: 0 }
-                        showTooltip({ tooltipData: arc.data, tooltipLeft: point.x, tooltipTop: point.y })
-                      }}
-                      onMouseLeave={hideTooltip}
-                    />
-                  ))
-                }
-              </Pie>
-            </Group>
-          </svg>
-          <div className="min-w-0 flex-1 space-y-1.5">
-            {shown.map((s, i) => (
-              <div key={s.label} className="flex items-center justify-between gap-2 text-sm">
-                <span className="flex items-center gap-1.5 truncate">
-                  <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: color(i) }} />
-                  {s.label}
-                </span>
-                <span className="tabular-nums text-muted-foreground">{pct(s.value, total)}%</span>
-              </div>
-            ))}
+    <Panel className="relative overflow-visible">
+      <PanelHeader>
+        <PanelTitle hint={note}>{title}</PanelTitle>
+      </PanelHeader>
+      <PanelBody className="p-3">
+        {total <= 0 ? (
+          <p className="py-8 text-center text-muted-foreground">Nothing allocated yet.</p>
+        ) : (
+          <div className="flex items-center gap-6">
+            <svg width={DONUT_SIZE} height={DONUT_SIZE} className="shrink-0">
+              <Group top={DONUT_RADIUS} left={DONUT_RADIUS}>
+                <Pie
+                  data={shown}
+                  pieValue={(d: Slice) => d.value}
+                  outerRadius={DONUT_RADIUS}
+                  innerRadius={DONUT_RADIUS - 20}
+                  padAngle={0.01}
+                >
+                  {(pie) =>
+                    pie.arcs.map((arc, i) => (
+                      <path
+                        key={arc.data.label}
+                        // visx types the path builder as possibly returning null; an arc always
+                        // has one, and an empty `d` is the correct nothing anyway.
+                        d={pie.path(arc) ?? undefined}
+                        fill={color(i)}
+                        onMouseMove={(e) => {
+                          const point = localPoint(e) ?? { x: 0, y: 0 }
+                          showTooltip({ tooltipData: arc.data, tooltipLeft: point.x, tooltipTop: point.y })
+                        }}
+                        onMouseLeave={hideTooltip}
+                      />
+                    ))
+                  }
+                </Pie>
+              </Group>
+            </svg>
+            <div className="min-w-0 flex-1 space-y-1.5">
+              {shown.map((s, i) => (
+                <div key={s.label} className="flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 truncate">
+                    <span className="size-2 shrink-0 rounded-full" style={{ backgroundColor: color(i) }} />
+                    {s.label}
+                  </span>
+                  <span className="tabular-nums text-muted-foreground">{pct(s.value, total)}%</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
-      {tooltipOpen && tooltipData && (
-        <TooltipWithBounds
-          left={tooltipLeft}
-          top={tooltipTop}
-          style={{ ...defaultStyles, background: 'var(--foreground)', color: 'var(--background)' }}
-        >
-          {tooltipData.label}: {inr(tooltipData.value)} ({pct(tooltipData.value, total)}%)
-        </TooltipWithBounds>
-      )}
-    </div>
+        )}
+        {tooltipOpen && tooltipData && (
+          <TooltipWithBounds
+            left={tooltipLeft}
+            top={tooltipTop}
+            style={{ ...defaultStyles, background: 'var(--foreground)', color: 'var(--background)' }}
+          >
+            {tooltipData.label}: {inr(tooltipData.value)} ({pct(tooltipData.value, total)}%)
+          </TooltipWithBounds>
+        )}
+      </PanelBody>
+    </Panel>
   )
 }

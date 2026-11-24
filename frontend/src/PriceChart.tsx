@@ -1,23 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AreaSeries, CandlestickSeries, HistogramSeries, LineSeries, createChart } from 'lightweight-charts'
 import { ChartCandlestickIcon, ChartSplineIcon, PlusIcon, XIcon } from 'lucide-react'
-import { Button, Input, Spinner } from '@/design-system'
+import { Button, Input, Spinner, useChartColors, Panel, PanelHeader, PanelTitle } from '@/design-system'
 import { compact } from '@/lib/format'
 import { computeEma, INDICATOR_COLORS as EMA_COLORS } from '@/lib/indicators'
 import type { UTCTimestamp } from 'lightweight-charts'
 import type { ChartBar, ChartResponse } from '@/services/api'
 
-// lightweight-charts' internal color parser only understands rgb()/hex/hsl literals, and
-// getComputedStyle doesn't reliably convert our theme.css oklch() values to rgb() across
-// browsers - so the chart uses its own fixed palette instead of reading CSS variables.
-const COLORS = {
-  up: '#22c55e',
-  down: '#ef4444',
-  volumeUp: 'rgba(34, 197, 94, 0.5)',
-  volumeDown: 'rgba(239, 68, 68, 0.5)',
-  text: '#9ca3af',
-  grid: 'rgba(148, 163, 184, 0.15)',
-}
+// Colors come from the theme (useChartColors): lightweight-charts only parses rgb/hex, so the
+// design system hands it resolved rgb strings and the chart is rebuilt when the theme changes.
 
 // Estimated tooltip box size, used to flip it to the opposite side near an edge instead of
 // clamping it in place (clamping can leave the box sitting on top of the cursor's data point).
@@ -61,14 +52,18 @@ export default function PriceChart({
   data,
   isLoading,
   leftControls,
+  title,
   emptyMessage = 'No price data for this range.',
 }: {
   data?: ChartResponse
   isLoading?: boolean
   leftControls?: React.ReactNode
+  /** Panel title in the header strip ("Price chart"). */
+  title?: React.ReactNode
   emptyMessage?: string
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const COLORS = useChartColors()
   const [type, setType] = useState<'line' | 'candles'>('line')
   const [tooltip, setTooltip] = useState<Tooltip | null>(null)
   const [emaEnabled, setEmaEnabled] = useState(() => localStorage.getItem('chart.emaEnabled') === 'true')
@@ -108,7 +103,7 @@ export default function PriceChart({
       autoSize: true,
       layout: {
         background: { color: 'transparent' },
-        textColor: COLORS.text,
+        textColor: COLORS.mutedText,
         attributionLogo: false,
       },
       grid: {
@@ -137,7 +132,7 @@ export default function PriceChart({
         .addSeries(AreaSeries, {
           lineColor: color,
           lineWidth: 2,
-          topColor: rising ? 'rgba(34, 197, 94, 0.25)' : 'rgba(239, 68, 68, 0.25)',
+          topColor: COLORS.alpha(color, 0.25),
           bottomColor: 'rgba(0, 0, 0, 0)',
         })
         .setData(visibleBars.map((b) => ({ time: t(b.time), value: b.close })))
@@ -159,7 +154,7 @@ export default function PriceChart({
         visibleBars.map((b) => ({
           time: t(b.time),
           value: b.volume,
-          color: b.close >= b.open ? COLORS.volumeUp : COLORS.volumeDown,
+          color: COLORS.alpha(b.close >= b.open ? COLORS.up : COLORS.down, 0.5),
         })),
       )
     chart.panes()[0].setStretchFactor(3)
@@ -217,24 +212,25 @@ export default function PriceChart({
       to: t(visibleBars.at(-1)!.time),
     })
     return () => chart.remove()
-  }, [data, visibleBars, type, barsByTime, emaEnabled, emaPeriods])
+  }, [data, visibleBars, type, barsByTime, emaEnabled, emaPeriods, COLORS])
 
   return (
-    <div className="rounded-xl border bg-card p-4">
-      <div className="mb-2 flex items-center justify-between">
+    <Panel>
+      <PanelHeader>
+        {title && <PanelTitle>{title}</PanelTitle>}
         <div className="flex gap-1">{leftControls}</div>
+        <span className="flex-1" />
         <div className="flex items-center gap-1">
           <Button
             variant={emaEnabled ? 'secondary' : 'ghost'}
-            size="sm"
-            className="h-7 px-2.5 text-xs"
+            size="xs"
             onClick={() => setEmaEnabled((e) => !e)}
           >
             EMA
           </Button>
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icon-xs"
             aria-label={type === 'line' ? 'Switch to candles' : 'Switch to line'}
             onClick={() => setType((t) => (t === 'line' ? 'candles' : 'line'))}
           >
@@ -245,14 +241,14 @@ export default function PriceChart({
             )}
           </Button>
         </div>
-      </div>
+      </PanelHeader>
 
       {emaEnabled && (
-        <div className="mb-2 flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-2 py-1">
           {emaPeriods.map((period, i) => (
             <span
               key={period}
-              className="flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs"
+              className="flex items-center gap-1 rounded-sm border border-border px-1.5 py-0.5 text-2xs"
               style={{ color: EMA_COLORS[i % EMA_COLORS.length] }}
             >
               EMA {period}
@@ -283,7 +279,7 @@ export default function PriceChart({
         </div>
       )}
 
-      <div className="relative h-96">
+      <div className="relative m-1 h-96">
         <div ref={containerRef} className="absolute inset-0" />
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center gap-2 text-muted-foreground">
@@ -297,7 +293,7 @@ export default function PriceChart({
         )}
         {tooltip && (
           <div
-            className="pointer-events-none absolute z-10 rounded-lg border bg-popover p-2.5 text-xs text-popover-foreground shadow-lg"
+            className="pointer-events-none absolute z-10 rounded-md border border-input bg-popover p-2 text-2xs text-popover-foreground"
             style={{ left: tooltip.left, top: tooltip.top, width: TOOLTIP_W }}
           >
             <p className="mb-1.5 font-medium">
@@ -333,6 +329,6 @@ export default function PriceChart({
           </div>
         )}
       </div>
-    </div>
+    </Panel>
   )
 }

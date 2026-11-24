@@ -371,7 +371,7 @@ export default function SectorPerformancePanel() {
   return (
     <TerminalPanel
       title="Sector Performance"
-      accent="text-cyan-500"
+      accent="text-accent"
       actions={
         <>
           <input

@@ -458,7 +458,7 @@ export default function OrderTicketDialog({
           </div>
 
           {warnings.length > 0 && (
-            <ul className="space-y-1 rounded-lg border border-amber-500/40 bg-amber-500/[0.06] p-2.5 text-xs text-amber-600 dark:text-amber-400">
+            <ul className="space-y-1 rounded-lg border border-warning/40 bg-warning/[0.06] p-2.5 text-xs text-warning">
               {warnings.map((w) => (
                 <li key={w}>{w}</li>
               ))}

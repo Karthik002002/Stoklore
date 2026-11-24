@@ -163,7 +163,7 @@ function Sparkline({ values }: { values: number[] }) {
     <svg
       viewBox="0 0 100 30"
       preserveAspectRatio="none"
-      className="h-8 w-full text-sky-500"
+      className="h-8 w-full text-accent"
       aria-hidden="true"
     >
       <polygon points={`0,30 ${points} 100,30`} fill="currentColor" opacity="0.12" />
@@ -357,7 +357,7 @@ function BarViz({
             <span
               className={cn(
                 'block h-full rounded-sm transition-[width] duration-300',
-                item.value < 0 ? 'bg-down' : 'bg-sky-500',
+                item.value < 0 ? 'bg-down' : 'bg-accent',
               )}
               style={{ width: `${(Math.abs(item.value) / max) * 100}%` }}
             />
@@ -446,8 +446,9 @@ function PieViz({
 
 const heat = (value: number, maxAbs: number, diverging: boolean) => {
   const strength = 0.15 + 0.85 * Math.min(1, Math.abs(value) / maxAbs)
-  if (!diverging) return `rgba(14, 165, 233, ${strength})`
-  return value >= 0 ? `rgba(34, 197, 94, ${strength})` : `rgba(239, 68, 68, ${strength})`
+  const pct = Math.round(strength * 100)
+  if (!diverging) return `color-mix(in oklab, var(--accent) ${pct}%, transparent)`
+  return `color-mix(in oklab, var(--${value >= 0 ? 'up' : 'down'}) ${pct}%, transparent)`
 }
 
 function HeatmapViz({
@@ -532,15 +533,12 @@ function useBoxSize() {
   return [ref, box] as const
 }
 
-// Neutral slate at zero, deepening to green or red as the move grows - the stock-heatmap convention.
-const NEUTRAL = [71, 85, 105]
-const UP = [22, 163, 74]
-const DOWN = [220, 38, 38]
+// Neutral at zero, deepening to the theme's up or down color as the move grows - the
+// stock-heatmap convention. CSS color-mix, so it follows the theme.
 const tileColor = (value: number | null, scale: number) => {
-  if (value == null) return `rgb(${NEUTRAL.join(',')})`
+  if (value == null) return 'var(--muted)'
   const t = Math.min(1, Math.abs(value) / (scale || 1))
-  const to = value >= 0 ? UP : DOWN
-  return `rgb(${NEUTRAL.map((c, i) => Math.round(c + (to[i] - c) * t)).join(',')})`
+  return `color-mix(in oklab, var(--${value >= 0 ? 'up' : 'down'}) ${Math.round(25 + t * 65)}%, var(--muted))`
 }
 
 function TreemapViz({
@@ -622,7 +620,7 @@ function HealthViz({ data }: { data: ShapedRows }) {
             r.seconds != null ? ` · ${formatDuration(Number(r.seconds))}` : ''
           }${r.error ? `\n${r.error}` : ''}`
           const tone =
-            status === 'failed' ? 'bg-down' : status === 'running' ? 'animate-pulse bg-sky-500' : 'bg-up'
+            status === 'failed' ? 'bg-down' : status === 'running' ? 'animate-pulse bg-accent' : 'bg-up'
           const cls = cn(
             'h-full w-2 shrink-0 origin-bottom rounded-sm transition-transform hover:scale-y-110',
             tone,
@@ -647,7 +645,7 @@ function HealthViz({ data }: { data: ShapedRows }) {
 const EVENT = {
   failure: { icon: CircleXIcon, tone: 'text-down' },
   success: { icon: CircleCheckIcon, tone: 'text-up' },
-  output: { icon: BellIcon, tone: 'text-sky-500' },
+  output: { icon: BellIcon, tone: 'text-accent' },
 } as const
 
 function NotificationsViz({ data }: { data: ShapedRows }) {

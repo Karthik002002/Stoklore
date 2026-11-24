@@ -135,7 +135,7 @@ export default function PaperTrading() {
               feed.tone === 'live'
                 ? 'bg-success/15 text-up'
                 : feed.tone === 'stale'
-                  ? 'bg-amber-500/15 text-amber-600'
+                  ? 'bg-warning/15 text-warning'
                   : 'text-muted-foreground'
             }
           >

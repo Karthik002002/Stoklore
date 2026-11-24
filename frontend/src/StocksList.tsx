@@ -152,7 +152,7 @@ function IndicesPanel({
   return (
     <TerminalPanel
       title="Indices"
-      accent="text-amber-500"
+      accent="text-warning"
       actions={<RefreshButton busy={isFetching} onClick={onRefresh} label="Refresh indices" />}
     >
       {!indices ? (
@@ -202,7 +202,7 @@ function MarketPulsePanel({ stocks }: { stocks?: TrackedStock[] }) {
   const session = nseSession()
 
   return (
-    <TerminalPanel title="Market Pulse" accent="text-cyan-500">
+    <TerminalPanel title="Market Pulse" accent="text-accent">
       <div className="border-b px-2 py-2">
         <div className="flex items-baseline justify-between font-mono">
           <span className="text-2xl font-semibold tabular-nums">{advanceRatio ?? '—'}</span>
@@ -311,7 +311,7 @@ function EventsPanel({ events }: { events?: FeedEvent[] }) {
   return (
     <TerminalPanel
       title="Recent Events"
-      accent="text-emerald-500"
+      accent="text-up"
       actions={
         <ScanButton
           symbols={(events ?? []).slice(0, 12).map((e) => e.symbol)}
@@ -411,7 +411,7 @@ function MoversPanel({
   return (
     <TerminalPanel
       title="Top Gainers / Losers"
-      accent="text-blue-500"
+      accent="text-accent"
       actions={
         <>
           {groups.length > 0 && (
@@ -456,7 +456,7 @@ function MoversPanel({
                 data.fetched_at ? `Fetched ${new Date(data.fetched_at).toLocaleString('en-GB')}` : undefined
               }
             >
-              {data.stale && <span className="mr-1 text-amber-500">STALE</span>}
+              {data.stale && <span className="mr-1 text-warning">STALE</span>}
               {data.timestamp ?? data.trade_date ?? '—'}
             </span>
           </div>
@@ -499,7 +499,7 @@ function MoversPanel({
                       {/* An ex-dividend/bonus date is often the entire reason a name is in this
                           table - marking it stops a mechanical drop reading as a sell-off. */}
                       {r.ca_purpose && (
-                        <span className="ml-1 text-[9px] text-amber-500" title={r.ca_purpose}>
+                        <span className="ml-1 text-[9px] text-warning" title={r.ca_purpose}>
                           CA
                         </span>
                       )}
@@ -566,7 +566,7 @@ function MacroIndicesPanel({
     <TerminalPanel
       className="lg:col-span-2"
       title="Macro Indices"
-      accent="text-violet-500"
+      accent="text-chart-5"
       actions={
         <>
           {groups.length > 0 && (

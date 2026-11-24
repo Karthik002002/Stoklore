@@ -290,7 +290,7 @@ export default function LiveOrderTicket({
       </div>
 
       {blocked && (
-        <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-2 text-xs text-amber-700 dark:text-amber-300">
+        <div className="flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-2.5 py-2 text-xs text-warning">
           <AlertTriangleIcon className="size-3.5 shrink-0" />
           <span className="flex-1">
             {!status?.configured
@@ -633,7 +633,7 @@ function ConfirmLiveOrder({
           ))}
         </dl>
         {warnings.map((w) => (
-          <p key={w} className="flex gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+          <p key={w} className="flex gap-1.5 text-xs text-warning">
             <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
             {w}
           </p>

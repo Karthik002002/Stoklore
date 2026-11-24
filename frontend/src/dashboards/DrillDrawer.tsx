@@ -18,7 +18,7 @@ function RowLinks({ row, workflowId }: { row: Record<string, unknown>; workflowI
   const wid = typeof row.workflow_id === 'string' ? row.workflow_id : workflowId
   const run = typeof row.run_id === 'string' ? row.run_id : undefined
   const symbol = typeof row.symbol === 'string' && /^[A-Z0-9&-]+$/.test(row.symbol) ? row.symbol : undefined
-  const link = 'text-sky-500 hover:underline'
+  const link = 'text-accent hover:underline'
   return (
     <span className="flex gap-2" onClick={(e) => e.stopPropagation()}>
       {wid && run && (

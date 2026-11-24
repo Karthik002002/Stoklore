@@ -101,7 +101,7 @@ const CATEGORIES: { value: GoalCategory; label: string }[] = [
 const STATUS_TONE: Record<GoalStatus, string> = {
   done: 'text-up',
   'on-track': 'text-up',
-  'at-risk': 'text-amber-600 dark:text-amber-400',
+  'at-risk': 'text-warning',
   'off-track': 'text-down',
   overdue: 'text-down',
 }
@@ -369,7 +369,7 @@ function CasDialog({ onClose }: { onClose: () => void }) {
               ))}
             </div>
             {result.missing.length > 0 && (
-              <p className="text-amber-600 dark:text-amber-400">
+              <p className="text-warning">
                 Not in this statement: {result.missing.join(', ')}. If you sold them, set them to 0 in the
                 monthly update and archive them; if they come from a different kind of CAS, ignore this.
               </p>

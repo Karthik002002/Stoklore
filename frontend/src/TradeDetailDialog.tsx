@@ -28,7 +28,7 @@ type Tone = 'good' | 'bad' | 'warn' | 'neutral'
 const TONE_CLASS: Record<Tone, string> = {
   good: 'text-up',
   bad: 'text-down',
-  warn: 'text-amber-600',
+  warn: 'text-warning',
   neutral: '',
 }
 

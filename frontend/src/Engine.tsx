@@ -79,7 +79,6 @@ import { fmt, formatDateTime, inr } from '@/lib/format'
 import type { EngineTab } from './router'
 import { usePageTitle } from '@/lib/usePageTitle'
 import {
-  COLORS,
   DailyBars,
   ExecutionsChart,
   ExportMenu,
@@ -1336,7 +1335,7 @@ function Sparkline({ values }: { values: number[] }) {
         points={pts}
         fill="none"
         strokeWidth="1.5"
-        stroke={values.at(-1)! >= 0 ? COLORS.up : COLORS.down}
+        stroke={values.at(-1)! >= 0 ? 'var(--up)' : 'var(--down)'}
       />
     </svg>
   )
@@ -1382,7 +1381,7 @@ function AxisBars({
                 width={w * 0.76}
                 y={Math.min(y(v), y(0))}
                 height={Math.max(Math.abs(y(v) - y(0)), 0.5)}
-                fill={metric === 'max_dd' ? COLORS.down : good ? COLORS.up : COLORS.down}
+                fill={metric === 'max_dd' ? 'var(--down)' : good ? 'var(--up)' : 'var(--down)'}
                 fillOpacity={p.isBase ? 1 : 0.6}
                 stroke={p.isBase ? 'currentColor' : 'none'}
                 vectorEffect="non-scaling-stroke"
@@ -1504,7 +1503,7 @@ function EquityFan({
                 points={fan.paths[i]}
                 fill="none"
                 strokeWidth={n === 0 ? 2.5 : 1.5}
-                stroke={n === 0 ? COLORS.up : COLORS.down}
+                stroke={n === 0 ? 'var(--up)' : 'var(--down)'}
                 vectorEffect="non-scaling-stroke"
               />
             </g>

@@ -17,6 +17,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  useChartColors,
 } from '@/design-system'
 import type { z } from 'zod'
 import { balanceAdjustmentSchema } from '@/lib/schemas'
@@ -73,7 +74,6 @@ type ConcentrationRow = { label: string; amount: number; count: number; pctOfTot
 /** One setup's R spread. */
 type RSpreadRow = { label: string; count: number; min: number; median: number; max: number }
 
-const COLORS = { up: '#22c55e', down: '#ef4444', text: '#9ca3af', grid: 'rgba(148, 163, 184, 0.15)' }
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
 const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const SESSION_ORDER = [...NSE_SESSIONS.map((s) => s.name), 'After hours']
@@ -99,14 +99,23 @@ function StatCard({
   )
 }
 
+// SVG/DOM charts on this page take CSS variables directly, so they follow the theme as-is.
+const SVG = {
+  up: 'var(--up)',
+  down: 'var(--down)',
+  text: 'var(--muted-foreground)',
+  grid: 'color-mix(in oklab, var(--muted-foreground) 15%, transparent)',
+}
+
 function MiniChart({ data, kind }: { data: { time: string; value: number }[]; kind?: string }) {
+  const COLORS = useChartColors()
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!data.length || !containerRef.current) return
     const chart = createChart(containerRef.current, {
       autoSize: true,
-      layout: { background: { color: 'transparent' }, textColor: COLORS.text, attributionLogo: false },
+      layout: { background: { color: 'transparent' }, textColor: COLORS.mutedText, attributionLogo: false },
       grid: { vertLines: { visible: false }, horzLines: { color: COLORS.grid } },
       timeScale: { borderVisible: false },
       rightPriceScale: { borderVisible: false },
@@ -125,14 +134,14 @@ function MiniChart({ data, kind }: { data: { time: string; value: number }[]; ki
         .addSeries(AreaSeries, {
           lineColor: color,
           lineWidth: 2,
-          topColor: rising ? 'rgba(34, 197, 94, 0.25)' : 'rgba(239, 68, 68, 0.25)',
+          topColor: COLORS.alpha(rising ? COLORS.up : COLORS.down, 0.25),
           bottomColor: 'rgba(0, 0, 0, 0)',
         })
         .setData(data)
     }
     chart.timeScale().fitContent()
     return () => chart.remove()
-  }, [data, kind])
+  }, [data, kind, COLORS])
 
   return (
     <div className="relative h-56">
@@ -665,16 +674,16 @@ function Plot({
               x2={PLOT.w - PLOT.padR}
               y1={sy(t)}
               y2={sy(t)}
-              stroke={COLORS.grid}
+              stroke={SVG.grid}
               strokeDasharray={t === 0 || t === 100 ? '3 3' : undefined}
             />
-            <text x={4} y={sy(t) + 3} fontSize="8" fill={COLORS.text}>
+            <text x={4} y={sy(t) + 3} fontSize="8" fill={SVG.text}>
               {formatY(t)}
             </text>
           </g>
         ))}
         {(xTicks ?? []).map((t) => (
-          <text key={t} x={sx(t)} y={PLOT.h - 6} fontSize="8" fill={COLORS.text} textAnchor="middle">
+          <text key={t} x={sx(t)} y={PLOT.h - 6} fontSize="8" fill={SVG.text} textAnchor="middle">
             {t}
           </text>
         ))}
@@ -828,10 +837,10 @@ function StreakSurvivalCard({
       hint={`${streakLen} losses back to back at ${riskPct}% risk, then trading on at your own expectancy.`}
     >
       <Plot
-        series={[{ label: 'Account', points: sim.points, color: COLORS.text }]}
+        series={[{ label: 'Account', points: sim.points, color: SVG.text }]}
         bands={[
-          { from: 0, to: streakLen, color: 'rgba(239, 68, 68, 0.12)' },
-          { from: streakLen, to: 75, color: 'rgba(34, 197, 94, 0.10)' },
+          { from: 0, to: streakLen, color: 'color-mix(in oklab, var(--down) 12%, transparent)' },
+          { from: streakLen, to: 75, color: 'color-mix(in oklab, var(--up) 10%, transparent)' },
         ]}
         xTicks={[0, 15, 30, 45, 60, 75]}
         yTicks={[Math.floor(sim.trough / 10) * 10, 100, Math.ceil((sim.points.at(-1)?.value ?? 0) / 10) * 10]}
@@ -850,7 +859,7 @@ function StreakSurvivalCard({
 
 // `3` One trade sequence, three position sizes.
 const RISK_LEVELS = [0.5, 1, 2]
-const RISK_COLORS = ['#22c55e', '#3b82f6', '#ef4444']
+const RISK_COLORS = ['var(--up)', 'var(--chart-1)', 'var(--down)']
 
 function RiskPathsCard({ winRate, payoff }: { winRate: number; payoff: number }) {
   const paths = useMemo(
@@ -892,16 +901,22 @@ function AchievableWinRateCard({ winRate, payoff }: { winRate: number; payoff: n
     >
       <Plot
         series={[
-          { label: 'Typically achievable', points, color: COLORS.text },
-          { label: 'Breakeven', points: breakeven, color: COLORS.down, dashed: true },
+          { label: 'Typically achievable', points, color: SVG.text },
+          { label: 'Breakeven', points: breakeven, color: SVG.down, dashed: true },
         ]}
-        bands={[{ from: SWEET_SPOT.from, to: SWEET_SPOT.to, color: 'rgba(34, 197, 94, 0.12)' }]}
+        bands={[
+          {
+            from: SWEET_SPOT.from,
+            to: SWEET_SPOT.to,
+            color: 'color-mix(in oklab, var(--up) 12%, transparent)',
+          },
+        ]}
         markers={[
           {
             label: `you: ${Math.round(payoff * 10) / 10}R, ${Math.round(winRate * 1000) / 10}%`,
             x: Math.min(Math.max(payoff, 1), 10),
             value: Math.round(winRate * 1000) / 10,
-            color: '#3b82f6',
+            color: 'var(--chart-1)',
           },
         ]}
         xTicks={[1, 2, 3, 4, 5, 6, 8, 10]}
@@ -910,9 +925,9 @@ function AchievableWinRateCard({ winRate, payoff }: { winRate: number; payoff: n
       />
       <Legend
         items={[
-          { label: 'Typically achievable', color: COLORS.text },
-          { label: 'Breakeven win rate', color: COLORS.down },
-          { label: 'Sweet spot (3R–6R)', color: 'rgba(34, 197, 94, 0.5)' },
+          { label: 'Typically achievable', color: SVG.text },
+          { label: 'Breakeven win rate', color: SVG.down },
+          { label: 'Sweet spot (3R–6R)', color: 'color-mix(in oklab, var(--up) 50%, transparent)' },
         ]}
       />
     </ModelCard>
@@ -932,8 +947,8 @@ function CompoundingCard({ gainPct, lossPct }: { gainPct: number; lossPct: numbe
     >
       <Plot
         series={[
-          { label: 'Winning', points: gains, color: COLORS.up },
-          { label: 'Losing', points: losses, color: COLORS.down },
+          { label: 'Winning', points: gains, color: SVG.up },
+          { label: 'Losing', points: losses, color: SVG.down },
         ]}
         xTicks={[0, 20, 40, 60, 80, 100]}
         yTicks={[-60, -30, 0, 30, 60]}
@@ -966,7 +981,7 @@ function DrawdownRiskCard({ winRate, payoff }: { winRate: number; payoff: number
             <span className="w-12 shrink-0 text-xs font-medium tabular-nums">{r.riskPct}%</span>
             <div className="h-4 flex-1 overflow-hidden rounded bg-muted">
               <div
-                className={`h-full ${r.probability >= 50 ? 'bg-down' : r.probability >= 15 ? 'bg-amber-500' : 'bg-up'}`}
+                className={`h-full ${r.probability >= 50 ? 'bg-down' : r.probability >= 15 ? 'bg-warning' : 'bg-up'}`}
                 style={{ width: `${Math.max(r.probability, 1)}%` }}
               />
             </div>

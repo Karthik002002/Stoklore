@@ -299,7 +299,7 @@ export default function EarningsPage() {
                               <div
                                 className={cn(
                                   'h-full',
-                                  fromHigh > -10 ? 'bg-up' : fromHigh > -25 ? 'bg-amber-500' : 'bg-down',
+                                  fromHigh > -10 ? 'bg-up' : fromHigh > -25 ? 'bg-warning' : 'bg-down',
                                 )}
                                 style={{
                                   width: `${Math.max(4, 100 + Math.max(-60, fromHigh) * (100 / 60))}%`,

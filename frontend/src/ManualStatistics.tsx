@@ -36,8 +36,9 @@ const PERIODS = { week: { label: 'Week' }, month: { label: 'Month' } }
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const WEEKDAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
-const UP = '#22c55e'
-const DOWN = '#ef4444'
+// SVG fills and DOM backgrounds take CSS variables, so these follow the theme.
+const UP = 'var(--up)'
+const DOWN = 'var(--down)'
 const MAX_ROWS = 15
 
 const formatValue = (v: number | string | null | undefined, format?: string) => {
@@ -403,7 +404,7 @@ function TrendPanel({ trades }: { trades: Trade[] }) {
       <LineChart
         series={[
           { label: 'per trade', values: points.map((p) => p.value), color: UP },
-          { label: 'moving avg', values: movingAverage.map((p) => p.value), color: '#9ca3af', dashed: true },
+          { label: 'moving avg', values: movingAverage.map((p) => p.value), color: 'var(--muted-foreground)', dashed: true },
         ]}
         format={TREND_BASES[basis].format}
       />
@@ -630,9 +631,7 @@ function CalendarHeatmap({ trades }: { trades: Trade[] }) {
               className={`flex h-12 flex-col items-center justify-center rounded text-xs ${c.future ? 'opacity-30' : ''}`}
               style={{
                 backgroundColor: c.count
-                  ? `${up ? UP : DOWN}${Math.round((0.15 + intensity * 0.65) * 255)
-                      .toString(16)
-                      .padStart(2, '0')}`
+                  ? `color-mix(in oklab, ${up ? UP : DOWN} ${Math.round((0.15 + intensity * 0.65) * 100)}%, transparent)`
                   : undefined,
               }}
             >
@@ -657,25 +656,25 @@ const QUADRANTS: { key: Quadrant; title: string; verdict: string; tone: string }
     key: 'keep',
     title: 'Good strategy + good execution',
     verdict: 'Keep collecting data',
-    tone: 'bg-emerald-500/10',
+    tone: 'bg-up/10',
   },
   {
     key: 'fixBehavior',
     title: 'Good strategy + poor execution',
     verdict: 'Fix behaviour',
-    tone: 'bg-amber-500/10',
+    tone: 'bg-warning/10',
   },
   {
     key: 'reviewStrategy',
     title: 'Poor strategy + good execution',
     verdict: 'Review the strategy',
-    tone: 'bg-orange-500/10',
+    tone: 'bg-warning/10',
   },
   {
     key: 'undiagnosed',
     title: 'Poor strategy + poor execution',
     verdict: "Don't diagnose the strategy yet",
-    tone: 'bg-red-500/10',
+    tone: 'bg-down/10',
   },
 ]
 
@@ -844,7 +843,7 @@ function PatternsPanel({ trades }: { trades: Trade[] }) {
             <span className="text-muted-foreground">(vs {inr(conc.net)} with)</span>
           </p>
           {conc.net > 0 && conc.netWithoutTop < 0 && (
-            <p className="text-xs text-amber-600">
+            <p className="text-xs text-warning">
               The result rests on a handful of trades. Worth knowing before trusting the average.
             </p>
           )}

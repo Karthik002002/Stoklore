@@ -675,7 +675,7 @@ function ClassifierTab() {
         </span>
       </label>
       {!config.installed && (
-        <p className="rounded-md bg-amber-500/10 px-2 py-1.5 text-xs text-amber-600">
+        <p className="rounded-md bg-warning/10 px-2 py-1.5 text-xs text-warning">
           The <code>laya</code> package isn't installed in the backend's environment — run{' '}
           <code>pip install -r requirements.txt</code> and restart.
         </p>
@@ -1634,7 +1634,7 @@ function StocksMasterTab() {
               </TableCell>
               <TableCell>
                 {s.board === 'SME' ? (
-                  <span className="text-amber-600 dark:text-amber-400">SME</span>
+                  <span className="text-warning">SME</span>
                 ) : (
                   <span className="text-muted-foreground">Main</span>
                 )}
@@ -1644,7 +1644,7 @@ function StocksMasterTab() {
                   quotes stay on the NSE line. */}
               <TableCell className="text-xs whitespace-nowrap">
                 {s.exchange === 'BSE' ? (
-                  <span className="text-sky-600 dark:text-sky-400">BSE</span>
+                  <span className="text-accent">BSE</span>
                 ) : s.bse_code ? (
                   <span className="text-muted-foreground" title={`BSE code ${s.bse_code}`}>
                     NSE + BSE

@@ -74,7 +74,7 @@ export default function StockFinancials({ symbol }: { symbol: string }) {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center gap-2 rounded-xl border bg-card py-16 text-muted-foreground">
+      <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
         <Spinner className="size-4" /> Loading financials…
       </div>
     )
@@ -82,7 +82,7 @@ export default function StockFinancials({ symbol }: { symbol: string }) {
 
   if (error || !data) {
     return (
-      <p className="rounded-xl border bg-card py-16 text-center text-sm text-muted-foreground">
+      <p className="py-12 text-center text-muted-foreground">
         No quarterly financials available for this stock.
       </p>
     )
@@ -94,7 +94,7 @@ export default function StockFinancials({ symbol }: { symbol: string }) {
       data={data.rows}
       getRowId={(row) => row.label}
       resizable
-      containerClassName="max-h-[500px] rounded-xl border bg-card"
+      containerClassName="max-h-[500px]"
     />
   )
 }

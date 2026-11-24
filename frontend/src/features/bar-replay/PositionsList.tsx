@@ -83,12 +83,12 @@ function OrderRow({
 
   if (order.status === 'pending') {
     return (
-      <div className="space-y-1 rounded-lg border border-dashed border-amber-500/60 bg-amber-500/5 p-2 text-sm">
+      <div className="space-y-1 rounded-lg border border-dashed border-warning/60 bg-warning/5 p-2 text-sm">
         <div className="flex items-center justify-between">
           <span className="capitalize">
             {order.direction} limit {order.quantity} @ {inr(order.entryPrice)}
           </span>
-          <Badge variant="outline" className="border-amber-500/70 text-amber-700">
+          <Badge variant="outline" className="border-warning/70 text-warning">
             Pending
           </Badge>
         </div>

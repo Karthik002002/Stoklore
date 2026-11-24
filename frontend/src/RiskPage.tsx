@@ -9,7 +9,22 @@ import { Link } from '@tanstack/react-router'
 import { AlertTriangleIcon, ShieldAlertIcon } from 'lucide-react'
 import ResultsBadge, { useNextResults } from '@/components/ResultsBadge'
 import SurveillanceBadge from '@/components/SurveillanceBadge'
-import { Spinner, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/design-system'
+import {
+  EmptyState,
+  Panel,
+  PanelHeader,
+  PanelTitle,
+  Progress,
+  Spinner,
+  Stat,
+  StatStrip,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/design-system'
 import { chartQuery } from '@/features/bar-replay/ChartControls'
 import type { BookPosition } from '@/lib/bookRisk'
 import { correlatedPairs, daysUntil, groupRisk, positionRisk } from '@/lib/bookRisk'
@@ -41,33 +56,18 @@ function Card({
   sub?: React.ReactNode
   tone?: 'up' | 'down' | 'warn'
 }) {
-  return (
-    <div className="rounded-xl border bg-card p-3">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p
-        className={cn(
-          'mt-1 text-xl font-semibold tabular-nums',
-          tone === 'up' && 'text-up',
-          tone === 'down' && 'text-down',
-          tone === 'warn' && 'text-amber-600 dark:text-amber-400',
-        )}
-      >
-        {value}
-      </p>
-      {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
-    </div>
-  )
+  return <Stat label={label} value={value} hint={sub} tone={tone === 'warn' ? 'warning' : tone} />
 }
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
-    <section className="space-y-2">
-      <div>
-        <h2 className="text-sm font-semibold">{title}</h2>
-        {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
-      </div>
+    <Panel>
+      <PanelHeader>
+        <PanelTitle>{title}</PanelTitle>
+        {hint && <span className="text-2xs text-muted-foreground">{hint}</span>}
+      </PanelHeader>
       {children}
-    </section>
+    </Panel>
   )
 }
 
@@ -199,22 +199,26 @@ export default function RiskPage() {
     )
 
   return (
-    <div className="space-y-5 p-1">
+    <div className="space-y-2 p-1">
       <div>
         <h1 className="text-lg font-semibold">Book risk</h1>
-        <p className="text-sm text-muted-foreground">
+        <p className="text-muted-foreground">
           Every open position across your paper accounts{live ? ' and Dhan' : ''}: what the stops put at risk,
           what isn't protected, where it's concentrated, and what reports results soon.
         </p>
       </div>
 
       {book.length === 0 ? (
-        <p className="rounded-xl border bg-card py-16 text-center text-sm text-muted-foreground">
-          No open positions.
-        </p>
+        <EmptyState
+          bordered
+          icon={ShieldAlertIcon}
+          title="No open positions"
+          description="Open a paper or live position and its risk shows up here."
+          className="py-16"
+        />
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StatStrip bordered>
             <Card
               label="At risk to stops"
               value={inr(totalRisk)}
@@ -247,13 +251,13 @@ export default function RiskPage() {
               }
               tone={throughResults.length ? 'warn' : undefined}
             />
-          </div>
+          </StatStrip>
 
           <Section
             title="By account"
             hint="Open risk as a share of each account - the number that decides whether the next trade fits."
           >
-            <div className="overflow-x-auto rounded-xl border bg-card">
+            <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
@@ -283,11 +287,7 @@ export default function RiskPage() {
                           ) : (
                             <span
                               className={cn(
-                                pct > 6
-                                  ? 'font-semibold text-down'
-                                  : pct > 3
-                                    ? 'text-amber-600 dark:text-amber-400'
-                                    : '',
+                                pct > 6 ? 'font-semibold text-down' : pct > 3 ? 'text-warning' : '',
                               )}
                             >
                               {fmt(pct, 2)}%
@@ -305,12 +305,7 @@ export default function RiskPage() {
                         >
                           {inr(g.stoppedPnl)}
                         </TableCell>
-                        <TableCell
-                          className={cn(
-                            'text-right tabular-nums',
-                            g.unprotected && 'text-amber-600 dark:text-amber-400',
-                          )}
-                        >
+                        <TableCell className={cn('text-right tabular-nums', g.unprotected && 'text-warning')}>
                           {g.unprotected || '—'}
                         </TableCell>
                       </TableRow>
@@ -325,7 +320,7 @@ export default function RiskPage() {
             title="Positions"
             hint="Biggest risk first. A position with no stop under some of its shares is flagged."
           >
-            <div className="overflow-x-auto rounded-xl border bg-card">
+            <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
@@ -361,7 +356,7 @@ export default function RiskPage() {
                           <ResultsBadge symbol={p.symbol} className="ml-1.5" />
                           <SurveillanceBadge symbol={p.symbol} className="ml-1.5" />
                           {r.uncoveredQty > 0 && (
-                            <span className="ml-1.5 inline-flex items-center gap-1 text-[10px] text-amber-600 dark:text-amber-400">
+                            <span className="ml-1.5 inline-flex items-center gap-1 text-[10px] text-warning">
                               <ShieldAlertIcon className="size-3" />
                               {r.uncoveredQty === p.quantity ? 'no stop' : `${r.uncoveredQty} unprotected`}
                             </span>
@@ -400,12 +395,12 @@ export default function RiskPage() {
             </div>
           </Section>
 
-          <div className="grid gap-5 lg:grid-cols-2">
+          <div className="grid gap-2 lg:grid-cols-2">
             <Section
               title="By sector"
               hint="Where the risk is concentrated. Live positions carry no sector, so they sit under Unknown."
             >
-              <div className="space-y-2 rounded-xl border bg-card p-3">
+              <div className="space-y-2.5 p-3">
                 {bySector.map((g) => {
                   const share = totalRisk ? (g.atRisk / totalRisk) * 100 : 0
                   return (
@@ -416,12 +411,7 @@ export default function RiskPage() {
                           {g.positions} pos · {inr(g.atRisk)} at risk · {fmt(share, 0)}%
                         </span>
                       </div>
-                      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                        <div
-                          className={cn('h-full rounded-full', share > 40 ? 'bg-down' : 'bg-primary/70')}
-                          style={{ width: `${share}%` }}
-                        />
-                      </div>
+                      <Progress value={share} limit={40} tone={share > 40 ? 'down' : 'accent'} />
                     </div>
                   )
                 })}
@@ -432,7 +422,7 @@ export default function RiskPage() {
               title="Moving together"
               hint="Pairs whose daily returns over 6 months correlate 0.7 or more - two positions that are really one bet."
             >
-              <div className="rounded-xl border bg-card p-3 text-xs">
+              <div className="p-3">
                 {chartsLoading ? (
                   <p className="flex items-center gap-2 text-muted-foreground">
                     <Spinner className="size-3.5" /> Reading price history…
@@ -445,13 +435,13 @@ export default function RiskPage() {
                   <ul className="space-y-1.5">
                     {pairs.map((x) => (
                       <li key={`${x.a}-${x.b}`} className="flex items-center gap-2">
-                        {Math.abs(x.r) >= 0.85 && <AlertTriangleIcon className="size-3.5 text-amber-500" />}
+                        {Math.abs(x.r) >= 0.85 && <AlertTriangleIcon className="size-3.5 text-warning" />}
                         <span className="font-medium">
                           {x.a} · {x.b}
                         </span>
                         <span className="ml-auto text-muted-foreground tabular-nums">
                           r ={' '}
-                          <span className={x.r > 0 ? 'text-foreground' : 'text-sky-500'}>{fmt(x.r, 2)}</span>{' '}
+                          <span className={x.r > 0 ? 'text-foreground' : 'text-accent'}>{fmt(x.r, 2)}</span>{' '}
                           over {x.days} days
                         </span>
                       </li>

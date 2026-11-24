@@ -1239,6 +1239,7 @@ Full details: [docs/finance.md](docs/finance.md).
 | Storage    | Postgres + pgvector (`app/core/db.py`)                                      |
 | API        | FastAPI (`app/main.py` + `app/routers/`) — chat streams over the AI SDK UI Message Stream protocol; 17 explicit agent tools (`AGENT_TOOLS`/`REAL_TOOL_IMPLS`) |
 | Frontend   | React + Vite, shadcn/ui, AI Elements, `@ai-sdk/react`, lightweight-charts, `pinets` (in-browser Pine Script v5 runtime) (`frontend/`) |
+| Design system | `frontend/src/design-system/` — themeable terminal components (shadcn/ui + Base UI + Tailwind v4) in Storybook (`npm run storybook`); theme presets in `tokens/themes.ts`, live color customizer ([docs](docs/design-system.md)) |
 | Tracing    | Langfuse (optional, self-hosted via `config/docker-compose.langfuse.yml`) — traces every LiteLLM call: prompts, tool calls, latency, cost |
 
 <div align="right">

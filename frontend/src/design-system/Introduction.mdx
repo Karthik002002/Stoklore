@@ -1,0 +1,30 @@
+import { Meta } from '@storybook/addon-docs/blocks'
+
+<Meta title="Introduction" />
+
+# Stoklore design system
+
+Trading-terminal components built on shadcn/ui + Base UI + Tailwind v4. Every component reads
+only CSS variables, so a theme is just data.
+
+## Theming
+
+- **Pick a theme** — the paintbrush in the toolbar above, or `Theme › Selector`.
+- **Change any color** — `Theme › Customizer`. Edits apply live and persist in `localStorage`
+  (`ds.theme`). Export/Import moves a theme between browsers; *Copy as preset* gives a block to
+  paste into `tokens/themes.ts`.
+- **Make the theme yours in a fork** — edit or add a preset in
+  `src/design-system/tokens/themes.ts`. It appears in the selector and this toolbar automatically.
+
+Derived tokens (focus ring, destructive, success, subtle fills) live in `tokens/tokens.css` and
+follow the editable ones — change *Accent* and the focus ring follows.
+
+## Rules for components
+
+1. Colors only through tokens (`bg-card`, `text-up`, `border-border`…). No hex in components.
+2. Heights through `--control-h` / `--row-h` so the density setting resizes everything.
+3. Numbers use the `tabular` class (mono, tabular figures).
+4. Same names and props as `components/ui/*` where a component already exists, so migration is an
+   import-path swap.
+
+See `docs/design-system.md` for phases and the migration plan.

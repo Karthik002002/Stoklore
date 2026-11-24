@@ -34,5 +34,5 @@
     // No baseUrl: TypeScript 7 removed it, and paths now resolve relative to this file.
     "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["src"]
+  "include": ["src", ".storybook"]
 }

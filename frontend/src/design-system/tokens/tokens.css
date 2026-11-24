@@ -1,0 +1,57 @@
+/* Design-system tokens.
+ *
+ * The real values come from themes.ts (applied to <html> at runtime by theme/store.ts). The
+ * :root block below is only the first-paint fallback (= Terminal Dark) plus the DERIVED tokens:
+ * they're expressed in terms of the editable ones, so changing --accent also recolors the focus
+ * ring, changing --down also recolors destructive, etc. Don't hardcode colors in components -
+ * add a token here instead. */
+
+:root {
+  /* editable (fallback = Terminal Dark) */
+  --background: #0a0c0f;
+  --card: #15181c;
+  --panel-head: #101316;
+  --popover: #101316;
+  --muted: #1c1f24;
+  --foreground: #d5d9de;
+  --muted-foreground: #7d848d;
+  --border: #23272c;
+  --input: #30353b;
+  --primary: #dfe2e6;
+  --primary-foreground: #121417;
+  --accent: #5b9cf5;
+  --accent-foreground: #ffffff;
+  --up: #2ebd85;
+  --up-foreground: #04140d;
+  --down: #ef5350;
+  --down-foreground: #ffffff;
+  --warning: #e9b44c;
+  --chart-1: #6ea8f7;
+  --chart-2: #e9b44c;
+  --chart-3: #3fcf9b;
+  --chart-4: #6b7280;
+  --chart-5: #b38cf5;
+
+  --radius: 3px;
+  --control-h: 26px;
+  --row-h: 26px;
+  --ds-font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --ds-font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* derived - follow the editable tokens automatically */
+  --card-foreground: var(--foreground);
+  --popover-foreground: var(--foreground);
+  --secondary: var(--muted);
+  --secondary-foreground: var(--foreground);
+  --muted-hover: color-mix(in oklab, var(--muted), var(--foreground) 6%);
+  --ring: color-mix(in oklab, var(--accent) 45%, transparent);
+  --destructive: var(--down);
+  --destructive-foreground: var(--down-foreground);
+  --success: var(--up);
+  --success-foreground: var(--up-foreground);
+  --selection: color-mix(in oklab, var(--accent) 12%, transparent);
+  --up-subtle: color-mix(in oklab, var(--up) 13%, transparent);
+  --down-subtle: color-mix(in oklab, var(--down) 12%, transparent);
+  --warning-subtle: color-mix(in oklab, var(--warning) 14%, transparent);
+  --accent-subtle: color-mix(in oklab, var(--accent) 12%, transparent);
+}

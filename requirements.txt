@@ -35,3 +35,7 @@ litellm[proxy]==1.100.4
 # Pinned <3: litellm 1.100.4's callback reads langfuse.version.__version__, a submodule the SDK
 # removed in its v3 OTel-based rewrite, so 3.x/4.x break the callback outright.
 langfuse==2.60.9
+
+# Net worth (/finance): parses CAMS / KFintech / NSDL / CDSL Consolidated Account Statement PDFs
+# (app/core/cas.py). MIT; 1.x uses pypdfium2, no GPL pdf backend.
+casparser==1.4.1

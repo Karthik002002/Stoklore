@@ -608,3 +608,59 @@ class EngineSettingsRequest(BaseModel):
     engine_dir: str = ""
     vps: str = ""
     vps_reports: str = ""
+
+
+FinKind = Literal["bank", "fd", "mf", "stock", "epf", "ppf", "nps", "gold", "property", "cash",
+                  "other", "loan", "credit_card"]
+FinAssetClass = Literal["equity", "debt", "gold", "cash", "real_estate", "other"]
+
+
+class FinItemRequest(BaseModel):
+    name: str = Field(min_length=1)
+    kind: FinKind
+    asset_class: FinAssetClass = "other"
+    is_liquid: bool = False
+    interest_pct: float | None = Field(default=None, ge=0, le=100)
+    archived: bool = False
+
+
+class FinSnapshotRow(BaseModel):
+    item_id: int
+    as_of: date
+    value: float = Field(ge=0)
+
+
+class FinCashflowRow(BaseModel):
+    month: date
+    income: float = Field(default=0, ge=0)
+    expenses: float = Field(default=0, ge=0)
+
+
+class FinMonthlyUpdateRequest(BaseModel):
+    """The one-screen monthly update: every item's balance, plus that month's income/expenses."""
+    snapshots: list[FinSnapshotRow]
+    cashflow: FinCashflowRow | None = None
+
+
+class FinGoalFunding(BaseModel):
+    item_id: int
+    pct: float = Field(gt=0, le=100)
+
+
+class FinGoalRequest(BaseModel):
+    name: str = Field(min_length=1)
+    category: Literal["emergency", "savings", "purchase", "lifestyle", "retirement", "other"]
+    target_amount: float = Field(gt=0)
+    target_date: date
+    priority: int = Field(default=3, ge=1, le=5)
+    expected_return_pct: float = Field(default=7, ge=-50, le=50)
+    monthly_contribution: float = Field(default=0, ge=0)
+    funding: list[FinGoalFunding] = []
+    notes: str | None = None
+
+
+class FinSettingsRequest(BaseModel):
+    emergency_months: float = Field(default=6, ge=0, le=60)
+    target_equity_pct: float = Field(default=60, ge=0, le=100)
+    target_debt_pct: float = Field(default=30, ge=0, le=100)
+    target_gold_pct: float = Field(default=10, ge=0, le=100)

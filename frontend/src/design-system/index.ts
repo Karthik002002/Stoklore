@@ -110,6 +110,25 @@ export type { DataTableColumns } from './components/data-table'
 export { Pagination } from './components/pagination'
 export type { PaginationProps } from './components/pagination'
 export { Calendar, CalendarDayButton, DatePicker, DateRangePicker } from './components/calendar'
+export {
+  Change,
+  TickPrice,
+  Quote,
+  RsPill,
+  Delivery,
+  ResultsBadge,
+  SurveillanceBadge,
+  Sparkline,
+  RangeBar,
+  IndexCard,
+  TickerStrip,
+  WatchlistRow,
+  Meter,
+} from './components/market'
+export { OrderTicket, SideToggle, MarketDepth } from './components/order-ticket'
+export type { TicketOrder } from './components/order-ticket'
+export { PnlCalendar, Treemap, HeatLegend } from './components/heatmap'
+export { readTicket, monthGrid, heat } from './components/marketMath'
 export { Input, Textarea } from './components/input'
 export type { InputProps } from './components/input'
 export {

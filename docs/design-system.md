@@ -105,11 +105,20 @@ Non-color: `--radius` (every `rounded-*` derives from it), `--control-h`, `--row
 | DataTable | same API as `components/DataTable.tsx` (now a named export); adds `selectedRowId` / `onRowClick` |
 | Pagination | new — range label, pages with gaps (`pageRange`, self-checked: `node src/design-system/components/pageRange.selfcheck.ts`), rows-per-page select |
 | Calendar, DatePicker, DateRangePicker | same props as `ui/calendar.tsx` and `components/DatePicker.tsx` ("YYYY-MM-DD" strings); range picker gains `presets` |
+| Change, TickPrice, Quote | new — signed change (text or pill, %, ₹, R), a price that flashes on tick, the header quote line |
+| RsPill | same API as `components/RsPill.tsx` |
+| Delivery | `components/DelivCell.tsx`'s rule as a span (not a `<td>`), optional bar with the 20-day average marker |
+| ResultsBadge, SurveillanceBadge | presentational versions: take `days` / `label` as props — the app keeps `useNextResults` / `useSurveillance` in thin wrappers |
+| Sparkline, RangeBar, IndexCard, TickerStrip, WatchlistRow, Meter | new — SVG sparkline (area, baseline), 52W range, index tile, scrolling ticker tape, watchlist line, gauge against a cap |
+| OrderTicket, SideToggle, MarketDepth | new — ticket with risk-based qty, R:R, % of wallet, wrong-side stop/target errors, warnings (math: `marketMath.readTicket`); flipping side mirrors the bracket; 5-level depth with qty bars and bid/ask balance |
+| PnlCalendar, Treemap, HeatLegend | new — Monday-first month with weekly totals (`marketMath.monthGrid`); squarified heatmap (reuses `components/charts/squarify.ts`) sized to its measured box |
 | Command palette | same parts as today, plus `CommandInput` `scope` / `loading` / `trailing`, `CommandScopes` (icon source tabs), `CommandChips` (filter chips + filter/sort slot), `CommandGroup count`, `CommandItemMedia` (icon / initials tile), `CommandItemText` (title • subtitle, breadcrumb, second line), `CommandItemMeta`, key-box `CommandShortcut`, `CommandLoading`, `CommandFooter` + `CommandHint`. The *Full palette* story is built from `lib/navTargets.ts`, so it lists every real page, tab and setting |
 
 All floating surfaces share one look (`popupSurface` in `components/control.ts`: hairline border,
 no shadow) and every menu-like row shares `menuRow`, so select, dropdown and command palette
 items match.
+
+Pure trading math is self-checked: `node src/design-system/components/marketMath.selfcheck.ts`.
 
 ## Phases
 
@@ -119,6 +128,6 @@ items match.
 | 2 | Primitives: input (+ `numeric`), textarea, input-group, field (label/help/error), select (search at 6+ items, as today), checkbox, switch, radio-group, tabs (`segment` / `line`, `sm`, `TabsCount`), button-group, toggle-group, badge (+ warning, accent, `dot`), kbd, spinner, skeleton, progress (tones + `limit` marker), avatar, separator | done |
 | 3 | Overlays: dialog (+ `size`, `DialogBody`), sheet (4 sides), alert-dialog, popover (+ header, close), tooltip, hover-card, dropdown-menu (sub, checkbox, radio, shortcut), command palette, themed Toaster for sonner | done |
 | 4 | Layout & data: panel (header/title/body/section/footer), card (compat), stat strip + stat, empty state, table (+ `TableSortHead`), data-table (+ `selectedRowId` / `onRowClick`), pagination, calendar, date picker / range picker (+ presets) | done |
-| 5 | Trading: change pill, RS pill, delivery cell, sparkline, ticker, watchlist row, order ticket, depth, P&L calendar, treemap, meters | next |
-| 6 | Page compositions as stories: workspace, stock detail, holdings, risk, simulation, agent… | |
+| 5 | Trading: change, tick price (flash), quote, RS pill, delivery, results & surveillance badges, sparkline, 52W range, index card, ticker strip (tape), watchlist row, meter, order ticket (risk sizing, R:R, warnings), side toggle, market depth, P&L calendar, treemap | done |
+| 6 | Page compositions as stories: workspace, stock detail, holdings, risk, simulation, agent… | next |
 | 7 | Migration: app switches to `styles.css`, ThemeSelector in the top bar, ThemeCustomizer in Settings › Appearance, pages move to `@/design-system` | waits for go-ahead |

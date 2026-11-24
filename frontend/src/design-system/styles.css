@@ -68,6 +68,12 @@
   --radius-xl: calc(var(--radius) * 2);
 }
 
+/* TickerStrip's tape: the list is rendered twice and slides exactly one copy's width. */
+@keyframes ds-ticker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring;

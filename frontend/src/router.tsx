@@ -38,6 +38,7 @@ import Settings from './Settings'
 import Shareholding from './Shareholding'
 import TopNews from './TopNews'
 import TradeSimulation from './TradeSimulation'
+import FinancePage from './FinancePage'
 
 // Search params arrive as `unknown` - they came off a URL somebody could have hand-edited. Every
 // validateSearch below is the same shape it has always been; the only thing TypeScript adds is
@@ -565,6 +566,20 @@ const simulationRoute = createRoute({
   component: TradeSimulation,
 })
 
+const financeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/finance',
+  validateSearch: (
+    search: { view?: 'networth' | 'goals' | 'focus' | 'projection' } & SearchSchemaInput,
+  ): { view: 'networth' | 'goals' | 'focus' | 'projection' } => ({
+    view:
+      search.view === 'goals' || search.view === 'focus' || search.view === 'projection'
+        ? search.view
+        : 'networth',
+  }),
+  component: FinancePage,
+})
+
 const autoBacktestDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/backtest/auto/$scriptId',
@@ -671,6 +686,7 @@ const routeTree = rootRoute.addChildren([
   liveRoute,
   livePositionRoute,
   simulationRoute,
+  financeRoute,
   engineRoute,
   engineRunRoute,
   engineAutotuneRoute,

@@ -11,6 +11,7 @@ import {
   IconChevronRight,
   IconLayoutSidebarLeftCollapse,
   IconChartHistogram,
+  IconTarget,
   IconCpu,
   IconRobot,
   IconShieldHalf,
@@ -110,6 +111,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/backtesting', icon: IconHistory, label: 'Backtesting' },
       { to: '/backtest/replay', icon: IconPlayerTrackNext, label: 'Bar Replay' },
       { to: '/simulation', icon: IconChartHistogram, label: 'Trade Simulation' },
+      { to: '/finance', icon: IconTarget, label: 'Net worth & goals' },
     ],
   },
   {

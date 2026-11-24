@@ -17,6 +17,7 @@
 import type { components } from './api.types.ts'
 import type { NewsTags } from '@/lib/newsTags'
 import type { Goal } from '@/lib/tradeGoals'
+import type { FinCashflow, FinGoal, FinItem, FinSettings, FinSnapshot } from '@/lib/goalMath'
 import type { DailyBar, StockMasterRow, Trade, TradeAccount } from '@/lib/types'
 
 /** The request bodies FastAPI validates, from its own schema. */
@@ -2650,3 +2651,54 @@ export const scanToWatchlist = (id: number, priorities: ScanPriority[], list_nam
     list_name,
   })
 export const deleteScan = (id: number) => scanSend<{ ok: boolean }>(`/api/scans/${id}`, 'DELETE')
+
+// --- Net worth + money goals (/finance). Shapes live in lib/goalMath.ts. ---
+export type FinanceData = {
+  items: FinItem[]
+  snapshots: FinSnapshot[]
+  goals: FinGoal[]
+  cashflow: FinCashflow[]
+  settings: FinSettings
+}
+export type FinItemInput = Pick<
+  FinItem,
+  'name' | 'kind' | 'asset_class' | 'is_liquid' | 'interest_pct' | 'archived'
+>
+export type FinGoalInput = Omit<FinGoal, 'id'>
+
+const sendJson = (url: string, method: string, body?: unknown) =>
+  fetch(url, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  }).then(json)
+
+export const getFinance = () => fetch('/api/finance').then(json<FinanceData>)
+export const saveFinItem = (item: FinItemInput, id?: number) =>
+  id ? sendJson(`/api/finance/items/${id}`, 'PUT', item) : sendJson('/api/finance/items', 'POST', item)
+export const deleteFinItem = (id: number) => sendJson(`/api/finance/items/${id}`, 'DELETE')
+export const saveMonthlyUpdate = (body: {
+  snapshots: { item_id: number; as_of: string; value: number }[]
+  cashflow?: FinCashflow | null
+}) => sendJson('/api/finance/monthly-update', 'POST', body)
+export const deleteFinSnapshot = (id: number) => sendJson(`/api/finance/snapshots/${id}`, 'DELETE')
+export const deleteFinCashflow = (month: string) => sendJson(`/api/finance/cashflow/${month}`, 'DELETE')
+export const saveFinGoal = (goal: FinGoalInput, id?: number) =>
+  id ? sendJson(`/api/finance/goals/${id}`, 'PUT', goal) : sendJson('/api/finance/goals', 'POST', goal)
+export const deleteFinGoal = (id: number) => sendJson(`/api/finance/goals/${id}`, 'DELETE')
+export const saveFinSettings = (settings: FinSettings) => sendJson('/api/finance/settings', 'PUT', settings)
+export type CasImportResult = {
+  as_of: string
+  file_type: string | null
+  imported: { name: string; value: number; new: boolean }[]
+  missing: string[]
+  warnings: string[]
+}
+export const importCas = (file: File, password: string) => {
+  const body = new FormData()
+  body.append('file', file)
+  body.append('password', password)
+  return fetch('/api/finance/cas', { method: 'POST', body }).then(json<CasImportResult>)
+}
+export const linkTradeAccount = (accountId: number) =>
+  sendJson(`/api/finance/link-trade-account/${accountId}`, 'POST') as Promise<{ id: number }>

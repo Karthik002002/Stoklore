@@ -34,5 +34,6 @@ why it exists, see the main [README](../README.md) — these docs are the
 - [Alerts](alerts.md)
 - [Chart Scans](scans.md)
 - [Trade Log Simulation & Stress Testing](trade-simulation.md)
+- [Net Worth & Money Goals](finance.md) — monthly balances, CAS import, goals and the Focus list
 - [Scraping & Anti-Block Transport](scraping.md)
 - [Database Backups](backups.md)

@@ -873,6 +873,58 @@ CREATE TABLE IF NOT EXISTS scan_marks (
   marked_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (scan_id, symbol)
 );
+
+-- Personal net worth + money goals (/finance). Balances, not transactions: a goal only needs to
+-- know what each account is worth, so the user records one value per item per month
+-- (fin_snapshots) instead of syncing every transaction - Indian banks offer no API to an
+-- individual, and the Account Aggregator network needs a regulated FIU. The arithmetic is all in
+-- frontend/src/lib/goalMath.ts.
+--   kind: bank|fd|mf|stock|epf|ppf|nps|gold|property|cash|other|loan|credit_card - the last two are
+--         liabilities. asset_class drives the allocation split; is_liquid the emergency-fund count.
+--   source + external_key: 'manual', or an item kept in step with another feed - 'cas' (ISIN or
+--         folio:scheme from a CAS PDF), 'trade_account' (the account id). The pair is unique so a
+--         re-imported statement updates its item instead of duplicating it.
+CREATE TABLE IF NOT EXISTS fin_items (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  asset_class TEXT NOT NULL DEFAULT 'other',
+  is_liquid BOOLEAN NOT NULL DEFAULT false,
+  interest_pct REAL,
+  source TEXT NOT NULL DEFAULT 'manual',
+  external_key TEXT,
+  archived BOOLEAN NOT NULL DEFAULT false,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (source, external_key)
+);
+CREATE TABLE IF NOT EXISTS fin_snapshots (
+  id SERIAL PRIMARY KEY,
+  item_id INTEGER NOT NULL REFERENCES fin_items(id) ON DELETE CASCADE,
+  as_of DATE NOT NULL,
+  value REAL NOT NULL,           -- always positive; a liability's kind makes it subtract
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (item_id, as_of)
+);
+-- funding: [{item_id, pct}] - which share of which item is earmarked for this goal. JSONB rather
+-- than a join table: it is only ever read and written whole, with its goal.
+CREATE TABLE IF NOT EXISTS fin_goals (
+  id SERIAL PRIMARY KEY,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL DEFAULT 'savings',
+  target_amount REAL NOT NULL,
+  target_date DATE NOT NULL,
+  priority INTEGER NOT NULL DEFAULT 3,
+  expected_return_pct REAL NOT NULL DEFAULT 7,
+  monthly_contribution REAL NOT NULL DEFAULT 0,
+  funding JSONB NOT NULL DEFAULT '[]',
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS fin_cashflow (
+  month DATE PRIMARY KEY,        -- first of the month
+  income REAL NOT NULL DEFAULT 0,
+  expenses REAL NOT NULL DEFAULT 0
+);
 """
 
 
@@ -3694,3 +3746,132 @@ def create_manual_trade_from_live(account_id, symbol, direction, quantity, entry
         emotion=None, tags=["live"], notes=f"Auto-journaled from Dhan ({source_ref})"
         if source_ref else "Auto-journaled from Dhan", traded_at=None, account_id=account_id,
     )
+
+
+# --- Net worth + money goals (/finance) ---------------------------------------------------------
+
+_FIN_ITEM_COLS = ("name", "kind", "asset_class", "is_liquid", "interest_pct", "archived")
+
+
+def list_fin_items():
+    with connect() as conn:
+        return conn.execute("SELECT * FROM fin_items ORDER BY archived, kind, name").fetchall()
+
+
+def create_fin_item(fields, source="manual", external_key=None):
+    cols = ", ".join(_FIN_ITEM_COLS)
+    with connect() as conn:
+        return conn.execute(
+            f"INSERT INTO fin_items ({cols}, source, external_key) "
+            f"VALUES ({', '.join(['%s'] * len(_FIN_ITEM_COLS))}, %s, %s) RETURNING id",
+            (*[fields[c] for c in _FIN_ITEM_COLS], source, external_key),
+        ).fetchone()["id"]
+
+
+def update_fin_item(item_id, fields):
+    sets = ", ".join(f"{c} = %s" for c in _FIN_ITEM_COLS)
+    with connect() as conn:
+        conn.execute(f"UPDATE fin_items SET {sets} WHERE id = %s",
+                     (*[fields[c] for c in _FIN_ITEM_COLS], item_id))
+
+
+def delete_fin_item(item_id):
+    with connect() as conn:
+        conn.execute("DELETE FROM fin_items WHERE id = %s", (item_id,))
+
+
+def find_fin_item(source, external_key):
+    with connect() as conn:
+        return conn.execute(
+            "SELECT * FROM fin_items WHERE source = %s AND external_key = %s", (source, external_key)
+        ).fetchone()
+
+
+def list_fin_snapshots():
+    with connect() as conn:
+        return conn.execute("SELECT * FROM fin_snapshots ORDER BY as_of, item_id").fetchall()
+
+
+def upsert_fin_snapshots(rows):
+    """rows: [(item_id, as_of, value)]. One value per item per date - re-saving a month overwrites
+    it, so correcting a typo is just saving again."""
+    with connect() as conn, conn.transaction():
+        for item_id, as_of, value in rows:
+            conn.execute(
+                "INSERT INTO fin_snapshots (item_id, as_of, value) VALUES (%s, %s, %s) "
+                "ON CONFLICT (item_id, as_of) DO UPDATE SET value = excluded.value",
+                (item_id, as_of, value),
+            )
+
+
+def delete_fin_snapshot(snapshot_id):
+    with connect() as conn:
+        conn.execute("DELETE FROM fin_snapshots WHERE id = %s", (snapshot_id,))
+
+
+_FIN_GOAL_COLS = ("name", "category", "target_amount", "target_date", "priority",
+                  "expected_return_pct", "monthly_contribution", "funding", "notes")
+
+
+def _goal_values(fields):
+    return [Jsonb(fields[c]) if c == "funding" else fields[c] for c in _FIN_GOAL_COLS]
+
+
+def list_fin_goals():
+    with connect() as conn:
+        return conn.execute("SELECT * FROM fin_goals ORDER BY priority, target_date").fetchall()
+
+
+def create_fin_goal(fields):
+    with connect() as conn:
+        return conn.execute(
+            f"INSERT INTO fin_goals ({', '.join(_FIN_GOAL_COLS)}) "
+            f"VALUES ({', '.join(['%s'] * len(_FIN_GOAL_COLS))}) RETURNING id",
+            _goal_values(fields),
+        ).fetchone()["id"]
+
+
+def update_fin_goal(goal_id, fields):
+    sets = ", ".join(f"{c} = %s" for c in _FIN_GOAL_COLS)
+    with connect() as conn:
+        conn.execute(f"UPDATE fin_goals SET {sets} WHERE id = %s", (*_goal_values(fields), goal_id))
+
+
+def delete_fin_goal(goal_id):
+    with connect() as conn:
+        conn.execute("DELETE FROM fin_goals WHERE id = %s", (goal_id,))
+
+
+def list_fin_cashflow():
+    with connect() as conn:
+        return conn.execute("SELECT * FROM fin_cashflow ORDER BY month").fetchall()
+
+
+def upsert_fin_cashflow(month, income, expenses):
+    with connect() as conn:
+        conn.execute(
+            "INSERT INTO fin_cashflow (month, income, expenses) VALUES (%s, %s, %s) "
+            "ON CONFLICT (month) DO UPDATE SET income = excluded.income, expenses = excluded.expenses",
+            (month, income, expenses),
+        )
+
+
+def delete_fin_cashflow(month):
+    with connect() as conn:
+        conn.execute("DELETE FROM fin_cashflow WHERE month = %s", (month,))
+
+
+FIN_SETTINGS_DEFAULT = {"emergency_months": 6, "target_equity_pct": 60, "target_debt_pct": 30,
+                        "target_gold_pct": 10}
+
+
+def get_fin_settings():
+    try:
+        saved = json.loads(_get_setting("finance", "{}"))
+    except (ValueError, TypeError):
+        saved = {}
+    return {**FIN_SETTINGS_DEFAULT, **(saved if isinstance(saved, dict) else {})}
+
+
+def set_fin_settings(values):
+    _set_setting("finance", json.dumps(values))

@@ -13,6 +13,7 @@ import {
   ScanEyeIcon,
   SettingsIcon,
   ShieldIcon,
+  TargetIcon,
   TrendingUpIcon,
   TrophyIcon,
   GemIcon,
@@ -44,6 +45,7 @@ export const PAGES: { icon: typeof LayoutDashboardIcon; label: string; to: LinkP
   { icon: ShieldIcon, label: 'Book risk', to: '/risk' },
   { icon: CpuIcon, label: 'Algo engine', to: '/engine' },
   { icon: ChartNoAxesCombinedIcon, label: 'Trade Simulation', to: '/simulation' },
+  { icon: TargetIcon, label: 'Net worth & goals', to: '/finance' },
   { icon: BellIcon, label: 'Alerts', to: '/alerts' },
   { icon: ScanEyeIcon, label: 'Scans', to: '/scans' },
   { icon: BotIcon, label: 'Agent', to: '/agent' },
@@ -94,6 +96,14 @@ export const SIMULATION_MODES = [
   { label: 'Trade Simulation > Single account', mode: 'single' },
   { label: 'Trade Simulation > Multiple accounts', mode: 'multiple' },
 ]
+
+// Mirrors FinancePage's tabs (router.tsx's financeRoute `view`).
+export const FINANCE_TABS = [
+  { label: 'Net worth & goals > Net worth', view: 'networth' },
+  { label: 'Net worth & goals > Goals', view: 'goals' },
+  { label: 'Net worth & goals > Focus', view: 'focus' },
+  { label: 'Net worth & goals > Projection', view: 'projection' },
+] as const
 
 // Mirrors Settings.jsx's TabsTab list exactly.
 export const SETTINGS_TABS = [
@@ -150,6 +160,11 @@ export const NAV_TARGETS: NavTarget[] = [
     label: m.label,
     to: '/simulation' as LinkProps['to'],
     search: { mode: m.mode },
+  })),
+  ...FINANCE_TABS.map((t) => ({
+    label: t.label,
+    to: '/finance' as LinkProps['to'],
+    search: { view: t.view },
   })),
   ...SETTINGS_TABS.map((t) => ({
     label: t.label,

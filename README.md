@@ -267,7 +267,7 @@ to guard rails you can see and control.
   between lists, filter the table by tab
 - A short icon-rail sidebar, grouped by what you're doing - **Discover** (Stocks, Leaders, Chart,
   Scans), **Research** (Events, Top news, Shareholding), **Trade** (Paper, Live, Holdings, Book risk,
-  Alerts), **Review** (Backtesting, Bar Replay, Trade Simulation), **Automate** (Algo engine,
+  Alerts), **Review** (Backtesting, Bar Replay, Trade Simulation, Net worth & goals), **Automate** (Algo engine,
   Workflows, Agent, Dashboards) - each opening its pages in a menu on hover (or click); the group
   lights up, showing the open page's own icon, when you're on one of its pages. At the foot: Settings, theme toggle, and a **Reload** button that clears the
   shared cache on demand. **Hide it** with the button at its foot or `⌘\` / `Ctrl+\`
@@ -1086,6 +1086,43 @@ Full details: [docs/engine.md](docs/engine.md).
 
 </div>
 
+### `15` Net Worth & Money Goals (`/finance`)
+
+Personal net worth, money goals, and what to fix first, without a bank sync. Indian banks give an
+individual no API and the Account Aggregator network needs an RBI-regulated FIU, so the page works
+on **balances, not transactions**: one value per account per month.
+
+- **Net worth**: add your items (bank, FD, MF, stocks, EPF, PPF, NPS, gold, property, cash, loans,
+  credit cards), then run the **Monthly update**: one screen, pre-filled with last month's values,
+  plus that month's income and expenses. You get a net-worth curve, an allocation donut and the
+  liquid total
+- **Import CAS**: upload a CAMS / KFintech / NSDL / CDSL Consolidated Account Statement PDF and
+  every mutual fund, demat account, bond and NPS scheme is recorded at the statement date
+  (parsed by [casparser](https://github.com/codereverser/casparser)). It is re-importable monthly;
+  the same holding updates the same item, and the PDF and password are never stored
+- **Link trading accounts**: a journal account becomes a net-worth item whose value is pre-filled
+  from the journal's live balance
+- **Goals**: target, date, priority, expected return, planned SIP, and which share of which items
+  funds each one. Each goal shows funded %, the SIP still needed, the projected value, and whether
+  it is on track, at risk, off track or overdue
+- **Focus**: a fixed order of priorities, applied to your own numbers: emergency fund, expensive
+  debt, goals behind schedule, whether your surplus pays for every goal (and which low-priority
+  goals to push back if not), short goals held in equity, allocation drift, stale balances. It is
+  arithmetic, not advice
+- **Projection**: "if I save ₹X a month for N years, what do I end up with?" You set a starting
+  amount, a monthly saving with a yearly step-up, a return, an inflation rate and an optional
+  target. You get the plain compounded projection (also in today's money) and a 2,000-run
+  simulation with year-to-year swings. It shows bad / median / good cases per year, plus the
+  chance of reaching the target or ending below what you put in
+
+Full details: [docs/finance.md](docs/finance.md).
+
+<div align="right">
+
+[![][back-to-top]](#readme-top)
+
+</div>
+
 ### `*` What's more
 
 - **A chart one click from any stock** — every stock list on the home page, and any dashboard table
@@ -1109,7 +1146,7 @@ Full details: [docs/engine.md](docs/engine.md).
   the URL all already spoke that, and converting at the edges beats spreading `Date` juggling
   across five call sites
 - **Command palette (Cmd/Ctrl+K)** — every page the app has, the tabs inside Backtesting, Paper
-  Trading and Trade Simulation, all twelve Settings sub-tabs, plus Profile, Watchlists, theme and a
+  Trading, Trade Simulation and Net worth & goals, all twelve Settings sub-tabs, plus Profile, Watchlists, theme and a
   cache-clearing reload. Type `@SYMBOL` to jump to a stock's detail page; an untracked ticker is
   verified against NSE before it navigates, so the palette never lands on an empty page. The lists
   in `frontend/src/CommandPalette.tsx` are hand-maintained rather than derived from the router —

@@ -16,6 +16,7 @@ import {
   RefreshCwIcon,
   SettingsIcon,
   SunIcon,
+  TargetIcon,
   WorkflowIcon,
   LayoutGridIcon,
   TrendingUpIcon,
@@ -36,6 +37,7 @@ import { useTheme } from '@/lib/theme'
 import {
   BACKTEST_TABS,
   ENGINE_TABS,
+  FINANCE_TABS,
   HOME_TABS,
   PAGES,
   HOLDINGS_TABS,
@@ -305,6 +307,18 @@ export default function CommandPalette() {
                   >
                     <ChartNoAxesCombinedIcon className="size-4" />
                     {m.label}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+              <CommandGroup heading="Net worth & goals">
+                {FINANCE_TABS.map((t) => (
+                  <CommandItem
+                    key={t.view}
+                    value={t.label}
+                    onSelect={() => goTo('/finance', { view: t.view })}
+                  >
+                    <TargetIcon className="size-4" />
+                    {t.label}
                   </CommandItem>
                 ))}
               </CommandGroup>

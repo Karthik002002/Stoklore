@@ -1,8 +1,8 @@
 import type { ComponentProps } from 'react'
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover'
 import { cn } from '@/lib/utils'
+import { popupSurface } from './control'
 
-// Pulled forward from Phase 3 because the theme selector needs it; Phase 3 adds its stories.
 type PopoverContentProps = ComponentProps<typeof PopoverPrimitive.Popup> &
   Pick<ComponentProps<typeof PopoverPrimitive.Positioner>, 'side' | 'align' | 'sideOffset' | 'alignOffset'>
 
@@ -33,11 +33,7 @@ function PopoverContent({
       >
         <PopoverPrimitive.Popup
           data-slot="popover-content"
-          className={cn(
-            'w-64 origin-(--transform-origin) rounded-md border border-input bg-popover p-2 text-xs text-popover-foreground outline-none',
-            'duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0',
-            className,
-          )}
+          className={cn(popupSurface, 'w-64 p-2', className)}
           {...props}
         />
       </PopoverPrimitive.Positioner>
@@ -45,4 +41,17 @@ function PopoverContent({
   )
 }
 
-export { Popover, PopoverTrigger, PopoverContent }
+/** Optional title row inside a popover. */
+const PopoverHeader = ({ className, ...props }: ComponentProps<'div'>) => (
+  <div
+    data-slot="popover-header"
+    className={cn('mb-1.5 flex items-center justify-between gap-2 font-semibold', className)}
+    {...props}
+  />
+)
+
+const PopoverClose = (props: ComponentProps<typeof PopoverPrimitive.Close>) => (
+  <PopoverPrimitive.Close data-slot="popover-close" {...props} />
+)
+
+export { Popover, PopoverTrigger, PopoverContent, PopoverHeader, PopoverClose }

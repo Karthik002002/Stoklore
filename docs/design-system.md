@@ -93,6 +93,15 @@ Non-color: `--radius` (every `rounded-*` derives from it), `--control-h`, `--row
 | Progress | new — `tone`, `limit` marker, `size`, indeterminate |
 | Checkbox, Switch, RadioGroup/Radio, Skeleton, Avatar | new to the shared set (pages hand-roll them today) |
 | Spinner | CSS ring that takes the token color (was a lucide icon) |
+| Dialog | `size` (`sm` / `default` / `lg` / `xl`); `DialogBody` scrolls while header/footer stay put; header and footer are panel-style strips |
+| Sheet (`SheetContent side=…`) | new — a dialog docked to right / left / bottom / top |
+| Popover | `PopoverHeader`, `PopoverClose` |
+| Toaster | new — sonner's `<Toaster>` painted from tokens (colored left edge + icon per type). Existing `toast()` calls don't change |
+| Command palette | same parts as today, plus `CommandInput` `scope` / `loading` / `trailing`, `CommandScopes` (icon source tabs), `CommandChips` (filter chips + filter/sort slot), `CommandGroup count`, `CommandItemMedia` (icon / initials tile), `CommandItemText` (title • subtitle, breadcrumb, second line), `CommandItemMeta`, key-box `CommandShortcut`, `CommandLoading`, `CommandFooter` + `CommandHint`. The *Full palette* story is built from `lib/navTargets.ts`, so it lists every real page, tab and setting |
+
+All floating surfaces share one look (`popupSurface` in `components/control.ts`: hairline border,
+no shadow) and every menu-like row shares `menuRow`, so select, dropdown and command palette
+items match.
 
 ## Phases
 
@@ -100,8 +109,8 @@ Non-color: `--radius` (every `rounded-*` derives from it), `--control-h`, `--row
 |---|---|---|
 | 1 | Storybook, tokens, 4 presets, theme runtime, ThemeSelector, ThemeCustomizer, Button (+ buy/sell), Popover (needed by the selector) | done |
 | 2 | Primitives: input (+ `numeric`), textarea, input-group, field (label/help/error), select (search at 6+ items, as today), checkbox, switch, radio-group, tabs (`segment` / `line`, `sm`, `TabsCount`), button-group, toggle-group, badge (+ warning, accent, `dot`), kbd, spinner, skeleton, progress (tones + `limit` marker), avatar, separator | done |
-| 3 | Overlays: dialog, alert-dialog, popover stories, tooltip, hover-card, dropdown-menu, command, toast, sheet | next |
-| 4 | Layout & data: panel, table / data-table, pagination, stat strip, empty state, calendar, date picker | |
+| 3 | Overlays: dialog (+ `size`, `DialogBody`), sheet (4 sides), alert-dialog, popover (+ header, close), tooltip, hover-card, dropdown-menu (sub, checkbox, radio, shortcut), command palette, themed Toaster for sonner | done |
+| 4 | Layout & data: panel, table / data-table, pagination, stat strip, empty state, calendar, date picker | next |
 | 5 | Trading: change pill, RS pill, delivery cell, sparkline, ticker, watchlist row, order ticket, depth, P&L calendar, treemap, meters | |
 | 6 | Page compositions as stories: workspace, stock detail, holdings, risk, simulation, agent… | |
 | 7 | Migration: app switches to `styles.css`, ThemeSelector in the top bar, ThemeCustomizer in Settings › Appearance, pages move to `@/design-system` | waits for go-ahead |

@@ -3,7 +3,7 @@ import * as React from 'react'
 import { Select as SelectPrimitive } from '@base-ui/react/select'
 import { IconCheck, IconChevronDown, IconChevronUp, IconSearch } from '@tabler/icons-react'
 import { cn } from '@/lib/utils'
-import { controlBase } from './control'
+import { controlBase, menuRow, popupSurface } from './control'
 
 // Behaviour copied from components/ui/select.tsx unchanged (item labels collected from children so
 // <SelectValue /> shows labels; a search box once a list has 6+ items) - only the look is new.
@@ -131,8 +131,8 @@ function SelectContent({
         <SelectPrimitive.Popup
           data-slot="select-content"
           className={cn(
-            'relative max-h-(--available-height) w-(--anchor-width) min-w-36 origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-md border border-input bg-popover p-0.5 text-xs text-popover-foreground',
-            'duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0',
+            popupSurface,
+            'relative max-h-(--available-height) w-(--anchor-width) min-w-36 overflow-x-hidden overflow-y-auto p-0.5',
             className,
           )}
           {...props}
@@ -185,11 +185,7 @@ function SelectItem({ className, children, ...props }: ComponentProps<typeof Sel
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
-      className={cn(
-        'relative flex h-6.5 w-full cursor-default items-center gap-1.5 rounded-sm pr-6 pl-1.5 outline-none select-none data-highlighted:bg-muted data-selected:text-accent data-disabled:pointer-events-none data-disabled:opacity-50',
-        "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
-        className,
-      )}
+      className={cn(menuRow, 'w-full pr-6 data-highlighted:bg-muted data-selected:text-accent', className)}
       {...props}
     >
       <SelectPrimitive.ItemText className="flex flex-1 shrink-0 gap-1.5 whitespace-nowrap">

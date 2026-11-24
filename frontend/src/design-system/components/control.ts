@@ -5,3 +5,11 @@ export const controlBase =
 
 /** Numbers in inputs line up like everywhere else. */
 export const numericText = 'font-mono tabular-nums tracking-tight'
+
+/** Every floating surface (menu, popover, select list, hover card): flat, hairline, no shadow. */
+export const popupSurface =
+  'origin-(--transform-origin) rounded-md border border-input bg-popover text-xs text-popover-foreground outline-none duration-100 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0'
+
+/** One row in a menu-like list (dropdown, command palette, select). */
+export const menuRow =
+  "relative flex h-6.5 cursor-default items-center gap-2 rounded-sm px-1.5 outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5"

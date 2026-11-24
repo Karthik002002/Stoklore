@@ -10,7 +10,10 @@ import { cn } from '@/lib/utils'
 function Swatch({ preset }: { preset: ThemePreset }) {
   const c = preset.colors
   return (
-    <span className="flex h-4 shrink-0 overflow-hidden rounded-xs border border-border" style={{ background: c.card }}>
+    <span
+      className="flex h-4 shrink-0 overflow-hidden rounded-xs border border-border"
+      style={{ background: c.card }}
+    >
       {[c.accent, c.up, c.down].map((col) => (
         <span key={col} className="w-1.5" style={{ background: col }} />
       ))}
@@ -24,7 +27,13 @@ export function ThemeModeToggle({ className }: { className?: string }) {
   if (!resolved.preset.pair) return null
   const dark = resolved.preset.mode === 'dark'
   return (
-    <Button variant="ghost" size="icon-sm" className={className} onClick={toggleMode} aria-label={dark ? 'Switch to light' : 'Switch to dark'}>
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className={className}
+      onClick={toggleMode}
+      aria-label={dark ? 'Switch to light' : 'Switch to dark'}
+    >
       {dark ? <IconSun /> : <IconMoon />}
     </Button>
   )
@@ -33,7 +42,8 @@ export function ThemeModeToggle({ className }: { className?: string }) {
 /** Top-bar theme picker. `onCustomize` opens wherever the app hosts the ThemeCustomizer. */
 export function ThemeSelector({ onCustomize }: { onCustomize?: () => void }) {
   const { resolved, state, setPreset } = useTheme()
-  const edited = Object.keys(state.overrides).length > 0 || state.radius !== undefined || state.density !== undefined
+  const edited =
+    Object.keys(state.overrides).length > 0 || state.radius !== undefined || state.density !== undefined
   return (
     <Popover>
       <PopoverTrigger render={<Button variant="ghost" size="sm" aria-label="Theme" />}>
@@ -50,7 +60,10 @@ export function ThemeSelector({ onCustomize }: { onCustomize?: () => void }) {
               key={t.id}
               type="button"
               onClick={() => setPreset(t.id)}
-              className={cn('flex h-7 w-full items-center gap-2 rounded-sm px-1.5 text-left hover:bg-muted', active && 'bg-selection')}
+              className={cn(
+                'flex h-7 w-full items-center gap-2 rounded-sm px-1.5 text-left hover:bg-muted',
+                active && 'bg-selection',
+              )}
             >
               <Swatch preset={t} />
               <span className="flex-1">{t.label}</span>
@@ -62,7 +75,11 @@ export function ThemeSelector({ onCustomize }: { onCustomize?: () => void }) {
         {onCustomize && (
           <>
             <div className="my-1 h-px bg-border" />
-            <button type="button" onClick={onCustomize} className="flex h-7 w-full items-center gap-2 rounded-sm px-1.5 text-left hover:bg-muted">
+            <button
+              type="button"
+              onClick={onCustomize}
+              className="flex h-7 w-full items-center gap-2 rounded-sm px-1.5 text-left hover:bg-muted"
+            >
               <IconPalette className="size-3.5 text-muted-foreground" />
               <span className="flex-1">Customize colors…</span>
               {edited && <span className="text-2xs text-accent">edited</span>}

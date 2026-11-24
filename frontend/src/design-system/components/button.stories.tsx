@@ -1,14 +1,21 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { IconChevronDown, IconDownload, IconEdit, IconPlus } from '@tabler/icons-react'
 import { Button } from './button'
+import { Row } from '../story-helpers'
 
 const meta = {
   title: 'Components/Button',
   component: Button,
   args: { children: 'Button' },
   argTypes: {
-    variant: { control: 'select', options: ['default', 'secondary', 'outline', 'ghost', 'destructive', 'link', 'buy', 'sell'] },
-    size: { control: 'select', options: ['xs', 'sm', 'default', 'lg', 'icon', 'icon-xs', 'icon-sm', 'icon-lg'] },
+    variant: {
+      control: 'select',
+      options: ['default', 'secondary', 'outline', 'ghost', 'destructive', 'link', 'buy', 'sell'],
+    },
+    size: {
+      control: 'select',
+      options: ['xs', 'sm', 'default', 'lg', 'icon', 'icon-xs', 'icon-sm', 'icon-lg'],
+    },
     disabled: { control: 'boolean' },
   },
 } satisfies Meta<typeof Button>
@@ -17,13 +24,6 @@ export default meta
 type Story = StoryObj<typeof meta>
 
 export const Playground: Story = {}
-
-const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (
-  <div className="flex items-center gap-3 border-b border-border py-2">
-    <span className="w-24 shrink-0 text-label text-muted-foreground uppercase">{label}</span>
-    <div className="flex flex-wrap items-center gap-1.5">{children}</div>
-  </div>
-)
 
 export const Variants: Story = {
   render: () => (

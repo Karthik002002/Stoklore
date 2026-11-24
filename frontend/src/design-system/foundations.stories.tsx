@@ -6,12 +6,25 @@ const meta: Meta = { title: 'Foundations', parameters: { controls: { disable: tr
 export default meta
 type Story = StoryObj
 
-const DERIVED = ['ring', 'destructive', 'success', 'selection', 'up-subtle', 'down-subtle', 'warning-subtle', 'accent-subtle', 'muted-hover']
+const DERIVED = [
+  'ring',
+  'destructive',
+  'success',
+  'selection',
+  'up-subtle',
+  'down-subtle',
+  'warning-subtle',
+  'accent-subtle',
+  'muted-hover',
+]
 
 function Swatch({ token, label, value }: { token: string; label?: string; value?: string }) {
   return (
     <div className="flex items-center gap-2 border-b border-border/60 py-1">
-      <span className="h-6 w-10 shrink-0 rounded-sm border border-border" style={{ background: `var(--${token})` }} />
+      <span
+        className="h-6 w-10 shrink-0 rounded-sm border border-border"
+        style={{ background: `var(--${token})` }}
+      />
       <div className="min-w-0">
         <div>{label ?? token}</div>
         <div className="tabular truncate text-2xs text-muted-foreground">
@@ -86,13 +99,18 @@ function ShapeView() {
       </div>
       <div className="flex flex-wrap gap-3">
         {['rounded-xs', 'rounded-sm', 'rounded-md', 'rounded-lg', 'rounded-xl'].map((r) => (
-          <div key={r} className={`flex size-20 items-end border border-input bg-card p-1.5 text-2xs text-muted-foreground ${r}`}>
+          <div
+            key={r}
+            className={`flex size-20 items-end border border-input bg-card p-1.5 text-2xs text-muted-foreground ${r}`}
+          >
             {r}
           </div>
         ))}
       </div>
       <div className="flex items-center gap-3">
-        <div className="flex h-(--control-h) items-center rounded-md border border-input px-2">--control-h</div>
+        <div className="flex h-(--control-h) items-center rounded-md border border-input px-2">
+          --control-h
+        </div>
         <div className="flex h-(--row-h) items-center border-b border-border px-2">--row-h (table rows)</div>
       </div>
     </div>

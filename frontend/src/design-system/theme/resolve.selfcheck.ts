@@ -34,7 +34,11 @@ const tokens = Object.keys(THEMES[0].colors)
 for (const t of THEMES) {
   assert.deepEqual(Object.keys(t.colors).sort(), [...tokens].sort(), `${t.id} token set`)
   for (const [k, c] of Object.entries(t.colors)) assert.ok(isColor(c), `${t.id}.${k}=${c}`)
-  if (t.pair) assert.ok(THEMES.some((p) => p.id === t.pair), `${t.id} pair`)
+  if (t.pair)
+    assert.ok(
+      THEMES.some((p) => p.id === t.pair),
+      `${t.id} pair`,
+    )
 }
 
 const p = toPreset(r)

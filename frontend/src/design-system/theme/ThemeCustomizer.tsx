@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react'
 import { IconArrowBackUp, IconCopy, IconDownload, IconUpload } from '@tabler/icons-react'
 import { Button } from '../components/button'
+import { Toggle, ToggleGroup } from '../components/button-group'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/select'
 import { COLOR_TOKENS, THEMES } from '../tokens/themes'
 import type { ColorToken, Density } from '../tokens/themes'
 import { isColor, toPreset } from './resolve'
@@ -20,7 +22,11 @@ function ColorRow({ token, label, hint }: { token: ColorToken; label: string; hi
 
   return (
     <div className="grid h-(--row-h) grid-cols-[20px_1fr_96px_20px] items-center gap-2 border-b border-border/60 px-2 hover:bg-muted">
-      <label className="relative size-4 cursor-pointer overflow-hidden rounded-xs border border-input" style={{ background: value }} title="Pick color">
+      <label
+        className="relative size-4 cursor-pointer overflow-hidden rounded-xs border border-input"
+        style={{ background: value }}
+        title="Pick color"
+      >
         {/* native picker only speaks #rrggbb; other formats stay editable in the text box */}
         <input
           type="color"
@@ -35,7 +41,10 @@ function ColorRow({ token, label, hint }: { token: ColorToken; label: string; hi
       </div>
       <input
         aria-label={`${label} value`}
-        className={cn('tabular h-5.5 w-full rounded-xs border border-input bg-panel-head px-1.5 text-2xs outline-none focus:border-accent', bad && 'border-down')}
+        className={cn(
+          'tabular h-5.5 w-full rounded-xs border border-input bg-panel-head px-1.5 text-2xs outline-none focus:border-accent',
+          bad && 'border-down',
+        )}
         value={draft ?? value}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={() => {
@@ -45,7 +54,13 @@ function ColorRow({ token, label, hint }: { token: ColorToken; label: string; hi
         onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
       />
       {overridden ? (
-        <Button variant="ghost" size="icon-xs" aria-label={`Reset ${label}`} title="Back to preset" onClick={() => setColor(token, undefined)}>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          aria-label={`Reset ${label}`}
+          title="Back to preset"
+          onClick={() => setColor(token, undefined)}
+        >
           <IconArrowBackUp />
         </Button>
       ) : (
@@ -80,41 +95,50 @@ export function ThemeCustomizer({ className }: { className?: string }) {
 
       <div className="grid grid-cols-[auto_1fr] items-center gap-x-3 gap-y-2 border-b border-border p-2">
         <span className="text-label text-muted-foreground uppercase">Start from</span>
-        <select
-          className="h-6 rounded-sm border border-input bg-panel-head px-1.5 outline-none focus:border-accent"
-          value={resolved.preset.id}
-          onChange={(e) => setPreset(e.target.value)}
-        >
-          {THEMES.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.label}
-            </option>
-          ))}
-        </select>
+        <Select value={resolved.preset.id} onValueChange={(v) => v && setPreset(v as string)}>
+          <SelectTrigger className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {THEMES.map((t) => (
+              <SelectItem key={t.id} value={t.id}>
+                {t.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <span className="text-label text-muted-foreground uppercase">Radius</span>
         <div className="flex items-center gap-2">
-          <input type="range" min={0} max={12} step={1} value={resolved.radius} onChange={(e) => update({ radius: Number(e.target.value) })} className="flex-1 accent-(--accent)" />
+          <input
+            type="range"
+            min={0}
+            max={12}
+            step={1}
+            value={resolved.radius}
+            onChange={(e) => update({ radius: Number(e.target.value) })}
+            className="flex-1 accent-(--accent)"
+          />
           <span className="tabular w-8 text-right text-2xs">{resolved.radius}px</span>
         </div>
         <span className="text-label text-muted-foreground uppercase">Density</span>
-        <div className="flex overflow-hidden rounded-sm border border-border">
+        <ToggleGroup
+          value={[resolved.density]}
+          onValueChange={(v) => v[0] && update({ density: v[0] as Density })}
+        >
           {(['compact', 'comfortable'] as Density[]).map((d) => (
-            <button
-              key={d}
-              type="button"
-              onClick={() => update({ density: d })}
-              className={cn('h-6 flex-1 border-r border-border capitalize last:border-0 hover:bg-muted', resolved.density === d && 'bg-muted shadow-[inset_0_-2px_var(--accent)]')}
-            >
+            <Toggle key={d} value={d} className="capitalize">
               {d}
-            </button>
+            </Toggle>
           ))}
-        </div>
+        </ToggleGroup>
       </div>
 
       <div className="flex-1 overflow-auto">
         {GROUPS.map((g) => (
           <div key={g}>
-            <div className="sticky top-0 border-b border-border bg-panel-head px-2 py-1 text-label text-muted-foreground uppercase">{g}</div>
+            <div className="sticky top-0 border-b border-border bg-panel-head px-2 py-1 text-label text-muted-foreground uppercase">
+              {g}
+            </div>
             {COLOR_TOKENS.filter((t) => t.group === g).map((t) => (
               <ColorRow key={t.token} token={t.token} label={t.label} hint={t.hint} />
             ))}
@@ -123,11 +147,20 @@ export function ThemeCustomizer({ className }: { className?: string }) {
       </div>
 
       <div className="flex flex-wrap items-center gap-1.5 border-t border-border bg-panel-head p-2">
-        <Button variant="outline" size="sm" onClick={() => copyText(presetJson()).then(() => flash('Copied'))} title="Paste into THEMES in tokens/themes.ts">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => copyText(presetJson()).then(() => flash('Copied'))}
+          title="Paste into THEMES in tokens/themes.ts"
+        >
           <IconCopy />
           Copy as preset
         </Button>
-        <Button variant="outline" size="sm" onClick={() => download(JSON.stringify(state, null, 2), 'stoklore-theme.json', 'application/json')}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => download(JSON.stringify(state, null, 2), 'stoklore-theme.json', 'application/json')}
+        >
           <IconDownload />
           Export
         </Button>

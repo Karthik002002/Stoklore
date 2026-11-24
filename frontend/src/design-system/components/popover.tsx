@@ -6,16 +6,31 @@ import { cn } from '@/lib/utils'
 type PopoverContentProps = ComponentProps<typeof PopoverPrimitive.Popup> &
   Pick<ComponentProps<typeof PopoverPrimitive.Positioner>, 'side' | 'align' | 'sideOffset' | 'alignOffset'>
 
-const Popover = (props: ComponentProps<typeof PopoverPrimitive.Root>) => <PopoverPrimitive.Root data-slot="popover" {...props} />
+const Popover = (props: ComponentProps<typeof PopoverPrimitive.Root>) => (
+  <PopoverPrimitive.Root data-slot="popover" {...props} />
+)
 
 const PopoverTrigger = (props: ComponentProps<typeof PopoverPrimitive.Trigger>) => (
   <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />
 )
 
-function PopoverContent({ className, side = 'bottom', sideOffset = 4, align = 'center', alignOffset = 0, ...props }: PopoverContentProps) {
+function PopoverContent({
+  className,
+  side = 'bottom',
+  sideOffset = 4,
+  align = 'center',
+  alignOffset = 0,
+  ...props
+}: PopoverContentProps) {
   return (
     <PopoverPrimitive.Portal>
-      <PopoverPrimitive.Positioner side={side} sideOffset={sideOffset} align={align} alignOffset={alignOffset} className="isolate z-50">
+      <PopoverPrimitive.Positioner
+        side={side}
+        sideOffset={sideOffset}
+        align={align}
+        alignOffset={alignOffset}
+        className="isolate z-50"
+      >
         <PopoverPrimitive.Popup
           data-slot="popover-content"
           className={cn(

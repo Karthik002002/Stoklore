@@ -79,13 +79,28 @@ Non-color: `--radius` (every `rounded-*` derives from it), `--control-h`, `--row
 4. Where `components/ui/*` already has the component, keep its name, variants and props, so
    migrating a page is an import-path change.
 
+### What's new vs `components/ui/*`
+
+| Component | Addition |
+|---|---|
+| Button | `buy`, `sell` variants; heights follow `--control-h` |
+| Input | `numeric` (mono tabular figures) |
+| Field, FieldLabel, FieldDescription, FieldError, Label | new — label/help/error with aria wiring from Base UI |
+| Tabs | `TabsList variant="segment" \| "line"`, `size="sm"`, `TabsCount`; `TabsIndicator` kept but optional |
+| ToggleGroup, Toggle | new — single/multi choice (timeframes, order type, indicators) |
+| Badge | `warning`, `accent` variants, `dot` prop; success/destructive are tints, not solid |
+| Kbd, KbdGroup | new |
+| Progress | new — `tone`, `limit` marker, `size`, indeterminate |
+| Checkbox, Switch, RadioGroup/Radio, Skeleton, Avatar | new to the shared set (pages hand-roll them today) |
+| Spinner | CSS ring that takes the token color (was a lucide icon) |
+
 ## Phases
 
 | # | Scope | State |
 |---|---|---|
 | 1 | Storybook, tokens, 4 presets, theme runtime, ThemeSelector, ThemeCustomizer, Button (+ buy/sell), Popover (needed by the selector) | done |
-| 2 | Primitives: input, input-group, select, textarea, checkbox, switch, radio, tabs, button-group, badge, kbd, spinner, skeleton, progress, avatar, separator | next |
-| 3 | Overlays: dialog, alert-dialog, popover stories, tooltip, hover-card, dropdown-menu, command, toast, sheet | |
+| 2 | Primitives: input (+ `numeric`), textarea, input-group, field (label/help/error), select (search at 6+ items, as today), checkbox, switch, radio-group, tabs (`segment` / `line`, `sm`, `TabsCount`), button-group, toggle-group, badge (+ warning, accent, `dot`), kbd, spinner, skeleton, progress (tones + `limit` marker), avatar, separator | done |
+| 3 | Overlays: dialog, alert-dialog, popover stories, tooltip, hover-card, dropdown-menu, command, toast, sheet | next |
 | 4 | Layout & data: panel, table / data-table, pagination, stat strip, empty state, calendar, date picker | |
 | 5 | Trading: change pill, RS pill, delivery cell, sparkline, ticker, watchlist row, order ticket, depth, P&L calendar, treemap, meters | |
 | 6 | Page compositions as stories: workspace, stock detail, holdings, risk, simulation, agent… | |

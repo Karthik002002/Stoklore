@@ -45,7 +45,13 @@ export const themeStore = {
   },
   /** Switching preset keeps the user's overrides only if they ask for it - by default a new preset starts clean. */
   setPreset: (presetId: string, keepOverrides = false) =>
-    commit({ ...state, presetId, overrides: keepOverrides ? state.overrides : {}, radius: keepOverrides ? state.radius : undefined, density: keepOverrides ? state.density : undefined }),
+    commit({
+      ...state,
+      presetId,
+      overrides: keepOverrides ? state.overrides : {},
+      radius: keepOverrides ? state.radius : undefined,
+      density: keepOverrides ? state.density : undefined,
+    }),
   /** Flip to the preset's light/dark pair, carrying overrides along. */
   toggleMode: () => {
     const pair = findPreset(state.presetId).pair

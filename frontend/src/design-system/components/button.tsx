@@ -14,7 +14,8 @@ const buttonVariants = cva(
         default: 'bg-primary text-primary-foreground hover:bg-primary/85',
         secondary: 'border-border bg-muted text-foreground hover:bg-muted-hover',
         outline: 'border-input bg-transparent text-foreground hover:bg-muted',
-        ghost: 'text-muted-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground',
+        ghost:
+          'text-muted-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground',
         destructive: 'border-down/40 text-down hover:bg-down-subtle',
         link: 'h-auto px-0.5 text-accent underline-offset-4 hover:underline',
         buy: 'bg-up font-semibold text-up-foreground hover:brightness-110',

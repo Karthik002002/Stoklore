@@ -17,7 +17,8 @@ const HEX = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i
 // Functional colors only; no ; { } so a pasted value can't smuggle extra CSS.
 const FN = /^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([^;{}()]*\)$/i
 
-export const isColor = (v: unknown): v is string => typeof v === 'string' && (HEX.test(v.trim()) || FN.test(v.trim()))
+export const isColor = (v: unknown): v is string =>
+  typeof v === 'string' && (HEX.test(v.trim()) || FN.test(v.trim()))
 
 export const findPreset = (id: string): ThemePreset => THEMES.find((t) => t.id === id) ?? THEMES[0]
 
@@ -25,13 +26,16 @@ export const findPreset = (id: string): ThemePreset => THEMES.find((t) => t.id =
 export function sanitizeState(raw: unknown): ThemeState {
   if (!raw || typeof raw !== 'object') return { ...DEFAULT_STATE }
   const r = raw as Record<string, unknown>
-  const presetId = typeof r.presetId === 'string' && THEMES.some((t) => t.id === r.presetId) ? r.presetId : DEFAULT_THEME_ID
+  const presetId =
+    typeof r.presetId === 'string' && THEMES.some((t) => t.id === r.presetId) ? r.presetId : DEFAULT_THEME_ID
   const overrides: Partial<ThemeColors> = {}
   if (r.overrides && typeof r.overrides === 'object') {
-    for (const [k, v] of Object.entries(r.overrides)) if (TOKENS.has(k) && isColor(v)) overrides[k as ColorToken] = v.trim()
+    for (const [k, v] of Object.entries(r.overrides))
+      if (TOKENS.has(k) && isColor(v)) overrides[k as ColorToken] = v.trim()
   }
   const state: ThemeState = { presetId, overrides }
-  if (typeof r.radius === 'number' && Number.isFinite(r.radius)) state.radius = Math.min(16, Math.max(0, r.radius))
+  if (typeof r.radius === 'number' && Number.isFinite(r.radius))
+    state.radius = Math.min(16, Math.max(0, r.radius))
   if (r.density === 'compact' || r.density === 'comfortable') state.density = r.density
   return state
 }

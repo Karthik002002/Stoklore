@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangleIcon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/design-system'
 import { getActivitySummary } from '@/services/api'
 
 const MILESTONES = [7, 30, 100]

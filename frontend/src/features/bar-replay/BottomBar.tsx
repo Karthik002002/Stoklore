@@ -25,13 +25,23 @@ import {
 } from 'lucide-react'
 import SourceSelect from '@/components/SourceSelect'
 import SymbolCombobox from '@/components/SymbolCombobox'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Separator } from '@/components/ui/separator'
-import { Spinner } from '@/components/ui/spinner'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  Badge,
+  Button,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Separator,
+  Spinner,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/design-system'
 import { inr } from '@/lib/format'
 import { tradePnl } from '@/lib/manualTrades'
 import { REPLAY_SPEEDS, REPLAY_TIMEFRAMES } from '@/lib/replay'

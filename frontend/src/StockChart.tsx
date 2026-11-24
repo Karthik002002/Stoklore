@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/design-system'
 import { getStockChart } from '@/services/api'
 import PriceChart from './PriceChart'
 

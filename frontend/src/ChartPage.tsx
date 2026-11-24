@@ -4,7 +4,15 @@
 // timeframe, alerts and positions come with it. Trading happens here too: the account picker in
 // the top bar and the sidebar's Trade tab are the chart modal's (components/TradeAccount), so an
 // order never needs a second chart opened over this one.
-import RsPill from '@/components/RsPill'
+import {
+  RsPill,
+  TableSortHead as SortTh,
+  Button,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  Spinner,
+} from '@/design-system'
 import { useStrength } from '@/lib/useStrength'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -20,11 +28,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { AccountSelect, TradeTicket, useTradeAccount } from '@/components/TradeAccount'
-import SortTh from '@/components/SortTh'
 import SymbolCombobox from '@/components/SymbolCombobox'
-import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Spinner } from '@/components/ui/spinner'
 import { compact, fmt } from '@/lib/format'
 import { sortRows } from '@/lib/sortRows'
 import type { Sort } from '@/lib/sortRows'
@@ -255,7 +259,9 @@ export default function ChartPage() {
   // keep the selected list's tab in view when there are more lists than fit
   const listsRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    listsRef.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    listsRef.current
+      ?.querySelector('[aria-pressed="true"]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [list])
 
   const refresh = () =>
@@ -375,7 +381,6 @@ export default function ChartPage() {
                 )
               })}
             </div>
-           
           </div>
           <div className="border-b p-2">
             <SymbolCombobox

@@ -12,10 +12,16 @@ import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams, useSearch } from '@tanstack/react-router'
 import { ArrowLeftIcon, ChevronDownIcon } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
+import {
+  Badge,
+  Button,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+} from '@/design-system'
 import { cn } from '@/lib/utils'
 import { ChartControls } from '@/features/bar-replay/ChartControls'
 import { fmt, formatDateTime, inr } from '@/lib/format'

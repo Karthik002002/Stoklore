@@ -1,13 +1,12 @@
 import { CalendarIcon, FlagIcon, ShuffleIcon } from 'lucide-react'
-import DatePicker from '@/components/DatePicker'
-import { Button } from '@/components/ui/button'
 import {
+  DatePicker,
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-
+} from '@/design-system'
 // Picks a bar to jump to - by exact date, the earliest bar in the collected range, or a random
 // one. The date picker sits in the menu itself rather than behind a hidden native input calling
 // showPicker(): that trick needed a user gesture, wasn't supported everywhere, and put the one

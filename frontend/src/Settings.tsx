@@ -17,6 +17,36 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { usePageTitle } from '@/lib/usePageTitle'
+import {
+  ThemeCustomizer,
+  ThemeSelector,
+  Badge,
+  Button,
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tabs,
+  TabsIndicator,
+  TabsList,
+  TabsPanel,
+  TabsTab,
+} from '@/design-system'
 import { BrokerLogo } from '@/BrokerLogo'
 import ChartTemplatesTab from '@/ChartTemplatesTab'
 import EngineSettingsTab from '@/EngineSettingsTab'
@@ -25,23 +55,8 @@ import TradeAccountsTab from '@/TradeAccountsTab'
 import SourceSelect from '@/components/SourceSelect'
 import StockMasterCombobox from '@/components/StockMasterCombobox'
 import TagInput from '@/components/TagInput'
-import { Badge } from '@/components/ui/badge'
 import { TextAreaField, TextField } from '@/components/form'
 import { watchRuleSchema } from '@/lib/schemas'
-import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
 import type { RuleCheck, WatchRule } from '@/services/api'
 import {
   addStock,
@@ -1676,6 +1691,30 @@ function StocksMasterTab() {
   )
 }
 
+/** Theme preset + live color editor (design system). Edits save in this browser; "Copy as preset"
+ *  gives a block for src/design-system/tokens/themes.ts so a fork can ship its own theme. */
+function AppearanceTab() {
+  return (
+    <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2">
+          <div>
+            <div className="font-medium">Theme</div>
+            <div className="text-xs text-muted-foreground">A preset; your color edits sit on top of it.</div>
+          </div>
+          <ThemeSelector />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Change any color, the corner radius or the density on the right - every page updates as you edit. To
+          make it the default for everyone running this repo, use <b>Copy as preset</b> and paste it into{' '}
+          <code>src/design-system/tokens/themes.ts</code>.
+        </p>
+      </div>
+      <ThemeCustomizer className="h-[70vh] min-h-[480px]" />
+    </div>
+  )
+}
+
 export default function Settings() {
   const { tab } = useSearch({ from: '/settings' })
   const navigate = useNavigate({ from: '/settings' })
@@ -1701,6 +1740,7 @@ export default function Settings() {
       >
         <TabsList className="w-44 shrink-0 self-start !h-full">
           <TabsIndicator />
+          <TabsTab value="appearance">Appearance</TabsTab>
           <TabsTab value="account">Account</TabsTab>
           <TabsTab value="model">Model</TabsTab>
           <TabsTab value="litellm">LiteLLM</TabsTab>
@@ -1722,6 +1762,9 @@ export default function Settings() {
           <TabsTab value="chart-templates">Chart templates</TabsTab>
         </TabsList>
         <div className="min-w-0 flex-1 overflow-y-auto pr-1">
+          <TabsPanel value="appearance">
+            <AppearanceTab />
+          </TabsPanel>
           <TabsPanel value="account">
             <AccountTab />
           </TabsPanel>

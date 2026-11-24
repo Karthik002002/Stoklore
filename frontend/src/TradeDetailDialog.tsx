@@ -3,9 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ChevronDownIcon, ChevronUpIcon, PencilIcon } from 'lucide-react'
 import ImageLightbox from '@/components/ImageLightbox'
 import { ChecksReadout } from '@/components/TradeReviewFields'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Badge, Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@/design-system'
 import { formatDateTime, inr } from '@/lib/format'
 import {
   actualRiskAmount,

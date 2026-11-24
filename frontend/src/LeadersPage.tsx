@@ -14,13 +14,17 @@ import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { ArrowUpRightIcon, PlayIcon } from 'lucide-react'
 import { ChartButton, startScan } from '@/components/ChartModal'
 import DelivCell from '@/components/DelivCell'
-import RsPill from '@/components/RsPill'
+import {
+  RsPill,
+  TableSortHead as SortTh,
+  Button,
+  Input,
+  Spinner,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/design-system'
 import SectorHoverCard, { hoverProps } from '@/components/SectorHoverCard'
-import SortTh from '@/components/SortTh'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Spinner } from '@/components/ui/spinner'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { fmt } from '@/lib/format'
 import { sortRows } from '@/lib/sortRows'
 import type { Sort } from '@/lib/sortRows'

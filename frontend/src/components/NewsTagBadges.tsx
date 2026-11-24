@@ -1,4 +1,4 @@
-import { Badge } from '@/components/ui/badge'
+import { Badge } from '@/design-system'
 import { EVENT_LABEL, isMaterial, materialityLabel, type NewsTags } from '@/lib/newsTags'
 
 /** The event type, plus a "material" marker when the story is rated moderate/major or likely to

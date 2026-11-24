@@ -1,6 +1,5 @@
 import { LayoutDashboardIcon, MoveIcon, RotateCcwIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import { Button, Dialog, DialogContent, DialogDescription, DialogTitle } from '@/design-system'
 import { HOME_PANELS, useHomeLayout } from '@/lib/homeLayout'
 import { cn } from '@/lib/utils'
 

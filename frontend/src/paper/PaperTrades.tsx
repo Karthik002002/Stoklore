@@ -10,11 +10,18 @@ import { F, Seg, TicketFooter } from '@/components/OrderTicketParts'
 import { cn } from '@/lib/utils'
 import MoveToAccount from './MoveToAccount'
 import SymbolCombobox from '@/components/SymbolCombobox'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Badge,
+  Button,
+  Input,
+  Spinner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/design-system'
 import { Controller } from 'react-hook-form'
 import { downloadXlsx } from '@/lib/exportFile'
 import { tradeSheet } from '@/lib/tradeExport'

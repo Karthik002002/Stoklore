@@ -19,23 +19,38 @@ import { toast } from 'sonner'
 import SeriesChart from '@/components/charts/SeriesChart'
 import { seriesColor } from '@/components/charts/colors'
 import type { Dataset } from '@/components/charts/colors'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import {
+  Badge,
+  Button,
   Command,
   CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
-} from '@/components/ui/command'
-import { Input } from '@/components/ui/input'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
-import { Textarea } from '@/components/ui/textarea'
-import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+  Input,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+  Textarea,
+  Tabs,
+  TabsIndicator,
+  TabsList,
+  TabsPanel,
+  TabsTab,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/design-system'
 import {
   comboCount,
   drawdown,
@@ -177,9 +192,7 @@ const sizingBad = (s: SizingChoice) => s.compound && !(Number(s.capital) > 0)
 function SizingFields({ value, onChange }: { value: SizingChoice; onChange: (v: SizingChoice) => void }) {
   return (
     <>
-      <label
-        className="flex h-7 items-center gap-1.5 self-end text-xs"
-      >
+      <label className="flex h-7 items-center gap-1.5 self-end text-xs">
         <input
           type="checkbox"
           checked={value.compound}
@@ -192,7 +205,10 @@ function SizingFields({ value, onChange }: { value: SizingChoice; onChange: (v: 
       {value.compound && (
         <>
           <Field label="Sizing" help={FIELD_HELP.sizing}>
-            <Select value={value.mode} onValueChange={(v) => onChange({ ...value, mode: v as SizingChoice['mode'] })}>
+            <Select
+              value={value.mode}
+              onValueChange={(v) => onChange({ ...value, mode: v as SizingChoice['mode'] })}
+            >
               <SelectTrigger
                 size="sm"
                 className="w-28"
@@ -338,7 +354,8 @@ function SymbolPicker({ value, onChange }: { value: string[]; onChange: (v: stri
   )
 }
 
-const SYMBOL_JSON_EXAMPLE = '[\n  { "symbol": "COFORGE", "index": "NSE" },\n  { "symbol": "RAIN", "index": "NSE" }\n]'
+const SYMBOL_JSON_EXAMPLE =
+  '[\n  { "symbol": "COFORGE", "index": "NSE" },\n  { "symbol": "RAIN", "index": "NSE" }\n]'
 
 /** Paste `[{"symbol": "INFY", "index": "NSE"}, ...]` to replace the selection in one go. Nothing
  *  changes until it all checks out: the JSON's shape first, then every stock against the stocks
@@ -353,7 +370,9 @@ function SymbolJsonImport({ onChange }: { onChange: (v: string[]) => void }) {
       const { entries, errors } = parseSymbolJson(text)
       if (errors.length) return errors
       const rows = await Promise.all(
-        entries.map((e) => searchStocksMaster(e.symbol).then((r) => r.stocks.find((s) => s.symbol === e.symbol))),
+        entries.map((e) =>
+          searchStocksMaster(e.symbol).then((r) => r.stocks.find((s) => s.symbol === e.symbol)),
+        ),
       )
       const bad = entries.flatMap((e, i) => {
         const row = rows[i]
@@ -400,7 +419,12 @@ function SymbolJsonImport({ onChange }: { onChange: (v: string[]) => void }) {
             ))}
           </ul>
         )}
-        <Button size="sm" className="w-full" disabled={!text.trim() || check.isPending} onClick={() => check.mutate()}>
+        <Button
+          size="sm"
+          className="w-full"
+          disabled={!text.trim() || check.isPending}
+          onClick={() => check.mutate()}
+        >
           {check.isPending && <Spinner className="size-3.5" />}
           Validate &amp; select
         </Button>
@@ -582,7 +606,9 @@ function RunForm({
     const b = bases[k]?.trim()
     return b ? Number(b) : (strategy?.params[k] ?? 0)
   }
-  const parsed = orderParams(strategy?.name, Object.keys(strategy?.params ?? {})).map((k) => [k, parseValues(text(k))] as const)
+  const parsed = orderParams(strategy?.name, Object.keys(strategy?.params ?? {})).map(
+    (k) => [k, parseValues(text(k))] as const,
+  )
   const invalid = [
     ...parsed.filter(([, v]) => v === null).map(([k]) => k),
     ...Object.entries(bases)
@@ -1580,7 +1606,9 @@ function SweepView({
         interval: sweep!.interval,
         params: Object.fromEntries(Object.entries(params).map(([k, v]) => [k, [v]])),
         cost_bps: cost_bps ?? sweep!.cost_bps,
-        sizing: sizing ? { mode: sizing === 2 ? 'all_in' : 'scale', capital } : { mode: 'fixed', capital: 100000 },
+        sizing: sizing
+          ? { mode: sizing === 2 ? 'all_in' : 'scale', capital }
+          : { mode: 'fixed', capital: 100000 },
         label: sweep!.label ?? `${sweep!.strategy} sweep`,
         // the same bars the sweep ran on, not today's history - or the numbers won't match the cell
         range: pinnedRange(sweep!.history, sweep!.coverage),
@@ -2152,7 +2180,6 @@ const DAILY_TUNE: Partial<Record<(typeof TUNE_NUMBERS)[number][0], number>> = {
 }
 const MAX_TUNE_CELLS = 5000 // app/core/autotune.py MAX_CELLS
 
-
 /** A titled group inside a form, so a long form reads as a few decisions instead of one wall. */
 function FormSection({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -2181,7 +2208,11 @@ function AutotuneForm({
   })
   // the whole form is remembered, so a tuning setup survives a reload; a strategy that's gone falls
   // back to the first one, and its params' text only ever reads the current strategy's keys
-  const [name, setName] = useStored<string | null>(`${TUNE_FORM_KEY}.strategy`, null, (v) => typeof v === 'string')
+  const [name, setName] = useStored<string | null>(
+    `${TUNE_FORM_KEY}.strategy`,
+    null,
+    (v) => typeof v === 'string',
+  )
   const [symbols, setSymbols] = useStoredSymbols(TUNE_SYMBOLS_KEY)
   const [barInterval, setBarInterval] = useStored(`${TUNE_FORM_KEY}.interval`, '5m', (v) =>
     INTERVALS.includes(v as string),
@@ -2197,7 +2228,9 @@ function AutotuneForm({
 
   const strategy = strategies?.find((s) => s.name === name) ?? strategies?.[0]
   const text = (k: string) => values[k] ?? String(strategy?.params[k] ?? '')
-  const parsed = orderParams(strategy?.name, Object.keys(strategy?.params ?? {})).map((k) => [k, parseValues(text(k))] as const)
+  const parsed = orderParams(strategy?.name, Object.keys(strategy?.params ?? {})).map(
+    (k) => [k, parseValues(text(k))] as const,
+  )
   const invalid = parsed.filter(([, v]) => v === null).map(([k]) => k)
   const tuned = parsed.filter(([, v]) => (v?.length ?? 0) > 1)
   const cells = comboCount(tuned.map(([, v]) => v ?? []))
@@ -2226,24 +2259,21 @@ function AutotuneForm({
       const failed = new Map<string, string[]>() // cause -> symbols: one bad grid fails every stock alike
       let batch = ''
       let finished = 0
-      await runEngineAutotune(
-        tuneRequest(),
-        (e) => {
-          if (e.type === 'start') {
-            batch = e.batch
-            setProgress([0, e.symbols])
-          } else if (e.type === 'report') {
-            ids.push(e.report.id)
-            onReport(batch, symbols.length > 1)
-          } else if (e.type === 'error') {
-            // the rest still run - say which ones didn't, and why, once per cause
-            const hit = [...(failed.get(e.error) ?? []), e.symbol]
-            failed.set(e.error, hit)
-            toast.error(e.error, { id: `tune-${e.error}`, description: hit.join(', ') })
-          }
-          if (e.type === 'report' || e.type === 'error') setProgress(([, n]) => [++finished, n])
-        },
-      )
+      await runEngineAutotune(tuneRequest(), (e) => {
+        if (e.type === 'start') {
+          batch = e.batch
+          setProgress([0, e.symbols])
+        } else if (e.type === 'report') {
+          ids.push(e.report.id)
+          onReport(batch, symbols.length > 1)
+        } else if (e.type === 'error') {
+          // the rest still run - say which ones didn't, and why, once per cause
+          const hit = [...(failed.get(e.error) ?? []), e.symbol]
+          failed.set(e.error, hit)
+          toast.error(e.error, { id: `tune-${e.error}`, description: hit.join(', ') })
+        }
+        if (e.type === 'report' || e.type === 'error') setProgress(([, n]) => [++finished, n])
+      })
       return { batch, ids }
     },
     onSuccess: ({ batch, ids }) => {
@@ -2376,16 +2406,16 @@ function AutotuneForm({
           {run.isPending
             ? `${progress[0]} of ${progress[1]} walked`
             : !symbols.length
-            ? 'Select symbols'
-            : historyProblem
-              ? historyProblem
-              : symbols.length > MAX_TUNE_SYMBOLS
-                ? `${symbols.length} stocks - keep it to ${MAX_TUNE_SYMBOLS}`
-                : !tuned.length
-                  ? 'Give a param a range'
-                  : cells > MAX_TUNE_CELLS
-                    ? `${fmt(cells, 0)} cells - keep it under ${fmt(MAX_TUNE_CELLS, 0)}`
-                    : `Walk forward ${symbols.length > 1 ? `${symbols.length} stocks` : symbols[0]} · ${fmt(cells, 0)} cells per window`}
+              ? 'Select symbols'
+              : historyProblem
+                ? historyProblem
+                : symbols.length > MAX_TUNE_SYMBOLS
+                  ? `${symbols.length} stocks - keep it to ${MAX_TUNE_SYMBOLS}`
+                  : !tuned.length
+                    ? 'Give a param a range'
+                    : cells > MAX_TUNE_CELLS
+                      ? `${fmt(cells, 0)} cells - keep it under ${fmt(MAX_TUNE_CELLS, 0)}`
+                      : `Walk forward ${symbols.length > 1 ? `${symbols.length} stocks` : symbols[0]} · ${fmt(cells, 0)} cells per window`}
         </Button>
         <Button
           size="sm"
@@ -2467,13 +2497,17 @@ function AutotuneList({ rows, onOpen }: { rows: EngineAutotuneRow[]; onOpen: (ru
                     {names.length > 3 ? ', …' : ''}
                   </span>
                 </TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">{Object.keys(first.axes).join(', ')}</TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">
+                  {Object.keys(first.axes).join(', ')}
+                </TableCell>
                 <TableCell className="text-right tabular-nums">
                   {held} / {rs.length}
                 </TableCell>
                 <TableCell className={cn('text-right tabular-nums', pnlClass(tuned))}>{inr(tuned)}</TableCell>
                 <TableCell className={cn('text-right tabular-nums', pnlClass(fixed))}>{inr(fixed)}</TableCell>
-                <TableCell className="whitespace-nowrap text-muted-foreground">{formatDateTime(first.created)}</TableCell>
+                <TableCell className="whitespace-nowrap text-muted-foreground">
+                  {formatDateTime(first.created)}
+                </TableCell>
               </TableRow>
             )
           })}
@@ -2499,7 +2533,8 @@ export default function Engine() {
   const { data: jobs = [] } = useQuery({
     queryKey: ['engineJobs'],
     queryFn: getEngineJobs,
-    refetchInterval: (q) => (q.state.data?.some((j) => j.status === 'queued' || j.status === 'running') ? 3000 : 30_000),
+    refetchInterval: (q) =>
+      q.state.data?.some((j) => j.status === 'queued' || j.status === 'running') ? 3000 : 30_000,
   })
   const activeJobs = jobs.filter((j) => j.status === 'queued' || j.status === 'running').length
   usePageTitle(settings?.name ?? 'Algo engine')

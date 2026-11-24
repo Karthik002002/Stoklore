@@ -1,15 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowRightLeftIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
 import {
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+} from '@/design-system'
 import { getPaperAccounts, movePaperPosition, movePaperTrade } from '@/services/api'
 
 /** Move an open paper position, or a closed paper trade, to another paper account. Only paper

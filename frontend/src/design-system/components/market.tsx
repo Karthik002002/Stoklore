@@ -171,7 +171,15 @@ function Delivery({
 
 /** "Results in 3d": amber within a week, red within two days, nothing past two weeks. The app
  *  wrapper passes `days` from useNextResults. */
-function ResultsBadge({ days, className }: { days: number | null | undefined; className?: string }) {
+function ResultsBadge({
+  days,
+  title,
+  className,
+}: {
+  days: number | null | undefined
+  title?: string
+  className?: string
+}) {
   if (days == null || days > 14 || days < 0) return null
   const when = days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days}d`
   return (
@@ -185,7 +193,7 @@ function ResultsBadge({ days, className }: { days: number | null | undefined; cl
             : 'bg-muted text-muted-foreground',
         className,
       )}
-      title="Holding through results is a gap you can't stop out of"
+      title={title ?? "Holding through results is a gap you can't stop out of"}
     >
       <IconCalendarEvent className="size-3" />
       Results {when}

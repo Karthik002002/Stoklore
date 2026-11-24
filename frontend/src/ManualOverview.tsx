@@ -6,11 +6,20 @@ import { AreaSeries, HistogramSeries, createChart } from 'lightweight-charts'
 import { ChevronLeftIcon, ChevronRightIcon, Trash2Icon, WalletIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { DateField, TextField } from '@/components/form'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/design-system'
 import type { z } from 'zod'
 import { balanceAdjustmentSchema } from '@/lib/schemas'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { fmt, formatDate, inr } from '@/lib/format'
 import {
   dayOfWeek,

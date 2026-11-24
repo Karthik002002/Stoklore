@@ -3,12 +3,19 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { BellIcon, CheckCheckIcon, CircleCheckIcon, CircleXIcon, Trash2Icon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import DataTable from '@/components/DataTable'
-import { Badge } from '@/components/ui/badge'
-import { Button, buttonVariants } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
+import {
+  DataTable,
+  Badge,
+  Button,
+  buttonVariants,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+} from '@/design-system'
 import { formatDateTime, formatDuration, timeAgoShort } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import {

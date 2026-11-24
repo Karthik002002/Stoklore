@@ -1,4 +1,4 @@
-import { Badge } from '@/components/ui/badge'
+import { Badge } from '@/design-system'
 import type { StockMasterRow } from '@/lib/types'
 
 // "What is this ticker, exactly" - shared by every symbol search in the app (SymbolCombobox,

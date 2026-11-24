@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Spinner, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/design-system'
 import { formatDateTime, formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { getWorkflowHealth } from '@/services/api'

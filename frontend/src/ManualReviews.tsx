@@ -2,11 +2,16 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
-import DatePicker from '@/components/DatePicker'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Spinner } from '@/components/ui/spinner'
-import { Textarea } from '@/components/ui/textarea'
+import {
+  DatePicker,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Spinner,
+  Textarea,
+} from '@/design-system'
 import { fmt, formatDate, inr } from '@/lib/format'
 import { seriesFor } from '@/lib/tradeStats'
 import { beforeAfter, localDay, summarize, topMistakes, tradesInPeriod } from '@/lib/tradeReview'

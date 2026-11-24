@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { KeyRoundIcon, LockIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Spinner } from '@/components/ui/spinner'
+import { Button, Input, Spinner } from '@/design-system'
 import {
   AUTH_EXPIRED_EVENT,
   getAuthStatus,

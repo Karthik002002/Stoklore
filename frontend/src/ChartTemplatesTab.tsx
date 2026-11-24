@@ -2,9 +2,7 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PaletteIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Spinner } from '@/components/ui/spinner'
+import { Button, Input, Spinner } from '@/design-system'
 import { cn } from '@/lib/utils'
 import IndicatorControls from '@/features/bar-replay/IndicatorControls'
 import ReplayChart from '@/features/bar-replay/ReplayChart'
@@ -96,7 +94,12 @@ export default function ChartTemplatesTab() {
               >
                 <Trash2Icon className="size-3.5" />
               </Button>
-              <Button size="sm" variant="outline" disabled={!changed || !draft.name.trim()} onClick={() => upsert(draft)}>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!changed || !draft.name.trim()}
+                onClick={() => upsert(draft)}
+              >
                 Save
               </Button>
               <Button
@@ -111,7 +114,10 @@ export default function ChartTemplatesTab() {
               </Button>
             </div>
           </div>
-          <IndicatorControls indicators={draft.indicators} onChange={(indicators) => setDraft({ ...draft, indicators })} />
+          <IndicatorControls
+            indicators={draft.indicators}
+            onChange={(indicators) => setDraft({ ...draft, indicators })}
+          />
 
           <div className="flex flex-wrap items-center gap-2">
             <Input

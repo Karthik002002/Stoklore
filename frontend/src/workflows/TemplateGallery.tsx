@@ -9,11 +9,16 @@ import {
   NewspaperIcon,
   SparklesIcon,
 } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Spinner } from '@/components/ui/spinner'
+import {
+  Badge,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Spinner,
+} from '@/design-system'
 import { createFromScreen, createFromTemplate, getWorkflowTemplates } from '@/services/api'
 import type { WorkflowTemplate } from '@/services/api'
 

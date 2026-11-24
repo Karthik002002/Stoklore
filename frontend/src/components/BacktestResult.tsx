@@ -1,6 +1,5 @@
 import { TrendingDownIcon, TrendingUpIcon } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Badge, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/design-system'
 import { fmt, formatDate, inr } from '@/lib/format'
 
 export function ReturnBadge({ pct }: { pct: number }) {

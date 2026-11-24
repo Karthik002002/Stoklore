@@ -11,15 +11,20 @@ import { ExternalLinkIcon, RefreshCwIcon, Trash2Icon, XIcon } from 'lucide-react
 import { toast } from 'sonner'
 import { ChartButton } from '@/components/ChartModal'
 import DelivCell from '@/components/DelivCell'
-import RsPill from '@/components/RsPill'
-import SortTh from '@/components/SortTh'
+import {
+  RsPill,
+  TableSortHead as SortTh,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Spinner,
+  Textarea,
+} from '@/design-system'
 import StockLinks from '@/components/StockLinks'
 import SurveillanceBadge from '@/components/SurveillanceBadge'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Spinner } from '@/components/ui/spinner'
-import { Textarea } from '@/components/ui/textarea'
 import { fmt } from '@/lib/format'
 import { sortRows } from '@/lib/sortRows'
 import type { Sort } from '@/lib/sortRows'

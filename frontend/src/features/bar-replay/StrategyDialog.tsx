@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react'
 import type { TradeAccount } from '@/lib/types'
-import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Badge, Dialog, DialogContent, DialogHeader, DialogTitle } from '@/design-system'
 import { inr } from '@/lib/format'
 import { positionSizeCap } from '@/lib/tradeAccounts'
 import { accountHasCosts, roundTripCost } from '@/lib/tradeCosts'

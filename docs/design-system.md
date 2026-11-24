@@ -4,8 +4,9 @@ A swappable component layer for the whole frontend: trading-terminal components 
 Base UI + Tailwind v4, catalogued in Storybook. Every component reads only CSS variables, so a
 theme is data — pick one, tweak colors live, or ship your own preset in a fork.
 
-> **Status:** being built on the `design-system` branch. The app still uses `components/ui/*`
-> and `index.css`; nothing switches over until the migration phase.
+> **Status:** on the `design-system` branch. The app runs on it: `components/ui/*` is gone, every
+> page imports from `@/design-system`, and the theme is picked in the rail (palette icon) and
+> edited in **Settings › Appearance**.
 
 ## Run Storybook
 
@@ -130,7 +131,7 @@ Pure trading math is self-checked: `node src/design-system/components/marketMath
 | 4 | Layout & data: panel (header/title/body/section/footer), card (compat), stat strip + stat, empty state, table (+ `TableSortHead`), data-table (+ `selectedRowId` / `onRowClick`), pagination, calendar, date picker / range picker (+ presets) | done |
 | 5 | Trading: change, tick price (flash), quote, RS pill, delivery, results & surveillance badges, sparkline, 52W range, index card, ticker strip (tape), watchlist row, meter, order ticket (risk sizing, R:R, warnings), side toggle, market depth, P&L calendar, treemap | done |
 | 6 | Page stories built only from design-system parts (`src/design-system/pages/`): trading workspace, home, stock detail, holdings, book risk, trade simulation, agent, Settings › Appearance | done |
-| 7 | Migration — see below | waits for go-ahead |
+| 7 | Migration — see below | steps 1–3 done; 4–5 next |
 
 ## Page stories (`src/design-system/pages/`)
 
@@ -150,20 +151,29 @@ index tape, ⌘K palette, market status, theme selector and light/dark toggle).
 
 Stories set `parameters.fullBleed` to drop the canvas padding.
 
-## Migration plan (Phase 7)
+## Migration (Phase 7)
 
-1. **Stylesheet:** `main.tsx` imports `design-system/styles.css` instead of `index.css` + `theme.css`;
+1. ✅ **Stylesheet:** `main.tsx` imports `design-system/styles.css` instead of `index.css` + `theme.css`;
    call `applyTheme()` before render. `lib/theme.ts` (`useTheme`, `useAppliedTheme`) is re-pointed at
    `themeStore` so existing callers keep working. The old `theme` localStorage key maps to the
    Terminal Dark / Light preset once.
-2. **Chrome:** App.tsx top bar gets `ThemeSelector` + `ThemeModeToggle` (replacing `ThemeToggle`);
+2. ✅ **Chrome:** App.tsx top bar gets `ThemeSelector` + `ThemeModeToggle` (replacing `ThemeToggle`);
    Settings gets an Appearance tab with `ThemeCustomizer`; `<Toaster>` from the design system.
-3. **Primitives:** swap `@/components/ui/*` imports for `@/design-system` (same names/props), one
+   *Done as:* the app has no top bar, so the rail's theme button is `ThemeSelector compact`
+   (preset list + light/dark + "Customize colors…" → `/settings?tab=appearance`).
+3. ✅ **Primitives:** swap `@/components/ui/*` imports for `@/design-system` (same names/props), one
    folder at a time, then delete `components/ui/`. `DataTable`, `SortTh`, `DatePicker`, `RsPill`,
    `DelivCell` move to their design-system versions; `ResultsBadge` / `SurveillanceBadge` keep their
    data hooks and render the design-system badge.
-4. **Pages:** hand-rolled panels, stat tiles and empty states become `Panel` / `StatStrip` /
+   *Done as:* one codemod merged every `@/components/ui/*`, `DataTable`, `DatePicker`, `RsPill`
+   and `SortTh` (→ `TableSortHead as SortTh`) import into a single `@/design-system` import per
+   file; `DelivCell` stays as a `<td>` around `Delivery`. `components.json`'s `ui` alias points at
+   `src/design-system/components`, so `shadcn add` lands there.
+
+   **Not yet themed:** charts drawn by lightweight-charts (`PriceChart`, `ReplayChart`, `IndexCard`
+   sparklines) keep their own hardcoded colors and only follow light/dark, not presets or edits.
+4. ⏳ **Pages:** hand-rolled panels, stat tiles and empty states become `Panel` / `StatStrip` /
    `EmptyState`, page by page, each a separate commit.
-5. **Command palette:** rebuild `CommandPalette.tsx` on the new parts (remove the invented demo
+5. ⏳ **Command palette:** rebuild `CommandPalette.tsx` on the new parts (remove the invented demo
    shortcuts or wire them in `lib/shortcuts.ts`), keeping `lib/navTargets.ts` as its index.
 

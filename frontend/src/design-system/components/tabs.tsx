@@ -53,6 +53,9 @@ function TabsTab({ className, ...props }: ComponentProps<typeof TabsPrimitive.Ta
         'group-data-[variant=segment]/tabs:data-active:bg-muted group-data-[variant=segment]/tabs:data-active:text-foreground group-data-[variant=segment]/tabs:data-active:shadow-[inset_0_-2px_var(--accent)]',
         // line
         'group-data-[variant=line]/tabs:-mb-px group-data-[variant=line]/tabs:h-7.5 group-data-[variant=line]/tabs:px-2 group-data-[variant=line]/tabs:data-active:text-foreground group-data-[variant=line]/tabs:data-active:shadow-[inset_0_-2px_var(--accent)]',
+        // vertical (settings-style nav): stacked rows, left-aligned, accent on the left edge
+        'data-[orientation=vertical]:h-7 data-[orientation=vertical]:w-full data-[orientation=vertical]:justify-start data-[orientation=vertical]:border-r-0! data-[orientation=vertical]:border-b data-[orientation=vertical]:border-border data-[orientation=vertical]:last:border-b-0',
+        'data-[orientation=vertical]:data-active:shadow-[inset_2px_0_var(--accent)]!',
         className,
       )}
       {...props}

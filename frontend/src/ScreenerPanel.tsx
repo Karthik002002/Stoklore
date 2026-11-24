@@ -1,13 +1,19 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ExternalLinkIcon, MinusCircleIcon, PlusCircleIcon } from 'lucide-react'
-import DataTable from '@/components/DataTable'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
-import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
+import {
+  DataTable,
+  Badge,
+  Button,
+  Spinner,
+  Tabs,
+  TabsIndicator,
+  TabsList,
+  TabsPanel,
+  TabsTab,
+} from '@/design-system'
+import type { DataTableColumns } from '@/design-system'
 import { cellChange } from '@/lib/screenerTable'
-import type { DataTableColumns } from '@/components/DataTable'
 import type { ScreenerDocument, ScreenerTable } from '@/services/api'
 import { getScreenerData } from '@/services/api'
 

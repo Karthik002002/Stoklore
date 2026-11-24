@@ -5,8 +5,7 @@ import { MessageCircleIcon, SquarePenIcon, Trash2Icon } from 'lucide-react'
 import ChatInput from '@/ChatInput'
 import { ToolCallChip, slashCommands } from '@/ChatWidget'
 import type { ToolPart } from '@/ChatWidget'
-import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
+import { Button, Spinner } from '@/design-system'
 import {
   Conversation,
   ConversationContent,

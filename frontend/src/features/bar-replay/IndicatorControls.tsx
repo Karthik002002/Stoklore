@@ -1,10 +1,18 @@
 import type { IndicatorConfig } from './store'
 import { useState } from 'react'
 import { CheckIcon, ChevronsUpDownIcon, EyeOffIcon, PlusIcon, XIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
-import { Input } from '@/components/ui/input'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  Button,
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  Input,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/design-system'
 import { INDICATOR_TYPES, indicatorLineColor } from '@/lib/indicators'
 import { cn } from '@/lib/utils'
 
@@ -55,7 +63,8 @@ function IndicatorEditor({
 }) {
   const type = INDICATOR_TYPES[ind.type]
   const lines = type.lines ?? [{ key: '', label: 'Line' }]
-  const defaultLevels = ind.type === 'rsi' ? 'RSI levels in Settings' : (type.levels ?? []).join(', ') || 'none'
+  const defaultLevels =
+    ind.type === 'rsi' ? 'RSI levels in Settings' : (type.levels ?? []).join(', ') || 'none'
   const [levelsText, setLevelsText] = useState(ind.levels?.join(', ') ?? '')
   const commitLevels = () => {
     const parsed = levelsText
@@ -118,7 +127,9 @@ function IndicatorEditor({
               size="sm"
               variant={ind.lineStyle === st.value ? 'secondary' : 'ghost'}
               className="h-6 px-1.5 text-xs"
-              onClick={() => onChange({ ...ind, lineStyle: ind.lineStyle === st.value ? undefined : st.value })}
+              onClick={() =>
+                onChange({ ...ind, lineStyle: ind.lineStyle === st.value ? undefined : st.value })
+              }
             >
               {st.label}
             </Button>
@@ -139,7 +150,11 @@ function IndicatorEditor({
         </label>
       )}
       <label className="flex items-center gap-2">
-        <input type="checkbox" checked={!!ind.hidden} onChange={(e) => onChange({ ...ind, hidden: e.target.checked })} />
+        <input
+          type="checkbox"
+          checked={!!ind.hidden}
+          onChange={(e) => onChange({ ...ind, hidden: e.target.checked })}
+        />
         Hide
       </label>
     </div>
@@ -191,7 +206,17 @@ export default function IndicatorControls({
             editing === ind.key && 'border-foreground',
             ind.hidden && 'opacity-50',
           )}
-          style={{ color: indicatorLineColor(ind, i, { key: INDICATOR_TYPES[ind.type].lines?.[0]?.key ?? null, color: INDICATOR_TYPES[ind.type].lines?.[0]?.color }, 0) }}
+          style={{
+            color: indicatorLineColor(
+              ind,
+              i,
+              {
+                key: INDICATOR_TYPES[ind.type].lines?.[0]?.key ?? null,
+                color: INDICATOR_TYPES[ind.type].lines?.[0]?.color,
+              },
+              0,
+            ),
+          }}
         >
           <button
             type="button"
@@ -268,7 +293,12 @@ export default function IndicatorControls({
       </div>
       {editingIndex >= 0 && (
         <div className="basis-full">
-          <IndicatorEditor key={editing} ind={indicators[editingIndex]} index={editingIndex} onChange={update} />
+          <IndicatorEditor
+            key={editing}
+            ind={indicators[editingIndex]}
+            index={editingIndex}
+            onChange={update}
+          />
         </div>
       )}
     </div>

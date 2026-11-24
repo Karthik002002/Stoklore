@@ -1,7 +1,5 @@
 import { PlusIcon, XIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
+import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, Input } from '@/design-system'
 import { inr } from '@/lib/format'
 import { CHECKS } from '@/lib/tradeReview'
 import { riskReward, sizeByRisk } from './orderEngine'

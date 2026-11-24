@@ -1,8 +1,7 @@
 import { Component } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
 import { TriangleAlertIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-
+import { Button } from '@/design-system'
 // A panel that throws while drawing takes the whole page down with it - the router's boundary
 // replaces the dashboard with an error screen, so one bad panel loses the other eleven. This keeps
 // the failure inside the panel that caused it, says so, and offers to draw it again.

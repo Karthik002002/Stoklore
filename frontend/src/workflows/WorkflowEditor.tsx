@@ -37,12 +37,17 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
-import { Button, buttonVariants } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
-import { Textarea } from '@/components/ui/textarea'
+  Button,
+  buttonVariants,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+  Textarea,
+} from '@/design-system'
 import { formatDuration, timeAgoShort } from '@/lib/format'
 import { useShortcut, useShortcutLabel } from '@/lib/shortcuts'
 import { useAppliedTheme } from '@/lib/theme'

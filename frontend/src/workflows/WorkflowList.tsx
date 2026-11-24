@@ -21,10 +21,11 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
-import { Badge } from '@/components/ui/badge'
-import { Button, buttonVariants } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
+  Badge,
+  Button,
+  buttonVariants,
+  Spinner,
+} from '@/design-system'
 import { formatDateTime, formatDuration, timeAgoShort } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { Workflow } from '@/services/api'

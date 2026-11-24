@@ -23,15 +23,35 @@ import TradeReviewFields, {
   reviewPayload,
   type ReviewValue,
 } from '@/components/TradeReviewFields'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
+import {
+  Badge,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tabs,
+  TabsIndicator,
+  TabsList,
+  TabsPanel,
+  TabsTab,
+} from '@/design-system'
 import { copyText, downloadXlsx } from '@/lib/exportFile'
 import { tradeJson, tradeSheet } from '@/lib/tradeExport'
 import { formatDate, inr } from '@/lib/format'
@@ -1017,7 +1037,12 @@ export default function ManualBacktesting() {
               Bar Replay
             </Button>
             <FilterButton filters={filters} onOpen={() => setFilterOpen(true)} />
-            <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} title="Import a broker tradebook CSV">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setImportOpen(true)}
+              title="Import a broker tradebook CSV"
+            >
               <FileUpIcon className="size-4" />
               Import
             </Button>

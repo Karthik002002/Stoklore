@@ -10,10 +10,17 @@ import TradeReviewFields, {
   reviewPayload,
   type ReviewValue,
 } from '@/components/TradeReviewFields'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Spinner } from '@/components/ui/spinner'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Spinner,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/design-system'
 import { inr } from '@/lib/format'
 import { autoResult, EMOTIONS, NEUTRAL_PNL_BAND, tradePnl } from '@/lib/manualTrades'
 import { tradeCosts, tradeNetPnl } from '@/lib/tradeCosts'

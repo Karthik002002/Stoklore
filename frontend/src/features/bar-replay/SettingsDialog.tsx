@@ -1,10 +1,19 @@
 import type { ChartSettings } from './store'
 import { useEffect, useRef, useState } from 'react'
 import { PlusIcon, XIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Tabs,
+  TabsIndicator,
+  TabsList,
+  TabsPanel,
+  TabsTab,
+} from '@/design-system'
 import { inr } from '@/lib/format'
 import { preferredQuantity } from './orderEngine'
 
@@ -64,7 +73,15 @@ function OptionalColorField({
   )
 }
 
-function CheckField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+function CheckField({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string
+  checked: boolean
+  onChange: (v: boolean) => void
+}) {
   return (
     <label className="flex items-center gap-2 text-sm">
       <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
@@ -211,7 +228,10 @@ export default function SettingsDialog({
             <TabsIndicator />
           </TabsList>
 
-          <TabsPanel value="chart" className="grid h-[min(34rem,70vh)] content-start items-start gap-3 overflow-y-auto pt-3 md:grid-cols-3">
+          <TabsPanel
+            value="chart"
+            className="grid h-[min(34rem,70vh)] content-start items-start gap-3 overflow-y-auto pt-3 md:grid-cols-3"
+          >
             <div className="space-y-2 rounded-lg border p-3">
               <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Candles</p>
               <ColorField label="Body up" value={draft.bodyUpColor} onChange={set('bodyUpColor')} />
@@ -240,22 +260,61 @@ export default function SettingsDialog({
 
             <div className="space-y-2 rounded-lg border p-3">
               <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Canvas</p>
-              <OptionalColorField label="Background" value={draft.background} fallback="#0a0a0a" onChange={set('background')} />
-              <OptionalColorField label="Grid" value={draft.gridColor} fallback="#334155" onChange={set('gridColor')} />
-              <OptionalColorField label="Axis text" value={draft.textColor} fallback="#9ca3af" onChange={set('textColor')} />
-              <CheckField label="Horizontal grid lines" checked={draft.horzGridVisible} onChange={set('horzGridVisible')} />
-              <CheckField label="Vertical grid lines" checked={draft.vertGridVisible} onChange={set('vertGridVisible')} />
+              <OptionalColorField
+                label="Background"
+                value={draft.background}
+                fallback="#0a0a0a"
+                onChange={set('background')}
+              />
+              <OptionalColorField
+                label="Grid"
+                value={draft.gridColor}
+                fallback="#334155"
+                onChange={set('gridColor')}
+              />
+              <OptionalColorField
+                label="Axis text"
+                value={draft.textColor}
+                fallback="#9ca3af"
+                onChange={set('textColor')}
+              />
+              <CheckField
+                label="Horizontal grid lines"
+                checked={draft.horzGridVisible}
+                onChange={set('horzGridVisible')}
+              />
+              <CheckField
+                label="Vertical grid lines"
+                checked={draft.vertGridVisible}
+                onChange={set('vertGridVisible')}
+              />
               <CheckField label="Volume" checked={draft.volumeVisible} onChange={set('volumeVisible')} />
-              <CheckField label="Last price line" checked={draft.lastPriceLine} onChange={set('lastPriceLine')} />
+              <CheckField
+                label="Last price line"
+                checked={draft.lastPriceLine}
+                onChange={set('lastPriceLine')}
+              />
             </div>
 
             <div className="space-y-2 rounded-lg border p-3">
               <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                 Oscillator levels
               </p>
-              <ColorField label="Upper level" value={draft.levelUpperColor} onChange={set('levelUpperColor')} />
-              <ColorField label="Lower level" value={draft.levelLowerColor} onChange={set('levelLowerColor')} />
-              <CheckField label="Fill between levels" checked={draft.levelBandVisible} onChange={set('levelBandVisible')} />
+              <ColorField
+                label="Upper level"
+                value={draft.levelUpperColor}
+                onChange={set('levelUpperColor')}
+              />
+              <ColorField
+                label="Lower level"
+                value={draft.levelLowerColor}
+                onChange={set('levelLowerColor')}
+              />
+              <CheckField
+                label="Fill between levels"
+                checked={draft.levelBandVisible}
+                onChange={set('levelBandVisible')}
+              />
               {draft.levelBandVisible && (
                 <ColorField label="Fill" value={draft.levelBandColor} onChange={set('levelBandColor')} />
               )}
@@ -288,7 +347,10 @@ export default function SettingsDialog({
             </div>
           </TabsPanel>
 
-          <TabsPanel value="preferences" className="grid h-[min(34rem,70vh)] content-start items-start gap-3 overflow-y-auto pt-3 md:grid-cols-2">
+          <TabsPanel
+            value="preferences"
+            className="grid h-[min(34rem,70vh)] content-start items-start gap-3 overflow-y-auto pt-3 md:grid-cols-2"
+          >
             <SizingFields draft={draft} set={set} balance={balance} price={price} />
             <label className="flex items-start gap-2 rounded-lg border p-3 text-sm">
               <input

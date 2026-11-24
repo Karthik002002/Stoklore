@@ -12,10 +12,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Spinner } from '@/components/ui/spinner'
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  Spinner,
+} from '@/design-system'
 import { timeAgoShort } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
 import {

@@ -28,8 +28,7 @@ import {
   ZapIcon,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
+import { Button, Spinner } from '@/design-system'
 import { useAppliedTheme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 import { getRunWorkflow, getSessionWorkflow } from '@/services/api'

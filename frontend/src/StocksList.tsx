@@ -1,5 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import RsPill from '@/components/RsPill'
+import {
+  RsPill,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  Input,
+  Spinner,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TableSortHead as SortTh,
+} from '@/design-system'
 import { useStrength } from '@/lib/useStrength'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -16,31 +37,10 @@ import {
 import { toast } from 'sonner'
 import { ChartButton, ScanButton } from '@/components/ChartModal'
 import TerminalPanel, { TerminalRow } from '@/components/TerminalPanel'
-import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog'
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Input } from '@/components/ui/input'
-import { Spinner } from '@/components/ui/spinner'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { fmt, formatDate, inr } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { sortRows } from '@/lib/sortRows'
 import type { Sort } from '@/lib/sortRows'
-import SortTh from '@/components/SortTh'
 import { BoardGrid } from '@/dashboards/DashboardPage'
 import { HOME_PANELS, useHomeLayout } from '@/lib/homeLayout'
 import SectorPerformancePanel from '@/components/SectorPerformancePanel'

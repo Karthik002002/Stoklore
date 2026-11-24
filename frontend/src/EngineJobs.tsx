@@ -6,11 +6,22 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { RotateCcwIcon, SquareIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Badge,
+  Button,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/design-system'
 import { formatDateTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import {
@@ -56,7 +67,11 @@ export function useQueueJob() {
 function took(a: string | null, b: string | null) {
   if (!a) return ''
   const s = Math.round(((b ? Date.parse(b) : Date.now()) - Date.parse(a)) / 1000)
-  return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
+  return s < 60
+    ? `${s}s`
+    : s < 3600
+      ? `${Math.floor(s / 60)}m ${s % 60}s`
+      : `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`
 }
 
 function what(j: EngineJob) {
@@ -77,13 +92,21 @@ function Output({ job }: { job: EngineJob }) {
         Open run
       </Link>
     ) : (
-      <Link to="/engine" search={{ tab: 'backtest', batch: r.batch, run: r.ids![0] }} className="text-primary hover:underline">
+      <Link
+        to="/engine"
+        search={{ tab: 'backtest', batch: r.batch, run: r.ids![0] }}
+        className="text-primary hover:underline"
+      >
         {n} runs
       </Link>
     )
   if (job.kind === 'sweep' && r.sweep)
     return (
-      <Link to="/engine" search={{ tab: 'backtest', sweep: r.sweep }} className="text-primary hover:underline">
+      <Link
+        to="/engine"
+        search={{ tab: 'backtest', sweep: r.sweep }}
+        className="text-primary hover:underline"
+      >
         Open sweep
       </Link>
     )
@@ -118,7 +141,11 @@ export function JobsPanel() {
   })
   const act = useMutation({
     mutationFn: ({ id, action }: { id: number; action: 'cancel' | 'retry' | 'delete' }) =>
-      action === 'cancel' ? cancelEngineJob(id) : action === 'retry' ? retryEngineJob(id) : deleteEngineJob(id),
+      action === 'cancel'
+        ? cancelEngineJob(id)
+        : action === 'retry'
+          ? retryEngineJob(id)
+          : deleteEngineJob(id),
     onSuccess: refresh,
     onError: (e) => toast.error(e.message),
   })
@@ -138,17 +165,17 @@ export function JobsPanel() {
     finished.current = now
   }, [jobs, queryClient])
 
-  const counts = jobs.reduce<Record<string, number>>((c, j) => ({ ...c, [j.status]: (c[j.status] ?? 0) + 1 }), {})
+  const counts = jobs.reduce<Record<string, number>>(
+    (c, j) => ({ ...c, [j.status]: (c[j.status] ?? 0) + 1 }),
+    {},
+  )
   return (
     <Panel
       title={`Background jobs${counts.running ? ` · ${counts.running} running` : ''}${counts.queued ? ` · ${counts.queued} queued` : ''}`}
       actions={
         <label className="flex items-center gap-2 text-xs text-muted-foreground">
           Run at once
-          <Select
-            value={String(config?.workers ?? 1)}
-            onValueChange={(v) => workers.mutate(Number(v))}
-          >
+          <Select value={String(config?.workers ?? 1)} onValueChange={(v) => workers.mutate(Number(v))}>
             <SelectTrigger size="sm" className="w-16">
               <SelectValue />
             </SelectTrigger>
@@ -167,8 +194,8 @@ export function JobsPanel() {
         <p className="text-sm text-destructive">{error.message}</p>
       ) : !jobs.length ? (
         <p className="text-sm text-muted-foreground">
-          Nothing queued yet. <em>Run in background</em> on the Backtests or Auto-tune form puts a run here: it
-          keeps going while you work elsewhere, and a queued job survives a server restart.
+          Nothing queued yet. <em>Run in background</em> on the Backtests or Auto-tune form puts a run here:
+          it keeps going while you work elsewhere, and a queued job survives a server restart.
         </p>
       ) : (
         <div className="overflow-x-auto">
@@ -201,7 +228,9 @@ export function JobsPanel() {
                     </TableCell>
                     <TableCell className="min-w-36">
                       <div className="flex items-center gap-2">
-                        <Badge variant={STATUS[j.status]}>{j.cancel && j.status === 'running' ? 'cancelling' : j.status}</Badge>
+                        <Badge variant={STATUS[j.status]}>
+                          {j.cancel && j.status === 'running' ? 'cancelling' : j.status}
+                        </Badge>
                         {j.progress && j.status === 'running' && (
                           <span className="text-xs tabular-nums text-muted-foreground">
                             {j.progress.done}/{j.progress.total}
@@ -215,8 +244,13 @@ export function JobsPanel() {
                       )}
                       {(j.error || errs > 0) && (
                         <p
-                          className={cn('mt-1 max-w-64 truncate text-xs', j.error ? 'text-destructive' : 'text-muted-foreground')}
-                          title={j.error ?? j.result?.errors?.map((e) => `${e.symbol}: ${e.error}`).join('\n')}
+                          className={cn(
+                            'mt-1 max-w-64 truncate text-xs',
+                            j.error ? 'text-destructive' : 'text-muted-foreground',
+                          )}
+                          title={
+                            j.error ?? j.result?.errors?.map((e) => `${e.symbol}: ${e.error}`).join('\n')
+                          }
                         >
                           {j.error ?? `${errs} stock${errs === 1 ? '' : 's'} failed`}
                         </p>
@@ -241,7 +275,9 @@ export function JobsPanel() {
                     <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
                       {formatDateTime(j.created_at)}
                     </TableCell>
-                    <TableCell className="text-right text-xs tabular-nums">{took(j.started_at, j.finished_at)}</TableCell>
+                    <TableCell className="text-right text-xs tabular-nums">
+                      {took(j.started_at, j.finished_at)}
+                    </TableCell>
                     <TableCell className="whitespace-nowrap text-xs">
                       <Output job={j} />
                     </TableCell>
@@ -252,16 +288,32 @@ export function JobsPanel() {
                           variant="ghost"
                           disabled={j.cancel}
                           onClick={() => act.mutate({ id: j.id, action: 'cancel' })}
-                          title={j.status === 'running' ? 'Stops before the next stock; a backtest or sweep just finishes' : undefined}
+                          title={
+                            j.status === 'running'
+                              ? 'Stops before the next stock; a backtest or sweep just finishes'
+                              : undefined
+                          }
                         >
                           <SquareIcon /> Cancel
                         </Button>
                       ) : (
                         <>
-                          <Button size="icon-sm" variant="ghost" aria-label="Retry" title="Queue the same request again" onClick={() => act.mutate({ id: j.id, action: 'retry' })}>
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            aria-label="Retry"
+                            title="Queue the same request again"
+                            onClick={() => act.mutate({ id: j.id, action: 'retry' })}
+                          >
                             <RotateCcwIcon />
                           </Button>
-                          <Button size="icon-sm" variant="ghost" aria-label="Remove" title="Remove the job - the runs it made stay" onClick={() => act.mutate({ id: j.id, action: 'delete' })}>
+                          <Button
+                            size="icon-sm"
+                            variant="ghost"
+                            aria-label="Remove"
+                            title="Remove the job - the runs it made stay"
+                            onClick={() => act.mutate({ id: j.id, action: 'delete' })}
+                          >
                             <Trash2Icon />
                           </Button>
                         </>

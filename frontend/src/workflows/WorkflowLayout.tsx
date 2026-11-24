@@ -1,7 +1,6 @@
 import { Link, Outlet, useLocation, useParams } from '@tanstack/react-router'
 import { ArrowLeftIcon, PlayIcon, PowerIcon } from 'lucide-react'
-import { Button, buttonVariants } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
+import { Button, buttonVariants, Spinner } from '@/design-system'
 import { cn } from '@/lib/utils'
 import { usePageTitle } from '@/lib/usePageTitle'
 import {

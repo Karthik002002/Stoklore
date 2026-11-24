@@ -66,6 +66,9 @@
   --radius-md: var(--radius);
   --radius-lg: calc(var(--radius) * 1.5);
   --radius-xl: calc(var(--radius) * 2);
+  --radius-2xl: calc(var(--radius) * 2.5);
+  --radius-3xl: calc(var(--radius) * 3);
+  --radius-4xl: calc(var(--radius) * 3.5);
 }
 
 /* TickerStrip's tape: the list is rendered twice and slides exactly one copy's width. */

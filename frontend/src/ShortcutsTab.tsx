@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { RotateCcwIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/design-system'
 import {
   SHORTCUT_SCOPES,
   SHORTCUTS,

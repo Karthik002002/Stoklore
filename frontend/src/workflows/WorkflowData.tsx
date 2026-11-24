@@ -2,15 +2,21 @@ import { useMemo } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import type { UTCTimestamp } from 'lightweight-charts'
-import DataTable from '@/components/DataTable'
+import {
+  DataTable,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+  Button,
+} from '@/design-system'
 import SeriesChart from '@/components/charts/SeriesChart'
 import { seriesColor } from '@/components/charts/colors'
 import type { Dataset } from '@/components/charts/colors'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
 import { LayoutGridIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
 import { createDashboardFromWorkflow, getWorkflowSeries } from '@/services/api'
 
 // What a workflow has gathered: its collected series as a chart and a table. Whether it is still

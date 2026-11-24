@@ -1,9 +1,15 @@
 import { useEffect, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import TagInput from '@/components/TagInput'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
+import {
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+} from '@/design-system'
 import { cn } from '@/lib/utils'
 import { getAlerts, getWorkflowCatalogue, getWorkflows, previewTrigger } from '@/services/api'
 import type { WorkflowTrigger, WorkflowTriggerKind } from '@/services/api'

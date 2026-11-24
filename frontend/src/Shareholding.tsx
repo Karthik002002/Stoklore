@@ -3,14 +3,25 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { Link } from '@tanstack/react-router'
 import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, RefreshCwIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { DateRangePicker } from '@/components/DatePicker'
+import {
+  DateRangePicker,
+  Badge,
+  Button,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/design-system'
 import TradeFilterDialog, { FilterButton, FilterChips } from '@/components/TradeFilterDialog'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { compact, formatDate } from '@/lib/format'
 import { EMPTY_FILTERS, filterTrades, setFacet } from '@/lib/tradeFilters'
 import { usePageTitle } from '@/lib/usePageTitle'

@@ -1,6 +1,5 @@
 import { FlameIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@/design-system'
 import { inr } from '@/lib/format'
 import type { TradeAccount } from '@/lib/types'
 

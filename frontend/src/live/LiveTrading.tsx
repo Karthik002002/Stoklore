@@ -4,10 +4,17 @@ import SurveillanceBadge from '@/components/SurveillanceBadge'
 import { Link } from '@tanstack/react-router'
 import { AlertTriangleIcon, OctagonXIcon, RefreshCwIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Badge,
+  Button,
+  Spinner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/design-system'
 import { inr } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
 import LiveOrderTicket from './LiveOrderTicket'

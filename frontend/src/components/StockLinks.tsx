@@ -1,6 +1,5 @@
 import { ExternalLinkIcon, GlobeIcon } from 'lucide-react'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-
+import { Popover, PopoverContent, PopoverTrigger } from '@/design-system'
 /** Where to read about an NSE stock elsewhere. Sites with a symbol-keyed page link straight to it;
  *  the rest key pages by their own ids, so the backend looks the page up and redirects
  *  (GET /api/research-link/{site}/{symbol}). */

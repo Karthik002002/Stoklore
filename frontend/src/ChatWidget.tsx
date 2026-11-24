@@ -18,14 +18,14 @@ import {
   XCircleIcon,
   XIcon,
 } from 'lucide-react'
-import { Spinner } from '@/components/ui/spinner'
-import { Button } from '@/components/ui/button'
 import {
+  Spinner,
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+} from '@/design-system'
 import ModelCombobox from '@/components/ModelCombobox'
 import { useShortcut } from '@/lib/shortcuts'
 import { getActiveModel, getModels } from '@/services/api'

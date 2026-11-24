@@ -107,6 +107,7 @@ export const FINANCE_TABS = [
 
 // Mirrors Settings.jsx's TabsTab list exactly.
 export const SETTINGS_TABS = [
+  { label: 'Settings > Appearance', tab: 'appearance' },
   { label: 'Settings > Account', tab: 'account' },
   { label: 'Settings > Model', tab: 'model' },
   { label: 'Settings > LiteLLM', tab: 'litellm' },

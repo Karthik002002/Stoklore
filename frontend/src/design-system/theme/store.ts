@@ -6,7 +6,11 @@ const KEY = 'ds.theme'
 
 function load(): ThemeState {
   try {
-    return sanitizeState(JSON.parse(localStorage.getItem(KEY) ?? 'null'))
+    const saved = localStorage.getItem(KEY)
+    // Before the design system the app stored only light/dark under 'theme'; carry that over once.
+    if (saved == null && localStorage.getItem('theme') === 'light')
+      return { presetId: 'terminal-light', overrides: {} }
+    return sanitizeState(JSON.parse(saved ?? 'null'))
   } catch {
     return { ...DEFAULT_STATE }
   }

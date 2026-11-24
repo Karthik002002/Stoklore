@@ -8,7 +8,7 @@ import { BellIcon, CircleCheckIcon, CircleXIcon } from 'lucide-react'
 import SeriesChart from '@/components/charts/SeriesChart'
 import { chartTime, seriesColor } from '@/components/charts/colors'
 import { squarify } from '@/components/charts/squarify'
-import { Spinner } from '@/components/ui/spinner'
+import { Spinner } from '@/design-system'
 import { formatDuration, timeAgoShort } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { queryPanel } from '@/services/api'
@@ -256,7 +256,11 @@ export function RowsTable({
         <tr>
           {symbolCol && (
             <th className="w-6 border-b py-1 pl-1">
-              <ScanButton symbols={rows.flatMap((r) => symbolOf(r) ?? [])} name="Panel rows" source="dashboard" />
+              <ScanButton
+                symbols={rows.flatMap((r) => symbolOf(r) ?? [])}
+                name="Panel rows"
+                source="dashboard"
+              />
             </th>
           )}
           {extra && <th className="border-b px-2 py-1" />}
@@ -279,7 +283,9 @@ export function RowsTable({
             className={cn(onOpenRow && 'cursor-pointer', 'hover:bg-muted/40')}
           >
             {symbolCol && (
-              <td className="border-b py-1 pl-1">{symbolOf(row) && <ChartButton symbol={symbolOf(row)!} />}</td>
+              <td className="border-b py-1 pl-1">
+                {symbolOf(row) && <ChartButton symbol={symbolOf(row)!} />}
+              </td>
             )}
             {extra && <td className="border-b px-2 py-1 whitespace-nowrap">{extra(row)}</td>}
             {columns.map((c) => (

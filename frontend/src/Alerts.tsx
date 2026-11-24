@@ -15,14 +15,28 @@ import { Link } from '@tanstack/react-router'
 import { BellIcon, BellRingIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, TrashIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import SymbolCombobox from '@/components/SymbolCombobox'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Textarea } from '@/components/ui/textarea'
+import {
+  Badge,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Textarea,
+} from '@/design-system'
 import { formatDateTime, inr, timeAgo } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
 import type {
@@ -47,7 +61,9 @@ import {
 
 /** How far the level is from the last price the alert saw, signed: + means price must rise to it. */
 const distance = (a: Alert) =>
-  a.price == null || !a.last_price || a.condition?.startsWith('moving') ? null : (100 * (a.price - a.last_price)) / a.last_price
+  a.price == null || !a.last_price || a.condition?.startsWith('moving')
+    ? null
+    : (100 * (a.price - a.last_price)) / a.last_price
 
 const TRIGGER_LABELS: Record<AlertTrigger, string> = {
   once: 'Only once',
@@ -323,7 +339,8 @@ function PositionsFor({
           className="block whitespace-nowrap text-primary hover:underline"
         >
           Live {p.net_qty > 0 ? 'LONG' : 'SHORT'} {Math.abs(p.net_qty)}
-          {(p.net_qty > 0 ? p.buy_avg : p.sell_avg) != null && ` @ ${inr((p.net_qty > 0 ? p.buy_avg : p.sell_avg)!)}`}
+          {(p.net_qty > 0 ? p.buy_avg : p.sell_avg) != null &&
+            ` @ ${inr((p.net_qty > 0 ? p.buy_avg : p.sell_avg)!)}`}
         </Link>
       ))}
     </div>

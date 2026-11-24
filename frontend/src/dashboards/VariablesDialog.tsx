@@ -1,9 +1,19 @@
 import { useQuery } from '@tanstack/react-query'
 import { PlusIcon, Trash2Icon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/design-system'
 import { DASHBOARD_ALL, getDashboardFields, getDashboardParams } from '@/services/api'
 import type { DashboardVariable } from '@/services/api'
 

@@ -1,16 +1,16 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { IconUserCircle } from '@tabler/icons-react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import {
+  Badge,
+  Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog'
+} from '@/design-system'
 import UsageCommitGraph from '@/components/UsageCommitGraph'
 import { readStore, secondsOn, subscribeLive } from '@/lib/activityTime'
 import { formatDuration } from '@/lib/format'

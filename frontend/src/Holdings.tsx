@@ -4,11 +4,25 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCwIcon, TrendingDownIcon, TrendingUpIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import AllocationDonut from '@/components/AllocationDonut'
-import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tabs, TabsIndicator, TabsList, TabsTab } from '@/components/ui/tabs'
+import {
+  Button,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tabs,
+  TabsIndicator,
+  TabsList,
+  TabsTab,
+} from '@/design-system'
 import LiveOrderTicket from '@/live/LiveOrderTicket'
 import { LiveOrdersTable, LivePositionsTable, LiveStateBar } from '@/live/LiveTrading'
 import type { HoldingsView } from '@/router'
@@ -84,7 +98,10 @@ export default function Holdings() {
   // Positions / Orders / Trade are Dhan's live account - Kite only ever shows holdings here.
   const view: HoldingsView = broker === 'dhan' ? (viewParam ?? 'holdings') : 'holdings'
   const setView = (next: string) =>
-    navigate({ search: (prev) => ({ ...prev, view: next === 'holdings' ? undefined : (next as HoldingsView) }), replace: true })
+    navigate({
+      search: (prev) => ({ ...prev, view: next === 'holdings' ? undefined : (next as HoldingsView) }),
+      replace: true,
+    })
   const navigate = useNavigate({ from: '/holdings' })
   const queryClient = useQueryClient()
   const [reloading, setReloading] = useState(false)

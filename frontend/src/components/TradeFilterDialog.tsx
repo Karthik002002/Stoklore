@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import type * as React from 'react'
 import { ChevronRightIcon, SearchIcon, SlidersHorizontalIcon, XIcon } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { DateRangePicker } from '@/components/DatePicker'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
+import {
+  Badge,
+  Button,
+  DateRangePicker,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Input,
+} from '@/design-system'
 import {
   activeCount,
   EMPTY_FILTERS,

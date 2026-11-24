@@ -3,7 +3,7 @@
 // toggle, a labelled field with something on the right of its label, a price input that shows its
 // distance from entry, and the summary footer that stays in view at the bottom of a scrolling panel.
 import { AlertTriangleIcon } from 'lucide-react'
-import { Input } from '@/components/ui/input'
+import { Input } from '@/design-system'
 import { fmt, inr } from '@/lib/format'
 import { useTicketCautions } from '@/lib/surveillance'
 import { cn } from '@/lib/utils'

@@ -5,14 +5,17 @@ import { useQuery } from '@tanstack/react-query'
 import { CandlestickSeries, HistogramSeries, createChart, createSeriesMarkers } from 'lightweight-charts'
 import type { UTCTimestamp } from 'lightweight-charts'
 import { DownloadIcon, InfoIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import {
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Spinner } from '@/components/ui/spinner'
+  Spinner,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/design-system'
 import { coverageNotes, focusRange, historyText, istTime, markerRange, tradeMarkers } from '@/lib/engine'
 import type { RunTrade } from '@/lib/engine'
 import { downloadCsv, downloadXlsx } from '@/lib/exportFile'
@@ -20,7 +23,6 @@ import type { SheetData } from '@/lib/exportFile'
 import { fmt, inr } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { Help } from '@/lib/engineHelp'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { getIntradayBars } from '@/services/api'
 import type { EngineCoverage, EngineHistory, EngineRun, EngineRunRow, EngineSkipped } from '@/services/api'
 
@@ -142,7 +144,15 @@ export function Field({ label, help, children }: { label: string; help?: Help; c
   )
 }
 
-export function Stat({ label, value, className }: { label: string; value: React.ReactNode; className?: string }) {
+export function Stat({
+  label,
+  value,
+  className,
+}: {
+  label: string
+  value: React.ReactNode
+  className?: string
+}) {
   return (
     <div className="rounded-lg border p-3">
       <p className={cn('text-lg font-semibold tabular-nums', className)}>{value}</p>
@@ -317,4 +327,3 @@ export function ExecutionsChart({ run, focus }: { run: EngineRun; focus: RunTrad
     </div>
   )
 }
-

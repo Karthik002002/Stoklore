@@ -23,9 +23,17 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { create } from 'zustand'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/design-system'
 import { inr } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { PaperChart } from '@/paper/PaperPositionChart'

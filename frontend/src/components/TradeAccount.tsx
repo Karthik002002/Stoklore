@@ -4,7 +4,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/design-system'
 import { cn } from '@/lib/utils'
 import LiveOrderTicket from '@/live/LiveOrderTicket'
 import { OrderPanel } from '@/paper/PaperTrades'

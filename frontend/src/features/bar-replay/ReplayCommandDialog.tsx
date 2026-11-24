@@ -1,13 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import {
-  Command,
-  CommandDialog,
-  CommandEmpty,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command'
+import { Command, CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/design-system'
 import { StockBadges, StockSubline } from '@/components/StockMeta'
 import { REPLAY_TIMEFRAMES } from '@/lib/replay'
 import { searchStocksMaster } from '@/services/api'

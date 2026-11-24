@@ -31,8 +31,8 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-} from '@/components/ui/command'
-import { Spinner } from '@/components/ui/spinner'
+  Spinner,
+} from '@/design-system'
 import { useTheme } from '@/lib/theme'
 import {
   BACKTEST_TABS,

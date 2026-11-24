@@ -4,11 +4,26 @@ import { useNavigate, useSearch } from '@tanstack/react-router'
 import { DownloadIcon, PlayIcon, PrinterIcon, SaveIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import MdActions from '@/components/MdActions'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
+import {
+  Button,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tabs,
+  TabsIndicator,
+  TabsList,
+  TabsPanel,
+  TabsTab,
+} from '@/design-system'
 import { compact, fmt, inr } from '@/lib/format'
 import { byLoggedOrder, tradePnl } from '@/lib/manualTrades'
 import { tradesForAccount } from '@/lib/tradeAccounts'

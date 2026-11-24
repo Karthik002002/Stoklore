@@ -29,11 +29,16 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
-import { Button, buttonVariants } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
+  Button,
+  buttonVariants,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+} from '@/design-system'
 import { cn } from '@/lib/utils'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { DASHBOARD_ALL, getDashboard, getDashboardValues, saveDashboard } from '@/services/api'

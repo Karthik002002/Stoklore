@@ -1,5 +1,4 @@
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/design-system'
 // Labels for known price_sources plugins (backend) - falls back to the raw key for any source
 // added later without a frontend change (see price_sources/__init__.py's SOURCES registry).
 const SOURCE_LABELS: Record<string, string> = { yfinance: 'Yahoo Finance', moneycontrol: 'Moneycontrol' }

@@ -4,12 +4,23 @@ import { useNavigate } from '@tanstack/react-router'
 import { PlayIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
 import { BacktestResultView, PlotsResultView } from '@/components/BacktestResult'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Textarea } from '@/components/ui/textarea'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  Input,
+  Spinner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Textarea,
+} from '@/design-system'
 import { formatDateTime } from '@/lib/format'
 import type { ScriptResult } from '@/lib/runPineScript'
 import { DEFAULT_PINE_SCRIPT, runPineScript } from '@/lib/runPineScript'

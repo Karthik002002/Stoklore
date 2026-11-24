@@ -4,7 +4,7 @@
 //
 // Anything hoverable spreads `hoverProps(tip)`; <SectorHoverCard /> is rendered once and follows the
 // pointer, flipping to the other side near a window edge.
-import RsPill from '@/components/RsPill'
+import { RsPill } from '@/design-system'
 import { useStrength } from '@/lib/useStrength'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'

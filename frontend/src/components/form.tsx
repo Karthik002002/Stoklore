@@ -1,10 +1,16 @@
 import { Controller } from 'react-hook-form'
 import type { FieldError, FieldValues, Path, UseFormReturn } from 'react-hook-form'
 import type { ComponentProps, ReactNode } from 'react'
-import DatePicker from '@/components/DatePicker'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
+import {
+  DatePicker,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Textarea,
+} from '@/design-system'
 import TagInput from '@/components/TagInput'
 
 // Thin react-hook-form bindings for this app's existing inputs. The base-ui primitives (Select,

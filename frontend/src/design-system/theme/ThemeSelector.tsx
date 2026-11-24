@@ -39,19 +39,45 @@ export function ThemeModeToggle({ className }: { className?: string }) {
   )
 }
 
-/** Top-bar theme picker. `onCustomize` opens wherever the app hosts the ThemeCustomizer. */
-export function ThemeSelector({ onCustomize }: { onCustomize?: () => void }) {
-  const { resolved, state, setPreset } = useTheme()
+/** Theme picker. `onCustomize` opens wherever the app hosts the ThemeCustomizer. `compact` is an
+ *  icon-only trigger for a narrow rail; it also puts the light/dark switch inside the menu. */
+export function ThemeSelector({
+  onCustomize,
+  compact = false,
+  side = 'bottom',
+  align = 'end',
+}: {
+  onCustomize?: () => void
+  compact?: boolean
+  side?: 'top' | 'bottom' | 'left' | 'right'
+  align?: 'start' | 'center' | 'end'
+}) {
+  const { resolved, state, setPreset, toggleMode } = useTheme()
+  const dark = resolved.preset.mode === 'dark'
   const edited =
     Object.keys(state.overrides).length > 0 || state.radius !== undefined || state.density !== undefined
   return (
     <Popover>
-      <PopoverTrigger render={<Button variant="ghost" size="sm" aria-label="Theme" />}>
+      <PopoverTrigger
+        render={
+          <Button
+            variant="ghost"
+            size={compact ? 'icon' : 'sm'}
+            aria-label={`Theme: ${resolved.preset.label}`}
+            className="relative"
+          />
+        }
+      >
         <Swatch preset={resolved.preset} />
-        <span>{resolved.preset.label}</span>
-        {edited && <span className="size-1.5 rounded-full bg-accent" title="Customized" />}
+        {!compact && <span>{resolved.preset.label}</span>}
+        {edited && (
+          <span
+            className={cn('size-1.5 rounded-full bg-accent', compact && 'absolute top-0.5 right-0.5')}
+            title="Customized"
+          />
+        )}
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-56 p-1">
+      <PopoverContent side={side} align={align} className="w-56 p-1">
         <div className="px-1.5 pt-1 pb-1.5 text-label text-muted-foreground uppercase">Theme</div>
         {THEMES.map((t) => {
           const active = t.id === resolved.preset.id
@@ -72,6 +98,23 @@ export function ThemeSelector({ onCustomize }: { onCustomize?: () => void }) {
             </button>
           )
         })}
+        {compact && resolved.preset.pair && (
+          <>
+            <div className="my-1 h-px bg-border" />
+            <button
+              type="button"
+              onClick={toggleMode}
+              className="flex h-7 w-full items-center gap-2 rounded-sm px-1.5 text-left hover:bg-muted"
+            >
+              {dark ? (
+                <IconSun className="size-3.5 text-muted-foreground" />
+              ) : (
+                <IconMoon className="size-3.5 text-muted-foreground" />
+              )}
+              <span className="flex-1">Switch to {dark ? 'light' : 'dark'}</span>
+            </button>
+          </>
+        )}
         {onCustomize && (
           <>
             <div className="my-1 h-px bg-border" />

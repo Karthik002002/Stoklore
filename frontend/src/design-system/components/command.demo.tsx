@@ -3,7 +3,7 @@
 // Pages, tabs and settings come from the app's real index (lib/navTargets.ts), so this stays in
 // sync with what CommandPalette.tsx can reach. Stocks and recents are sample data.
 import { Fragment, useEffect, useMemo, useState } from 'react'
-import type { ComponentType } from 'react'
+import type { ComponentType, ReactNode } from 'react'
 import { useCommandState } from 'cmdk'
 import {
   IconAlertTriangle,
@@ -573,13 +573,18 @@ function ResultCount() {
 export function StoklorePalette({
   initialQuery = '',
   embedded = false,
+  defaultOpen = true,
+  renderTrigger,
 }: {
   initialQuery?: string
   embedded?: boolean
+  defaultOpen?: boolean
+  /** Replaces the default "Search ⌘K" button (the app shell draws a search bar). */
+  renderTrigger?: (open: () => void) => ReactNode
 }) {
   const entries = useMemo(buildEntries, [])
   const byValue = useMemo(() => new Map(entries.map((e) => [e.value, e])), [entries])
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(defaultOpen)
   const [query, setQuery] = useState(initialQuery)
   const [scope, setScope] = useState<ScopeId>('all')
   const [chips, setChips] = useState<string[]>([])
@@ -820,13 +825,17 @@ export function StoklorePalette({
 
   return (
     <>
-      <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
-        Search
-        <KbdGroup>
-          <Kbd>⌘</Kbd>
-          <Kbd>K</Kbd>
-        </KbdGroup>
-      </Button>
+      {renderTrigger ? (
+        renderTrigger(() => setOpen(true))
+      ) : (
+        <Button variant="outline" size="sm" onClick={() => setOpen(true)}>
+          Search
+          <KbdGroup>
+            <Kbd>⌘</Kbd>
+            <Kbd>K</Kbd>
+          </KbdGroup>
+        </Button>
+      )}
       <CommandDialog
         open={open}
         onOpenChange={setOpen}

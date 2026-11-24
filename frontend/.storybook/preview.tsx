@@ -15,7 +15,9 @@ const withTheme: Decorator = (Story, ctx) => {
     lastToolbar = id
   }
   return (
-    <div className="min-h-full bg-background p-4 font-sans text-xs text-foreground">
+    <div
+      className={`min-h-full bg-background font-sans text-xs text-foreground ${ctx.parameters.fullBleed ? '' : 'p-4'}`}
+    >
       <Story />
     </div>
   )
@@ -39,7 +41,9 @@ const preview: Preview = {
     layout: 'fullscreen',
     backgrounds: { disable: true },
     controls: { expanded: true },
-    options: { storySort: { order: ['Introduction', 'Foundations', 'Theme', 'Components', 'Trading', '*'] } },
+    options: {
+      storySort: { order: ['Introduction', 'Foundations', 'Theme', 'Components', 'Trading', 'Pages', '*'] },
+    },
   },
 }
 

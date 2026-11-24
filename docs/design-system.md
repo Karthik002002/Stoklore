@@ -129,5 +129,41 @@ Pure trading math is self-checked: `node src/design-system/components/marketMath
 | 3 | Overlays: dialog (+ `size`, `DialogBody`), sheet (4 sides), alert-dialog, popover (+ header, close), tooltip, hover-card, dropdown-menu (sub, checkbox, radio, shortcut), command palette, themed Toaster for sonner | done |
 | 4 | Layout & data: panel (header/title/body/section/footer), card (compat), stat strip + stat, empty state, table (+ `TableSortHead`), data-table (+ `selectedRowId` / `onRowClick`), pagination, calendar, date picker / range picker (+ presets) | done |
 | 5 | Trading: change, tick price (flash), quote, RS pill, delivery, results & surveillance badges, sparkline, 52W range, index card, ticker strip (tape), watchlist row, meter, order ticket (risk sizing, R:R, warnings), side toggle, market depth, P&L calendar, treemap | done |
-| 6 | Page compositions as stories: workspace, stock detail, holdings, risk, simulation, agent… | next |
-| 7 | Migration: app switches to `styles.css`, ThemeSelector in the top bar, ThemeCustomizer in Settings › Appearance, pages move to `@/design-system` | waits for go-ahead |
+| 6 | Page stories built only from design-system parts (`src/design-system/pages/`): trading workspace, home, stock detail, holdings, book risk, trade simulation, agent, Settings › Appearance | done |
+| 7 | Migration — see below | waits for go-ahead |
+
+## Page stories (`src/design-system/pages/`)
+
+Whole screens assembled from `@/design-system` exports only — the check that the parts work
+together before any real page moves. Storybook-only: sample data in `pages/data.ts`, an SVG
+`CandleChart` standing in for lightweight-charts, and an `AppShell` (icon rail with page menus,
+index tape, ⌘K palette, market status, theme selector and light/dark toggle).
+
+| Story | Shows |
+|---|---|
+| Pages › Trading workspace | watchlist → chart → order ticket + depth; positions / orders / events dock. Clicking a row switches the symbol everywhere |
+| Pages › Home | review banner, index cards, stats, sortable screener with pills/sparklines + pagination, sector treemap, P&L calendar, events |
+| Pages › Stock detail | header (quote, range, fundamentals), tabs: chart, quarterly financials, shareholding, events, AI report |
+| Pages › Portfolio | Holdings (DataTable with weights, summary strip) and Book risk (meters, sector concentration vs limit, position risk) |
+| Pages › Review | Trade simulation: config, fan chart, percentiles, correlation matrix with n<10 cells |
+| Pages › Automate · Settings | Agent chat with tool calls and prompt box; Settings › Appearance hosting the ThemeCustomizer |
+
+Stories set `parameters.fullBleed` to drop the canvas padding.
+
+## Migration plan (Phase 7)
+
+1. **Stylesheet:** `main.tsx` imports `design-system/styles.css` instead of `index.css` + `theme.css`;
+   call `applyTheme()` before render. `lib/theme.ts` (`useTheme`, `useAppliedTheme`) is re-pointed at
+   `themeStore` so existing callers keep working. The old `theme` localStorage key maps to the
+   Terminal Dark / Light preset once.
+2. **Chrome:** App.tsx top bar gets `ThemeSelector` + `ThemeModeToggle` (replacing `ThemeToggle`);
+   Settings gets an Appearance tab with `ThemeCustomizer`; `<Toaster>` from the design system.
+3. **Primitives:** swap `@/components/ui/*` imports for `@/design-system` (same names/props), one
+   folder at a time, then delete `components/ui/`. `DataTable`, `SortTh`, `DatePicker`, `RsPill`,
+   `DelivCell` move to their design-system versions; `ResultsBadge` / `SurveillanceBadge` keep their
+   data hooks and render the design-system badge.
+4. **Pages:** hand-rolled panels, stat tiles and empty states become `Panel` / `StatStrip` /
+   `EmptyState`, page by page, each a separate commit.
+5. **Command palette:** rebuild `CommandPalette.tsx` on the new parts (remove the invented demo
+   shortcuts or wire them in `lib/shortcuts.ts`), keeping `lib/navTargets.ts` as its index.
+

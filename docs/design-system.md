@@ -97,6 +97,14 @@ Non-color: `--radius` (every `rounded-*` derives from it), `--control-h`, `--row
 | Sheet (`SheetContent side=…`) | new — a dialog docked to right / left / bottom / top |
 | Popover | `PopoverHeader`, `PopoverClose` |
 | Toaster | new — sonner's `<Toaster>` painted from tokens (colored left edge + icon per type). Existing `toast()` calls don't change |
+| Panel, PanelHeader, PanelTitle, PanelBody, PanelSection, PanelFooter | new — the terminal surface: hairline box, header strip with uppercase title + actions |
+| Card | same parts as `ui/card.tsx`, drawn as a panel |
+| StatStrip, Stat | new — label / value / delta cells with hairline dividers (journal stats, backtest metrics, net worth) |
+| EmptyState | new — icon, title, why, what to do |
+| Table | same parts as `ui/table.tsx`; rows follow `--row-h`; `data-state="selected"` draws the accent edge; `TableSortHead` replaces `components/SortTh.tsx` (same props) |
+| DataTable | same API as `components/DataTable.tsx` (now a named export); adds `selectedRowId` / `onRowClick` |
+| Pagination | new — range label, pages with gaps (`pageRange`, self-checked: `node src/design-system/components/pageRange.selfcheck.ts`), rows-per-page select |
+| Calendar, DatePicker, DateRangePicker | same props as `ui/calendar.tsx` and `components/DatePicker.tsx` ("YYYY-MM-DD" strings); range picker gains `presets` |
 | Command palette | same parts as today, plus `CommandInput` `scope` / `loading` / `trailing`, `CommandScopes` (icon source tabs), `CommandChips` (filter chips + filter/sort slot), `CommandGroup count`, `CommandItemMedia` (icon / initials tile), `CommandItemText` (title • subtitle, breadcrumb, second line), `CommandItemMeta`, key-box `CommandShortcut`, `CommandLoading`, `CommandFooter` + `CommandHint`. The *Full palette* story is built from `lib/navTargets.ts`, so it lists every real page, tab and setting |
 
 All floating surfaces share one look (`popupSurface` in `components/control.ts`: hairline border,
@@ -110,7 +118,7 @@ items match.
 | 1 | Storybook, tokens, 4 presets, theme runtime, ThemeSelector, ThemeCustomizer, Button (+ buy/sell), Popover (needed by the selector) | done |
 | 2 | Primitives: input (+ `numeric`), textarea, input-group, field (label/help/error), select (search at 6+ items, as today), checkbox, switch, radio-group, tabs (`segment` / `line`, `sm`, `TabsCount`), button-group, toggle-group, badge (+ warning, accent, `dot`), kbd, spinner, skeleton, progress (tones + `limit` marker), avatar, separator | done |
 | 3 | Overlays: dialog (+ `size`, `DialogBody`), sheet (4 sides), alert-dialog, popover (+ header, close), tooltip, hover-card, dropdown-menu (sub, checkbox, radio, shortcut), command palette, themed Toaster for sonner | done |
-| 4 | Layout & data: panel, table / data-table, pagination, stat strip, empty state, calendar, date picker | next |
-| 5 | Trading: change pill, RS pill, delivery cell, sparkline, ticker, watchlist row, order ticket, depth, P&L calendar, treemap, meters | |
+| 4 | Layout & data: panel (header/title/body/section/footer), card (compat), stat strip + stat, empty state, table (+ `TableSortHead`), data-table (+ `selectedRowId` / `onRowClick`), pagination, calendar, date picker / range picker (+ presets) | done |
+| 5 | Trading: change pill, RS pill, delivery cell, sparkline, ticker, watchlist row, order ticket, depth, P&L calendar, treemap, meters | next |
 | 6 | Page compositions as stories: workspace, stock detail, holdings, risk, simulation, agent… | |
 | 7 | Migration: app switches to `styles.css`, ThemeSelector in the top bar, ThemeCustomizer in Settings › Appearance, pages move to `@/design-system` | waits for go-ahead |

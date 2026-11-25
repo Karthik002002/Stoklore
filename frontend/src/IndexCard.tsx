@@ -58,7 +58,7 @@ export default function IndexCard({ name }: { name: string }) {
   const Icon = up ? TrendingUpIcon : TrendingDownIcon
 
   return (
-    <div className="flex items-center justify-between gap-4 rounded-xl border bg-card p-4">
+    <div className="rounded-md border border-border bg-card flex items-center justify-between gap-4 p-3">
       <div>
         <p className="text-xs text-muted-foreground">{LABELS[name] ?? name}</p>
         <p className="mt-1 text-xl font-semibold tabular-nums">

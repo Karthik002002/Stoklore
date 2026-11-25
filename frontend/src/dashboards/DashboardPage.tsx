@@ -137,7 +137,7 @@ export function PanelFrame({
   return (
     <section
       className={cn(
-        'group flex h-full flex-col overflow-hidden rounded-xl border bg-card',
+        'group flex h-full flex-col overflow-hidden rounded-md border border-border bg-card',
         edit && 'border-dashed',
       )}
     >
@@ -437,14 +437,14 @@ export default function DashboardPage() {
 
   if (isLoading || (saved && !draft)) {
     return (
-      <div className="flex h-[calc(100vh-5rem)] items-center justify-center rounded-xl border bg-card">
+      <div className="rounded-md border border-border bg-card flex h-[calc(100vh-5rem)] items-center justify-center">
         <Spinner className="size-5" />
       </div>
     )
   }
   if (isError || !draft) {
     return (
-      <div className="flex h-[calc(100vh-5rem)] flex-col items-center justify-center gap-3 rounded-xl border bg-card text-sm text-muted-foreground">
+      <div className="rounded-md border border-border bg-card flex h-[calc(100vh-5rem)] flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
         <p>This dashboard doesn't exist — it may have been deleted.</p>
         <Link to="/dashboards" className={buttonVariants({ size: 'sm', variant: 'outline' })}>
           <ArrowLeftIcon className="size-4" />
@@ -459,7 +459,7 @@ export default function DashboardPage() {
   const rowPanel = panels.find((p) => p.id === openRow?.panel)
 
   return (
-    <div className="flex h-[calc(100vh-5rem)] flex-col overflow-hidden rounded-xl border bg-card">
+    <div className="rounded-md border border-border bg-card flex h-[calc(100vh-5rem)] flex-col overflow-hidden">
       <header className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2">
         <Link
           to="/dashboards"

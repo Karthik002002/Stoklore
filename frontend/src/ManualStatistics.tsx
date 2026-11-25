@@ -1,7 +1,19 @@
 import { useMemo, useState } from 'react'
 import { ChevronLeftIcon, ChevronRightIcon, SearchIcon } from 'lucide-react'
 import MdActions from '@/components/MdActions'
-import { Button, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/design-system'
+import {
+  Button,
+  Input,
+  Panel as DsPanel,
+  PanelBody,
+  PanelHeader,
+  PanelTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/design-system'
 import type { Trade } from '@/lib/types'
 import { mdTable } from '@/lib/exportFile'
 import { fmt, inr } from '@/lib/format'
@@ -89,6 +101,7 @@ function Picker({
   )
 }
 
+/** A titled section: the design system's panel, with this page's title / hint / controls props. */
 function Panel({
   title,
   hint,
@@ -103,16 +116,17 @@ function Panel({
   className?: string
 }) {
   return (
-    <div className={`rounded-xl border bg-card p-4 ${className}`}>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <p className="text-sm font-medium">{title}</p>
-          {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
-        </div>
-        {controls && <div className="flex items-center gap-2">{controls}</div>}
-      </div>
-      {children}
-    </div>
+    <DsPanel className={className}>
+      <PanelHeader>
+        <PanelTitle>{title}</PanelTitle>
+        <span className="flex-1" />
+        {controls && <div className="flex items-center gap-1.5">{controls}</div>}
+      </PanelHeader>
+      <PanelBody className="p-3">
+        {hint && <p className="mb-2 text-2xs text-muted-foreground">{hint}</p>}
+        {children}
+      </PanelBody>
+    </DsPanel>
   )
 }
 
@@ -404,7 +418,12 @@ function TrendPanel({ trades }: { trades: Trade[] }) {
       <LineChart
         series={[
           { label: 'per trade', values: points.map((p) => p.value), color: UP },
-          { label: 'moving avg', values: movingAverage.map((p) => p.value), color: 'var(--muted-foreground)', dashed: true },
+          {
+            label: 'moving avg',
+            values: movingAverage.map((p) => p.value),
+            color: 'var(--muted-foreground)',
+            dashed: true,
+          },
         ]}
         format={TREND_BASES[basis].format}
       />
@@ -976,7 +995,7 @@ export default function ManualStatistics({
 
   if (!trades?.length) {
     return (
-      <div className="rounded-xl border bg-card">
+      <div className="rounded-md border border-border bg-card">
         <Empty>Log a trade to see statistics.</Empty>
       </div>
     )

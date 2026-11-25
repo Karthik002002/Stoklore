@@ -41,7 +41,7 @@ function Card({
   children: React.ReactNode
 }) {
   return (
-    <section className={cn('rounded-xl border bg-card p-4', className)}>
+    <section className={cn('rounded-md border border-border bg-card p-4', className)}>
       <div className="mb-3 flex items-center justify-between gap-2">
         <h3 className="text-[11px] font-medium text-muted-foreground">{title}</h3>
         {action && <span className="text-xs">{action}</span>}

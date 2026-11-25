@@ -227,7 +227,7 @@ function Table({
   })
   const th = (label: string, k: string) => <SortTh label={label} k={k} sort={sort} onSort={setSort} />
   return (
-    <div ref={scrollRef} className="max-h-[72vh] overflow-auto rounded-xl border bg-card">
+    <div ref={scrollRef} className="max-h-[72vh] overflow-auto rounded-md border border-border bg-card">
       <table className="w-full min-w-[78rem] font-mono text-xs">
         <thead className="sticky top-0 z-10 bg-background">
           <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
@@ -691,7 +691,7 @@ export default function MicrocapsPage() {
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-2">
+      <div className="rounded-md border border-border bg-card flex flex-wrap items-center gap-3 p-2">
         <Input
           value={f.q}
           onChange={(e) => set('q')(e.target.value)}

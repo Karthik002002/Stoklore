@@ -40,7 +40,7 @@ export function TradesTable({ trades }: { trades: BacktestTrade[] }) {
     return <p className="text-sm text-muted-foreground">No completed trades in this window.</p>
   }
   return (
-    <div className="overflow-hidden rounded-xl border bg-card">
+    <div className="rounded-md border border-border bg-card overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">

@@ -44,7 +44,7 @@ function ScriptPreview({ script }: { script: string }) {
   })
 
   return (
-    <div className="space-y-3 rounded-xl border bg-card p-3">
+    <div className="rounded-md border border-border bg-card space-y-3 p-3">
       <div className="flex items-center gap-2">
         <Input
           value={symbol}
@@ -150,7 +150,7 @@ function ScriptsTable() {
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border bg-card">
+    <div className="rounded-md border border-border bg-card overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">

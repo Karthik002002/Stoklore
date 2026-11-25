@@ -449,7 +449,7 @@ export function OrderPanel({
   return (
     <form
       onSubmit={form.handleSubmit((v) => place.mutate(v))}
-      className={cn('flex flex-col gap-3', className ?? 'rounded-xl border bg-card p-4')}
+      className={cn('flex flex-col gap-3', className ?? 'rounded-md border border-border bg-card p-4')}
     >
       {/* header: what, at what price, against which wallet */}
       <div className="flex items-start justify-between gap-2">
@@ -645,7 +645,7 @@ function HistoryLog({ trades, accountId }: { trades: Trade[]; accountId: number 
   const accountName = accounts.find((a) => a.id === trades[0]?.account_id)?.name ?? 'paper'
   if (trades.length === 0) {
     return (
-      <p className="rounded-xl border bg-card py-12 text-center text-sm text-muted-foreground">
+      <p className="rounded-md border border-border bg-card py-12 text-center text-sm text-muted-foreground">
         No closed paper trades yet.
       </p>
     )
@@ -661,7 +661,7 @@ function HistoryLog({ trades, accountId }: { trades: Trade[]; accountId: number 
           <FileSpreadsheetIcon className="size-4" /> Excel
         </Button>
       </div>
-      <div className="overflow-x-auto rounded-xl border bg-card">
+      <div className="rounded-md border border-border bg-card overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">

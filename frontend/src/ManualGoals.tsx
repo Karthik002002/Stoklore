@@ -116,7 +116,7 @@ function AddGoalForm({
   return (
     <form
       onSubmit={form.handleSubmit(submit)}
-      className="flex flex-wrap items-start gap-2 rounded-xl border bg-card p-3"
+      className="flex flex-wrap items-start gap-2 rounded-md border border-border bg-card p-3"
     >
       <span className="mt-1.5 text-sm text-muted-foreground">
         Keep my {PERIODS[period].label.toLowerCase()}
@@ -141,7 +141,7 @@ function CurrentPeriod({
   period: GoalPeriod
 }) {
   return (
-    <div className="rounded-xl border bg-card p-4">
+    <div className="rounded-md border border-border bg-card p-3">
       <div className="mb-3 flex items-center justify-between">
         <div>
           <p className="text-sm font-medium">{progress.label}</p>
@@ -183,7 +183,7 @@ function HistoryTable({
   saving: boolean
 }) {
   return (
-    <div className="overflow-x-auto rounded-xl border bg-card">
+    <div className="rounded-md border border-border bg-card overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b">
@@ -343,7 +343,7 @@ export function GoalsSummary({ trades }: { trades: Trade[] }) {
         const progress = currentPeriodProgress(trades, goals, period)
         const met = progress.cells.filter((c) => c.met).length
         return (
-          <div key={period} className="flex items-center gap-3 rounded-xl border bg-card p-3">
+          <div key={period} className="flex items-center gap-3 rounded-md border border-border bg-card p-3">
             <Gauge pct={progress.total} />
             <div className="min-w-0">
               <p className="text-sm font-medium">{PERIODS[period].label} goals</p>

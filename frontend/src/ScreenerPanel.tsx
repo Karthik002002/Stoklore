@@ -74,7 +74,7 @@ function StatementTable({ table, showChange }: { table: ScreenerTable; showChang
       data={table.rows}
       getRowId={(row) => row.label}
       resizable
-      containerClassName="max-h-[460px] rounded-xl border bg-card"
+      containerClassName="max-h-[460px] rounded-md border border-border bg-card"
     />
   )
 }
@@ -91,7 +91,7 @@ function ProsCons({ pros, cons }: { pros: string[]; cons: string[] }) {
     <div className="grid gap-3 md:grid-cols-2">
       {columns.map(([title, items, Icon, tone]) =>
         items.length === 0 ? null : (
-          <div key={title} className="rounded-xl border bg-card p-4">
+          <div key={title} className="rounded-md border border-border bg-card p-4">
             <p className={`mb-2 flex items-center gap-1.5 text-sm font-medium ${tone}`}>
               <Icon className="size-4" /> {title}
             </p>
@@ -115,7 +115,7 @@ function DocumentGroup({ title, items }: { title: string; items: ScreenerDocumen
   const [expanded, setExpanded] = useState(false)
   const visible = expanded ? items : items.slice(0, DOCS_PREVIEW)
   return (
-    <div className="rounded-xl border bg-card p-4">
+    <div className="rounded-md border border-border bg-card p-3">
       <p className="mb-2 flex items-center gap-2 text-sm font-medium">
         {title}
         <Badge variant="outline" className="text-[10px] text-muted-foreground">
@@ -174,11 +174,7 @@ export default function ScreenerPanel({ symbol }: { symbol: string }) {
   }
 
   if (error || !data) {
-    return (
-      <p className="py-12 text-center text-muted-foreground">
-        No screener.in page for {symbol}.
-      </p>
-    )
+    return <p className="py-12 text-center text-muted-foreground">No screener.in page for {symbol}.</p>
   }
 
   const tableEntries = Object.entries(data.tables ?? {})
@@ -209,7 +205,7 @@ export default function ScreenerPanel({ symbol }: { symbol: string }) {
       {data.ratios?.length > 0 && (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
           {data.ratios.map((r) => (
-            <div key={r.label} className="rounded-xl border bg-card p-3">
+            <div key={r.label} className="rounded-md border border-border bg-card p-3">
               <p className="text-xs text-muted-foreground">{r.label}</p>
               <p className="mt-1 font-semibold tabular-nums">{r.value}</p>
             </div>
@@ -220,7 +216,7 @@ export default function ScreenerPanel({ symbol }: { symbol: string }) {
       <ProsCons pros={data.pros ?? []} cons={data.cons ?? []} />
 
       {(data.about || data.keyPoints) && (
-        <div className="rounded-xl border bg-card p-4">
+        <div className="rounded-md border border-border bg-card p-3">
           {data.about && <p className="text-sm text-muted-foreground">{data.about}</p>}
           {data.keyPoints && (
             <>

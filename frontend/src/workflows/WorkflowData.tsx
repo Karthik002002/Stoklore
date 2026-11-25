@@ -191,7 +191,7 @@ export default function WorkflowData() {
           </div>
 
           {data.numeric.length > 0 && (
-            <div className="mb-4 rounded-xl border bg-card p-3">
+            <div className="rounded-md border border-border bg-card mb-4 p-3">
               {datasets.length ? (
                 <>
                   <SeriesChart datasets={datasets} />

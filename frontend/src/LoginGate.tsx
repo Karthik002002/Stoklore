@@ -53,7 +53,7 @@ function RecoveryCode({ code, onDone }: { code: string; onDone: () => void }) {
   return (
     <div className="w-full max-w-sm space-y-4 rounded-2xl border bg-card p-6 shadow-lg">
       <div className="flex items-center gap-2">
-        <span className="flex size-8 items-center justify-center rounded-xl border">
+        <span className="flex size-8 items-center justify-center rounded-md border border-border">
           <KeyRoundIcon className="size-4" />
         </span>
         <div>
@@ -191,7 +191,7 @@ export default function LoginGate({ children }: { children: React.ReactNode }) {
         className="w-full max-w-sm space-y-4 rounded-2xl border bg-card p-6 shadow-lg"
       >
         <div className="flex items-center gap-2">
-          <span className="flex size-8 items-center justify-center rounded-xl border">
+          <span className="flex size-8 items-center justify-center rounded-md border border-border">
             <LockIcon className="size-4" />
           </span>
           <div>

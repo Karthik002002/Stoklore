@@ -109,7 +109,7 @@ export default function TemplateGallery({
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
           <form
-            className="rounded-xl border border-dashed bg-muted/30 p-3"
+            className="rounded-md border border-dashed border-input bg-muted/30 p-3"
             onSubmit={(e) => {
               e.preventDefault()
               if (screenUrl.trim()) fromScreen.mutate()
@@ -179,7 +179,7 @@ export default function TemplateGallery({
                     type="button"
                     disabled={clone.isPending}
                     onClick={() => clone.mutate(t.id)}
-                    className="flex h-full flex-col rounded-xl border bg-card p-3 text-left transition-colors hover:border-primary hover:bg-muted/40 disabled:opacity-60"
+                    className="flex h-full flex-col rounded-md border border-border bg-card p-3 text-left transition-colors hover:border-primary hover:bg-muted/40 disabled:opacity-60"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-sm font-medium">{t.name}</p>

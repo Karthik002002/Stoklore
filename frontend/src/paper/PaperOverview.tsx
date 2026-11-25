@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useChartColors } from '@/design-system'
+import { Panel, PanelBody, PanelHeader, PanelTitle, useChartColors } from '@/design-system'
 import { useQuery } from '@tanstack/react-query'
 import { AreaSeries, createChart } from 'lightweight-charts'
 import { useEffect, useRef } from 'react'
@@ -22,7 +22,7 @@ function Metric({
   sub?: React.ReactNode
 }) {
   return (
-    <div className="rounded-xl border bg-card p-4">
+    <div className="rounded-md border border-border bg-card p-3">
       <p className={`text-xl font-semibold tabular-nums ${valueClassName ?? ''}`}>{value}</p>
       <p className="mt-1 text-xs tracking-wide text-muted-foreground uppercase">{label}</p>
       {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
@@ -199,15 +199,18 @@ export default function PaperOverview({
         <AllocationDonut title="Capital allocation" slices={allocation.stocks} note="incl. uninvested cash" />
       </div>
 
-      <div className="rounded-xl border bg-card p-4">
-        <div className="mb-2 flex items-baseline justify-between">
-          <p className="text-sm font-medium">Equity curve</p>
+      <Panel>
+        <PanelHeader>
+          <PanelTitle>Equity curve</PanelTitle>
+          <span className="flex-1" />
           <p className="text-xs text-muted-foreground">
             Realized only — open positions move it when they close.
           </p>
-        </div>
-        <EquityCurve data={stats.curve} />
-      </div>
+        </PanelHeader>
+        <PanelBody className="p-3">
+          <EquityCurve data={stats.curve} />
+        </PanelBody>
+      </Panel>
 
       {stats.closedCount > 0 && (
         <p className="text-xs text-muted-foreground">

@@ -182,10 +182,8 @@ function CostFields({ form }: { form: AccountForm }) {
 
       <p className="border-t border-warning/30 pt-2 text-xs text-muted-foreground">
         A round trip of {PREVIEW_QTY} shares at {inr(PREVIEW_PRICE)} costs{' '}
-        <span className="font-semibold text-warning tabular-nums">
-          {inr(preview.total)}
-        </span>{' '}
-        — {inr(preview.slippage)} slippage · {inr(preview.brokerage)} brokerage · {inr(preview.charges)}{' '}
+        <span className="font-semibold text-warning tabular-nums">{inr(preview.total)}</span> —{' '}
+        {inr(preview.slippage)} slippage · {inr(preview.brokerage)} brokerage · {inr(preview.charges)}{' '}
         charges.
       </p>
     </div>
@@ -234,8 +232,8 @@ function VolumeSpikeFields({ form }: { form: AccountForm }) {
 
       <p className="border-t border-accent/30 pt-2 text-xs text-muted-foreground">
         A trade is flagged when any of the {lookback} bars before entry traded at least{' '}
-        <span className="font-semibold text-accent tabular-nums">{multiple}×</span> the
-        average volume of the 20 bars before those.
+        <span className="font-semibold text-accent tabular-nums">{multiple}×</span> the average volume of the
+        20 bars before those.
       </p>
     </div>
   )
@@ -276,7 +274,7 @@ function AccountForm({
   return (
     <form
       onSubmit={form.handleSubmit((values) => save.mutate(values))}
-      className="space-y-3 rounded-xl border bg-card p-3"
+      className="space-y-3 rounded-md border border-border bg-card p-3"
     >
       <div className="grid grid-cols-2 gap-2">
         <TextField form={form} name="name" label="Account name" placeholder="e.g. Swing account" />
@@ -499,7 +497,7 @@ function AccountCard({
   })
 
   return (
-    <div className="space-y-3 rounded-xl border bg-card p-3">
+    <div className="rounded-md border border-border bg-card space-y-3 p-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-medium">{account.name}</p>

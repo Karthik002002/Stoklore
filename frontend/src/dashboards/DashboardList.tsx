@@ -148,7 +148,7 @@ export default function DashboardList() {
   )
 
   return (
-    <div className="h-[calc(100vh-5rem)] overflow-y-auto rounded-xl border bg-card p-4">
+    <div className="rounded-md border border-border bg-card h-[calc(100vh-5rem)] overflow-y-auto p-3">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="font-medium">Dashboards</h2>
@@ -172,7 +172,7 @@ export default function DashboardList() {
       {isLoading ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {[0, 1, 2].map((i) => (
-            <div key={i} className="h-24 animate-pulse rounded-xl border bg-muted/30" />
+            <div key={i} className="h-24 animate-pulse rounded-md border border-border bg-muted/30" />
           ))}
         </div>
       ) : dashboards.length === 0 ? (
@@ -187,7 +187,7 @@ export default function DashboardList() {
           {dashboards.map((d) => (
             <div
               key={d.id}
-              className="group relative rounded-xl border bg-card transition-colors hover:border-foreground/20 hover:bg-muted/20"
+              className="group relative rounded-md border border-border bg-card transition-colors hover:border-foreground/20 hover:bg-muted/20"
             >
               <Link to="/dashboards/$dashboardId" params={{ dashboardId: d.id }} className="block p-4">
                 <p className="truncate pr-8 font-medium">{d.name}</p>

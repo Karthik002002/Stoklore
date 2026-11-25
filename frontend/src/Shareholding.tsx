@@ -442,13 +442,13 @@ export default function Shareholding() {
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : rows.length === 0 ? (
-        <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+        <p className="rounded-md border border-dashed border-input p-8 text-center text-sm text-muted-foreground">
           {coverage?.filings
             ? 'No company matches these filters.'
             : 'Nothing collected yet — hit Collect to pull the filings NSE has published.'}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border">
+        <div className="overflow-x-auto rounded-md border border-border">
           <Table>
             <TableHeader>
               <TableRow>

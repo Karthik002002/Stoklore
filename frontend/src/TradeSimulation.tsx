@@ -7,11 +7,17 @@ import MdActions from '@/components/MdActions'
 import {
   Button,
   Input,
+  Panel as DsPanel,
+  PanelBody,
+  PanelHeader,
+  PanelTitle,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
+  Stat,
+  StatStrip,
   Table,
   TableBody,
   TableCell,
@@ -340,15 +346,11 @@ function StatCard({
   valueClassName?: string
   sub?: React.ReactNode
 }) {
-  return (
-    <div className="rounded-xl border bg-card p-3">
-      <p className={`text-lg font-semibold tabular-nums ${valueClassName ?? ''}`}>{value}</p>
-      <p className="mt-0.5 text-[11px] tracking-wide text-muted-foreground uppercase">{label}</p>
-      {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
-    </div>
-  )
+  // the value keeps its caller's colour class (text-up / text-down / ...)
+  return <Stat label={label} value={<span className={valueClassName}>{value}</span>} hint={sub} />
 }
 
+/** A titled section: the design system's panel, with this page's title / hint / action props. */
 function Panel({
   title,
   hint,
@@ -363,16 +365,17 @@ function Panel({
   action?: React.ReactNode
 }) {
   return (
-    <div className={`rounded-xl border bg-card p-4 ${className}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-sm font-medium">{title}</p>
-          {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
-        </div>
+    <DsPanel className={className}>
+      <PanelHeader>
+        <PanelTitle>{title}</PanelTitle>
+        <span className="flex-1" />
         {action}
-      </div>
-      <div className="mt-3">{children}</div>
-    </div>
+      </PanelHeader>
+      <PanelBody className="p-3">
+        {hint && <p className="mb-2 text-2xs text-muted-foreground">{hint}</p>}
+        {children}
+      </PanelBody>
+    </DsPanel>
   )
 }
 
@@ -454,7 +457,7 @@ function SlippagePanel({ config, set, pool }: { config: PresetConfig; set: SetCo
   const drag = config.slip * config.length
   const winsEaten = pool?.avgWin ? drag / pool.avgWin : null
   return (
-    <div className="rounded-xl border-2 border-warning/60 bg-warning/[0.06] p-4">
+    <div className="rounded-md border-2 border-warning/60 bg-warning/[0.06] p-4">
       <p className="text-sm font-semibold text-warning">Human friction & slippage</p>
       <p className="mt-0.5 text-xs text-muted-foreground">
         Charged on every simulated trade, winners included. This is the number that usually explains the gap
@@ -490,8 +493,7 @@ function SlippagePanel({ config, set, pool }: { config: PresetConfig; set: SetCo
 
       <p className="mt-3 border-t border-warning/30 pt-2 text-xs">
         Over {config.length} trades that is{' '}
-        <span className="font-semibold text-warning tabular-nums">{inr(drag)}</span> of
-        drag
+        <span className="font-semibold text-warning tabular-nums">{inr(drag)}</span> of drag
         {winsEaten != null && (
           <>
             {' '}
@@ -745,7 +747,7 @@ function DataProfile({ pool, hint }: { pool?: Pool | null; hint?: React.ReactNod
   return (
     <Panel title="Active data profile" hint={hint}>
       {pool ? (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <StatStrip bordered>
           <StatCard label="Trades" value={fmt(pool.n, 0)} />
           <StatCard label="Win rate" value={`${fmt(pool.winRate, 1)}%`} />
           <StatCard
@@ -756,7 +758,7 @@ function DataProfile({ pool, hint }: { pool?: Pool | null; hint?: React.ReactNod
           <StatCard label="Avg win" value={inr(pool.avgWin)} valueClassName="text-up" />
           <StatCard label="Avg loss" value={inr(pool.avgLoss)} valueClassName="text-down" />
           <StatCard label="Largest loss" value={inr(pool.largestLoss)} valueClassName="text-down" />
-        </div>
+        </StatStrip>
       ) : (
         <p className="text-sm text-muted-foreground">
           No closed trades on this account yet — nothing to resample.
@@ -828,7 +830,7 @@ function SimulationResults({ result, config }: { result: SimulationResult; confi
 
   return (
     <>
-      <div className="grid gap-2 sm:grid-cols-3">
+      <StatStrip bordered>
         <StatCard
           label="Strategy survival rate"
           value={`${fmt(result.survivalRate, 1)}%`}
@@ -847,7 +849,7 @@ function SimulationResults({ result, config }: { result: SimulationResult; confi
           valueClassName={result.ruinFullPct === 0 ? 'text-up' : 'text-down'}
           sub="account hit the liquidation threshold"
         />
-      </div>
+      </StatStrip>
 
       <Panel
         title="Equity curves"
@@ -1028,7 +1030,7 @@ function ComparisonView({
       <Panel title="Where each account ends up" hint="Median run per account, on one set of axes.">
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {entries.map((e, i) => (
-            <div key={e.id} className="rounded-xl border bg-card p-3">
+            <div key={e.id} className="rounded-md border border-border bg-card p-3">
               <p className="flex items-center gap-1.5 text-xs font-medium">
                 <span className="size-2 shrink-0 rounded-full" style={{ background: colorFor(i) }} />
                 <span className="truncate">{e.name}</span>
@@ -1246,7 +1248,7 @@ function SingleMode({ config, set, accounts, allTrades }: ModeProps) {
       </div>
 
       {account == null ? (
-        <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+        <p className="rounded-md border border-dashed border-input p-8 text-center text-sm text-muted-foreground">
           Pick a backtest log or paper account to simulate. To hold two or more against each other, use the{' '}
           <span className="font-medium">Multiple</span> tab.
         </p>
@@ -1283,7 +1285,7 @@ function SingleMode({ config, set, accounts, allTrades }: ModeProps) {
             {result ? (
               <SimulationResults result={result} config={config} />
             ) : (
-              <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+              <p className="rounded-md border border-dashed border-input p-8 text-center text-sm text-muted-foreground">
                 Set the friction you actually pay, then run the simulation.
               </p>
             )}
@@ -1410,7 +1412,7 @@ function MultiMode({ config, set, accounts, allTrades }: ModeProps) {
       </Panel>
 
       {chosen.length < 2 ? (
-        <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+        <p className="rounded-md border border-dashed border-input p-8 text-center text-sm text-muted-foreground">
           Select at least two accounts. The usual pairing is a backtest log against the paper account running
           the same strategy — the comparison shows whether your live execution is still the thing you tested.
         </p>
@@ -1438,7 +1440,7 @@ function MultiMode({ config, set, accounts, allTrades }: ModeProps) {
 
           <div className="min-w-0 flex-1">
             {!results ? (
-              <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+              <p className="rounded-md border border-dashed border-input p-8 text-center text-sm text-muted-foreground">
                 {runnable.length < 2
                   ? 'At least two of the selected accounts need closed trades to compare.'
                   : 'Set the shared configuration, then run all selected accounts at once.'}

@@ -63,7 +63,7 @@ export function Panel({
         <h2 className="text-sm font-medium text-muted-foreground">{title}</h2>
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </div>
-      <div className="rounded-xl border bg-card p-4">{children}</div>
+      <div className="rounded-md border border-border bg-card p-3">{children}</div>
     </section>
   )
 }

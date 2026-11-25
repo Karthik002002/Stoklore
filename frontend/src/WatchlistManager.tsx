@@ -118,7 +118,7 @@ function StockNode({ data, selected }: NodeProps<Node<StockNodeData>>) {
 function ListNode({ data, selected }: NodeProps<Node<ListNodeData>>) {
   return (
     <div
-      className={`w-48 rounded-xl border bg-primary/5 px-3 py-2 shadow-sm ${selected ? 'ring-2 ring-primary' : ''}`}
+      className={`w-48 rounded-md border border-border bg-primary/5 px-3 py-2 shadow-sm ${selected ? 'ring-2 ring-primary' : ''}`}
     >
       <p className="flex items-center gap-1.5 text-sm font-medium">
         <BookmarkIcon className="size-3.5 text-primary" />

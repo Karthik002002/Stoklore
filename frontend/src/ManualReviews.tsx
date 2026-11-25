@@ -351,14 +351,14 @@ export default function ManualReviews({ trades, accountId }: { trades: Trade[]; 
       </div>
 
       {reviews.length === 0 ? (
-        <div className="rounded-xl border bg-card py-10 text-center text-sm text-muted-foreground">
+        <div className="rounded-md border border-border bg-card py-10 text-center text-sm text-muted-foreground">
           No reviews for this account yet.
         </div>
       ) : (
         reviews.map((r) => {
           const i = r.change_from ? changes.indexOf(r.change_from) : -1
           return (
-            <div key={r.id} className="space-y-3 rounded-xl border bg-card p-4">
+            <div key={r.id} className="space-y-3 rounded-md border border-border bg-card p-4">
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="font-medium">

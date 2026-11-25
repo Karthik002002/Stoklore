@@ -98,11 +98,11 @@ export function ScansList() {
           <kbd>3</kbd> marks A/B/C, <kbd>N</kbd> adds a note. Marks are saved as you go.
         </p>
       </div>
-      <section className="space-y-2 rounded-xl border bg-card p-4">
+      <section className="space-y-2 rounded-md border border-border bg-card p-4">
         <p className="text-sm font-medium">Scan a watchlist</p>
         <ScanWatchlist />
       </section>
-      <div className="overflow-x-auto rounded-xl border">
+      <div className="overflow-x-auto rounded-md border border-border">
         <Table>
           <TableHeader>
             <TableRow>
@@ -291,7 +291,7 @@ export function ScanReview() {
         </div>
       </div>
 
-      <section className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-3 text-sm">
+      <section className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-card p-3 text-sm">
         <span className="font-medium">Save to a watchlist</span>
         {(['A', 'B', 'C'] as const).map((p) => (
           <label key={p} className="flex items-center gap-1 text-xs">

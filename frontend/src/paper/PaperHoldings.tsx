@@ -233,7 +233,7 @@ export default function PaperHoldings({
   // request is still in flight tells the user their book is empty when it isn't.
   if (isPending) {
     return (
-      <p className="flex items-center justify-center gap-2 rounded-xl border bg-card py-16 text-center text-sm text-muted-foreground">
+      <p className="flex items-center justify-center gap-2 rounded-md border border-border bg-card py-16 text-center text-sm text-muted-foreground">
         <Spinner className="size-4" /> Loading positions…
       </p>
     )
@@ -241,7 +241,7 @@ export default function PaperHoldings({
 
   if (positions.length === 0) {
     return (
-      <p className="rounded-xl border bg-card py-16 text-center text-sm text-muted-foreground">
+      <p className="rounded-md border border-border bg-card py-16 text-center text-sm text-muted-foreground">
         No open paper positions — place an order from the Trades tab.
       </p>
     )
@@ -249,7 +249,7 @@ export default function PaperHoldings({
 
   return (
     <>
-      <div className="overflow-x-auto rounded-xl border bg-card">
+      <div className="rounded-md border border-border bg-card overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">

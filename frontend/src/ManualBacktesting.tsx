@@ -571,7 +571,7 @@ function TradesTable({
   }
   const allSelected = trades.length > 0 && trades.every((t) => selected.has(t.id))
   return (
-    <div className="overflow-x-auto rounded-xl border bg-card">
+    <div className="rounded-md border border-border bg-card overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">

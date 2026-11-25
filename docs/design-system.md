@@ -131,7 +131,7 @@ Pure trading math is self-checked: `node src/design-system/components/marketMath
 | 4 | Layout & data: panel (header/title/body/section/footer), card (compat), stat strip + stat, empty state, table (+ `TableSortHead`), data-table (+ `selectedRowId` / `onRowClick`), pagination, calendar, date picker / range picker (+ presets) | done |
 | 5 | Trading: change, tick price (flash), quote, RS pill, delivery, results & surveillance badges, sparkline, 52W range, index card, ticker strip (tape), watchlist row, meter, order ticket (risk sizing, R:R, warnings), side toggle, market depth, P&L calendar, treemap | done |
 | 6 | Page stories built only from design-system parts (`src/design-system/pages/`): trading workspace, home, stock detail, holdings, book risk, trade simulation, agent, Settings › Appearance | done |
-| 7 | Migration — see below | steps 1–3 and 5 done, charts and colors themed; step 4 (pages) in progress |
+| 7 | Migration — see below | done |
 
 ## Page stories (`src/design-system/pages/`)
 
@@ -180,13 +180,17 @@ Stories set `parameters.fullBleed` to drop the canvas padding.
    `bg-sky-500/10`…) became tokens - amber/yellow/orange → `warning`, sky/blue/cyan → `accent`,
    emerald/green → `up`, red/rose → `down`, violet/purple → `chart-5` - so every status color follows
    the theme and the customizer.
-4. ⏳ **Pages:** hand-rolled panels, stat tiles and empty states become `Panel` / `StatStrip` /
-   `EmptyState`, page by page.
-   *Done:* Stock detail (header + fundamentals strip, every section a panel, events/reports as rows),
-   Holdings (stat strip, panels, empty states), Book risk, `PriceChart` / `StockChart` (a panel with
-   range and EMA controls in its header), `AllocationDonut`.
-   *Next, by how many hand-rolled cards they have:* ManualOverview, TradeSimulation, LeadersPage,
-   FinancePage, LiveTrading, dashboards, ManualGoals, paper pages, Scans, workflows.
+4. ✅ **Pages:** no page hand-rolls a card any more.
+   *By hand:* Stock detail, Holdings, Book risk, `PriceChart` / `StockChart`, `AllocationDonut`, and
+   the local `Panel` / `StatCard` helpers in TradeSimulation and ManualStatistics (now thin
+   wrappers over the design-system `Panel` and `Stat`, so every section on those pages follows).
+   *By codemod:* a card whose first child is a title (`<p|h2|h3>`, a title + hint block, or a
+   title-and-controls row) became `Panel` + `PanelHeader` (title, controls) + `PanelBody`; grids
+   made only of stat cards became `StatStrip`; the rest - cards with dynamic class names, dashed
+   empty boxes, workflow nodes - kept their markup but took the flat panel look
+   (`rounded-md border border-border`). `rounded-lg border` inner boxes and floating shadows
+   (chat widget, popups) are left as they are.
+
 5. ✅ **Command palette:** `CommandPalette.tsx` is the Storybook palette on real data, keeping
    `lib/navTargets.ts` as its index: source tabs (All · Stocks · Pages · Page tabs · Actions ·
    Settings · Theme; Tab cycles), stock filter chips (Watchlist, Held, Gainers, Losers, Results

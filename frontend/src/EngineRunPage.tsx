@@ -98,7 +98,7 @@ export function Section({
         {title}
         {hint && <span className="font-normal text-muted-foreground"> · {hint}</span>}
       </h2>
-      <div className="rounded-xl border bg-card p-4">{children}</div>
+      <div className="rounded-md border border-border bg-card p-3">{children}</div>
     </section>
   )
 }

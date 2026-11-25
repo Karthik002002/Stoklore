@@ -433,7 +433,7 @@ export default function Alerts() {
         </Button>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border">
+      <div className="overflow-x-auto rounded-md border border-border">
         <Table>
           <TableHeader>
             <TableRow>
@@ -544,7 +544,7 @@ export default function Alerts() {
         </div>
         {/* Fired levels and everything the broker did, in one list - see app/core/alerts.py on why
             these are not two inboxes. */}
-        <div className="max-h-96 space-y-1 overflow-y-auto rounded-xl border p-1">
+        <div className="max-h-96 space-y-1 overflow-y-auto rounded-md border border-border p-1">
           {feed.length === 0 ? (
             <p className="py-6 text-center text-xs text-muted-foreground">
               Nothing yet. Fired alerts, fills and rejections land here.

@@ -117,7 +117,7 @@ function EditorNode({ data, selected }: NodeProps<Node<NodeData>>) {
     data.kind
   return (
     <div
-      className={`w-44 rounded-xl border-2 px-3 py-2 shadow-sm transition-shadow hover:shadow-md ${KIND_TINT[data.kind]} ${
+      className={`w-44 rounded-md border-2 px-3 py-2 shadow-sm transition-shadow hover:shadow-md ${KIND_TINT[data.kind]} ${
         selected ? 'ring-2 ring-primary' : ''
       }`}
     >

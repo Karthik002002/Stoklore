@@ -23,7 +23,7 @@ import StateIcon from './StateIcon'
 export function WorkflowsShell() {
   usePageTitle('Workflows')
   return (
-    <div className="h-[calc(100vh-5rem)] overflow-hidden rounded-xl border bg-card">
+    <div className="rounded-md border border-border bg-card h-[calc(100vh-5rem)] overflow-hidden">
       <Outlet />
     </div>
   )

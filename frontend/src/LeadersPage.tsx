@@ -123,7 +123,7 @@ function SectorFlowView({ sectors, recent, tf }: { sectors: SectorFlow[]; recent
             ['Money flowing out', outflow, 'border-down/40 bg-down/5 text-down'],
           ] as const
         ).map(([label, list, cls]) => (
-          <div key={label} className={cn('rounded-xl border p-3', cls)}>
+          <div key={label} className={cn('rounded-md border border-border p-3', cls)}>
             <p className="text-xs font-semibold">
               {label} · last {recent} {unit}s
             </p>
@@ -133,7 +133,7 @@ function SectorFlowView({ sectors, recent, tf }: { sectors: SectorFlow[]; recent
           </div>
         ))}
       </div>
-      <div className="overflow-hidden rounded-xl border bg-card">
+      <div className="rounded-md border border-border bg-card overflow-hidden">
         <div className="grid grid-cols-[minmax(8rem,14rem)_1fr_6rem_minmax(8rem,12rem)_1.5rem] items-center gap-3 border-b px-3 py-1.5 text-[10px] tracking-widest text-muted-foreground uppercase">
           <span>Sector</span>
           <span className="text-center">Net flow, % of turnover</span>
@@ -249,7 +249,7 @@ function StockTable({ rows, sectorOf }: { rows: StrengthStock[]; sectorOf: Map<s
     deliv: (s) => s.deliv_pct,
   })
   return (
-    <div ref={scrollRef} className="max-h-[70vh] overflow-auto rounded-xl border bg-card">
+    <div ref={scrollRef} className="max-h-[70vh] overflow-auto rounded-md border border-border bg-card">
       <table className="w-full min-w-[60rem] font-mono text-xs">
         <thead className="sticky top-0 z-10 bg-background">
           <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
@@ -760,7 +760,7 @@ export default function LeadersPage() {
 
       {status && !status.ready && (
         // the first backfill: progress on top, and whatever is rated so far underneath
-        <div className="space-y-2 rounded-xl border border-dashed p-3">
+        <div className="space-y-2 rounded-md border border-dashed border-input p-3">
           <div className="flex items-center gap-3 text-sm">
             <Spinner className="size-4" />
             <span className="font-medium">Collecting a year of NSE price history…</span>
@@ -792,7 +792,7 @@ export default function LeadersPage() {
 
       {ready && tab === 'scan' && table.data && (
         <>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border bg-card p-3">
+          <div className="rounded-md border border-border bg-card flex flex-wrap items-center gap-x-4 gap-y-2 p-3">
             {num(minRs, setMinRs, 'RS ≥')}
             {num(minTemplate, setMinTemplate, 'Template ≥')}
             {num(maxFromHigh, setMaxFromHigh, 'Within % of 52wH')}
@@ -919,14 +919,14 @@ export default function LeadersPage() {
               return (
                 // one height for both columns: the chart fills it, the list scrolls inside it
                 <div className="grid h-[calc(100vh-16rem)] min-h-[420px] gap-4 lg:grid-cols-[1fr_18rem]">
-                  <div className="min-h-0 rounded-xl border bg-card p-2">
+                  <div className="rounded-md border border-border bg-card min-h-0 p-2">
                     {rrgView === 'graph' ? (
                       <RrgChart sectors={shown} focus={focus} pinned={pinned} hover={hover} onPin={pin} />
                     ) : (
                       <RrgTimeline sectors={shown} focus={focus} pinned={pinned} hover={hover} onPin={pin} />
                     )}
                   </div>
-                  <div className="min-h-0 space-y-3 overflow-y-auto rounded-xl border bg-card p-2">
+                  <div className="rounded-md border border-border bg-card min-h-0 space-y-3 overflow-y-auto p-2">
                     {(['leading', 'improving', 'weakening', 'lagging'] as const).map((q) => {
                       const list = shown.filter((s) => s.quadrant === q)
                       return (

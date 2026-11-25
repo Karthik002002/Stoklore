@@ -184,7 +184,7 @@ export default function WorkflowList() {
       {isLoading ? (
         <div className="space-y-2">
           {[0, 1, 2].map((i) => (
-            <div key={i} className="h-[4.25rem] animate-pulse rounded-xl border bg-muted/30" />
+            <div key={i} className="h-[4.25rem] animate-pulse rounded-md border border-border bg-muted/30" />
           ))}
         </div>
       ) : isError ? (
@@ -218,7 +218,7 @@ export default function WorkflowList() {
               <div
                 key={w.id}
                 className={cn(
-                  'flex items-center gap-3 rounded-xl border bg-card p-3 transition-colors hover:border-foreground/20 hover:bg-muted/20',
+                  'flex items-center gap-3 rounded-md border border-border bg-card p-3 transition-colors hover:border-foreground/20 hover:bg-muted/20',
                   state === 'failed' && 'border-down/30',
                 )}
               >
@@ -369,7 +369,7 @@ function CountTile({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        'rounded-xl border bg-card px-3 py-2 text-left transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+        'rounded-md border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
         active && 'border-primary/60 bg-primary/5',
         tone === 'bad' && !active && 'border-down/40',
       )}

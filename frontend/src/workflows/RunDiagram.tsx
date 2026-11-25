@@ -89,7 +89,7 @@ function TaskNode({ data, selected }: NodeProps<Node<NodeData>>) {
   return (
     <div
       className={cn(
-        'w-48 cursor-pointer rounded-xl border-2 bg-card px-3 py-2 shadow-sm transition-shadow hover:shadow-md',
+        'w-48 cursor-pointer rounded-md border-2 bg-card px-3 py-2 shadow-sm transition-shadow hover:shadow-md',
         STATUS_RING[status] ?? 'border-border',
         selected && 'ring-2 ring-primary ring-offset-2 ring-offset-background',
       )}

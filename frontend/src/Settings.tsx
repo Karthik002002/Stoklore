@@ -1724,7 +1724,7 @@ export default function Settings() {
     navigate({ search: (prev) => ({ ...prev, tab: next as typeof tab }), replace: true })
 
   return (
-    <div className="flex h-[calc(100vh-1.5rem)] flex-col gap-3 overflow-hidden rounded-xl border bg-card p-4">
+    <div className="rounded-md border border-border bg-card flex h-[calc(100vh-1.5rem)] flex-col gap-3 overflow-hidden p-3">
       <div className="shrink-0">
         <h1 className="font-medium">Settings</h1>
         <p className="text-sm text-muted-foreground">

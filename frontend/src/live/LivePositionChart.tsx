@@ -234,7 +234,7 @@ export default function LivePositionChart() {
       </div>
 
       {position && (
-        <div className="grid grid-cols-2 gap-3 rounded-xl border bg-card p-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="rounded-md border border-border bg-card grid grid-cols-2 gap-3 p-3 sm:grid-cols-3 lg:grid-cols-6">
           <Metric label="Average" value={inr(entry)} />
           <Metric
             label="Last"
@@ -260,7 +260,7 @@ export default function LivePositionChart() {
         </div>
       )}
 
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border bg-card">
+      <div className="rounded-md border border-border bg-card relative min-h-0 flex-1 overflow-hidden">
         {chartPending || isPending ? (
           <p className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
             <Spinner className="size-4" /> Loading {symbol}…

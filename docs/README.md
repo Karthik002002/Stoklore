@@ -24,6 +24,7 @@ why it exists, see the main [README](../README.md) — these docs are the
 - [Backtesting — Manual (Trade Journal)](backtesting-manual.md)
 - [Bar Replay](bar-replay.md)
 - [Indicators](indicators.md) — every indicator and how it's calculated
+- [Design system](design-system.md) — Storybook, themes, the color customizer, component rules
 - [Paper Trading](paper-trading.md)
 - [Live Trading (Dhan)](live-trading.md)
 - [Engine (C++ algo trading)](engine.md) — backtest sweeps and paper/live runs of an external C++ engine

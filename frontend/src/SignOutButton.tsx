@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { LogOutIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/design-system'
 import { logout } from '@/services/api'
 
 /** Ends the session on the server, not just in this tab - the cookie is useless afterwards. */

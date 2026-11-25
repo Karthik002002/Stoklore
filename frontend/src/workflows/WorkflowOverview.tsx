@@ -2,8 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
 import { CopyIcon, DatabaseIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
-import { Spinner } from '@/components/ui/spinner'
+import { Badge, Spinner } from '@/design-system'
 import { formatDateTime, formatDuration, timeAgoShort } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import {
@@ -42,9 +41,9 @@ function Card({
   children: React.ReactNode
 }) {
   return (
-    <section className={cn('rounded-xl border bg-card p-4', className)}>
+    <section className={cn('rounded-md border border-border bg-card p-4', className)}>
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-[11px] font-medium text-muted-foreground">{title}</h3>
+        <h3 className="text-[12px] font-medium text-muted-foreground">{title}</h3>
         {action && <span className="text-xs">{action}</span>}
       </div>
       {children}
@@ -56,8 +55,8 @@ const cardLink = 'text-primary hover:underline'
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: 'bad' }) {
   return (
-    <div className="rounded-lg border px-2.5 py-1.5">
-      <p className="text-[10px] text-muted-foreground">{label}</p>
+    <div className="rounded-md border border-border px-2.5 py-1.5">
+      <p className="text-[11px] text-muted-foreground">{label}</p>
       <p className={cn('truncate text-sm font-medium', tone === 'bad' && 'text-down')}>{value}</p>
     </div>
   )
@@ -138,7 +137,7 @@ export default function WorkflowOverview() {
                 ))}
               </ol>
               {!armed && (
-                <p className="mt-2 text-[11px] text-muted-foreground">When it would run, once armed.</p>
+                <p className="mt-2 text-[12px] text-muted-foreground">When it would run, once armed.</p>
               )}
             </>
           )}

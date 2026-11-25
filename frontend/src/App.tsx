@@ -1,4 +1,4 @@
-import { Link, Outlet, useRouterState } from '@tanstack/react-router'
+import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import {
   IconBolt,
   IconCheck,
@@ -33,11 +33,19 @@ import { useEffect, useState } from 'react'
 import { useShortcut, useShortcutLabel } from '@/lib/shortcuts'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { Toaster } from 'sonner'
-import { Button } from '@/components/ui/button'
+import {
+  Button,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  ThemeSelector,
+  Toaster,
+} from '@/design-system'
 import { getEngineSettings } from '@/services/api'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import ActivityTracker from './ActivityTracker'
 import ChatWidget from './ChatWidget'
@@ -50,7 +58,6 @@ import GuiltBanner from './GuiltBanner'
 import Profile from './Profile'
 import type { ComponentType } from 'react'
 import type { LinkProps } from '@tanstack/react-router'
-import ThemeToggle from './ThemeToggle'
 import LoginGate from './LoginGate'
 import SignOutButton from './SignOutButton'
 
@@ -170,9 +177,9 @@ function NavGroupIcon({
         />
       </PopoverTrigger>
       <PopoverContent side="right" align="start" sideOffset={10} className="w-52 gap-0 p-1">
-        <p className="px-2 pt-1 pb-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+        <p className="px-2 pt-1 pb-1.5 text-[12px] font-semibold tracking-wide text-muted-foreground uppercase">
           {group.label}
-          <span className="block text-[10px] font-normal tracking-normal text-muted-foreground/80 normal-case">
+          <span className="block text-[11px] font-normal tracking-normal text-muted-foreground/80 normal-case">
             {group.hint}
           </span>
         </p>
@@ -285,6 +292,7 @@ function useSidebar() {
 }
 
 function App() {
+  const navigate = useNavigate()
   const [sidebarHidden, setSidebarHidden] = useSidebar()
   const sidebarKey = useShortcutLabel('global.sidebar')
   // Background runs finish while you're on another page - see agent/useRunNotifications.ts.
@@ -346,8 +354,13 @@ function App() {
                 <Profile />
               </TooltipIcon>
               <NavIcon to="/settings" icon={IconSettings} label="Settings" />
-              <TooltipIcon label="Toggle theme">
-                <ThemeToggle />
+              <TooltipIcon label="Theme">
+                <ThemeSelector
+                  compact
+                  side="right"
+                  align="end"
+                  onCustomize={() => navigate({ to: '/settings', search: { tab: 'appearance' } })}
+                />
               </TooltipIcon>
               <TooltipIcon label="Sign out">
                 <SignOutButton />
@@ -384,7 +397,7 @@ function App() {
       </LoginGate>
       {/* Outside the gate: a toast is how a failed sign-in and a dropped session announce
           themselves, so it has to exist while the login dialog is up. */}
-      <Toaster position="top-center" richColors closeButton />
+      <Toaster position="top-center" closeButton />
     </TooltipProvider>
   )
 }

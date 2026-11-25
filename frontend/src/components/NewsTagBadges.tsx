@@ -1,4 +1,4 @@
-import { Badge } from '@/components/ui/badge'
+import { Badge } from '@/design-system'
 import { EVENT_LABEL, isMaterial, materialityLabel, type NewsTags } from '@/lib/newsTags'
 
 /** The event type, plus a "material" marker when the story is rated moderate/major or likely to
@@ -15,7 +15,7 @@ export default function NewsTagBadges({ tags }: { tags: NewsTags | null | undefi
         {EVENT_LABEL[tags.event] ?? tags.event}
       </Badge>
       {isMaterial(tags) && (
-        <Badge variant="secondary" className="bg-amber-500/15 text-amber-600 dark:text-amber-400">
+        <Badge variant="secondary" className="bg-warning/15 text-warning">
           {materialityLabel(tags)}
         </Badge>
       )}

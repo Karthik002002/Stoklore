@@ -14,11 +14,8 @@ import type { Connection, Edge, Node, NodeProps, ReactFlowInstance } from '@xyfl
 import '@xyflow/react/dist/style.css'
 import { BookmarkIcon, PlusIcon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
+import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, Input, Spinner } from '@/design-system'
 import DeleteStockButton from '@/DeleteStockButton'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Spinner } from '@/components/ui/spinner'
 import { inr } from '@/lib/format'
 import { useShortcut, useShortcutLabel } from '@/lib/shortcuts'
 import { useTheme } from '@/lib/theme'
@@ -68,14 +65,14 @@ const StockActions = createContext<{ remove: (symbol: string, list: string) => v
 })
 
 const pctClass = (v: number | null | undefined) =>
-  v == null ? 'text-muted-foreground' : v > 0 ? 'text-green-500' : v < 0 ? 'text-red-500' : ''
+  v == null ? 'text-muted-foreground' : v > 0 ? 'text-up' : v < 0 ? 'text-down' : ''
 
 function StockNode({ data, selected }: NodeProps<Node<StockNodeData>>) {
   const { symbol, stock, list } = data
   const { remove, deleted } = useContext(StockActions)
   return (
     <div
-      className={`group relative w-44 rounded-lg border bg-card px-3 py-1.5 shadow-sm ${selected ? 'ring-2 ring-primary' : ''}`}
+      className={`group relative w-44 rounded-md border border-border bg-card px-3 py-1.5 shadow-sm ${selected ? 'ring-2 ring-primary' : ''}`}
     >
       {list && (
         // nodrag/nopan: a press here is a click, not the start of a drag or a pan
@@ -121,7 +118,7 @@ function StockNode({ data, selected }: NodeProps<Node<StockNodeData>>) {
 function ListNode({ data, selected }: NodeProps<Node<ListNodeData>>) {
   return (
     <div
-      className={`w-48 rounded-xl border bg-primary/5 px-3 py-2 shadow-sm ${selected ? 'ring-2 ring-primary' : ''}`}
+      className={`w-48 rounded-md border border-border bg-primary/5 px-3 py-2 shadow-sm ${selected ? 'ring-2 ring-primary' : ''}`}
     >
       <p className="flex items-center gap-1.5 text-sm font-medium">
         <BookmarkIcon className="size-3.5 text-primary" />
@@ -138,7 +135,7 @@ function ListNode({ data, selected }: NodeProps<Node<ListNodeData>>) {
 
 function LabelNode({ data }: NodeProps<Node<{ text: string }>>) {
   return (
-    <p className="w-44 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{data.text}</p>
+    <p className="w-44 text-[12px] font-medium tracking-wide text-muted-foreground uppercase">{data.text}</p>
   )
 }
 

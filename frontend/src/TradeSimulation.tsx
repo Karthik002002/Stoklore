@@ -4,11 +4,32 @@ import { useNavigate, useSearch } from '@tanstack/react-router'
 import { DownloadIcon, PlayIcon, PrinterIcon, SaveIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import MdActions from '@/components/MdActions'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
+import {
+  Button,
+  Input,
+  Panel as DsPanel,
+  PanelBody,
+  PanelHeader,
+  PanelTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Stat,
+  StatStrip,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tabs,
+  TabsIndicator,
+  TabsList,
+  TabsPanel,
+  TabsTab,
+} from '@/design-system'
 import { compact, fmt, inr } from '@/lib/format'
 import { byLoggedOrder, tradePnl } from '@/lib/manualTrades'
 import { tradesForAccount } from '@/lib/tradeAccounts'
@@ -299,7 +320,7 @@ function PathsCanvas({
       />
       {hovered && tooltip && (
         <div
-          className="pointer-events-none absolute z-10 w-52 rounded-lg border bg-popover p-2 text-xs shadow-md"
+          className="pointer-events-none absolute z-10 w-52 rounded-md border border-border bg-popover p-2 text-xs shadow-md"
           style={{
             left: Math.min((hover?.x ?? 0) + 12, Math.max(width - 220, 0)),
             top: Math.min((hover?.y ?? 0) + 12, height - 40),
@@ -325,15 +346,11 @@ function StatCard({
   valueClassName?: string
   sub?: React.ReactNode
 }) {
-  return (
-    <div className="rounded-xl border bg-card p-3">
-      <p className={`text-lg font-semibold tabular-nums ${valueClassName ?? ''}`}>{value}</p>
-      <p className="mt-0.5 text-[11px] tracking-wide text-muted-foreground uppercase">{label}</p>
-      {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
-    </div>
-  )
+  // the value keeps its caller's colour class (text-up / text-down / ...)
+  return <Stat label={label} value={<span className={valueClassName}>{value}</span>} hint={sub} />
 }
 
+/** A titled section: the design system's panel, with this page's title / hint / action props. */
 function Panel({
   title,
   hint,
@@ -348,16 +365,17 @@ function Panel({
   action?: React.ReactNode
 }) {
   return (
-    <div className={`rounded-xl border bg-card p-4 ${className}`}>
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-sm font-medium">{title}</p>
-          {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
-        </div>
+    <DsPanel className={className}>
+      <PanelHeader>
+        <PanelTitle>{title}</PanelTitle>
+        <span className="flex-1" />
         {action}
-      </div>
-      <div className="mt-3">{children}</div>
-    </div>
+      </PanelHeader>
+      <PanelBody className="p-3">
+        {hint && <p className="mb-2 text-2xs text-muted-foreground">{hint}</p>}
+        {children}
+      </PanelBody>
+    </DsPanel>
   )
 }
 
@@ -374,7 +392,7 @@ function Field({
     <label className="block space-y-1">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       {children}
-      {hint && <span className="block text-[11px] text-muted-foreground">{hint}</span>}
+      {hint && <span className="block text-[12px] text-muted-foreground">{hint}</span>}
     </label>
   )
 }
@@ -398,7 +416,7 @@ function Choice({
           type="button"
           size="sm"
           variant={value === key ? 'default' : 'outline'}
-          className="h-auto flex-1 py-1.5 text-[11px] leading-tight whitespace-normal"
+          className="h-auto flex-1 py-1.5 text-[12px] leading-tight whitespace-normal"
           onClick={() => onChange(key)}
         >
           {label}
@@ -439,8 +457,8 @@ function SlippagePanel({ config, set, pool }: { config: PresetConfig; set: SetCo
   const drag = config.slip * config.length
   const winsEaten = pool?.avgWin ? drag / pool.avgWin : null
   return (
-    <div className="rounded-xl border-2 border-amber-500/60 bg-amber-500/[0.06] p-4">
-      <p className="text-sm font-semibold text-amber-600 dark:text-amber-400">Human friction & slippage</p>
+    <div className="rounded-md border-2 border-warning/60 bg-warning/[0.06] p-4">
+      <p className="text-sm font-semibold text-warning">Human friction & slippage</p>
       <p className="mt-0.5 text-xs text-muted-foreground">
         Charged on every simulated trade, winners included. This is the number that usually explains the gap
         between a paper account and a funded one.
@@ -460,7 +478,7 @@ function SlippagePanel({ config, set, pool }: { config: PresetConfig; set: SetCo
         className="mt-2 w-full accent-amber-500"
         aria-label="Slippage per trade"
       />
-      <div className="flex justify-between text-[11px] text-muted-foreground">
+      <div className="flex justify-between text-[12px] text-muted-foreground">
         <span>₹0</span>
         <span>₹1,000</span>
       </div>
@@ -473,10 +491,9 @@ function SlippagePanel({ config, set, pool }: { config: PresetConfig; set: SetCo
         className="mt-2 h-8"
       />
 
-      <p className="mt-3 border-t border-amber-500/30 pt-2 text-xs">
+      <p className="mt-3 border-t border-warning/30 pt-2 text-xs">
         Over {config.length} trades that is{' '}
-        <span className="font-semibold text-amber-600 tabular-nums dark:text-amber-400">{inr(drag)}</span> of
-        drag
+        <span className="font-semibold text-warning tabular-nums">{inr(drag)}</span> of drag
         {winsEaten != null && (
           <>
             {' '}
@@ -487,7 +504,7 @@ function SlippagePanel({ config, set, pool }: { config: PresetConfig; set: SetCo
         .
       </p>
 
-      <label className="mt-3 flex cursor-pointer items-start gap-2 border-t border-amber-500/30 pt-3 text-xs">
+      <label className="mt-3 flex cursor-pointer items-start gap-2 border-t border-warning/30 pt-3 text-xs">
         <input
           type="checkbox"
           checked={config.removeTopWins}
@@ -730,7 +747,7 @@ function DataProfile({ pool, hint }: { pool?: Pool | null; hint?: React.ReactNod
   return (
     <Panel title="Active data profile" hint={hint}>
       {pool ? (
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <StatStrip bordered>
           <StatCard label="Trades" value={fmt(pool.n, 0)} />
           <StatCard label="Win rate" value={`${fmt(pool.winRate, 1)}%`} />
           <StatCard
@@ -741,7 +758,7 @@ function DataProfile({ pool, hint }: { pool?: Pool | null; hint?: React.ReactNod
           <StatCard label="Avg win" value={inr(pool.avgWin)} valueClassName="text-up" />
           <StatCard label="Avg loss" value={inr(pool.avgLoss)} valueClassName="text-down" />
           <StatCard label="Largest loss" value={inr(pool.largestLoss)} valueClassName="text-down" />
-        </div>
+        </StatStrip>
       ) : (
         <p className="text-sm text-muted-foreground">
           No closed trades on this account yet — nothing to resample.
@@ -813,7 +830,7 @@ function SimulationResults({ result, config }: { result: SimulationResult; confi
 
   return (
     <>
-      <div className="grid gap-2 sm:grid-cols-3">
+      <StatStrip bordered>
         <StatCard
           label="Strategy survival rate"
           value={`${fmt(result.survivalRate, 1)}%`}
@@ -832,7 +849,7 @@ function SimulationResults({ result, config }: { result: SimulationResult; confi
           valueClassName={result.ruinFullPct === 0 ? 'text-up' : 'text-down'}
           sub="account hit the liquidation threshold"
         />
-      </div>
+      </StatStrip>
 
       <Panel
         title="Equity curves"
@@ -901,7 +918,7 @@ function SimulationResults({ result, config }: { result: SimulationResult; confi
               <span className="w-8 shrink-0 text-xs font-medium tabular-nums">{b.label}</span>
               <div className="h-4 flex-1 overflow-hidden rounded bg-muted">
                 <div
-                  className={`h-full ${b.streak >= 7 ? 'bg-down' : b.streak >= 4 ? 'bg-amber-500' : 'bg-up'}`}
+                  className={`h-full ${b.streak >= 7 ? 'bg-down' : b.streak >= 4 ? 'bg-warning' : 'bg-up'}`}
                   style={{ width: `${b.pct}%` }}
                 />
               </div>
@@ -974,7 +991,7 @@ function CorrelationMatrixPanel({ entries, matrix }: { entries: AccountRun[]; ma
                           {fmt(cell.r, 2)}
                         </span>
                       )}
-                      <span className="block text-[10px] text-muted-foreground">{cell.overlap}d</span>
+                      <span className="block text-[11px] text-muted-foreground">{cell.overlap}d</span>
                     </td>
                   )
                 })}
@@ -1013,13 +1030,13 @@ function ComparisonView({
       <Panel title="Where each account ends up" hint="Median run per account, on one set of axes.">
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {entries.map((e, i) => (
-            <div key={e.id} className="rounded-xl border bg-card p-3">
+            <div key={e.id} className="rounded-md border border-border bg-card p-3">
               <p className="flex items-center gap-1.5 text-xs font-medium">
                 <span className="size-2 shrink-0 rounded-full" style={{ background: colorFor(i) }} />
                 <span className="truncate">{e.name}</span>
               </p>
               <p className="mt-1 text-lg font-semibold tabular-nums">{inr(e.result.table.endBalance[2])}</p>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[12px] text-muted-foreground">
                 median · {fmt(e.result.table.roi[2], 1)}% ROI · {e.result.pool.n} trades in pool
               </p>
             </div>
@@ -1231,7 +1248,7 @@ function SingleMode({ config, set, accounts, allTrades }: ModeProps) {
       </div>
 
       {account == null ? (
-        <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+        <p className="rounded-md border border-dashed border-input p-8 text-center text-sm text-muted-foreground">
           Pick a backtest log or paper account to simulate. To hold two or more against each other, use the{' '}
           <span className="font-medium">Multiple</span> tab.
         </p>
@@ -1268,7 +1285,7 @@ function SingleMode({ config, set, accounts, allTrades }: ModeProps) {
             {result ? (
               <SimulationResults result={result} config={config} />
             ) : (
-              <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+              <p className="rounded-md border border-dashed border-input p-8 text-center text-sm text-muted-foreground">
                 Set the friction you actually pay, then run the simulation.
               </p>
             )}
@@ -1395,7 +1412,7 @@ function MultiMode({ config, set, accounts, allTrades }: ModeProps) {
       </Panel>
 
       {chosen.length < 2 ? (
-        <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+        <p className="rounded-md border border-dashed border-input p-8 text-center text-sm text-muted-foreground">
           Select at least two accounts. The usual pairing is a backtest log against the paper account running
           the same strategy — the comparison shows whether your live execution is still the thing you tested.
         </p>
@@ -1423,7 +1440,7 @@ function MultiMode({ config, set, accounts, allTrades }: ModeProps) {
 
           <div className="min-w-0 flex-1">
             {!results ? (
-              <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+              <p className="rounded-md border border-dashed border-input p-8 text-center text-sm text-muted-foreground">
                 {runnable.length < 2
                   ? 'At least two of the selected accounts need closed trades to compare.'
                   : 'Set the shared configuration, then run all selected accounts at once.'}

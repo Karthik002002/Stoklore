@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { Button } from '@/components/ui/button'
+import { Toggle, ToggleGroup } from '@/design-system'
 import { getStockChart } from '@/services/api'
 import PriceChart from './PriceChart'
 
@@ -15,7 +15,7 @@ const RANGES = [
   ['max', 'All'],
 ]
 
-export default function StockChart({ symbol }: { symbol: string }) {
+export default function StockChart({ symbol, title }: { symbol: string; title?: React.ReactNode }) {
   const [range, setRange] = useState('1mo')
 
   const { data, isLoading } = useQuery({
@@ -27,17 +27,21 @@ export default function StockChart({ symbol }: { symbol: string }) {
     <PriceChart
       data={data}
       isLoading={isLoading}
-      leftControls={RANGES.map(([key, label]) => (
-        <Button
-          key={key}
-          variant={range === key ? 'secondary' : 'ghost'}
+      title={title}
+      leftControls={
+        <ToggleGroup
           size="sm"
-          className="h-7 px-2.5 text-xs"
-          onClick={() => setRange(key)}
+          value={[range]}
+          onValueChange={(v) => v[0] && setRange(v[0] as string)}
+          aria-label="Range"
         >
-          {label}
-        </Button>
-      ))}
+          {RANGES.map(([key, label]) => (
+            <Toggle key={key} value={key}>
+              {label}
+            </Toggle>
+          ))}
+        </ToggleGroup>
+      }
     />
   )
 }

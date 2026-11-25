@@ -2,9 +2,18 @@
 // too many to scroll. Grouped by provider (the part before "/"), the current one ticked.
 import { useMemo, useState } from 'react'
 import { CheckIcon, ChevronsUpDownIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  Button,
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/design-system'
 import { cn } from '@/lib/utils'
 import type { ModelOption } from '@/services/api'
 
@@ -43,7 +52,9 @@ export default function ModelCombobox({
           />
         }
       >
-        <span className={cn('truncate', !current && 'text-muted-foreground')}>{current?.label ?? 'Model…'}</span>
+        <span className={cn('truncate', !current && 'text-muted-foreground')}>
+          {current?.label ?? 'Model…'}
+        </span>
         <ChevronsUpDownIcon className="size-3.5 shrink-0 opacity-50" />
       </PopoverTrigger>
       <PopoverContent className="w-80 p-0" align="end">

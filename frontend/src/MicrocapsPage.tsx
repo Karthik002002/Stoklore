@@ -11,15 +11,20 @@ import { ExternalLinkIcon, RefreshCwIcon, Trash2Icon, XIcon } from 'lucide-react
 import { toast } from 'sonner'
 import { ChartButton } from '@/components/ChartModal'
 import DelivCell from '@/components/DelivCell'
-import RsPill from '@/components/RsPill'
-import SortTh from '@/components/SortTh'
+import {
+  RsPill,
+  TableSortHead as SortTh,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Spinner,
+  Textarea,
+} from '@/design-system'
 import StockLinks from '@/components/StockLinks'
 import SurveillanceBadge from '@/components/SurveillanceBadge'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Spinner } from '@/components/ui/spinner'
-import { Textarea } from '@/components/ui/textarea'
 import { fmt } from '@/lib/format'
 import { sortRows } from '@/lib/sortRows'
 import type { Sort } from '@/lib/sortRows'
@@ -159,7 +164,7 @@ function Flags({ flags }: { flags: string[] }) {
   return (
     <span className="flex flex-wrap gap-1" title={flags.join('\n')}>
       {flags.map((f) => (
-        <span key={f} className="rounded border border-down/40 px-1 text-[9px] whitespace-nowrap text-down">
+        <span key={f} className="rounded border border-down/40 px-1 text-[10px] whitespace-nowrap text-down">
           {f}
         </span>
       ))}
@@ -222,10 +227,10 @@ function Table({
   })
   const th = (label: string, k: string) => <SortTh label={label} k={k} sort={sort} onSort={setSort} />
   return (
-    <div ref={scrollRef} className="max-h-[72vh] overflow-auto rounded-xl border bg-card">
+    <div ref={scrollRef} className="max-h-[72vh] overflow-auto rounded-md border border-border bg-card">
       <table className="w-full min-w-[78rem] font-mono text-xs">
         <thead className="sticky top-0 z-10 bg-background">
-          <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
+          <tr className="border-b text-[11px] tracking-widest text-muted-foreground uppercase">
             <th className="w-6" title="Pick up to five to compare" />
             <th className="w-6" />
             <SortTh label="Company" k="name" sort={sort} onSort={setSort} align="left" first="asc" />
@@ -277,12 +282,12 @@ function Table({
               <td className="max-w-56 px-2 py-1">
                 <span className="font-semibold">{r.symbol ?? r.bse_code}</span>
                 {theses.has(r.key) && (
-                  <span className="ml-1.5 rounded border border-primary/50 px-1 text-[9px] text-primary">
+                  <span className="ml-1.5 rounded border border-primary/50 px-1 text-[10px] text-primary">
                     THESIS
                   </span>
                 )}
-                {r.symbol && <SurveillanceBadge symbol={r.symbol} className="ml-1.5 py-0 text-[9px]" />}
-                <span className="block truncate font-sans text-[11px] text-muted-foreground">{r.name}</span>
+                {r.symbol && <SurveillanceBadge symbol={r.symbol} className="ml-1.5 py-0 text-[10px]" />}
+                <span className="block truncate font-sans text-[12px] text-muted-foreground">{r.name}</span>
               </td>
               <td className="px-2 py-1 text-right tabular-nums">{num(r.mcap_cr, 0)}</td>
               <td className="px-2 py-1 text-right tabular-nums">{num(r.pe)}</td>
@@ -406,7 +411,7 @@ function ThesisEditor({ row, thesis }: { row: Microcap; thesis?: MicrocapThesis 
     onError: (e) => toast.error(e.message),
   })
   return (
-    <section className="space-y-2 rounded-lg border p-3">
+    <section className="space-y-2 rounded-md border border-border p-3">
       <h3 className="text-sm font-semibold">{thesis ? 'Your thesis' : 'Add to long-term list'}</h3>
       {thesis && thesis.breaches.length > 0 && (
         <ul className="space-y-0.5 text-xs text-down">
@@ -416,7 +421,7 @@ function ThesisEditor({ row, thesis }: { row: Microcap; thesis?: MicrocapThesis 
         </ul>
       )}
       {thesis && (
-        <div className="grid grid-cols-3 gap-x-3 gap-y-1 text-[11px]">
+        <div className="grid grid-cols-3 gap-x-3 gap-y-1 text-[12px]">
           {Object.entries(thesis.since).map(([k, [a, b]]) => (
             <div key={k}>
               <span className="text-muted-foreground">{SINCE_LABELS[k] ?? k}</span>{' '}
@@ -436,7 +441,7 @@ function ThesisEditor({ row, thesis }: { row: Microcap; thesis?: MicrocapThesis 
         placeholder="Why this company? What has to stay true?"
         className="min-h-20 text-xs"
       />
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-[12px] text-muted-foreground">
         Re-checked after every weekly pull. A newly broken limit, or a new results quarter, lands in Alerts.
       </p>
       <div className="flex flex-wrap items-center gap-2">
@@ -639,13 +644,13 @@ export default function MicrocapsPage() {
         </Button>
       </div>
       {st && !st.has_cookie && (
-        <p className="rounded-lg border border-amber-500/40 p-2 text-xs">
+        <p className="rounded-md border border-warning/40 p-2 text-xs">
           Paste your screener.in <code>sessionid</code> cookie in Settings › Screener - the universe comes
           from one screener.in query that needs you signed in.
         </p>
       )}
       {st?.error && (
-        <p className="rounded-lg border border-down/40 p-2 text-xs text-down">Last pull failed: {st.error}</p>
+        <p className="rounded-md border border-down/40 p-2 text-xs text-down">Last pull failed: {st.error}</p>
       )}
 
       <div className="flex flex-wrap items-center gap-1.5">
@@ -686,7 +691,7 @@ export default function MicrocapsPage() {
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-2">
+      <div className="rounded-md border border-border bg-card flex flex-wrap items-center gap-3 p-2">
         <Input
           value={f.q}
           onChange={(e) => set('q')(e.target.value)}

@@ -2,11 +2,21 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { RefreshCwIcon, SettingsIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
-import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
+import {
+  Badge,
+  Button,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+  Tabs,
+  TabsIndicator,
+  TabsList,
+  TabsPanel,
+  TabsTab,
+} from '@/design-system'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { timeAgoShort } from '@/lib/format'
 import type { PaperStatus } from '@/services/api'
@@ -125,7 +135,7 @@ export default function PaperTrading() {
               feed.tone === 'live'
                 ? 'bg-success/15 text-up'
                 : feed.tone === 'stale'
-                  ? 'bg-amber-500/15 text-amber-600'
+                  ? 'bg-warning/15 text-warning'
                   : 'text-muted-foreground'
             }
           >

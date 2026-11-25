@@ -1,13 +1,19 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ExternalLinkIcon, MinusCircleIcon, PlusCircleIcon } from 'lucide-react'
-import DataTable from '@/components/DataTable'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
-import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
+import {
+  DataTable,
+  Badge,
+  Button,
+  Spinner,
+  Tabs,
+  TabsIndicator,
+  TabsList,
+  TabsPanel,
+  TabsTab,
+} from '@/design-system'
+import type { DataTableColumns } from '@/design-system'
 import { cellChange } from '@/lib/screenerTable'
-import type { DataTableColumns } from '@/components/DataTable'
 import type { ScreenerDocument, ScreenerTable } from '@/services/api'
 import { getScreenerData } from '@/services/api'
 
@@ -49,7 +55,7 @@ function StatementTable({ table, showChange }: { table: ScreenerTable; showChang
                 {value || <span className="text-muted-foreground">—</span>}
               </span>
               {change && (
-                <span className={`block text-[11px] ${change.up ? 'text-up' : 'text-down'}`}>
+                <span className={`block text-[12px] ${change.up ? 'text-up' : 'text-down'}`}>
                   {change.text}
                 </span>
               )}
@@ -68,7 +74,7 @@ function StatementTable({ table, showChange }: { table: ScreenerTable; showChang
       data={table.rows}
       getRowId={(row) => row.label}
       resizable
-      containerClassName="max-h-[460px] rounded-xl border bg-card"
+      containerClassName="max-h-[460px] rounded-md border border-border bg-card"
     />
   )
 }
@@ -85,7 +91,7 @@ function ProsCons({ pros, cons }: { pros: string[]; cons: string[] }) {
     <div className="grid gap-3 md:grid-cols-2">
       {columns.map(([title, items, Icon, tone]) =>
         items.length === 0 ? null : (
-          <div key={title} className="rounded-xl border bg-card p-4">
+          <div key={title} className="rounded-md border border-border bg-card p-4">
             <p className={`mb-2 flex items-center gap-1.5 text-sm font-medium ${tone}`}>
               <Icon className="size-4" /> {title}
             </p>
@@ -109,10 +115,10 @@ function DocumentGroup({ title, items }: { title: string; items: ScreenerDocumen
   const [expanded, setExpanded] = useState(false)
   const visible = expanded ? items : items.slice(0, DOCS_PREVIEW)
   return (
-    <div className="rounded-xl border bg-card p-4">
+    <div className="rounded-md border border-border bg-card p-3">
       <p className="mb-2 flex items-center gap-2 text-sm font-medium">
         {title}
-        <Badge variant="outline" className="text-[10px] text-muted-foreground">
+        <Badge variant="outline" className="text-[11px] text-muted-foreground">
           {items.length}
         </Badge>
       </p>
@@ -161,18 +167,14 @@ export default function ScreenerPanel({ symbol }: { symbol: string }) {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center gap-2 rounded-xl border bg-card py-16 text-muted-foreground">
+      <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
         <Spinner className="size-4" /> Loading screener data…
       </div>
     )
   }
 
   if (error || !data) {
-    return (
-      <p className="rounded-xl border bg-card py-16 text-center text-sm text-muted-foreground">
-        No screener.in page for {symbol}.
-      </p>
-    )
+    return <p className="py-12 text-center text-muted-foreground">No screener.in page for {symbol}.</p>
   }
 
   const tableEntries = Object.entries(data.tables ?? {})
@@ -185,7 +187,7 @@ export default function ScreenerPanel({ symbol }: { symbol: string }) {
           <span className="text-sm font-medium">{data.name}</span>
           {/* Broad sector > sector > broad industry > industry; the last is the most specific. */}
           {data.industry?.map((tag, i) => (
-            <Badge key={i} variant="secondary" className="text-[10px]">
+            <Badge key={i} variant="secondary" className="text-[11px]">
               {tag}
             </Badge>
           ))}
@@ -203,7 +205,7 @@ export default function ScreenerPanel({ symbol }: { symbol: string }) {
       {data.ratios?.length > 0 && (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
           {data.ratios.map((r) => (
-            <div key={r.label} className="rounded-xl border bg-card p-3">
+            <div key={r.label} className="rounded-md border border-border bg-card p-3">
               <p className="text-xs text-muted-foreground">{r.label}</p>
               <p className="mt-1 font-semibold tabular-nums">{r.value}</p>
             </div>
@@ -214,7 +216,7 @@ export default function ScreenerPanel({ symbol }: { symbol: string }) {
       <ProsCons pros={data.pros ?? []} cons={data.cons ?? []} />
 
       {(data.about || data.keyPoints) && (
-        <div className="rounded-xl border bg-card p-4">
+        <div className="rounded-md border border-border bg-card p-3">
           {data.about && <p className="text-sm text-muted-foreground">{data.about}</p>}
           {data.keyPoints && (
             <>

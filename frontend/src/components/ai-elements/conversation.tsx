@@ -1,6 +1,6 @@
 'use client'
 import type { ComponentProps, ReactNode } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/design-system'
 import { cn } from '@/lib/utils'
 import { ArrowDownIcon, DownloadIcon } from 'lucide-react'
 import { useCallback } from 'react'

@@ -3,12 +3,19 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { BellIcon, CheckCheckIcon, CircleCheckIcon, CircleXIcon, Trash2Icon, XIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import DataTable from '@/components/DataTable'
-import { Badge } from '@/components/ui/badge'
-import { Button, buttonVariants } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
+import {
+  DataTable,
+  Badge,
+  Button,
+  buttonVariants,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+} from '@/design-system'
 import { formatDateTime, formatDuration, timeAgoShort } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import {
@@ -192,7 +199,7 @@ export default function WorkflowNotifications() {
                       >
                         {n.message}
                       </span>
-                      <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                      <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px] text-muted-foreground">
                         {meta.label}
                         {n.triggered_at && (
                           <span title={formatDateTime(n.triggered_at)}>
@@ -297,7 +304,7 @@ function NotificationDrawer({
         <meta.icon className={cn('mt-0.5 size-4 shrink-0', meta.tone)} />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">{meta.label}</p>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             {n.triggered_at && formatDateTime(n.triggered_at)}
           </p>
         </div>
@@ -331,7 +338,7 @@ function NotificationDrawer({
         </p>
 
         <section>
-          <h3 className="mb-1 text-[11px] font-medium text-muted-foreground">The run</h3>
+          <h3 className="mb-1 text-[12px] font-medium text-muted-foreground">The run</h3>
           {!runId ? (
             <p className="text-xs text-muted-foreground">Not tied to a run — it predates run tracking.</p>
           ) : !run ? (
@@ -341,7 +348,7 @@ function NotificationDrawer({
               to="/workflows/$workflowId/runs/$runId"
               params={{ workflowId, runId }}
               search={{ node: failedNode }}
-              className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs transition-colors hover:bg-muted/50"
+              className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-xs transition-colors hover:bg-muted/50"
             >
               <span>
                 <span
@@ -372,13 +379,13 @@ function NotificationDrawer({
         {runId && (
           <section>
             <div className="mb-1 flex items-center justify-between">
-              <h3 className="text-[11px] font-medium text-muted-foreground">Collected in this run</h3>
+              <h3 className="text-[12px] font-medium text-muted-foreground">Collected in this run</h3>
               {!!collected?.rows.length && (
                 <Link
                   to="/workflows/$workflowId/data"
                   params={{ workflowId }}
                   search={{ series: collected.selected ?? undefined }}
-                  className="text-[11px] text-primary hover:underline"
+                  className="text-[12px] text-primary hover:underline"
                 >
                   Open in Data →
                 </Link>
@@ -388,7 +395,7 @@ function NotificationDrawer({
               <Spinner className="size-4" />
             ) : collected?.rows.length ? (
               <>
-                <p className="mb-1 text-[11px] text-muted-foreground">
+                <p className="mb-1 text-[12px] text-muted-foreground">
                   {collected.rows.length} row{collected.rows.length === 1 ? '' : 's'} in{' '}
                   <strong>{collected.selected}</strong>
                   {collected.series.length > 1 && ` (+${collected.series.length - 1} more series in Data)`}
@@ -397,7 +404,7 @@ function NotificationDrawer({
                   columns={columns as never}
                   data={collected.rows as never}
                   sortable
-                  containerClassName="max-h-72 rounded-lg border"
+                  containerClassName="max-h-72 rounded-md border border-border"
                 />
               </>
             ) : (
@@ -406,13 +413,13 @@ function NotificationDrawer({
           </section>
         )}
 
-        <section className="rounded-lg border bg-muted/20 p-3 text-xs">
+        <section className="rounded-md border border-border bg-muted/20 p-3 text-xs">
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-[11px] font-medium text-muted-foreground">The workflow</h3>
+            <h3 className="text-[12px] font-medium text-muted-foreground">The workflow</h3>
             <Link
               to="/workflows/$workflowId"
               params={{ workflowId }}
-              className="text-[11px] text-primary hover:underline"
+              className="text-[12px] text-primary hover:underline"
             >
               Overview →
             </Link>
@@ -503,7 +510,7 @@ function RulesPanel({ workflow }: { workflow: Workflow }) {
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <h3 className="text-[11px] font-medium text-muted-foreground">What reaches you</h3>
+        <h3 className="text-[12px] font-medium text-muted-foreground">What reaches you</h3>
         {save.isPending && <Spinner className="size-3.5" />}
       </div>
 
@@ -518,7 +525,7 @@ function RulesPanel({ workflow }: { workflow: Workflow }) {
         <Check checked={rules.on_success} onChange={(v) => update({ on_success: v })}>
           succeeds — every run, even quiet ones
         </Check>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[12px] text-muted-foreground">
           Switched-off failures and outputs are still kept in this inbox; they just don't reach you.
         </p>
       </section>
@@ -529,7 +536,7 @@ function RulesPanel({ workflow }: { workflow: Workflow }) {
           Mute until I turn it back on
         </Check>
         {snoozedUntil ? (
-          <div className="flex items-center justify-between gap-2 rounded-lg border px-2 py-1.5 text-xs">
+          <div className="flex items-center justify-between gap-2 rounded-md border border-border px-2 py-1.5 text-xs">
             <span>Snoozed until {formatSlot(snoozedUntil)}</span>
             <Button size="xs" variant="ghost" onClick={() => update({ snooze_until: null })}>
               Resume
@@ -611,7 +618,7 @@ function RulesPanel({ workflow }: { workflow: Workflow }) {
       </section>
 
       {isArmed(workflow) || workflow.trigger.kind === 'manual' ? null : (
-        <p className="rounded-lg border border-dashed px-3 py-2 text-[11px] text-muted-foreground">
+        <p className="rounded-md border border-dashed border-input px-3 py-2 text-[12px] text-muted-foreground">
           This workflow is off, so it won't run on its own — these rules apply when you run it.
         </p>
       )}

@@ -5,14 +5,18 @@ import { useQuery } from '@tanstack/react-query'
 import { CandlestickSeries, HistogramSeries, createChart, createSeriesMarkers } from 'lightweight-charts'
 import type { UTCTimestamp } from 'lightweight-charts'
 import { DownloadIcon, InfoIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import {
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Spinner } from '@/components/ui/spinner'
+  Spinner,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  useChartColors,
+} from '@/design-system'
 import { coverageNotes, focusRange, historyText, istTime, markerRange, tradeMarkers } from '@/lib/engine'
 import type { RunTrade } from '@/lib/engine'
 import { downloadCsv, downloadXlsx } from '@/lib/exportFile'
@@ -20,11 +24,8 @@ import type { SheetData } from '@/lib/exportFile'
 import { fmt, inr } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { Help } from '@/lib/engineHelp'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { getIntradayBars } from '@/services/api'
 import type { EngineCoverage, EngineHistory, EngineRun, EngineRunRow, EngineSkipped } from '@/services/api'
-
-export const COLORS = { text: '#9ca3af', grid: 'rgba(148, 163, 184, 0.15)', up: '#22c55e', down: '#ef4444' }
 
 //: How many markers (two per trade) the executions chart frames when it opens - see ExecutionsChart.
 export const OPENING_MARKERS = 40
@@ -62,7 +63,7 @@ export function Panel({
         <h2 className="text-sm font-medium text-muted-foreground">{title}</h2>
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </div>
-      <div className="rounded-xl border bg-card p-4">{children}</div>
+      <div className="rounded-md border border-border bg-card p-3">{children}</div>
     </section>
   )
 }
@@ -142,9 +143,17 @@ export function Field({ label, help, children }: { label: string; help?: Help; c
   )
 }
 
-export function Stat({ label, value, className }: { label: string; value: React.ReactNode; className?: string }) {
+export function Stat({
+  label,
+  value,
+  className,
+}: {
+  label: string
+  value: React.ReactNode
+  className?: string
+}) {
   return (
-    <div className="rounded-lg border p-3">
+    <div className="rounded-md border border-border p-3">
       <p className={cn('text-lg font-semibold tabular-nums', className)}>{value}</p>
       <p className="mt-0.5 text-xs text-muted-foreground">{label}</p>
     </div>
@@ -176,12 +185,13 @@ export function HistoryLine({
 }
 
 export function DailyBars({ daily }: { daily: [number, number][] }) {
+  const COLORS = useChartColors()
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     if (!ref.current || !daily.length) return
     const chart = createChart(ref.current, {
       autoSize: true,
-      layout: { background: { color: 'transparent' }, textColor: COLORS.text, attributionLogo: false },
+      layout: { background: { color: 'transparent' }, textColor: COLORS.mutedText, attributionLogo: false },
       grid: { vertLines: { visible: false }, horzLines: { color: COLORS.grid } },
       timeScale: { borderVisible: false },
       rightPriceScale: { borderVisible: false },
@@ -196,7 +206,7 @@ export function DailyBars({ daily }: { daily: [number, number][] }) {
     )
     chart.timeScale().fitContent()
     return () => chart.remove()
-  }, [daily])
+  }, [daily, COLORS])
   return <div ref={ref} className="h-44" />
 }
 
@@ -207,6 +217,7 @@ export function DailyBars({ daily }: { daily: [number, number][] }) {
  *  with. Entry prices in the trade list are that bar's open, which is what makes this worth looking
  *  at: you can see what the strategy saw. */
 export function ExecutionsChart({ run, focus }: { run: EngineRun; focus: RunTrade | null }) {
+  const COLORS = useChartColors()
   const [symbol, setSymbol] = useState(run.symbols[0] ?? '')
   // the run's own dates: a backtest on an old range would otherwise get today's newest bars, and
   // its arrows would land on candles that were never loaded
@@ -228,7 +239,7 @@ export function ExecutionsChart({ run, focus }: { run: EngineRun; focus: RunTrad
     if (focus) setSymbol(focus[0])
   }, [focus])
 
-  const markers = useMemo(() => tradeMarkers(run.trades, symbol, COLORS), [run.trades, symbol])
+  const markers = useMemo(() => tradeMarkers(run.trades, symbol, COLORS), [run.trades, symbol, COLORS])
   const total = useMemo(() => run.trades.filter((t) => t[0] === symbol).length, [run.trades, symbol])
 
   useEffect(() => {
@@ -236,7 +247,7 @@ export function ExecutionsChart({ run, focus }: { run: EngineRun; focus: RunTrad
     if (!ref.current || !rows?.length) return
     const chart = createChart(ref.current, {
       autoSize: true,
-      layout: { background: { color: 'transparent' }, textColor: COLORS.text, attributionLogo: false },
+      layout: { background: { color: 'transparent' }, textColor: COLORS.mutedText, attributionLogo: false },
       grid: { vertLines: { visible: false }, horzLines: { color: COLORS.grid } },
       // Bar times are already IST-shifted (see minute_data.py) and the chart renders UTC, so the
       // axis reads as market-local time.
@@ -274,7 +285,7 @@ export function ExecutionsChart({ run, focus }: { run: EngineRun; focus: RunTrad
       chart.timeScale().fitContent()
     }
     return () => chart.remove()
-  }, [bars, markers, focus, symbol, run.interval])
+  }, [bars, markers, focus, symbol, run.interval, COLORS])
 
   if (!run.symbols.length) return null
   return (
@@ -284,7 +295,7 @@ export function ExecutionsChart({ run, focus }: { run: EngineRun; focus: RunTrad
           Executions on {run.interval} candles
           {total > markers.length / 2 ? ` (latest ${markers.length / 2} of ${total} trades)` : ''}
         </p>
-        <span className="text-[11px] text-muted-foreground">
+        <span className="text-[12px] text-muted-foreground">
           ▲ buy · ▼ sell · exit arrow green when that trade made money
         </span>
         {run.symbols.length > 1 && (
@@ -303,18 +314,17 @@ export function ExecutionsChart({ run, focus }: { run: EngineRun; focus: RunTrad
         )}
       </div>
       {error ? (
-        <p className="rounded-lg border p-4 text-sm text-destructive">
+        <p className="rounded-md border border-border p-4 text-sm text-destructive">
           {error instanceof Error ? error.message : 'Could not load bars'}
         </p>
       ) : isLoading ? (
-        <div className="flex h-96 items-center justify-center gap-2 rounded-lg border text-sm text-muted-foreground">
+        <div className="flex h-96 items-center justify-center gap-2 rounded-md border border-border text-sm text-muted-foreground">
           <Spinner className="size-4" /> Loading {symbol} {run.interval} bars — the first fetch of a symbol
           takes a few seconds
         </div>
       ) : (
-        <div ref={ref} className="h-96 rounded-lg border" />
+        <div ref={ref} className="h-96 rounded-md border border-border" />
       )}
     </div>
   )
 }
-

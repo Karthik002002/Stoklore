@@ -1,5 +1,5 @@
 import { CircleCheckIcon, CircleDashedIcon, CircleXIcon } from 'lucide-react'
-import { Spinner } from '@/components/ui/spinner'
+import { Spinner } from '@/design-system'
 import { cn } from '@/lib/utils'
 import { STATE_META } from './status'
 import type { RunState } from './status'

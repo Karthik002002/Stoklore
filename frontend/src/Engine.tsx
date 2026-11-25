@@ -19,23 +19,38 @@ import { toast } from 'sonner'
 import SeriesChart from '@/components/charts/SeriesChart'
 import { seriesColor } from '@/components/charts/colors'
 import type { Dataset } from '@/components/charts/colors'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import {
+  Badge,
+  Button,
   Command,
   CommandEmpty,
   CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
-} from '@/components/ui/command'
-import { Input } from '@/components/ui/input'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
-import { Textarea } from '@/components/ui/textarea'
-import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+  Input,
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+  Textarea,
+  Tabs,
+  TabsIndicator,
+  TabsList,
+  TabsPanel,
+  TabsTab,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/design-system'
 import {
   comboCount,
   drawdown,
@@ -64,7 +79,6 @@ import { fmt, formatDateTime, inr } from '@/lib/format'
 import type { EngineTab } from './router'
 import { usePageTitle } from '@/lib/usePageTitle'
 import {
-  COLORS,
   DailyBars,
   ExecutionsChart,
   ExportMenu,
@@ -177,9 +191,7 @@ const sizingBad = (s: SizingChoice) => s.compound && !(Number(s.capital) > 0)
 function SizingFields({ value, onChange }: { value: SizingChoice; onChange: (v: SizingChoice) => void }) {
   return (
     <>
-      <label
-        className="flex h-7 items-center gap-1.5 self-end text-xs"
-      >
+      <label className="flex h-7 items-center gap-1.5 self-end text-xs">
         <input
           type="checkbox"
           checked={value.compound}
@@ -192,7 +204,10 @@ function SizingFields({ value, onChange }: { value: SizingChoice; onChange: (v: 
       {value.compound && (
         <>
           <Field label="Sizing" help={FIELD_HELP.sizing}>
-            <Select value={value.mode} onValueChange={(v) => onChange({ ...value, mode: v as SizingChoice['mode'] })}>
+            <Select
+              value={value.mode}
+              onValueChange={(v) => onChange({ ...value, mode: v as SizingChoice['mode'] })}
+            >
               <SelectTrigger
                 size="sm"
                 className="w-28"
@@ -338,7 +353,8 @@ function SymbolPicker({ value, onChange }: { value: string[]; onChange: (v: stri
   )
 }
 
-const SYMBOL_JSON_EXAMPLE = '[\n  { "symbol": "COFORGE", "index": "NSE" },\n  { "symbol": "RAIN", "index": "NSE" }\n]'
+const SYMBOL_JSON_EXAMPLE =
+  '[\n  { "symbol": "COFORGE", "index": "NSE" },\n  { "symbol": "RAIN", "index": "NSE" }\n]'
 
 /** Paste `[{"symbol": "INFY", "index": "NSE"}, ...]` to replace the selection in one go. Nothing
  *  changes until it all checks out: the JSON's shape first, then every stock against the stocks
@@ -353,7 +369,9 @@ function SymbolJsonImport({ onChange }: { onChange: (v: string[]) => void }) {
       const { entries, errors } = parseSymbolJson(text)
       if (errors.length) return errors
       const rows = await Promise.all(
-        entries.map((e) => searchStocksMaster(e.symbol).then((r) => r.stocks.find((s) => s.symbol === e.symbol))),
+        entries.map((e) =>
+          searchStocksMaster(e.symbol).then((r) => r.stocks.find((s) => s.symbol === e.symbol)),
+        ),
       )
       const bad = entries.flatMap((e, i) => {
         const row = rows[i]
@@ -400,7 +418,12 @@ function SymbolJsonImport({ onChange }: { onChange: (v: string[]) => void }) {
             ))}
           </ul>
         )}
-        <Button size="sm" className="w-full" disabled={!text.trim() || check.isPending} onClick={() => check.mutate()}>
+        <Button
+          size="sm"
+          className="w-full"
+          disabled={!text.trim() || check.isPending}
+          onClick={() => check.mutate()}
+        >
           {check.isPending && <Spinner className="size-3.5" />}
           Validate &amp; select
         </Button>
@@ -417,7 +440,7 @@ function SymbolChips({ value, onChange }: { value: string[]; onChange: (v: strin
   if (!value.length) return null
   const listed = new Set((watchlist ?? []).map((w) => w.symbol))
   return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-dashed px-2 py-1.5">
+    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-dashed border-input px-2 py-1.5">
       <span className="mr-1 text-xs text-muted-foreground">
         {value.length} stock{value.length === 1 ? '' : 's'}
       </span>
@@ -582,7 +605,9 @@ function RunForm({
     const b = bases[k]?.trim()
     return b ? Number(b) : (strategy?.params[k] ?? 0)
   }
-  const parsed = orderParams(strategy?.name, Object.keys(strategy?.params ?? {})).map((k) => [k, parseValues(text(k))] as const)
+  const parsed = orderParams(strategy?.name, Object.keys(strategy?.params ?? {})).map(
+    (k) => [k, parseValues(text(k))] as const,
+  )
   const invalid = [
     ...parsed.filter(([, v]) => v === null).map(([k]) => k),
     ...Object.entries(bases)
@@ -960,7 +985,7 @@ function RunDetail({ id, onClose }: { id: string; onClose: () => void }) {
             {run.trades.length > trades.length ? `(latest ${trades.length} of ${run.trades.length})` : ''}
             {' · click a row to zoom the chart above onto it'}
           </p>
-          <div className="max-h-96 overflow-auto rounded-lg border">
+          <div className="max-h-96 overflow-auto rounded-md border border-border">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
@@ -1191,7 +1216,7 @@ function SweepHeatmap({
               columns · each cell shows its best run over the other params
             </div>
           )}
-          <div className="overflow-x-auto rounded-lg border">
+          <div className="overflow-x-auto rounded-md border border-border">
             <table className="w-full text-xs tabular-nums">
               <thead>
                 <tr>
@@ -1228,7 +1253,7 @@ function SweepHeatmap({
                               style={{ background: dead ? undefined : heat(value(r)) }}
                             >
                               <span className="block font-medium">{dead ? '—' : m.format(value(r))}</span>
-                              <span className="block text-[10px] opacity-70">
+                              <span className="block text-[11px] opacity-70">
                                 {dead ? 'no trades' : `${r.summary.trades} tr`}
                               </span>
                             </button>
@@ -1310,7 +1335,7 @@ function Sparkline({ values }: { values: number[] }) {
         points={pts}
         fill="none"
         strokeWidth="1.5"
-        stroke={values.at(-1)! >= 0 ? COLORS.up : COLORS.down}
+        stroke={values.at(-1)! >= 0 ? 'var(--up)' : 'var(--down)'}
       />
     </svg>
   )
@@ -1356,7 +1381,7 @@ function AxisBars({
                 width={w * 0.76}
                 y={Math.min(y(v), y(0))}
                 height={Math.max(Math.abs(y(v) - y(0)), 0.5)}
-                fill={metric === 'max_dd' ? COLORS.down : good ? COLORS.up : COLORS.down}
+                fill={metric === 'max_dd' ? 'var(--down)' : good ? 'var(--up)' : 'var(--down)'}
                 fillOpacity={p.isBase ? 1 : 0.6}
                 stroke={p.isBase ? 'currentColor' : 'none'}
                 vectorEffect="non-scaling-stroke"
@@ -1365,7 +1390,7 @@ function AxisBars({
           )
         })}
       </svg>
-      <div className="flex text-[10px] text-muted-foreground tabular-nums">
+      <div className="flex text-[11px] text-muted-foreground tabular-nums">
         {points.map((p, i) => (
           <span
             key={p.value}
@@ -1384,7 +1409,7 @@ function AxisBars({
 function HeatLegend({ metric, dead }: { metric: SweepMetric; dead: number }) {
   const m = SWEEP_METRICS[metric]
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
       <span className="flex items-center gap-1.5">
         worst
         <span
@@ -1439,7 +1464,7 @@ function EquityFan({
   const ends = [0, shown.length - 1]
 
   return (
-    <div className="rounded-lg border p-3">
+    <div className="rounded-md border border-border p-3">
       <p className="mb-1 flex flex-wrap items-baseline gap-x-2 text-sm">
         <span className="font-medium">Equity of every run</span>
         <span className="text-xs text-muted-foreground">
@@ -1478,16 +1503,16 @@ function EquityFan({
                 points={fan.paths[i]}
                 fill="none"
                 strokeWidth={n === 0 ? 2.5 : 1.5}
-                stroke={n === 0 ? COLORS.up : COLORS.down}
+                stroke={n === 0 ? 'var(--up)' : 'var(--down)'}
                 vectorEffect="non-scaling-stroke"
               />
             </g>
           ))}
         </svg>
-        <span className="pointer-events-none absolute top-0 left-0 text-[10px] text-muted-foreground tabular-nums">
+        <span className="pointer-events-none absolute top-0 left-0 text-[11px] text-muted-foreground tabular-nums">
           {inr(fan.hi)}
         </span>
-        <span className="pointer-events-none absolute bottom-0 left-0 text-[10px] text-muted-foreground tabular-nums">
+        <span className="pointer-events-none absolute bottom-0 left-0 text-[11px] text-muted-foreground tabular-nums">
           {inr(fan.lo)}
         </span>
       </div>
@@ -1515,7 +1540,7 @@ function MetricSpread({
   const median = sorted[Math.floor(sorted.length / 2)]
 
   return (
-    <div className="rounded-lg border p-3">
+    <div className="rounded-md border border-border p-3">
       <p className="mb-2 flex flex-wrap items-baseline gap-x-2 text-sm">
         <span className="font-medium">{m.label} across the sweep</span>
         <span className="text-xs text-muted-foreground">
@@ -1535,7 +1560,7 @@ function MetricSpread({
           />
         ))}
       </div>
-      <div className="mt-1 flex justify-between text-[10px] text-muted-foreground tabular-nums">
+      <div className="mt-1 flex justify-between text-[11px] text-muted-foreground tabular-nums">
         <span>{m.format(lo)}</span>
         <span>{m.format(hi)}</span>
       </div>
@@ -1580,7 +1605,9 @@ function SweepView({
         interval: sweep!.interval,
         params: Object.fromEntries(Object.entries(params).map(([k, v]) => [k, [v]])),
         cost_bps: cost_bps ?? sweep!.cost_bps,
-        sizing: sizing ? { mode: sizing === 2 ? 'all_in' : 'scale', capital } : { mode: 'fixed', capital: 100000 },
+        sizing: sizing
+          ? { mode: sizing === 2 ? 'all_in' : 'scale', capital }
+          : { mode: 'fixed', capital: 100000 },
         label: sweep!.label ?? `${sweep!.strategy} sweep`,
         // the same bars the sweep ran on, not today's history - or the numbers won't match the cell
         range: pinnedRange(sweep!.history, sweep!.coverage),
@@ -1779,7 +1806,7 @@ function SweepView({
             </div>
             <div className="grid gap-4 lg:grid-cols-2">
               {series.map((s) => (
-                <div key={s.param} className="rounded-lg border p-3">
+                <div key={s.param} className="rounded-md border border-border p-3">
                   <p className="mb-1 text-sm">
                     <span className="font-mono font-medium">{s.param}</span>{' '}
                     <span className="text-xs text-muted-foreground">
@@ -1821,7 +1848,7 @@ function SweepView({
                 columns · each cell shows its best run over the other params
               </div>
             )}
-            <div className="max-h-[28rem] overflow-auto rounded-lg border">
+            <div className="max-h-[28rem] overflow-auto rounded-md border border-border">
               <table className="w-full text-xs tabular-nums">
                 <thead>
                   <tr>
@@ -1860,7 +1887,7 @@ function SweepView({
                                 <span className="block font-medium">
                                   {dead ? '—' : m.format(metricOf(r, metric))}
                                 </span>
-                                <span className="block text-[10px] opacity-70">
+                                <span className="block text-[11px] opacity-70">
                                   {dead ? 'no trades' : `${fmt(r.summary.trades, 0)} tr`}
                                 </span>
                               </button>
@@ -1888,7 +1915,7 @@ function SweepView({
             · click a row to open it as a full backtest with charts and trades
             {deadCount > 0 ? ' · runs that took no trades sit at the bottom' : ''}
           </p>
-          <div className="max-h-[32rem] overflow-auto rounded-lg border">
+          <div className="max-h-[32rem] overflow-auto rounded-md border border-border">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
@@ -2152,7 +2179,6 @@ const DAILY_TUNE: Partial<Record<(typeof TUNE_NUMBERS)[number][0], number>> = {
 }
 const MAX_TUNE_CELLS = 5000 // app/core/autotune.py MAX_CELLS
 
-
 /** A titled group inside a form, so a long form reads as a few decisions instead of one wall. */
 function FormSection({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -2181,7 +2207,11 @@ function AutotuneForm({
   })
   // the whole form is remembered, so a tuning setup survives a reload; a strategy that's gone falls
   // back to the first one, and its params' text only ever reads the current strategy's keys
-  const [name, setName] = useStored<string | null>(`${TUNE_FORM_KEY}.strategy`, null, (v) => typeof v === 'string')
+  const [name, setName] = useStored<string | null>(
+    `${TUNE_FORM_KEY}.strategy`,
+    null,
+    (v) => typeof v === 'string',
+  )
   const [symbols, setSymbols] = useStoredSymbols(TUNE_SYMBOLS_KEY)
   const [barInterval, setBarInterval] = useStored(`${TUNE_FORM_KEY}.interval`, '5m', (v) =>
     INTERVALS.includes(v as string),
@@ -2197,7 +2227,9 @@ function AutotuneForm({
 
   const strategy = strategies?.find((s) => s.name === name) ?? strategies?.[0]
   const text = (k: string) => values[k] ?? String(strategy?.params[k] ?? '')
-  const parsed = orderParams(strategy?.name, Object.keys(strategy?.params ?? {})).map((k) => [k, parseValues(text(k))] as const)
+  const parsed = orderParams(strategy?.name, Object.keys(strategy?.params ?? {})).map(
+    (k) => [k, parseValues(text(k))] as const,
+  )
   const invalid = parsed.filter(([, v]) => v === null).map(([k]) => k)
   const tuned = parsed.filter(([, v]) => (v?.length ?? 0) > 1)
   const cells = comboCount(tuned.map(([, v]) => v ?? []))
@@ -2226,24 +2258,21 @@ function AutotuneForm({
       const failed = new Map<string, string[]>() // cause -> symbols: one bad grid fails every stock alike
       let batch = ''
       let finished = 0
-      await runEngineAutotune(
-        tuneRequest(),
-        (e) => {
-          if (e.type === 'start') {
-            batch = e.batch
-            setProgress([0, e.symbols])
-          } else if (e.type === 'report') {
-            ids.push(e.report.id)
-            onReport(batch, symbols.length > 1)
-          } else if (e.type === 'error') {
-            // the rest still run - say which ones didn't, and why, once per cause
-            const hit = [...(failed.get(e.error) ?? []), e.symbol]
-            failed.set(e.error, hit)
-            toast.error(e.error, { id: `tune-${e.error}`, description: hit.join(', ') })
-          }
-          if (e.type === 'report' || e.type === 'error') setProgress(([, n]) => [++finished, n])
-        },
-      )
+      await runEngineAutotune(tuneRequest(), (e) => {
+        if (e.type === 'start') {
+          batch = e.batch
+          setProgress([0, e.symbols])
+        } else if (e.type === 'report') {
+          ids.push(e.report.id)
+          onReport(batch, symbols.length > 1)
+        } else if (e.type === 'error') {
+          // the rest still run - say which ones didn't, and why, once per cause
+          const hit = [...(failed.get(e.error) ?? []), e.symbol]
+          failed.set(e.error, hit)
+          toast.error(e.error, { id: `tune-${e.error}`, description: hit.join(', ') })
+        }
+        if (e.type === 'report' || e.type === 'error') setProgress(([, n]) => [++finished, n])
+      })
       return { batch, ids }
     },
     onSuccess: ({ batch, ids }) => {
@@ -2376,16 +2405,16 @@ function AutotuneForm({
           {run.isPending
             ? `${progress[0]} of ${progress[1]} walked`
             : !symbols.length
-            ? 'Select symbols'
-            : historyProblem
-              ? historyProblem
-              : symbols.length > MAX_TUNE_SYMBOLS
-                ? `${symbols.length} stocks - keep it to ${MAX_TUNE_SYMBOLS}`
-                : !tuned.length
-                  ? 'Give a param a range'
-                  : cells > MAX_TUNE_CELLS
-                    ? `${fmt(cells, 0)} cells - keep it under ${fmt(MAX_TUNE_CELLS, 0)}`
-                    : `Walk forward ${symbols.length > 1 ? `${symbols.length} stocks` : symbols[0]} · ${fmt(cells, 0)} cells per window`}
+              ? 'Select symbols'
+              : historyProblem
+                ? historyProblem
+                : symbols.length > MAX_TUNE_SYMBOLS
+                  ? `${symbols.length} stocks - keep it to ${MAX_TUNE_SYMBOLS}`
+                  : !tuned.length
+                    ? 'Give a param a range'
+                    : cells > MAX_TUNE_CELLS
+                      ? `${fmt(cells, 0)} cells - keep it under ${fmt(MAX_TUNE_CELLS, 0)}`
+                      : `Walk forward ${symbols.length > 1 ? `${symbols.length} stocks` : symbols[0]} · ${fmt(cells, 0)} cells per window`}
         </Button>
         <Button
           size="sm"
@@ -2467,13 +2496,17 @@ function AutotuneList({ rows, onOpen }: { rows: EngineAutotuneRow[]; onOpen: (ru
                     {names.length > 3 ? ', …' : ''}
                   </span>
                 </TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">{Object.keys(first.axes).join(', ')}</TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">
+                  {Object.keys(first.axes).join(', ')}
+                </TableCell>
                 <TableCell className="text-right tabular-nums">
                   {held} / {rs.length}
                 </TableCell>
                 <TableCell className={cn('text-right tabular-nums', pnlClass(tuned))}>{inr(tuned)}</TableCell>
                 <TableCell className={cn('text-right tabular-nums', pnlClass(fixed))}>{inr(fixed)}</TableCell>
-                <TableCell className="whitespace-nowrap text-muted-foreground">{formatDateTime(first.created)}</TableCell>
+                <TableCell className="whitespace-nowrap text-muted-foreground">
+                  {formatDateTime(first.created)}
+                </TableCell>
               </TableRow>
             )
           })}
@@ -2499,7 +2532,8 @@ export default function Engine() {
   const { data: jobs = [] } = useQuery({
     queryKey: ['engineJobs'],
     queryFn: getEngineJobs,
-    refetchInterval: (q) => (q.state.data?.some((j) => j.status === 'queued' || j.status === 'running') ? 3000 : 30_000),
+    refetchInterval: (q) =>
+      q.state.data?.some((j) => j.status === 'queued' || j.status === 'running') ? 3000 : 30_000,
   })
   const activeJobs = jobs.filter((j) => j.status === 'queued' || j.status === 'running').length
   usePageTitle(settings?.name ?? 'Algo engine')

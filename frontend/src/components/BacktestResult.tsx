@@ -1,6 +1,5 @@
 import { TrendingDownIcon, TrendingUpIcon } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Badge, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/design-system'
 import { fmt, formatDate, inr } from '@/lib/format'
 
 export function ReturnBadge({ pct }: { pct: number }) {
@@ -41,7 +40,7 @@ export function TradesTable({ trades }: { trades: BacktestTrade[] }) {
     return <p className="text-sm text-muted-foreground">No completed trades in this window.</p>
   }
   return (
-    <div className="overflow-hidden rounded-xl border bg-card">
+    <div className="rounded-md border border-border bg-card overflow-hidden">
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
@@ -59,7 +58,7 @@ export function TradesTable({ trades }: { trades: BacktestTrade[] }) {
               <TableCell>
                 {formatDate(t.exit_date)}
                 {t.open && (
-                  <Badge variant="outline" className="ml-1.5 text-[10px]">
+                  <Badge variant="outline" className="ml-1.5 text-[11px]">
                     Open
                   </Badge>
                 )}
@@ -107,7 +106,7 @@ export function PlotsResultView({ plots }: { plots: Record<string, PlotPoint[]> 
       {names.map((name) => {
         const values = plots[name].slice(-10)
         return (
-          <div key={name} className="rounded-lg border bg-card p-3 text-sm">
+          <div key={name} className="rounded-md border border-border bg-card p-3 text-sm">
             <p className="mb-1 font-medium">{name}</p>
             <p className="text-muted-foreground tabular-nums">
               {values.map((v) => fmt(typeof v === 'number' ? v : (v?.value ?? null), 2)).join(', ')}

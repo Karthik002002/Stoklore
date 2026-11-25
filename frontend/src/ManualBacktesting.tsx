@@ -23,15 +23,35 @@ import TradeReviewFields, {
   reviewPayload,
   type ReviewValue,
 } from '@/components/TradeReviewFields'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
+import {
+  Badge,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tabs,
+  TabsIndicator,
+  TabsList,
+  TabsPanel,
+  TabsTab,
+} from '@/design-system'
 import { copyText, downloadXlsx } from '@/lib/exportFile'
 import { tradeJson, tradeSheet } from '@/lib/tradeExport'
 import { formatDate, inr } from '@/lib/format'
@@ -329,7 +349,7 @@ function TradeFormDialog({
             />
 
             {warnings.map((w) => (
-              <p key={w} className="rounded-md bg-amber-500/10 px-2 py-1.5 text-xs text-amber-600">
+              <p key={w} className="rounded-md bg-warning/10 px-2 py-1.5 text-xs text-warning">
                 {w}
               </p>
             ))}
@@ -507,7 +527,7 @@ function ScreenshotField({
               <img
                 src={current}
                 alt={label}
-                className="mt-2 max-h-24 cursor-pointer rounded-lg border"
+                className="mt-2 max-h-24 cursor-pointer rounded-md border border-border"
                 onClick={() => onView(current)}
               />
             )}
@@ -551,7 +571,7 @@ function TradesTable({
   }
   const allSelected = trades.length > 0 && trades.every((t) => selected.has(t.id))
   return (
-    <div className="overflow-x-auto rounded-xl border bg-card">
+    <div className="rounded-md border border-border bg-card overflow-x-auto">
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
@@ -622,7 +642,7 @@ function TradesTable({
                   {formatDate(t.created_at ?? t.traded_at)}
                   {/* Always rendered, blank when there is nothing to say: an optional second line
                       would make replay rows taller than hand-logged ones. */}
-                  <span className="block text-[11px] text-muted-foreground">
+                  <span className="block text-[12px] text-muted-foreground">
                     {marketDate(t) ? `traded ${marketDate(t)}` : '\u00A0'}
                   </span>
                 </TableCell>
@@ -1017,7 +1037,12 @@ export default function ManualBacktesting() {
               Bar Replay
             </Button>
             <FilterButton filters={filters} onOpen={() => setFilterOpen(true)} />
-            <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} title="Import a broker tradebook CSV">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setImportOpen(true)}
+              title="Import a broker tradebook CSV"
+            >
               <FileUpIcon className="size-4" />
               Import
             </Button>

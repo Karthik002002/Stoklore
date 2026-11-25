@@ -6,9 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
 import { SelectField, TextField } from '@/components/form'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Badge, Button, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/design-system'
 import { fmt, inr } from '@/lib/format'
 import { goalSchema } from '@/lib/schemas'
 import {
@@ -40,7 +38,7 @@ const heatFor = (pct: number | null | undefined) => {
   if (pct == null) return 'bg-muted/30 text-muted-foreground'
   if (pct >= 100) return 'bg-up/25'
   if (pct >= 60) return 'bg-up/10'
-  if (pct >= 30) return 'bg-amber-500/15'
+  if (pct >= 30) return 'bg-warning/15'
   return 'bg-down/20'
 }
 
@@ -84,7 +82,7 @@ function Gauge({ pct, size = 52 }: { pct: number | null | undefined; size?: numb
         y="22"
         textAnchor="middle"
         dominantBaseline="central"
-        className="fill-foreground text-[10px] font-semibold"
+        className="fill-foreground text-[11px] font-semibold"
       >
         {pct == null ? '—' : `${Math.round(pct)}%`}
       </text>
@@ -118,7 +116,7 @@ function AddGoalForm({
   return (
     <form
       onSubmit={form.handleSubmit(submit)}
-      className="flex flex-wrap items-start gap-2 rounded-xl border bg-card p-3"
+      className="flex flex-wrap items-start gap-2 rounded-md border border-border bg-card p-3"
     >
       <span className="mt-1.5 text-sm text-muted-foreground">
         Keep my {PERIODS[period].label.toLowerCase()}
@@ -143,7 +141,7 @@ function CurrentPeriod({
   period: GoalPeriod
 }) {
   return (
-    <div className="rounded-xl border bg-card p-4">
+    <div className="rounded-md border border-border bg-card p-3">
       <div className="mb-3 flex items-center justify-between">
         <div>
           <p className="text-sm font-medium">{progress.label}</p>
@@ -159,7 +157,7 @@ function CurrentPeriod({
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {progress.cells.map(({ goal, actual, pct }) => (
-          <div key={goal.id} className="flex items-center gap-3 rounded-lg border p-2.5">
+          <div key={goal.id} className="flex items-center gap-3 rounded-md border border-border p-2.5">
             <Gauge pct={pct} />
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{goalLabel(goal)}</p>
@@ -185,7 +183,7 @@ function HistoryTable({
   saving: boolean
 }) {
   return (
-    <div className="overflow-x-auto rounded-xl border bg-card">
+    <div className="rounded-md border border-border bg-card overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b">
@@ -207,11 +205,11 @@ function HistoryTable({
                   </Button>
                 </div>
                 <div className="mt-0.5 flex gap-1">
-                  <Badge variant="outline" className="text-[10px]">
+                  <Badge variant="outline" className="text-[11px]">
                     {goal.operator === 'gt' ? 'Target' : 'Limit'}
                   </Badge>
                   {goal.mode === 'binary' && (
-                    <Badge variant="outline" className="text-[10px]">
+                    <Badge variant="outline" className="text-[11px]">
                       All or nothing
                     </Badge>
                   )}
@@ -345,7 +343,7 @@ export function GoalsSummary({ trades }: { trades: Trade[] }) {
         const progress = currentPeriodProgress(trades, goals, period)
         const met = progress.cells.filter((c) => c.met).length
         return (
-          <div key={period} className="flex items-center gap-3 rounded-xl border bg-card p-3">
+          <div key={period} className="flex items-center gap-3 rounded-md border border-border bg-card p-3">
             <Gauge pct={progress.total} />
             <div className="min-w-0">
               <p className="text-sm font-medium">{PERIODS[period].label} goals</p>

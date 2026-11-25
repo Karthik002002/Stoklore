@@ -1,13 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import {
-  Command,
-  CommandDialog,
-  CommandEmpty,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from '@/components/ui/command'
+import { Command, CommandDialog, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/design-system'
 import { StockBadges, StockSubline } from '@/components/StockMeta'
 import { REPLAY_TIMEFRAMES } from '@/lib/replay'
 import { searchStocksMaster } from '@/services/api'
@@ -46,7 +39,7 @@ function SymbolBody({ onSelect }: { onSelect: (symbol: string) => void }) {
         placeholder="Search symbol…"
         className="uppercase placeholder:normal-case"
       />
-      <div className="flex items-center gap-1 border-b px-2 pb-2 text-[11px]">
+      <div className="flex items-center gap-1 border-b px-2 pb-2 text-[12px]">
         {BOARDS.map((b) => (
           <button
             key={b.label}

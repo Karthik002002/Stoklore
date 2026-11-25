@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { KeyRoundIcon, LockIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Spinner } from '@/components/ui/spinner'
+import { Button, Input, Spinner } from '@/design-system'
 import {
   AUTH_EXPIRED_EVENT,
   getAuthStatus,
@@ -44,7 +42,7 @@ function Field({
     <label className="block space-y-1">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <Input type={type} value={value} onChange={(e) => onChange(e.target.value)} {...rest} />
-      {hint && <span className="block text-[11px] text-muted-foreground">{hint}</span>}
+      {hint && <span className="block text-[12px] text-muted-foreground">{hint}</span>}
     </label>
   )
 }
@@ -55,7 +53,7 @@ function RecoveryCode({ code, onDone }: { code: string; onDone: () => void }) {
   return (
     <div className="w-full max-w-sm space-y-4 rounded-2xl border bg-card p-6 shadow-lg">
       <div className="flex items-center gap-2">
-        <span className="flex size-8 items-center justify-center rounded-xl border">
+        <span className="flex size-8 items-center justify-center rounded-md border border-border">
           <KeyRoundIcon className="size-4" />
         </span>
         <div>
@@ -63,7 +61,7 @@ function RecoveryCode({ code, onDone }: { code: string; onDone: () => void }) {
           <p className="text-xs text-muted-foreground">Shown once. Put it in your password manager.</p>
         </div>
       </div>
-      <p className="rounded-lg border bg-muted/40 p-3 text-center font-mono text-sm tracking-wider select-all">
+      <p className="rounded-md border border-border bg-muted/40 p-3 text-center font-mono text-sm tracking-wider select-all">
         {code}
       </p>
       <p className="text-xs text-muted-foreground">
@@ -193,7 +191,7 @@ export default function LoginGate({ children }: { children: React.ReactNode }) {
         className="w-full max-w-sm space-y-4 rounded-2xl border bg-card p-6 shadow-lg"
       >
         <div className="flex items-center gap-2">
-          <span className="flex size-8 items-center justify-center rounded-xl border">
+          <span className="flex size-8 items-center justify-center rounded-md border border-border">
             <LockIcon className="size-4" />
           </span>
           <div>
@@ -267,7 +265,7 @@ export default function LoginGate({ children }: { children: React.ReactNode }) {
         {mode === 'unlock' && (
           <button
             type="button"
-            className="w-full text-[11px] text-muted-foreground underline"
+            className="w-full text-[12px] text-muted-foreground underline"
             onClick={() => {
               clear()
               setError(null)
@@ -279,7 +277,7 @@ export default function LoginGate({ children }: { children: React.ReactNode }) {
         )}
 
         {(mode === 'login' || mode === 'recover') && (
-          <div className="space-y-1.5 border-t pt-3 text-[11px] text-muted-foreground">
+          <div className="space-y-1.5 border-t pt-3 text-[12px] text-muted-foreground">
             {mode === 'login' ? (
               <>
                 <p>Forgot it?</p>
@@ -319,13 +317,13 @@ export default function LoginGate({ children }: { children: React.ReactNode }) {
         )}
 
         {mode === 'setup' && (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             Set this up on the machine running the app — it can't be created through a tunnel. You'll get a
             recovery code next; there's no other way back in.
           </p>
         )}
         {mode === 'unlock' && (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             This browser stays unlockable by PIN for 48 hours after a password sign-in. A few wrong PINs and
             it asks for the password again.
           </p>

@@ -9,13 +9,36 @@ import { FileUpIcon, LinkIcon, PencilIcon, PlusIcon, Trash2Icon } from 'lucide-r
 import AllocationDonut from '@/components/AllocationDonut'
 import SeriesChart from '@/components/charts/SeriesChart'
 import { chartTime, seriesColor } from '@/components/charts/colors'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Panel,
+  PanelBody,
+  PanelHeader,
+  PanelTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tabs,
+  TabsIndicator,
+  TabsList,
+  TabsPanel,
+  TabsTab,
+} from '@/design-system'
 import { formatDate, inr } from '@/lib/format'
 import type {
   AssetClass,
@@ -82,7 +105,7 @@ const CATEGORIES: { value: GoalCategory; label: string }[] = [
 const STATUS_TONE: Record<GoalStatus, string> = {
   done: 'text-up',
   'on-track': 'text-up',
-  'at-risk': 'text-amber-600 dark:text-amber-400',
+  'at-risk': 'text-warning',
   'off-track': 'text-down',
   overdue: 'text-down',
 }
@@ -112,7 +135,7 @@ function Card({
   tone?: 'up' | 'down'
 }) {
   return (
-    <div className="rounded-xl border bg-card p-3">
+    <div className="rounded-md border border-border bg-card p-3">
       <p className="text-xs text-muted-foreground">{label}</p>
       <p
         className={cn(
@@ -133,7 +156,7 @@ function Field({ label, children, hint }: { label: string; children: React.React
     <label className="grid gap-1 text-xs">
       <span className="text-muted-foreground">{label}</span>
       {children}
-      {hint && <span className="text-[11px] text-muted-foreground">{hint}</span>}
+      {hint && <span className="text-[12px] text-muted-foreground">{hint}</span>}
     </label>
   )
 }
@@ -350,7 +373,7 @@ function CasDialog({ onClose }: { onClose: () => void }) {
               ))}
             </div>
             {result.missing.length > 0 && (
-              <p className="text-amber-600 dark:text-amber-400">
+              <p className="text-warning">
                 Not in this statement: {result.missing.join(', ')}. If you sold them, set them to 0 in the
                 monthly update and archive them; if they come from a different kind of CAS, ignore this.
               </p>
@@ -565,14 +588,18 @@ function NetWorthTab({ data }: { data: FinanceData }) {
         />
       </div>
       <div className="grid gap-4 md:grid-cols-[1fr_auto]">
-        <div className="rounded-xl border bg-card p-3">
-          <p className="mb-2 text-sm font-semibold">Net worth over time</p>
-          {datasets.length ? (
-            <SeriesChart datasets={datasets} format={(v) => inr(Math.round(v))} />
-          ) : (
-            <p className="text-xs text-muted-foreground">Appears after two monthly updates.</p>
-          )}
-        </div>
+        <Panel>
+          <PanelHeader>
+            <PanelTitle>Net worth over time</PanelTitle>
+          </PanelHeader>
+          <PanelBody className="p-3">
+            {datasets.length ? (
+              <SeriesChart datasets={datasets} format={(v) => inr(Math.round(v))} />
+            ) : (
+              <p className="text-xs text-muted-foreground">Appears after two monthly updates.</p>
+            )}
+          </PanelBody>
+        </Panel>
         <AllocationDonut
           title="Allocation"
           slices={ASSET_CLASSES.map((c) => ({ label: c.label, value: nw.byClass[c.value] }))}
@@ -596,9 +623,9 @@ function NetWorthTab({ data }: { data: FinanceData }) {
               <TableRow key={i.id} className={cn(i.archived && 'opacity-50')}>
                 <TableCell>
                   {i.name}
-                  {i.is_liquid && <span className="ml-1 text-[11px] text-muted-foreground">liquid</span>}
+                  {i.is_liquid && <span className="ml-1 text-[12px] text-muted-foreground">liquid</span>}
                   {i.source !== 'manual' && (
-                    <span className="ml-1 text-[11px] text-muted-foreground">· {i.source}</span>
+                    <span className="ml-1 text-[12px] text-muted-foreground">· {i.source}</span>
                   )}
                 </TableCell>
                 <TableCell>{KIND_DEFAULTS[i.kind].label}</TableCell>
@@ -827,7 +854,7 @@ function GoalsTab({ data }: { data: FinanceData }) {
         {data.goals.map((g) => {
           const p = goalProgress(g, latest, t)
           return (
-            <div key={g.id} className="space-y-2 rounded-xl border bg-card p-3">
+            <div key={g.id} className="space-y-2 rounded-md border border-border bg-card p-3">
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="font-semibold">{g.name}</p>
@@ -893,25 +920,29 @@ function SettingsForm({ settings }: { settings: FinSettings }) {
     ['target_gold_pct', 'Target gold %'],
   ]
   return (
-    <div className="space-y-2 rounded-xl border bg-card p-3">
-      <p className="text-sm font-semibold">Targets</p>
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-        {fields.map(([key, label]) => (
-          <Field key={key} label={label}>
-            <Input
-              type="number"
-              min="0"
-              value={form[key]}
-              onChange={(e) => setForm((f) => ({ ...f, [key]: num(e.target.value) }))}
-            />
-          </Field>
-        ))}
-      </div>
-      {sum !== 100 && <p className="text-xs text-down">Allocation targets add up to {sum}%, not 100%.</p>}
-      <Button size="sm" disabled={sum !== 100 || save.isPending} onClick={() => save.mutate(undefined)}>
-        Save targets
-      </Button>
-    </div>
+    <Panel>
+      <PanelHeader>
+        <PanelTitle>Targets</PanelTitle>
+      </PanelHeader>
+      <PanelBody className="space-y-2 p-3">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+          {fields.map(([key, label]) => (
+            <Field key={key} label={label}>
+              <Input
+                type="number"
+                min="0"
+                value={form[key]}
+                onChange={(e) => setForm((f) => ({ ...f, [key]: num(e.target.value) }))}
+              />
+            </Field>
+          ))}
+        </div>
+        {sum !== 100 && <p className="text-xs text-down">Allocation targets add up to {sum}%, not 100%.</p>}
+        <Button size="sm" disabled={sum !== 100 || save.isPending} onClick={() => save.mutate(undefined)}>
+          Save targets
+        </Button>
+      </PanelBody>
+    </Panel>
   )
 }
 
@@ -933,54 +964,58 @@ function FocusTab({ data }: { data: FinanceData }) {
         ))}
       </div>
       <SettingsForm key={JSON.stringify(data.settings)} settings={data.settings} />
-      <div className="rounded-xl border bg-card p-3">
-        <p className="mb-2 text-sm font-semibold">Cash flow</p>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Month</TableHead>
-              <TableHead className="text-right">Income</TableHead>
-              <TableHead className="text-right">Expenses</TableHead>
-              <TableHead className="text-right">Saved</TableHead>
-              <TableHead />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {[...data.cashflow].reverse().map((c) => (
-              <TableRow key={c.month}>
-                <TableCell>{c.month.slice(0, 7)}</TableCell>
-                <TableCell className="text-right tabular-nums">{inr(c.income)}</TableCell>
-                <TableCell className="text-right tabular-nums">{inr(c.expenses)}</TableCell>
-                <TableCell
-                  className={cn(
-                    'text-right tabular-nums',
-                    c.income - c.expenses >= 0 ? 'text-up' : 'text-down',
-                  )}
-                >
-                  {inr(c.income - c.expenses)}
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Delete"
-                    onClick={() => remove.mutate(c.month)}
-                  >
-                    <Trash2Icon />
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-            {!data.cashflow.length && (
+      <Panel>
+        <PanelHeader>
+          <PanelTitle>Cash flow</PanelTitle>
+        </PanelHeader>
+        <PanelBody className="p-3">
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-xs text-muted-foreground">
-                  Enter income and expenses in the monthly update.
-                </TableCell>
+                <TableHead>Month</TableHead>
+                <TableHead className="text-right">Income</TableHead>
+                <TableHead className="text-right">Expenses</TableHead>
+                <TableHead className="text-right">Saved</TableHead>
+                <TableHead />
               </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+            </TableHeader>
+            <TableBody>
+              {[...data.cashflow].reverse().map((c) => (
+                <TableRow key={c.month}>
+                  <TableCell>{c.month.slice(0, 7)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{inr(c.income)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{inr(c.expenses)}</TableCell>
+                  <TableCell
+                    className={cn(
+                      'text-right tabular-nums',
+                      c.income - c.expenses >= 0 ? 'text-up' : 'text-down',
+                    )}
+                  >
+                    {inr(c.income - c.expenses)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Delete"
+                      onClick={() => remove.mutate(c.month)}
+                    >
+                      <Trash2Icon />
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {!data.cashflow.length && (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-xs text-muted-foreground">
+                    Enter income and expenses in the monthly update.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </PanelBody>
+      </Panel>
     </div>
   )
 }
@@ -1062,7 +1097,7 @@ function ProjectionTab({ data }: { data: FinanceData }) {
         swing year to year, giving a bad case (1 in 10 runs ends lower), a median and a good case. It's a
         model, not a promise. Real markets have fatter tails than this.
       </p>
-      <div className="space-y-3 rounded-xl border bg-card p-3">
+      <div className="rounded-md border border-border bg-card space-y-3 p-3">
         <div className="flex flex-wrap gap-2">
           {MIXES.map((m) => (
             <Button
@@ -1121,10 +1156,14 @@ function ProjectionTab({ data }: { data: FinanceData }) {
               tone={sim.successRate != null ? (sim.successRate >= 0.7 ? 'up' : 'down') : undefined}
             />
           </div>
-          <div className="rounded-xl border bg-card p-3">
-            <p className="mb-2 text-sm font-semibold">Growth over time</p>
-            <SeriesChart datasets={datasets} format={(v) => inr(Math.round(v))} />
-          </div>
+          <Panel>
+            <PanelHeader>
+              <PanelTitle>Growth over time</PanelTitle>
+            </PanelHeader>
+            <PanelBody className="p-3">
+              <SeriesChart datasets={datasets} format={(v) => inr(Math.round(v))} />
+            </PanelBody>
+          </Panel>
           <Table>
             <TableHeader>
               <TableRow>

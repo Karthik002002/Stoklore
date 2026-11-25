@@ -11,16 +11,21 @@ import { toast } from 'sonner'
 import SeriesChart from '@/components/charts/SeriesChart'
 import { seriesColor } from '@/components/charts/colors'
 import type { Dataset } from '@/components/charts/colors'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import {
+  Badge,
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+  Spinner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/design-system'
 import {
   autotuneBatchSheet,
   autotuneRunSheets,
@@ -103,7 +108,7 @@ function CellTable({
         Every combination, traded unchanged in every window (hindsight) · {cells.length} combinations
         {cells.length > rows.length ? `, top ${rows.length} shown` : ''} · highlighted = the tuner picked it
       </p>
-      <div className="max-h-80 overflow-auto rounded-lg border">
+      <div className="max-h-80 overflow-auto rounded-md border border-border">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
@@ -321,7 +326,7 @@ function WalkForward({ r }: { r: EngineAutotuneReport }) {
             <p className="mb-1 text-xs text-muted-foreground">
               What the tuner picked - each parameter set it traded, and what those windows made out-of-sample
             </p>
-            <div className="max-h-80 overflow-auto rounded-lg border">
+            <div className="max-h-80 overflow-auto rounded-md border border-border">
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
@@ -361,7 +366,7 @@ function WalkForward({ r }: { r: EngineAutotuneReport }) {
             {r.cells?.length ? (
               <CellTable cells={r.cells} axes={swept} sort={cellSort} onSort={setCellSort} />
             ) : (
-              <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">
+              <p className="rounded-md border border-dashed border-input p-4 text-xs text-muted-foreground">
                 Every combination's out-of-sample result is kept on walk-forwards run from now on - re-run
                 this one to see which parameter sets held up across all its windows.
               </p>
@@ -410,7 +415,7 @@ function WalkForward({ r }: { r: EngineAutotuneReport }) {
           {r.oos.trades ? (
             <div className="space-y-2">
               {execRun && <ExecutionsChart key={`${side}-${selected}`} run={execRun} focus={focus} />}
-              <div className="max-h-80 overflow-auto rounded-lg border">
+              <div className="max-h-80 overflow-auto rounded-md border border-border">
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
@@ -466,14 +471,14 @@ function WalkForward({ r }: { r: EngineAutotuneReport }) {
                 </Table>
               </div>
               {shownTrades.length > 1000 && (
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-[12px] text-muted-foreground">
                   Showing the latest 1,000 of {shownTrades.length} - pick a window to see its own. Export has
                   them all.
                 </p>
               )}
             </div>
           ) : (
-            <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">
+            <p className="rounded-md border border-dashed border-input p-4 text-xs text-muted-foreground">
               Executed trades are kept on walk-forwards run from now on - re-run this one to see them on the
               chart.
             </p>
@@ -501,7 +506,7 @@ function WalkForward({ r }: { r: EngineAutotuneReport }) {
             Windows · click one to see its trades on the chart · <em>pick rank</em> is where the tuner's
             choice finished among every combination on that window's unseen bars
           </p>
-          <div className="max-h-[28rem] overflow-auto rounded-lg border">
+          <div className="max-h-[28rem] overflow-auto rounded-md border border-border">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
@@ -636,7 +641,10 @@ function rewalkRequest(r: EngineAutotuneReport): EngineAutotuneRequest {
     min_trades: r.min_trades,
     margin: r.margin,
     cost_bps: r.cost_bps,
-    range: pinnedRange(typeof r.history === 'number' ? null : r.history, r.coverage && { [r.symbol]: r.coverage }),
+    range: pinnedRange(
+      typeof r.history === 'number' ? null : r.history,
+      r.coverage && { [r.symbol]: r.coverage },
+    ),
     sizing: sizingOf(r.sizing) ?? { mode: 'fixed', capital: 100000 },
   }
 }
@@ -645,7 +653,13 @@ function Compare({ t, f, r }: { t: RunAnalytics; f: RunAnalytics; r: EngineAutot
   const ts = r.oos.summary
   const fs = r.baseline.summary
   // [label, tuned, fixed, which is better: 1 higher, -1 lower, 0 neither, formatter]
-  const rows: [string, number | null | undefined, number | null | undefined, 1 | -1 | 0, (v: number | null | undefined) => string][] = [
+  const rows: [
+    string,
+    number | null | undefined,
+    number | null | undefined,
+    1 | -1 | 0,
+    (v: number | null | undefined) => string,
+  ][] = [
     ['Net P&L', ts.net, fs.net, 1, inr],
     ['Return', t.returnPct, f.returnPct, 1, pct],
     ['CAGR', t.cagr, f.cagr, 1, pct],
@@ -693,9 +707,19 @@ function Compare({ t, f, r }: { t: RunAnalytics; f: RunAnalytics; r: EngineAutot
           return (
             <TableRow key={label}>
               <TableCell className="text-muted-foreground">{label}</TableCell>
-              <TableCell className={cn('text-right tabular-nums', win === true && 'font-medium text-success')}>{f(a)}</TableCell>
-              <TableCell className={cn('text-right tabular-nums', win === false && 'font-medium text-success')}>{f(b)}</TableCell>
-              <TableCell className="text-right tabular-nums text-muted-foreground">{d == null ? '—' : f(d)}</TableCell>
+              <TableCell
+                className={cn('text-right tabular-nums', win === true && 'font-medium text-success')}
+              >
+                {f(a)}
+              </TableCell>
+              <TableCell
+                className={cn('text-right tabular-nums', win === false && 'font-medium text-success')}
+              >
+                {f(b)}
+              </TableCell>
+              <TableCell className="text-right tabular-nums text-muted-foreground">
+                {d == null ? '—' : f(d)}
+              </TableCell>
             </TableRow>
           )
         })}
@@ -706,10 +730,19 @@ function Compare({ t, f, r }: { t: RunAnalytics; f: RunAnalytics; r: EngineAutot
 
 /** Window by window: what each side made, what the pick promised in-sample, and how the pick ranked. */
 function WindowCharts({ r }: { r: EngineAutotuneReport }) {
-  const at = (w: EngineAutotuneReport['windows'][number]) => (w.start ?? sessionTime(w.test[0])) as UTCTimestamp
+  const at = (w: EngineAutotuneReport['windows'][number]) =>
+    (w.start ?? sessionTime(w.test[0])) as UTCTimestamp
   const nets: Dataset[] = [
-    { key: 'Tuned', color: seriesColor(0), points: r.windows.map((w) => ({ time: at(w), value: w.oos?.net ?? 0 })) },
-    { key: 'Fixed defaults', color: seriesColor(3), points: r.windows.map((w) => ({ time: at(w), value: w.baseline.net })) },
+    {
+      key: 'Tuned',
+      color: seriesColor(0),
+      points: r.windows.map((w) => ({ time: at(w), value: w.oos?.net ?? 0 })),
+    },
+    {
+      key: 'Fixed defaults',
+      color: seriesColor(3),
+      points: r.windows.map((w) => ({ time: at(w), value: w.baseline.net })),
+    },
     {
       key: 'In-sample promise (per test length)',
       color: seriesColor(1),
@@ -788,7 +821,10 @@ function StockReport({ r, onDeleted }: { r: EngineAutotuneReport; onDeleted: () 
   const an = useMemo(() => ({ oos: runAnalytics(runs.oos), baseline: runAnalytics(runs.baseline) }), [runs])
 
   // MAE/MFE: the stock's bars over the traded windows
-  const span = { start: istTime(runs.oos.summary.from).slice(0, 10), end: istTime(runs.oos.summary.to).slice(0, 10) }
+  const span = {
+    start: istTime(runs.oos.summary.from).slice(0, 10),
+    end: istTime(runs.oos.summary.to).slice(0, 10),
+  }
   const { data: bars } = useQuery({
     queryKey: ['intradayBars', r.symbol, r.interval, span.start, span.end],
     queryFn: () => getIntradayBars(r.symbol, r.interval, span),
@@ -847,7 +883,8 @@ function StockReport({ r, onDeleted }: { r: EngineAutotuneReport; onDeleted: () 
                 </Link>
               )}
               <span>
-                {r.sessions[0]} → {r.sessions[1]} · {r.stats.windows} windows · created {formatDateTime(r.created)}
+                {r.sessions[0]} → {r.sessions[1]} · {r.stats.windows} windows · created{' '}
+                {formatDateTime(r.created)}
               </span>
             </div>
           </div>
@@ -874,7 +911,10 @@ function StockReport({ r, onDeleted }: { r: EngineAutotuneReport; onDeleted: () 
       </Section>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <Section title="Tuned vs fixed defaults" hint={`every metric, out-of-sample · % on ${inr(an.oos.capital)} (${an.oos.capitalBasis})`}>
+        <Section
+          title="Tuned vs fixed defaults"
+          hint={`every metric, out-of-sample · % on ${inr(an.oos.capital)} (${an.oos.capitalBasis})`}
+        >
           <Compare t={an.oos} f={an.baseline} r={r} />
         </Section>
         <Section title="Window by window">
@@ -931,13 +971,19 @@ function StockReport({ r, onDeleted }: { r: EngineAutotuneReport; onDeleted: () 
                     <TableCell className="tabular-nums">{istTime(d.start).slice(0, 10)}</TableCell>
                     <TableCell className="tabular-nums">{istTime(d.trough).slice(0, 10)}</TableCell>
                     <TableCell className="tabular-nums">
-                      {d.end ? istTime(d.end).slice(0, 10) : <span className="text-destructive">not yet</span>}
+                      {d.end ? (
+                        istTime(d.end).slice(0, 10)
+                      ) : (
+                        <span className="text-destructive">not yet</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-right tabular-nums text-destructive">
                       {inr(-d.depth)} · {pct(d.pct)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{d.days}d</TableCell>
-                    <TableCell className="text-right tabular-nums">{d.recovery == null ? '—' : `${d.recovery}d`}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {d.recovery == null ? '—' : `${d.recovery}d`}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -1000,12 +1046,16 @@ function StockReport({ r, onDeleted }: { r: EngineAutotuneReport; onDeleted: () 
                 </dd>
                 <dt className="text-muted-foreground">Missing sessions</dt>
                 <dd className={cn(r.coverage.missing?.sessions && 'text-destructive')}>
-                  {r.coverage.missing ? `${r.coverage.missing.sessions} (${r.coverage.missing.from} → ${r.coverage.missing.to})` : '0'}
+                  {r.coverage.missing
+                    ? `${r.coverage.missing.sessions} (${r.coverage.missing.from} → ${r.coverage.missing.to})`
+                    : '0'}
                 </dd>
                 <dt className="text-muted-foreground">Back-adjusted</dt>
                 <dd>{r.coverage.adjusted?.map((x) => `${x.date} ×${fmt(x.ratio, 3)}`).join(', ') || '—'}</dd>
                 <dt className="text-muted-foreground">Jumps to check</dt>
-                <dd className="text-destructive">{r.coverage.jumps?.map((x) => `${x.date} ${pct(x.move * 100, 0)}`).join(', ') || '—'}</dd>
+                <dd className="text-destructive">
+                  {r.coverage.jumps?.map((x) => `${x.date} ${pct(x.move * 100, 0)}`).join(', ') || '—'}
+                </dd>
               </dl>
             )}
           </div>
@@ -1018,8 +1068,8 @@ function StockReport({ r, onDeleted }: { r: EngineAutotuneReport; onDeleted: () 
             <dd>{r.job != null ? `background job #${r.job}` : 'Run now'}</dd>
             <dt className="text-muted-foreground">Walk</dt>
             <dd>
-              train {r.train} / test {r.test} sessions · min {r.min_trades} trades · switch margin {fmt(r.margin * 100, 0)}% · cost{' '}
-              {r.cost_bps} bps
+              train {r.train} / test {r.test} sessions · min {r.min_trades} trades · switch margin{' '}
+              {fmt(r.margin * 100, 0)}% · cost {r.cost_bps} bps
             </dd>
             <dt className="text-muted-foreground">Params as typed</dt>
             <dd className="font-mono text-xs">
@@ -1034,11 +1084,19 @@ function StockReport({ r, onDeleted }: { r: EngineAutotuneReport; onDeleted: () 
                 .join(' ')}
             </dd>
             <dt className="text-muted-foreground">Sizing</dt>
-            <dd>{sized ? `${sized.mode === 'all_in' ? 'All-in' : 'Scale qty'} on ${inr(sized.capital)}, carried window to window` : 'Fixed qty'}</dd>
+            <dd>
+              {sized
+                ? `${sized.mode === 'all_in' ? 'All-in' : 'Scale qty'} on ${inr(sized.capital)}, carried window to window`
+                : 'Fixed qty'}
+            </dd>
           </dl>
           <details className="mt-3 text-xs">
-            <summary className="cursor-pointer text-muted-foreground hover:text-foreground">The request to walk it again</summary>
-            <pre className="mt-2 max-h-72 overflow-auto rounded bg-muted p-2">{JSON.stringify(rewalkRequest(r), null, 2)}</pre>
+            <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+              The request to walk it again
+            </summary>
+            <pre className="mt-2 max-h-72 overflow-auto rounded bg-muted p-2">
+              {JSON.stringify(rewalkRequest(r), null, 2)}
+            </pre>
           </details>
         </Section>
       </div>
@@ -1072,7 +1130,10 @@ function RunExport({
         {ready ? <DownloadIcon /> : <Spinner className="size-3.5" />} Export
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem disabled={!ready} onClick={() => downloadXlsx(autotuneRunSheets(rows, reports), `${file}-complete`)}>
+        <DropdownMenuItem
+          disabled={!ready}
+          onClick={() => downloadXlsx(autotuneRunSheets(rows, reports), `${file}-complete`)}
+        >
           Everything (.xlsx) - every stock, every sheet
           {!ready && ` · loading ${reports.length}/${rows.length}`}
         </DropdownMenuItem>
@@ -1084,7 +1145,9 @@ function RunExport({
         </DropdownMenuItem>
         <DropdownMenuItem
           disabled={!ready}
-          onClick={() => download(JSON.stringify(reports, null, 2), `${file}-reports.json`, 'application/json')}
+          onClick={() =>
+            download(JSON.stringify(reports, null, 2), `${file}-reports.json`, 'application/json')
+          }
         >
           Raw reports (.json)
         </DropdownMenuItem>
@@ -1105,7 +1168,11 @@ export default function EngineAutotuneRunPage() {
   const { stocks } = useSearch({ from: '/engine/autotune/$runId' })
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { data: all = [], isPending, error } = useQuery({ queryKey: ['engineAutotunes'], queryFn: getEngineAutotunes })
+  const {
+    data: all = [],
+    isPending,
+    error,
+  } = useQuery({ queryKey: ['engineAutotunes'], queryFn: getEngineAutotunes })
   const rows = useMemo(
     () => all.filter((r) => runIdOf(r) === runId).sort((a, b) => b.oos.net - a.oos.net),
     [all, runId],
@@ -1115,11 +1182,19 @@ export default function EngineAutotuneRunPage() {
     if (rows.length) return
     const hit = all.find((r) => r.id === runId)
     if (hit && runIdOf(hit) !== runId)
-      navigate({ to: '/engine/autotune/$runId', params: { runId: runIdOf(hit) }, search: { stocks: hit.symbol }, replace: true })
+      navigate({
+        to: '/engine/autotune/$runId',
+        params: { runId: runIdOf(hit) },
+        search: { stocks: hit.symbol },
+        replace: true,
+      })
   }, [all, rows.length, runId, navigate])
 
   const reports = useQueries({
-    queries: rows.map((r) => ({ queryKey: ['engineAutotune', r.id], queryFn: () => getEngineAutotune(r.id) })),
+    queries: rows.map((r) => ({
+      queryKey: ['engineAutotune', r.id],
+      queryFn: () => getEngineAutotune(r.id),
+    })),
   })
   const loaded = reports.filter((q) => q.data).length
   const byId = useMemo(() => {
@@ -1177,13 +1252,25 @@ export default function EngineAutotuneRunPage() {
     const ds = plotted.flatMap((r) => (byId.get(r.id) ? [byId.get(r.id)!] : []))
     if (!ds.length) return []
     return [
-      { key: 'Tuned (out-of-sample)', color: seriesColor(0), points: points(portfolioCurve(ds.map((d) => d.oos.daily))) },
-      { key: 'Fixed defaults (out-of-sample)', color: seriesColor(3), points: points(portfolioCurve(ds.map((d) => d.baseline.daily))) },
+      {
+        key: 'Tuned (out-of-sample)',
+        color: seriesColor(0),
+        points: points(portfolioCurve(ds.map((d) => d.oos.daily))),
+      },
+      {
+        key: 'Fixed defaults (out-of-sample)',
+        color: seriesColor(3),
+        points: points(portfolioCurve(ds.map((d) => d.baseline.daily))),
+      },
     ]
   }, [plotted, byId])
 
   const back = (
-    <Link to="/engine" search={{ tab: 'autotune' }} className="no-print inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+    <Link
+      to="/engine"
+      search={{ tab: 'autotune' }}
+      className="no-print inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+    >
       <ArrowLeftIcon className="size-4" /> Auto-tune runs
     </Link>
   )
@@ -1196,7 +1283,9 @@ export default function EngineAutotuneRunPage() {
         ) : isPending ? (
           <Spinner className="size-4" />
         ) : (
-          <p className="text-sm text-muted-foreground">No auto-tune run {runId} - it may have been deleted.</p>
+          <p className="text-sm text-muted-foreground">
+            No auto-tune run {runId} - it may have been deleted.
+          </p>
         )}
       </div>
     )
@@ -1234,8 +1323,8 @@ export default function EngineAutotuneRunPage() {
                 </Link>
               )}
               <span>
-                train {first.train} / test {first.test} sessions · min {first.min_trades} trades · switch margin{' '}
-                {fmt(first.margin * 100, 0)}% · cost {first.cost_bps} bps · tuned{' '}
+                train {first.train} / test {first.test} sessions · min {first.min_trades} trades · switch
+                margin {fmt(first.margin * 100, 0)}% · cost {first.cost_bps} bps · tuned{' '}
                 <span className="font-mono text-foreground">
                   {Object.entries(first.axes)
                     .map(([k, v]) => `${k} ${v[0]}…${v.at(-1)}`)
@@ -1246,7 +1335,11 @@ export default function EngineAutotuneRunPage() {
             </div>
           </div>
           <div className="no-print flex flex-wrap items-center gap-2">
-            <RunExport runId={runId} rows={rows} reports={rows.flatMap((r) => (byId.get(r.id) ? [byId.get(r.id)!] : []))} />
+            <RunExport
+              runId={runId}
+              rows={rows}
+              reports={rows.flatMap((r) => (byId.get(r.id) ? [byId.get(r.id)!] : []))}
+            />
             <Button size="sm" variant="outline" onClick={() => window.print()}>
               <PrinterIcon /> PDF
             </Button>
@@ -1261,21 +1354,37 @@ export default function EngineAutotuneRunPage() {
         <Stat label="Stocks where tuning held up" value={`${held} / ${rows.length}`} />
         <Stat label="Tuned net · all stocks" value={inr(tunedNet)} className={pnlClass(tunedNet)} />
         <Stat label="Fixed defaults net · all stocks" value={inr(fixedNet)} className={pnlClass(fixedNet)} />
-        <Stat label="Tuning added" value={inr(tunedNet - fixedNet)} className={pnlClass(tunedNet - fixedNet)} />
+        <Stat
+          label="Tuning added"
+          value={inr(tunedNet - fixedNet)}
+          className={pnlClass(tunedNet - fixedNet)}
+        />
         <Stat label="Never traded" value={`${idle} / ${rows.length}`} />
-        <Stat label="Median walk-forward efficiency" value={wfes.length ? fmt(wfes[Math.floor(wfes.length / 2)]) : '—'} />
+        <Stat
+          label="Median walk-forward efficiency"
+          value={wfes.length ? fmt(wfes[Math.floor(wfes.length / 2)]) : '—'}
+        />
       </div>
 
       <Section
         title={picked.length ? `${picked.length} of ${rows.length} stocks` : `All ${rows.length} stocks`}
-        hint={picked.length ? 'the stocks you picked below' : 'pick stocks in the table below to narrow this down and open their reports'}
+        hint={
+          picked.length
+            ? 'the stocks you picked below'
+            : 'pick stocks in the table below to narrow this down and open their reports'
+        }
       >
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-xs text-muted-foreground">Each stock's own out-of-sample equity</p>
             <div className="no-print ml-auto flex gap-1">
               {(['oos', 'baseline'] as const).map((k) => (
-                <Button key={k} size="xs" variant={side === k ? 'secondary' : 'ghost'} onClick={() => setSide(k)}>
+                <Button
+                  key={k}
+                  size="xs"
+                  variant={side === k ? 'secondary' : 'ghost'}
+                  onClick={() => setSide(k)}
+                >
                   {k === 'oos' ? 'Tuned' : 'Fixed defaults'}
                 </Button>
               ))}
@@ -1291,7 +1400,8 @@ export default function EngineAutotuneRunPage() {
           </div>
           <div>
             <p className="mb-1 text-xs text-muted-foreground">
-              {picked.length ? 'These stocks' : 'The whole run'} as one book: every stock's out-of-sample P&L summed day by day
+              {picked.length ? 'These stocks' : 'The whole run'} as one book: every stock's out-of-sample P&L
+              summed day by day
             </p>
             <div className="h-64">
               <SeriesChart datasets={book} fill format={inr} />
@@ -1302,10 +1412,20 @@ export default function EngineAutotuneRunPage() {
 
       <Section title="Stocks" hint="tick any number to see their full reports below">
         <div className="no-print mb-2 flex flex-wrap items-center gap-2 text-xs">
-          <Button size="xs" variant="outline" disabled={allPicked} onClick={() => setPicked(rows.map((r) => r.symbol))}>
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={allPicked}
+            onClick={() => setPicked(rows.map((r) => r.symbol))}
+          >
             Select all
           </Button>
-          <Button size="xs" variant="ghost" disabled={!picked.length || rows.length === 1} onClick={() => setPicked([])}>
+          <Button
+            size="xs"
+            variant="ghost"
+            disabled={!picked.length || rows.length === 1}
+            onClick={() => setPicked([])}
+          >
             Clear
           </Button>
           <span className="text-muted-foreground">
@@ -1313,7 +1433,7 @@ export default function EngineAutotuneRunPage() {
             {idle ? ` · ${idle} never traded` : ''}
           </span>
         </div>
-        <div className="max-h-[32rem] overflow-auto rounded-lg border">
+        <div className="max-h-[32rem] overflow-auto rounded-md border border-border">
           <Table>
             <TableHeader className="sticky top-0 bg-card">
               <TableRow className="hover:bg-transparent">
@@ -1337,7 +1457,11 @@ export default function EngineAutotuneRunPage() {
                 const v = VERDICT_BADGE[verdicts[i]]
                 const on = picked.some((p) => p.id === r.id)
                 return (
-                  <TableRow key={r.id} className={cn('cursor-pointer', on && 'bg-muted/60')} onClick={() => toggle(r.symbol)}>
+                  <TableRow
+                    key={r.id}
+                    className={cn('cursor-pointer', on && 'bg-muted/60')}
+                    onClick={() => toggle(r.symbol)}
+                  >
                     <TableCell>
                       <input
                         type="checkbox"
@@ -1356,13 +1480,19 @@ export default function EngineAutotuneRunPage() {
                     <TableCell className="text-right tabular-nums">
                       {r.stats.traded_windows} / {r.stats.windows}
                     </TableCell>
-                    <TableCell className={cn('text-right tabular-nums', pnlClass(r.oos.net))}>{inr(r.oos.net)}</TableCell>
-                    <TableCell className={cn('text-right tabular-nums', pnlClass(r.baseline.net))}>{inr(r.baseline.net)}</TableCell>
+                    <TableCell className={cn('text-right tabular-nums', pnlClass(r.oos.net))}>
+                      {inr(r.oos.net)}
+                    </TableCell>
+                    <TableCell className={cn('text-right tabular-nums', pnlClass(r.baseline.net))}>
+                      {inr(r.baseline.net)}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">{r.oos.trades}</TableCell>
                     <TableCell className="text-right tabular-nums">
                       {r.oos.trades ? fmt(r.oos.profit_factor) : '—'} / {fmt(r.baseline.profit_factor)}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{r.stats.wfe == null ? '—' : fmt(r.stats.wfe)}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.stats.wfe == null ? '—' : fmt(r.stats.wfe)}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">
                       {r.stats.dsr == null ? '—' : `${fmt(r.stats.dsr * 100, 0)}%`}
                     </TableCell>
@@ -1377,7 +1507,9 @@ export default function EngineAutotuneRunPage() {
                         <>
                           {paramsLabel(r.best_cell.params, Object.keys(r.axes))}{' '}
                           <span className={pnlClass(r.best_cell.net)}>{inr(r.best_cell.net)}</span>
-                          {!r.best_cell.picked && <span className="text-muted-foreground"> · never picked</span>}
+                          {!r.best_cell.picked && (
+                            <span className="text-muted-foreground"> · never picked</span>
+                          )}
                         </>
                       ) : (
                         '—'
@@ -1403,7 +1535,9 @@ export default function EngineAutotuneRunPage() {
                   onClick={() => setActive(r.symbol)}
                 >
                   {r.symbol}
-                  <span className={cn('ml-1 text-xs tabular-nums', pnlClass(r.oos.net))}>{inr(r.oos.net)}</span>
+                  <span className={cn('ml-1 text-xs tabular-nums', pnlClass(r.oos.net))}>
+                    {inr(r.oos.net)}
+                  </span>
                 </Button>
               ))}
             </div>

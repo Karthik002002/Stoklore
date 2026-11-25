@@ -1,11 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { RefreshCwIcon, SearchIcon } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Spinner } from '@/components/ui/spinner'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Badge, Button, Input, Spinner, Tooltip, TooltipContent, TooltipTrigger } from '@/design-system'
 import { formatDateTime, timeAgoShort } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
 import NewsTagBadges from '@/components/NewsTagBadges'
@@ -228,7 +224,7 @@ export default function TopNews() {
       )}
 
       {!error && visible && visible.length > 0 && (
-        <div className="rounded-lg border">
+        <div className="rounded-md border border-border">
           {visible.map((n) => (
             <NewsRow key={n.url} n={n} />
           ))}

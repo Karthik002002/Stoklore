@@ -1,8 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { ArrowLeftIcon, ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
-import { Button, buttonVariants } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
+import { Button, buttonVariants, Spinner } from '@/design-system'
 import { formatDateTime, formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { getRunWorkflow, getWorkflowRuns } from '@/services/api'
@@ -58,7 +57,7 @@ export default function WorkflowRun() {
         </Link>
         {run && (
           <>
-            <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', tone)}>
+            <span className={cn('rounded-full px-2 py-0.5 text-[12px] font-medium', tone)}>
               {run.status === 'running' && <Spinner className="mr-1 inline size-3" />}
               {label}
             </span>
@@ -70,7 +69,7 @@ export default function WorkflowRun() {
         )}
         <div className="ml-auto flex items-center gap-1">
           {runs.length > 1 && index >= 0 && (
-            <span className="mr-1 text-[11px] text-muted-foreground tabular-nums">
+            <span className="mr-1 text-[12px] text-muted-foreground tabular-nums">
               Run {runs.length - index} of {runs.length}
             </span>
           )}

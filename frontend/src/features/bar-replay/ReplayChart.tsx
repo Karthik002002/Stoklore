@@ -1,4 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
+import { currentChartColors, themeStore, toRgb, useChartColors } from '@/design-system'
 import type * as React from 'react'
 import type { ReactNode } from 'react'
 import { BellIcon } from 'lucide-react'
@@ -32,7 +33,22 @@ import { riskReward } from './orderEngine'
 import { DEFAULT_CHART_SETTINGS } from './store'
 import type { ChartFrame } from './store'
 
-const COLORS = { up: '#22c55e', down: '#ef4444', text: '#9ca3af', grid: 'rgba(148, 163, 184, 0.15)' }
+// Theme colors, read fresh on each access (currentChartColors is cached per theme). The chart
+// re-applies its options when useChartColors() changes - see the options effect below.
+const COLORS = {
+  get up() {
+    return currentChartColors().up
+  },
+  get down() {
+    return currentChartColors().down
+  },
+  get text() {
+    return currentChartColors().mutedText
+  },
+  get grid() {
+    return currentChartColors().grid
+  },
+}
 
 // Volume bars are tinted with the same up/down colors as the candles (settings.bodyUpColor/
 // bodyDownColor), just faded - so a user who customizes candle colors gets matching volume
@@ -65,15 +81,32 @@ const PRICE_PANE_KEY = 'price'
 
 // Maps the user-configurable chart settings (see store.js) onto lightweight-charts'
 // candlestick series options - shared by the initial creation and the reactive re-apply below.
+// The replay's color settings ship with fixed green/red defaults (and persist them). A color still
+// at that default follows the theme's up/down instead; one the user picked stays theirs.
+const OLD_UP = '#22c55e'
+const OLD_DOWN = '#ef4444'
+const toHex = (color: string) =>
+  `#${toRgb(color)
+    .map((x) => x.toString(16).padStart(2, '0'))
+    .join('')}`
+function themed(color: string): string
+function themed(color: string | undefined): string | undefined
+function themed(color: string | undefined) {
+  const c = color?.toLowerCase()
+  if (c === OLD_UP) return toHex(themeStore.resolved().colors.up)
+  if (c === OLD_DOWN) return toHex(themeStore.resolved().colors.down)
+  return color
+}
+
 function candleOptionsFrom(settings: ChartSettings) {
   return {
-    upColor: settings.bodyUpColor,
-    downColor: settings.bodyDownColor,
-    wickUpColor: settings.wickUpColor,
-    wickDownColor: settings.wickDownColor,
+    upColor: themed(settings.bodyUpColor),
+    downColor: themed(settings.bodyDownColor),
+    wickUpColor: themed(settings.wickUpColor),
+    wickDownColor: themed(settings.wickDownColor),
     borderVisible: settings.borderVisible,
-    borderUpColor: settings.borderUpColor,
-    borderDownColor: settings.borderDownColor,
+    borderUpColor: themed(settings.borderUpColor),
+    borderDownColor: themed(settings.borderDownColor),
     priceLineVisible: settings.lastPriceLine !== false,
   }
 }
@@ -341,7 +374,7 @@ function MeasureBox({ measure, bars }: { measure: MeasureState; bars: ReplayBar[
         <foreignObject x={-140} y={-78} width={280} height={72} style={{ overflow: 'visible' }}>
           <div className="flex justify-center">
             <div
-              className="rounded-lg px-3 py-1.5 text-center text-[11px] leading-tight font-medium text-white tabular-nums shadow-md"
+              className="rounded-lg px-3 py-1.5 text-center text-[12px] leading-tight font-medium text-white tabular-nums shadow-md"
               style={{ backgroundColor: tone }}
             >
               <div>
@@ -443,6 +476,8 @@ const ReplayChart = forwardRef(function ReplayChart(
   }: ReplayChartProps,
   ref: React.Ref<ReplayChartHandle>,
 ) {
+  // subscribes to the theme so the options effect below re-applies colors when it changes
+  const themeColors = useChartColors()
   const containerRef = useRef<HTMLDivElement | null>(null)
   const overlayRef = useRef<HTMLDivElement | null>(null)
   const drawLayerRef = useRef<SVGSVGElement | null>(null)
@@ -649,7 +684,7 @@ const ReplayChart = forwardRef(function ReplayChart(
   // chart (which would wipe zoom/pan) - the creation effect above only sets them once, at mount.
   useEffect(() => {
     candleSeriesRef.current?.applyOptions(candleOptionsFrom(settings))
-  }, [settings])
+  }, [settings, themeColors])
 
   // The canvas: background, axis text, grid and the volume overlay. Same reasoning as the candle
   // colours - applied in place, so a live preview from the settings dialog never resets the zoom.
@@ -666,7 +701,7 @@ const ReplayChart = forwardRef(function ReplayChart(
       },
     })
     volumeSeriesRef.current?.applyOptions({ visible: settings.volumeVisible !== false })
-  }, [settings, resetKey])
+  }, [settings, resetKey, themeColors])
 
   // Blind replay: the time axis and the crosshair's date label go, so nothing on the chart says
   // when this is. resetKey is a dependency because a symbol/timeframe change recreates the chart.
@@ -1136,8 +1171,8 @@ const ReplayChart = forwardRef(function ReplayChart(
               midpoint == null || level === midpoint
                 ? COLORS.text
                 : level > midpoint
-                  ? (settings.levelUpperColor ?? settings.bodyDownColor)
-                  : (settings.levelLowerColor ?? settings.bodyUpColor)
+                  ? themed(settings.levelUpperColor ?? settings.bodyDownColor)
+                  : themed(settings.levelLowerColor ?? settings.bodyUpColor)
             series.createPriceLine({
               price: level,
               color,
@@ -1162,7 +1197,7 @@ const ReplayChart = forwardRef(function ReplayChart(
       pane.setStretchFactor(heights[key] ?? fallback)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [indicators, resetKey, ...levelDeps])
+  }, [indicators, resetKey, themeColors, ...levelDeps])
 
   // Data updates - runs on every bar step, but only ever calls .setData() on already-existing
   // series, never recreates the chart. The initial framing only fires once per resetKey (first
@@ -1194,7 +1229,10 @@ const ReplayChart = forwardRef(function ReplayChart(
       bars.map((b) => ({
         time: b.time,
         value: b.volume ?? 0,
-        color: b.close >= b.open ? fade(settings.bodyUpColor, 0.5) : fade(settings.bodyDownColor, 0.5),
+        color:
+          b.close >= b.open
+            ? fade(themed(settings.bodyUpColor), 0.5)
+            : fade(themed(settings.bodyDownColor), 0.5),
       })) as never,
     )
     // Full bars, not a {time, close} projection: the moving averages only read `close`, but the
@@ -1255,7 +1293,16 @@ const ReplayChart = forwardRef(function ReplayChart(
     // Deps must stay a superset of the series-creating effect's: anything that makes that effect
     // tear down and rebuild the series (rsiLevels, resetKey) has to re-run this one too, or the
     // freshly created series sit there with no data until the next bar step.
-  }, [bars, indicators, markers, resetKey, settings.bodyUpColor, settings.bodyDownColor, ...levelDeps])
+  }, [
+    bars,
+    indicators,
+    markers,
+    resetKey,
+    settings.bodyUpColor,
+    settings.bodyDownColor,
+    themeColors,
+    ...levelDeps,
+  ])
 
   // Restores each pane's saved price scale. Per pane rather than once for the whole chart: an
   // oscillator pane added mid-session (adding RSI after the chart is already up) doesn't exist when
@@ -1605,14 +1652,14 @@ const ReplayChart = forwardRef(function ReplayChart(
         )}
         {topLeft && <div className="pointer-events-auto">{topLeft}</div>}
         {tool && (
-          <div className="rounded border bg-background/90 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm">
+          <div className="rounded border bg-background/90 px-2 py-1 text-[12px] text-muted-foreground shadow-sm backdrop-blur-sm">
             {DRAW_TOOLS[tool].label} — {DRAW_TOOLS[tool].hint.toLowerCase()} · Esc to cancel
           </div>
         )}
         {/* Click-move-click gives no clue that a second click is what ends it, so the band says so
             while it is live, and how to get rid of it once it isn't. */}
         {measure && (
-          <div className="rounded border bg-background/90 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm">
+          <div className="rounded border bg-background/90 px-2 py-1 text-[12px] text-muted-foreground shadow-sm backdrop-blur-sm">
             {measure.locked
               ? 'Measure — click anywhere to clear · Esc'
               : 'Measure — click to lock · Esc to cancel'}
@@ -1680,7 +1727,7 @@ function OhlcvLegend({ bar, prev, blind }: { bar: ReplayBar; prev: ReplayBar | n
   const changePct = prev && prev.close && change !== null ? (change / prev.close) * 100 : null
 
   return (
-    <div className="flex flex-wrap items-center gap-x-2 rounded border bg-background/85 px-2 py-1 text-[11px] tabular-nums shadow-sm backdrop-blur-sm">
+    <div className="flex flex-wrap items-center gap-x-2 rounded border bg-background/85 px-2 py-1 text-[12px] tabular-nums shadow-sm backdrop-blur-sm">
       {!blind && <span className="text-muted-foreground">{stamp(bar)}</span>}
       {(
         [
@@ -1722,7 +1769,7 @@ const price = (v: number) =>
 
 const PILL =
   'absolute left-[80%] -translate-x-1/2 -translate-y-1/2 pointer-events-auto flex items-center ' +
-  'rounded border bg-background/90 text-[11px] whitespace-nowrap tabular-nums shadow-sm backdrop-blur-sm'
+  'rounded border bg-background/90 text-[12px] whitespace-nowrap tabular-nums shadow-sm backdrop-blur-sm'
 
 function PillButton({
   label,
@@ -1823,11 +1870,11 @@ function LegPill({
 const ALERT_COLOR = '#f59e0b'
 const ALERT_PILL =
   'absolute left-[62%] -translate-x-1/2 -translate-y-1/2 pointer-events-auto flex items-center ' +
-  'rounded border bg-background/90 text-[11px] whitespace-nowrap tabular-nums shadow-sm backdrop-blur-sm'
+  'rounded border bg-background/90 text-[12px] whitespace-nowrap tabular-nums shadow-sm backdrop-blur-sm'
 
 /** A pill on each alert level: what it watches, and ✕ to delete it. Drag the line to move it. */
 function AlertPills({ alert, onRemove }: { alert: ChartAlert; onRemove?: (id: number) => void }) {
-  const tone = alert.active ? 'border-amber-500/70 text-amber-500' : 'border-dashed text-muted-foreground'
+  const tone = alert.active ? 'border-warning/70 text-warning' : 'border-dashed text-muted-foreground'
   const word =
     CHART_ALERT_KINDS.find(([k]) => k === alert.condition)?.[1] ??
     (alert.condition ?? 'crossing').replace(/_/g, ' ')
@@ -1897,7 +1944,7 @@ function PositionPills({
           entry line's dashed amber; filled positions get the neutral one. */}
       <div
         data-price={order.entryPrice}
-        className={`${PILL} ${pending ? 'border-dashed border-amber-500/70 text-amber-600' : 'border-primary/60'}`}
+        className={`${PILL} ${pending ? 'border-dashed border-warning/70 text-warning' : 'border-primary/60'}`}
       >
         <span className="border-r px-1.5 py-0.5 font-medium">
           {order.draft
@@ -2070,7 +2117,7 @@ function ContextMenu({
       {onNewOrder && (
         // First: on a stock you don't hold, starting a trade is the reason to right-click at all.
         <div className="border-t pt-1 first:border-t-0">
-          <div className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] uppercase text-muted-foreground">
             Trade here
           </div>
           <MenuItem onClick={() => (onNewOrder('long', price), onClose())}>
@@ -2089,7 +2136,7 @@ function ContextMenu({
       )}
       {onAddAlert && (
         <div className="border-t pt-1 first:border-t-0">
-          <div className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] uppercase text-muted-foreground">
             <BellIcon className="size-3" style={{ color: ALERT_COLOR }} /> Alert here
           </div>
           {CHART_ALERT_KINDS.map(([kind, label]) => (
@@ -2102,7 +2149,7 @@ function ContextMenu({
       )}
       {openOrders.map((order: ReplayOrder) => (
         <div key={order.id} className="border-t pt-1 first:border-t-0">
-          <div className="px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+          <div className="px-2 py-0.5 text-[11px] uppercase text-muted-foreground">
             {order.draft
               ? `New order · ${order.direction === 'long' ? 'buy' : 'sell'} (ticket)`
               : label(order)}
@@ -2127,7 +2174,7 @@ function ContextMenu({
       ))}
       {pendingOrders.map((order: ReplayOrder) => (
         <div key={order.id} className="border-t pt-1">
-          <div className="px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+          <div className="px-2 py-0.5 text-[11px] uppercase text-muted-foreground">
             {label(order)} · pending
           </div>
           <MenuItem onClick={() => (onCancelPending?.(order.id), onClose())}>Cancel pending</MenuItem>

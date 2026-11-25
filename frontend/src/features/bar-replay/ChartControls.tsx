@@ -1,17 +1,24 @@
 import { useState } from 'react'
-import { ActivityIcon, CheckIcon, ChevronDownIcon, LayoutTemplateIcon, SaveIcon, SettingsIcon } from 'lucide-react'
-import { Link } from '@tanstack/react-router'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import {
+  ActivityIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  LayoutTemplateIcon,
+  SaveIcon,
+  SettingsIcon,
+} from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import {
+  Badge,
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
   Select,
   SelectContent,
   SelectGroup,
@@ -20,7 +27,7 @@ import {
   SelectSeparator,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select'
+} from '@/design-system'
 import { getIntradayBars, getStockChart } from '@/services/api'
 import IndicatorControls from './IndicatorControls'
 import SettingsDialog from './SettingsDialog'
@@ -89,7 +96,9 @@ export function TemplateMenu() {
   return (
     <div className="flex items-center gap-1">
       <DropdownMenu>
-        <DropdownMenuTrigger render={<Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs" />}>
+        <DropdownMenuTrigger
+          render={<Button variant="ghost" size="sm" className="h-7 gap-1.5 px-2 text-xs" />}
+        >
           <LayoutTemplateIcon className="size-3.5" />
           {active?.name ?? 'Template'}
           {dirty && <span className="text-muted-foreground">*</span>}
@@ -133,7 +142,7 @@ export function ChartControls() {
           <ActivityIcon className="size-3.5" />
           Indicators
           {indicators.length > 0 && (
-            <Badge variant="outline" className="text-[10px]">
+            <Badge variant="outline" className="text-[11px]">
               {indicators.length}
             </Badge>
           )}
@@ -143,10 +152,20 @@ export function ChartControls() {
         </PopoverContent>
       </Popover>
       <TemplateMenu />
-      <Button size="icon-sm" variant="ghost" aria-label="Chart settings" onClick={() => setSettingsOpen(true)}>
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        aria-label="Chart settings"
+        onClick={() => setSettingsOpen(true)}
+      >
         <SettingsIcon className="size-4" />
       </Button>
-      <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} settings={settings} onSave={setSettings} />
+      <SettingsDialog
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        settings={settings}
+        onSave={setSettings}
+      />
     </div>
   )
 }

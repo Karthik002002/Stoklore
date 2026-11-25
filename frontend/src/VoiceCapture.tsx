@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { MicIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { askInChat } from './ChatWidget'
-import { Spinner } from '@/components/ui/spinner'
+import { Spinner } from '@/design-system'
 import { bindingFor, formatShortcut, keyFromEvent, useShortcutStore } from '@/lib/shortcuts'
 import { startRecording, transcribe, type Recorder } from '@/lib/voice'
 import { routeTranscript } from '@/lib/voiceCommands'
@@ -153,7 +153,7 @@ export default function VoiceCapture() {
       <div className="flex items-center gap-2 rounded-full border bg-card/95 px-4 py-2 text-sm shadow-lg backdrop-blur">
         {state === 'recording' ? (
           <>
-            <MicIcon className="size-4 animate-pulse text-red-500" />
+            <MicIcon className="size-4 animate-pulse text-down" />
             <span>Listening…</span>
             <span className="text-xs text-muted-foreground">release {formatShortcut(binding)}</span>
           </>

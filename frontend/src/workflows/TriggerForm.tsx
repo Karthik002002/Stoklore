@@ -1,9 +1,15 @@
 import { useEffect, useState } from 'react'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import TagInput from '@/components/TagInput'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
+import {
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+} from '@/design-system'
 import { cn } from '@/lib/utils'
 import { getAlerts, getWorkflowCatalogue, getWorkflows, previewTrigger } from '@/services/api'
 import type { WorkflowTrigger, WorkflowTriggerKind } from '@/services/api'
@@ -123,7 +129,7 @@ export function Chip({
       title={title}
       onClick={onClick}
       className={cn(
-        'rounded-md border px-2 py-0.5 text-[11px] transition-colors',
+        'rounded-md border px-2 py-0.5 text-[12px] transition-colors',
         active ? 'border-primary bg-primary text-primary-foreground' : 'hover:bg-muted',
       )}
     >
@@ -135,7 +141,7 @@ export function Chip({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
-      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="text-[12px] text-muted-foreground">{label}</p>
       {children}
     </div>
   )
@@ -314,7 +320,7 @@ export default function TriggerForm({
           </Field>
           <Field label="At (IST)">{time}</Field>
           {typeof value.day === 'number' && value.day > 28 && (
-            <p className="text-[11px] text-muted-foreground">Shorter months run on their last day.</p>
+            <p className="text-[12px] text-muted-foreground">Shorter months run on their last day.</p>
           )}
         </>
       )}
@@ -382,7 +388,7 @@ export default function TriggerForm({
                   </Chip>
                 ))}
               {!alerts.some((a) => a.kind === 'price' && a.active) && (
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-[12px] text-muted-foreground">
                   No armed price alerts — any that fire later count.
                 </p>
               )}
@@ -454,7 +460,10 @@ export default function TriggerForm({
       )}
 
       {kind !== 'manual' && (
-        <div className="space-y-1.5 rounded-lg border bg-background/60 p-2 text-[11px]" aria-live="polite">
+        <div
+          className="space-y-1.5 rounded-md border border-border bg-background/60 p-2 text-[12px]"
+          aria-live="polite"
+        >
           {preview?.error ? (
             <p className="text-down">{preview.error}</p>
           ) : isTime ? (

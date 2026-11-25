@@ -1,7 +1,7 @@
 import { CheckIcon, CopyIcon, FileTextIcon } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/design-system'
 import { copyText, downloadMd } from '@/lib/exportFile'
 
 /** Copy / download the markdown of whatever panel it sits in. `build` is a thunk so a large

@@ -23,9 +23,17 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { create } from 'zustand'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/design-system'
 import { inr } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { PaperChart } from '@/paper/PaperPositionChart'
@@ -112,7 +120,7 @@ export function ScanButton({
         startScan(name, source, list)
       }}
       className={cn(
-        'inline-flex h-5 items-center gap-0.5 rounded px-1 text-[10px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground',
+        'inline-flex h-5 items-center gap-0.5 rounded px-1 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground',
         className,
       )}
     >
@@ -142,8 +150,8 @@ const write = (key: string, v: number) => {
 
 export const PRIORITY: Record<ScanPriority, { label: string; className: string }> = {
   A: { label: 'act now', className: 'bg-up/20 text-up border-up/50' },
-  B: { label: 'watch closely', className: 'bg-amber-500/20 text-amber-500 border-amber-500/50' },
-  C: { label: 'maybe later', className: 'bg-sky-500/20 text-sky-500 border-sky-500/50' },
+  B: { label: 'watch closely', className: 'bg-warning/20 text-warning border-warning/50' },
+  C: { label: 'maybe later', className: 'bg-accent/20 text-accent border-accent/50' },
 }
 const KEYS: Record<string, ScanPriority> = { '1': 'A', '2': 'B', '3': 'C' }
 
@@ -322,7 +330,7 @@ export default function ChartModal() {
       >
         <ChevronRightIcon className="size-4" />
       </Button>
-      <span className="ml-1 flex gap-1 font-mono text-[11px]">
+      <span className="ml-1 flex gap-1 font-mono text-[12px]">
         {(['A', 'B', 'C'] as const).map((p) => (
           <span
             key={p}
@@ -436,7 +444,7 @@ export default function ChartModal() {
               current?.priority ? (
                 <span
                   className={cn(
-                    'rounded border px-1.5 font-mono text-[11px] font-semibold',
+                    'rounded border px-1.5 font-mono text-[12px] font-semibold',
                     PRIORITY[current.priority].className,
                   )}
                 >

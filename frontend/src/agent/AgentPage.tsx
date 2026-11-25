@@ -11,7 +11,7 @@ export default function AgentPage() {
   const { session } = useSearch({ from: '/agent' })
 
   return (
-    <div className="h-[calc(100vh-5rem)] overflow-hidden rounded-xl border bg-card">
+    <div className="rounded-md border border-border bg-card h-[calc(100vh-5rem)] overflow-hidden">
       <AgentChat
         sessionId={session ?? null}
         onSessionChange={(id) => navigate({ to: '/agent', search: { session: id } })}

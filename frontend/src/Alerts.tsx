@@ -15,14 +15,28 @@ import { Link } from '@tanstack/react-router'
 import { BellIcon, BellRingIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, TrashIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import SymbolCombobox from '@/components/SymbolCombobox'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Textarea } from '@/components/ui/textarea'
+import {
+  Badge,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Textarea,
+} from '@/design-system'
 import { formatDateTime, inr, timeAgo } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
 import type {
@@ -47,7 +61,9 @@ import {
 
 /** How far the level is from the last price the alert saw, signed: + means price must rise to it. */
 const distance = (a: Alert) =>
-  a.price == null || !a.last_price || a.condition?.startsWith('moving') ? null : (100 * (a.price - a.last_price)) / a.last_price
+  a.price == null || !a.last_price || a.condition?.startsWith('moving')
+    ? null
+    : (100 * (a.price - a.last_price)) / a.last_price
 
 const TRIGGER_LABELS: Record<AlertTrigger, string> = {
   once: 'Only once',
@@ -182,7 +198,7 @@ function AlertDialog({
             {/* Said where it is chosen, not in a help page: a crossing is the one kind of
                 condition this app can genuinely miss. */}
             {meta?.stateful && (
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[12px] text-muted-foreground">
                 Compares against the previous check. A move that crosses and comes back within one sweep is
                 invisible — use <span className="font-medium">Greater than</span> or{' '}
                 <span className="font-medium">Less than</span> when being told matters more than being told at
@@ -218,7 +234,7 @@ function AlertDialog({
             )}
           </div>
           {meta?.move && (
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[12px] text-muted-foreground">
               Measured from the price when this was armed, and re-measured from wherever it last fired — not
               from the previous candle.
             </p>
@@ -323,7 +339,8 @@ function PositionsFor({
           className="block whitespace-nowrap text-primary hover:underline"
         >
           Live {p.net_qty > 0 ? 'LONG' : 'SHORT'} {Math.abs(p.net_qty)}
-          {(p.net_qty > 0 ? p.buy_avg : p.sell_avg) != null && ` @ ${inr((p.net_qty > 0 ? p.buy_avg : p.sell_avg)!)}`}
+          {(p.net_qty > 0 ? p.buy_avg : p.sell_avg) != null &&
+            ` @ ${inr((p.net_qty > 0 ? p.buy_avg : p.sell_avg)!)}`}
         </Link>
       ))}
     </div>
@@ -416,7 +433,7 @@ export default function Alerts() {
         </Button>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border">
+      <div className="overflow-x-auto rounded-md border border-border">
         <Table>
           <TableHeader>
             <TableRow>
@@ -527,7 +544,7 @@ export default function Alerts() {
         </div>
         {/* Fired levels and everything the broker did, in one list - see app/core/alerts.py on why
             these are not two inboxes. */}
-        <div className="max-h-96 space-y-1 overflow-y-auto rounded-xl border p-1">
+        <div className="max-h-96 space-y-1 overflow-y-auto rounded-md border border-border p-1">
           {feed.length === 0 ? (
             <p className="py-6 text-center text-xs text-muted-foreground">
               Nothing yet. Fired alerts, fills and rejections land here.
@@ -540,7 +557,7 @@ export default function Alerts() {
               const body = (
                 <>
                   <span className={a.kind === 'order' ? 'font-medium' : ''}>{a.message}</span>
-                  <span className="ml-1.5 text-[11px] text-muted-foreground">{timeAgo(a.triggered_at)}</span>
+                  <span className="ml-1.5 text-[12px] text-muted-foreground">{timeAgo(a.triggered_at)}</span>
                 </>
               )
               // A workflow's notification opens in that workflow's inbox, with its run and data.

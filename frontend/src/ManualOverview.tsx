@@ -6,11 +6,27 @@ import { AreaSeries, HistogramSeries, createChart } from 'lightweight-charts'
 import { ChevronLeftIcon, ChevronRightIcon, Trash2Icon, WalletIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { DateField, TextField } from '@/components/form'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Panel,
+  PanelBody,
+  PanelHeader,
+  PanelTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Stat,
+  StatStrip,
+  useChartColors,
+} from '@/design-system'
 import type { z } from 'zod'
 import { balanceAdjustmentSchema } from '@/lib/schemas'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { fmt, formatDate, inr } from '@/lib/format'
 import {
   dayOfWeek,
@@ -64,7 +80,6 @@ type ConcentrationRow = { label: string; amount: number; count: number; pctOfTot
 /** One setup's R spread. */
 type RSpreadRow = { label: string; count: number; min: number; median: number; max: number }
 
-const COLORS = { up: '#22c55e', down: '#ef4444', text: '#9ca3af', grid: 'rgba(148, 163, 184, 0.15)' }
 const WEEKDAYS = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
 const DAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const SESSION_ORDER = [...NSE_SESSIONS.map((s) => s.name), 'After hours']
@@ -81,23 +96,27 @@ function StatCard({
   valueClassName?: string
   sub?: React.ReactNode
 }) {
-  return (
-    <div className="rounded-xl border bg-card p-4">
-      <p className={`text-xl font-semibold tabular-nums ${valueClassName ?? ''}`}>{value}</p>
-      <p className="mt-1 text-xs tracking-wide text-muted-foreground uppercase">{label}</p>
-      {sub && <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p>}
-    </div>
-  )
+  // the value keeps its caller's colour class (text-up / text-down / ...)
+  return <Stat label={label} value={<span className={valueClassName}>{value}</span>} hint={sub} />
+}
+
+// SVG/DOM charts on this page take CSS variables directly, so they follow the theme as-is.
+const SVG = {
+  up: 'var(--up)',
+  down: 'var(--down)',
+  text: 'var(--muted-foreground)',
+  grid: 'color-mix(in oklab, var(--muted-foreground) 15%, transparent)',
 }
 
 function MiniChart({ data, kind }: { data: { time: string; value: number }[]; kind?: string }) {
+  const COLORS = useChartColors()
   const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!data.length || !containerRef.current) return
     const chart = createChart(containerRef.current, {
       autoSize: true,
-      layout: { background: { color: 'transparent' }, textColor: COLORS.text, attributionLogo: false },
+      layout: { background: { color: 'transparent' }, textColor: COLORS.mutedText, attributionLogo: false },
       grid: { vertLines: { visible: false }, horzLines: { color: COLORS.grid } },
       timeScale: { borderVisible: false },
       rightPriceScale: { borderVisible: false },
@@ -116,14 +135,14 @@ function MiniChart({ data, kind }: { data: { time: string; value: number }[]; ki
         .addSeries(AreaSeries, {
           lineColor: color,
           lineWidth: 2,
-          topColor: rising ? 'rgba(34, 197, 94, 0.25)' : 'rgba(239, 68, 68, 0.25)',
+          topColor: COLORS.alpha(rising ? COLORS.up : COLORS.down, 0.25),
           bottomColor: 'rgba(0, 0, 0, 0)',
         })
         .setData(data)
     }
     chart.timeScale().fitContent()
     return () => chart.remove()
-  }, [data, kind])
+  }, [data, kind, COLORS])
 
   return (
     <div className="relative h-56">
@@ -178,7 +197,7 @@ function CalendarHeatmap({
     day === today.getDate() && month === today.getMonth() && year === today.getFullYear()
 
   return (
-    <div className="rounded-xl border bg-card p-4">
+    <div className="rounded-md border border-border bg-card p-3">
       <div className="mb-3 flex items-center justify-between">
         <Button
           size="sm"
@@ -209,7 +228,7 @@ function CalendarHeatmap({
           </Button>
         </div>
       </div>
-      <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-muted-foreground">
+      <div className="grid grid-cols-7 gap-1 text-center text-[12px] text-muted-foreground">
         {WEEKDAYS.map((d) => (
           <div key={d} className="py-1">
             {d}
@@ -267,69 +286,77 @@ function sortByOrder<T extends { label: string }>(rows: T[], order: string[]) {
 function BreakdownCard({ title, rows }: { title: string; rows: BreakdownRow[] }) {
   const maxAbs = Math.max(...rows.map((r) => Math.abs(r.metricValue)), 0.01)
   return (
-    <div className="rounded-xl border bg-card p-4">
-      <p className="mb-3 text-sm font-medium">{title}</p>
-      {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No closed trades yet.</p>
-      ) : (
-        <div className="space-y-3">
-          {rows.map((r) => (
-            <div key={r.label} className="space-y-1">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium">{r.label}</span>
-                <span className="text-xs text-muted-foreground">
-                  {r.count} trade{r.count === 1 ? '' : 's'} · {r.winRate}% WR
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className={`h-full rounded-full ${r.metricValue >= 0 ? 'bg-up' : 'bg-down'}`}
-                    style={{ width: `${(Math.abs(r.metricValue) / maxAbs) * 100}%` }}
-                  />
+    <Panel>
+      <PanelHeader>
+        <PanelTitle>{title}</PanelTitle>
+      </PanelHeader>
+      <PanelBody className="p-3">
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No closed trades yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {rows.map((r) => (
+              <div key={r.label} className="space-y-1">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">{r.label}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {r.count} trade{r.count === 1 ? '' : 's'} · {r.winRate}% WR
+                  </span>
                 </div>
-                <span
-                  className={`w-20 shrink-0 text-right text-xs tabular-nums ${r.metricValue >= 0 ? 'text-up' : 'text-down'}`}
-                >
-                  {inr(r.metricValue)}
-                </span>
+                <div className="flex items-center gap-2">
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className={`h-full rounded-full ${r.metricValue >= 0 ? 'bg-up' : 'bg-down'}`}
+                      style={{ width: `${(Math.abs(r.metricValue) / maxAbs) * 100}%` }}
+                    />
+                  </div>
+                  <span
+                    className={`w-20 shrink-0 text-right text-xs tabular-nums ${r.metricValue >= 0 ? 'text-up' : 'text-down'}`}
+                  >
+                    {inr(r.metricValue)}
+                  </span>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+            ))}
+          </div>
+        )}
+      </PanelBody>
+    </Panel>
   )
 }
 
 function RDistributionCard({ rows }: { rows: { bucket: string; count: number }[] }) {
   const maxCount = Math.max(...rows.map((r) => r.count), 1)
   return (
-    <div className="rounded-xl border bg-card p-4">
-      <p className="mb-3 text-sm font-medium">R-multiple distribution</p>
-      {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          Set an "Ideal risk ₹" when logging a trade to see this.
-        </p>
-      ) : (
-        <div className="space-y-2">
-          {rows.map((r) => (
-            <div key={r.bucket} className="flex items-center gap-2">
-              <span className="w-10 shrink-0 text-xs font-medium tabular-nums">{r.bucket}R</span>
-              <div className="h-4 flex-1 overflow-hidden rounded bg-muted">
-                <div
-                  className={`h-full ${r.bucket.startsWith('-') ? 'bg-down' : 'bg-up'}`}
-                  style={{ width: `${(r.count / maxCount) * 100}%` }}
-                />
+    <Panel>
+      <PanelHeader>
+        <PanelTitle>R-multiple distribution</PanelTitle>
+      </PanelHeader>
+      <PanelBody className="p-3">
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            Set an "Ideal risk ₹" when logging a trade to see this.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {rows.map((r) => (
+              <div key={r.bucket} className="flex items-center gap-2">
+                <span className="w-10 shrink-0 text-xs font-medium tabular-nums">{r.bucket}R</span>
+                <div className="h-4 flex-1 overflow-hidden rounded bg-muted">
+                  <div
+                    className={`h-full ${r.bucket.startsWith('-') ? 'bg-down' : 'bg-up'}`}
+                    style={{ width: `${(r.count / maxCount) * 100}%` }}
+                  />
+                </div>
+                <span className="w-6 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
+                  {r.count}
+                </span>
               </div>
-              <span className="w-6 shrink-0 text-right text-xs tabular-nums text-muted-foreground">
-                {r.count}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+            ))}
+          </div>
+        )}
+      </PanelBody>
+    </Panel>
   )
 }
 
@@ -444,9 +471,10 @@ function ConcentrationCard({
     [trades, dimension],
   )
   return (
-    <div className="rounded-xl border bg-card p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-sm font-medium">{title}</p>
+    <Panel>
+      <PanelHeader>
+        <PanelTitle>{title}</PanelTitle>
+        <span className="flex-1" />
         <Select value={dimension} onValueChange={(v) => setDimension(String(v))}>
           <SelectTrigger size="sm" className="w-36">
             <SelectValue />
@@ -459,19 +487,25 @@ function ConcentrationCard({
             ))}
           </SelectContent>
         </Select>
-      </div>
-      <ConcentrationList rows={rows} tone={tone} />
-    </div>
+      </PanelHeader>
+      <PanelBody className="p-3">
+        <ConcentrationList rows={rows} tone={tone} />
+      </PanelBody>
+    </Panel>
   )
 }
 
 function TagLossCard({ losingTrades }: { losingTrades: Trade[] }) {
   const rows = useMemo(() => computeTagLossFrequency(losingTrades), [losingTrades])
   return (
-    <div className="rounded-xl border bg-card p-4">
-      <p className="mb-3 text-sm font-medium">Most common tags in losing trades</p>
-      <ConcentrationList rows={rows} tone="down" />
-    </div>
+    <Panel>
+      <PanelHeader>
+        <PanelTitle>Most common tags in losing trades</PanelTitle>
+      </PanelHeader>
+      <PanelBody className="p-3">
+        <ConcentrationList rows={rows} tone="down" />
+      </PanelBody>
+    </Panel>
   )
 }
 
@@ -501,36 +535,40 @@ function RSpreadCard({ rows }: { rows: RSpreadRow[] }) {
   const clamp = (r: number) => Math.max(-3, Math.min(3, r))
   const pos = (r: number) => ((clamp(r) + 3) / 6) * 100
   return (
-    <div className="rounded-xl border bg-card p-4">
-      <p className="mb-3 text-sm font-medium">R-multiple spread by setup</p>
-      {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Set an "Ideal risk ₹" to see this.</p>
-      ) : (
-        <div className="space-y-3">
-          {rows.map((r) => (
-            <div key={r.label} className="space-y-1">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium">{r.label}</span>
-                <span className="text-xs text-muted-foreground">
-                  {r.count} trade{r.count === 1 ? '' : 's'} · median {r.median}R
-                </span>
+    <Panel>
+      <PanelHeader>
+        <PanelTitle>R-multiple spread by setup</PanelTitle>
+      </PanelHeader>
+      <PanelBody className="p-3">
+        {rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Set an "Ideal risk ₹" to see this.</p>
+        ) : (
+          <div className="space-y-3">
+            {rows.map((r) => (
+              <div key={r.label} className="space-y-1">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-medium">{r.label}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {r.count} trade{r.count === 1 ? '' : 's'} · median {r.median}R
+                  </span>
+                </div>
+                <div className="relative h-2 rounded-full bg-muted">
+                  <div className="absolute inset-y-0 left-1/2 w-px bg-border" />
+                  <div
+                    className="absolute inset-y-0 rounded-full bg-primary/30"
+                    style={{ left: `${pos(r.min)}%`, width: `${Math.max(pos(r.max) - pos(r.min), 1)}%` }}
+                  />
+                  <div
+                    className="absolute top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary"
+                    style={{ left: `${pos(r.median)}%` }}
+                  />
+                </div>
               </div>
-              <div className="relative h-2 rounded-full bg-muted">
-                <div className="absolute inset-y-0 left-1/2 w-px bg-border" />
-                <div
-                  className="absolute inset-y-0 rounded-full bg-primary/30"
-                  style={{ left: `${pos(r.min)}%`, width: `${Math.max(pos(r.max) - pos(r.min), 1)}%` }}
-                />
-                <div
-                  className="absolute top-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary"
-                  style={{ left: `${pos(r.median)}%` }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+            ))}
+          </div>
+        )}
+      </PanelBody>
+    </Panel>
   )
 }
 
@@ -656,16 +694,16 @@ function Plot({
               x2={PLOT.w - PLOT.padR}
               y1={sy(t)}
               y2={sy(t)}
-              stroke={COLORS.grid}
+              stroke={SVG.grid}
               strokeDasharray={t === 0 || t === 100 ? '3 3' : undefined}
             />
-            <text x={4} y={sy(t) + 3} fontSize="8" fill={COLORS.text}>
+            <text x={4} y={sy(t) + 3} fontSize="8" fill={SVG.text}>
               {formatY(t)}
             </text>
           </g>
         ))}
         {(xTicks ?? []).map((t) => (
-          <text key={t} x={sx(t)} y={PLOT.h - 6} fontSize="8" fill={COLORS.text} textAnchor="middle">
+          <text key={t} x={sx(t)} y={PLOT.h - 6} fontSize="8" fill={SVG.text} textAnchor="middle">
             {t}
           </text>
         ))}
@@ -723,11 +761,15 @@ function ModelCard({
   children: React.ReactNode
 }) {
   return (
-    <div className="rounded-xl border bg-card p-4">
-      <p className="text-sm font-medium">{title}</p>
-      {hint && <p className="mt-0.5 mb-2 text-xs text-muted-foreground">{hint}</p>}
-      {children}
-    </div>
+    <Panel>
+      <PanelHeader>
+        <PanelTitle>{title}</PanelTitle>
+      </PanelHeader>
+      <PanelBody className="p-3">
+        {hint && <p className="mt-0.5 mb-2 text-xs text-muted-foreground">{hint}</p>}
+        {children}
+      </PanelBody>
+    </Panel>
   )
 }
 
@@ -747,7 +789,7 @@ function ExpectancyGridCard({ winRate, payoff }: { winRate: number; payoff: numb
     >
       <div className="overflow-x-auto">
         <div className="min-w-[380px]">
-          <div className="grid grid-cols-[2.5rem_repeat(8,1fr)] gap-0.5 text-[10px]">
+          <div className="grid grid-cols-[2.5rem_repeat(8,1fr)] gap-0.5 text-[11px]">
             <div />
             {GRID_WIN_RATES.map((w) => (
               <div key={w} className="text-center text-muted-foreground">
@@ -819,10 +861,10 @@ function StreakSurvivalCard({
       hint={`${streakLen} losses back to back at ${riskPct}% risk, then trading on at your own expectancy.`}
     >
       <Plot
-        series={[{ label: 'Account', points: sim.points, color: COLORS.text }]}
+        series={[{ label: 'Account', points: sim.points, color: SVG.text }]}
         bands={[
-          { from: 0, to: streakLen, color: 'rgba(239, 68, 68, 0.12)' },
-          { from: streakLen, to: 75, color: 'rgba(34, 197, 94, 0.10)' },
+          { from: 0, to: streakLen, color: 'color-mix(in oklab, var(--down) 12%, transparent)' },
+          { from: streakLen, to: 75, color: 'color-mix(in oklab, var(--up) 10%, transparent)' },
         ]}
         xTicks={[0, 15, 30, 45, 60, 75]}
         yTicks={[Math.floor(sim.trough / 10) * 10, 100, Math.ceil((sim.points.at(-1)?.value ?? 0) / 10) * 10]}
@@ -841,7 +883,7 @@ function StreakSurvivalCard({
 
 // `3` One trade sequence, three position sizes.
 const RISK_LEVELS = [0.5, 1, 2]
-const RISK_COLORS = ['#22c55e', '#3b82f6', '#ef4444']
+const RISK_COLORS = ['var(--up)', 'var(--chart-1)', 'var(--down)']
 
 function RiskPathsCard({ winRate, payoff }: { winRate: number; payoff: number }) {
   const paths = useMemo(
@@ -883,16 +925,22 @@ function AchievableWinRateCard({ winRate, payoff }: { winRate: number; payoff: n
     >
       <Plot
         series={[
-          { label: 'Typically achievable', points, color: COLORS.text },
-          { label: 'Breakeven', points: breakeven, color: COLORS.down, dashed: true },
+          { label: 'Typically achievable', points, color: SVG.text },
+          { label: 'Breakeven', points: breakeven, color: SVG.down, dashed: true },
         ]}
-        bands={[{ from: SWEET_SPOT.from, to: SWEET_SPOT.to, color: 'rgba(34, 197, 94, 0.12)' }]}
+        bands={[
+          {
+            from: SWEET_SPOT.from,
+            to: SWEET_SPOT.to,
+            color: 'color-mix(in oklab, var(--up) 12%, transparent)',
+          },
+        ]}
         markers={[
           {
             label: `you: ${Math.round(payoff * 10) / 10}R, ${Math.round(winRate * 1000) / 10}%`,
             x: Math.min(Math.max(payoff, 1), 10),
             value: Math.round(winRate * 1000) / 10,
-            color: '#3b82f6',
+            color: 'var(--chart-1)',
           },
         ]}
         xTicks={[1, 2, 3, 4, 5, 6, 8, 10]}
@@ -901,9 +949,9 @@ function AchievableWinRateCard({ winRate, payoff }: { winRate: number; payoff: n
       />
       <Legend
         items={[
-          { label: 'Typically achievable', color: COLORS.text },
-          { label: 'Breakeven win rate', color: COLORS.down },
-          { label: 'Sweet spot (3R–6R)', color: 'rgba(34, 197, 94, 0.5)' },
+          { label: 'Typically achievable', color: SVG.text },
+          { label: 'Breakeven win rate', color: SVG.down },
+          { label: 'Sweet spot (3R–6R)', color: 'color-mix(in oklab, var(--up) 50%, transparent)' },
         ]}
       />
     </ModelCard>
@@ -923,8 +971,8 @@ function CompoundingCard({ gainPct, lossPct }: { gainPct: number; lossPct: numbe
     >
       <Plot
         series={[
-          { label: 'Winning', points: gains, color: COLORS.up },
-          { label: 'Losing', points: losses, color: COLORS.down },
+          { label: 'Winning', points: gains, color: SVG.up },
+          { label: 'Losing', points: losses, color: SVG.down },
         ]}
         xTicks={[0, 20, 40, 60, 80, 100]}
         yTicks={[-60, -30, 0, 30, 60]}
@@ -957,7 +1005,7 @@ function DrawdownRiskCard({ winRate, payoff }: { winRate: number; payoff: number
             <span className="w-12 shrink-0 text-xs font-medium tabular-nums">{r.riskPct}%</span>
             <div className="h-4 flex-1 overflow-hidden rounded bg-muted">
               <div
-                className={`h-full ${r.probability >= 50 ? 'bg-down' : r.probability >= 15 ? 'bg-amber-500' : 'bg-up'}`}
+                className={`h-full ${r.probability >= 50 ? 'bg-down' : r.probability >= 15 ? 'bg-warning' : 'bg-up'}`}
                 style={{ width: `${Math.max(r.probability, 1)}%` }}
               />
             </div>
@@ -1384,7 +1432,7 @@ export default function ManualOverview({ trades, accountId }: { trades: Trade[];
           them (see the Goals tab). */}
       <GoalsSummary trades={trades} />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <StatStrip bordered>
         <StatCard
           label="Total PnL (closed)"
           value={inr(totalPnl)}
@@ -1397,10 +1445,10 @@ export default function ManualOverview({ trades, accountId }: { trades: Trade[];
           value={inr(avgPnl)}
           valueClassName={avgPnl >= 0 ? 'text-up' : 'text-down'}
         />
-      </div>
+      </StatStrip>
 
       {anyCosts && (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatStrip bordered>
           <StatCard
             label="Net PnL (after costs)"
             value={inr(totalNetPnl)}
@@ -1417,11 +1465,11 @@ export default function ManualOverview({ trades, accountId }: { trades: Trade[];
             value={inr(avgNetPnl)}
             valueClassName={avgNetPnl >= 0 ? 'text-up' : 'text-down'}
           />
-        </div>
+        </StatStrip>
       )}
 
       {riskTrades.length > 0 ? (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatStrip bordered>
           <StatCard label="Trades w/ planned risk" value={riskTrades.length} />
           <StatCard
             label="Avg Expected R"
@@ -1433,7 +1481,7 @@ export default function ManualOverview({ trades, accountId }: { trades: Trade[];
             value={`${Math.round((riskCounts.good / riskTrades.length) * 100)}%`}
           />
           <StatCard label="Over / under-risked" value={`${riskCounts.over} / ${riskCounts.under}`} />
-        </div>
+        </StatStrip>
       ) : (
         <p className="text-sm text-muted-foreground">
           Set an "Ideal risk ₹" when logging a trade to unlock risk-discipline metrics (Expected R, good vs.
@@ -1442,35 +1490,54 @@ export default function ManualOverview({ trades, accountId }: { trades: Trade[];
       )}
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <div className="rounded-xl border bg-card p-4">
-          <p className="mb-2 text-sm font-medium">Daily Wins/Losses</p>
-          <MiniChart data={winLossData} kind="histogram" />
-        </div>
-        <div className="rounded-xl border bg-card p-4">
-          <p className="mb-2 text-sm font-medium">Total PnL</p>
-          <MiniChart data={totalPnlData} kind="area" />
-        </div>
-        <div className="rounded-xl border bg-card p-4">
-          <p className="mb-2 text-sm font-medium">Daily PnL</p>
-          <MiniChart data={dailyPnlData} kind="histogram" />
-        </div>
+        <Panel>
+          <PanelHeader>
+            <PanelTitle>Daily Wins/Losses</PanelTitle>
+          </PanelHeader>
+          <PanelBody className="p-3">
+            <MiniChart data={winLossData} kind="histogram" />
+          </PanelBody>
+        </Panel>
+        <Panel>
+          <PanelHeader>
+            <PanelTitle>Total PnL</PanelTitle>
+          </PanelHeader>
+          <PanelBody className="p-3">
+            <MiniChart data={totalPnlData} kind="area" />
+          </PanelBody>
+        </Panel>
+        <Panel>
+          <PanelHeader>
+            <PanelTitle>Daily PnL</PanelTitle>
+          </PanelHeader>
+          <PanelBody className="p-3">
+            <MiniChart data={dailyPnlData} kind="histogram" />
+          </PanelBody>
+        </Panel>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border bg-card p-4">
-          <p className="mb-2 text-sm font-medium">Expected-R Equity Curve</p>
-          <MiniChart data={expectedREquityData} kind="area" />
-        </div>
-        <div className="rounded-xl border bg-card p-4">
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-sm font-medium">Account Balance</p>
+        <Panel>
+          <PanelHeader>
+            <PanelTitle>Expected-R Equity Curve</PanelTitle>
+          </PanelHeader>
+          <PanelBody className="p-3">
+            <MiniChart data={expectedREquityData} kind="area" />
+          </PanelBody>
+        </Panel>
+        <Panel>
+          <PanelHeader>
+            <PanelTitle>Account Balance</PanelTitle>
+            <span className="flex-1" />
             <Button size="sm" variant="outline" onClick={() => setAdjusterOpen(true)}>
               <WalletIcon className="size-3.5" />
               Adjust
             </Button>
-          </div>
-          <MiniChart data={balanceEquityData} kind="area" />
-        </div>
+          </PanelHeader>
+          <PanelBody className="p-3">
+            <MiniChart data={balanceEquityData} kind="area" />
+          </PanelBody>
+        </Panel>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -1483,214 +1550,237 @@ export default function ManualOverview({ trades, accountId }: { trades: Trade[];
         <BreakdownCard title="Avg P&L by session" rows={sessionRows} />
       </div>
 
-      <div className="space-y-3 rounded-xl border bg-card p-4">
-        <div>
-          <h3 className="text-sm font-semibold">Timing</h3>
-          <p className="text-xs text-muted-foreground">
+      <Panel>
+        <PanelHeader>
+          <PanelTitle>Timing</PanelTitle>
+        </PanelHeader>
+        <PanelBody className="space-y-3 p-3">
+          <p className="text-2xs text-muted-foreground">
             How long positions are held, and how long you wait between them. The first pair asks whether you
             cut winners short; the second whether trading more often makes you money.
           </p>
-        </div>
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <StatCard
-            label="Median hold · winners"
-            value={holding.winMedian == null ? '—' : `${fmt(holding.winMedian, 1)} bars`}
-          />
-          <StatCard
-            label="Median hold · losers"
-            value={holding.lossMedian == null ? '—' : `${fmt(holding.lossMedian, 1)} bars`}
-          />
-          <StatCard
-            label="Hold edge"
-            value={holding.edge == null ? '—' : `${holding.edge > 0 ? '+' : ''}${fmt(holding.edge, 1)} bars`}
-            valueClassName={holding.edge == null ? '' : holding.edge >= 0 ? 'text-up' : 'text-down'}
-            sub={
-              holding.edge == null
-                ? undefined
-                : holding.edge >= 0
-                  ? 'Winners held longer — the healthy direction'
-                  : 'Winners cut shorter than losers'
-            }
-          />
-          <StatCard
-            label="Trades measured"
-            value={`${holding.covered}/${holding.total}`}
-            sub={holding.covered < holding.total ? 'Rest have no context snapshot' : 'Whole journal covered'}
-          />
-        </div>
+          <StatStrip bordered>
+            <StatCard
+              label="Median hold · winners"
+              value={holding.winMedian == null ? '—' : `${fmt(holding.winMedian, 1)} bars`}
+            />
+            <StatCard
+              label="Median hold · losers"
+              value={holding.lossMedian == null ? '—' : `${fmt(holding.lossMedian, 1)} bars`}
+            />
+            <StatCard
+              label="Hold edge"
+              value={
+                holding.edge == null ? '—' : `${holding.edge > 0 ? '+' : ''}${fmt(holding.edge, 1)} bars`
+              }
+              valueClassName={holding.edge == null ? '' : holding.edge >= 0 ? 'text-up' : 'text-down'}
+              sub={
+                holding.edge == null
+                  ? undefined
+                  : holding.edge >= 0
+                    ? 'Winners held longer — the healthy direction'
+                    : 'Winners cut shorter than losers'
+              }
+            />
+            <StatCard
+              label="Trades measured"
+              value={`${holding.covered}/${holding.total}`}
+              sub={
+                holding.covered < holding.total ? 'Rest have no context snapshot' : 'Whole journal covered'
+              }
+            />
+          </StatStrip>
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <BreakdownCard title="Avg P&L by holding period" rows={holdingRows} />
-          <BreakdownCard title="Avg P&L by gap since last trade" rows={gapRows} />
-        </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <BreakdownCard title="Avg P&L by holding period" rows={holdingRows} />
+            <BreakdownCard title="Avg P&L by gap since last trade" rows={gapRows} />
+          </div>
 
-        <p className="text-xs text-muted-foreground">
-          Holding period is measured in bars, from each trade's stored context snapshot — the only clock that
-          is valid for replayed trades, which are journaled at today's date but exit on their replayed one.
-          The gap is measured between consecutive exits.
-        </p>
-      </div>
-
-      <div className="space-y-3 rounded-xl border bg-card p-4">
-        <div>
-          <h3 className="text-sm font-semibold">Profit & edge</h3>
           <p className="text-xs text-muted-foreground">
+            Holding period is measured in bars, from each trade's stored context snapshot — the only clock
+            that is valid for replayed trades, which are journaled at today's date but exit on their replayed
+            one. The gap is measured between consecutive exits.
+          </p>
+        </PanelBody>
+      </Panel>
+
+      <Panel>
+        <PanelHeader>
+          <PanelTitle>Profit & edge</PanelTitle>
+        </PanelHeader>
+        <PanelBody className="space-y-3 p-3">
+          <p className="text-2xs text-muted-foreground">
             Is the edge real, or a couple of outlier trades carrying the average? Risk-adjusted and
             concentration metrics, not just win rate.
           </p>
-        </div>
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <StatCard label="SQN" value={sqn == null ? '—' : fmt(sqn, 2)} sub={sqnLabel ?? undefined} />
-          <StatCard label="Sortino (R-based)" value={sortino == null ? '—' : fmt(sortino, 2)} />
-          <StatCard label="Recovery factor" value={recovery == null ? '—' : fmt(recovery, 2)} />
-          <StatCard label="Max drawdown" value={inr(underwater.maxDrawdown)} valueClassName="text-down" />
-        </div>
+          <StatStrip bordered>
+            <StatCard label="SQN" value={sqn == null ? '—' : fmt(sqn, 2)} sub={sqnLabel ?? undefined} />
+            <StatCard label="Sortino (R-based)" value={sortino == null ? '—' : fmt(sortino, 2)} />
+            <StatCard label="Recovery factor" value={recovery == null ? '—' : fmt(recovery, 2)} />
+            <StatCard label="Max drawdown" value={inr(underwater.maxDrawdown)} valueClassName="text-down" />
+          </StatStrip>
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <StatCard label="Longest winning streak" value={winStreak.longest} />
-          <StatCard label="Top-3 trades % of profit" value={grossProfit > 0 ? `${top3ProfitPct}%` : '—'} />
-          <StatCard label="Best day % of total profit" value={totalPnl > 0 ? `${bestDayProfitPct}%` : '—'} />
-          <StatCard
-            label="Profitable days"
-            value={profitableDaysPct == null ? '—' : `${profitableDaysPct}%`}
-          />
-        </div>
+          <StatStrip bordered>
+            <StatCard label="Longest winning streak" value={winStreak.longest} />
+            <StatCard label="Top-3 trades % of profit" value={grossProfit > 0 ? `${top3ProfitPct}%` : '—'} />
+            <StatCard
+              label="Best day % of total profit"
+              value={totalPnl > 0 ? `${bestDayProfitPct}%` : '—'}
+            />
+            <StatCard
+              label="Profitable days"
+              value={profitableDaysPct == null ? '—' : `${profitableDaysPct}%`}
+            />
+          </StatStrip>
 
-        <div className="grid grid-cols-2 gap-3">
-          <StatCard
-            label="Best trade"
-            value={bestTrade ? inr(tradePnl(bestTrade)) : '—'}
-            valueClassName="text-up"
-            sub={bestTrade ? `${bestTrade.symbol} · ${formatDate(bestTrade.traded_at)}` : undefined}
-          />
-          <StatCard
-            label="Worst trade"
-            value={worstTrade ? inr(tradePnl(worstTrade)) : '—'}
-            valueClassName="text-down"
-            sub={worstTrade ? `${worstTrade.symbol} · ${formatDate(worstTrade.traded_at)}` : undefined}
-          />
-        </div>
+          <StatStrip bordered>
+            <StatCard
+              label="Best trade"
+              value={bestTrade ? inr(tradePnl(bestTrade)) : '—'}
+              valueClassName="text-up"
+              sub={bestTrade ? `${bestTrade.symbol} · ${formatDate(bestTrade.traded_at)}` : undefined}
+            />
+            <StatCard
+              label="Worst trade"
+              value={worstTrade ? inr(tradePnl(worstTrade)) : '—'}
+              valueClassName="text-down"
+              sub={worstTrade ? `${worstTrade.symbol} · ${formatDate(worstTrade.traded_at)}` : undefined}
+            />
+          </StatStrip>
 
-        <div className="rounded-xl border bg-card p-4">
-          <p className="mb-2 text-sm font-medium">Underwater (drawdown from peak)</p>
-          <MiniChart data={underwaterChartData} kind="histogram" />
-        </div>
+          <Panel>
+            <PanelHeader>
+              <PanelTitle>Underwater (drawdown from peak)</PanelTitle>
+            </PanelHeader>
+            <PanelBody className="p-3">
+              <MiniChart data={underwaterChartData} kind="histogram" />
+            </PanelBody>
+          </Panel>
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <ConcentrationCard title="Profit concentration" trades={winningTrades} tone="up" />
-          <RSpreadCard rows={rSpreadRows} />
-        </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <ConcentrationCard title="Profit concentration" trades={winningTrades} tone="up" />
+            <RSpreadCard rows={rSpreadRows} />
+          </div>
 
-        <div className="rounded-xl border bg-card p-4">
-          <p className="mb-3 text-sm font-medium">Monthly P&L</p>
-          <MonthlyReturnsGrid monthlyByMonth={monthlyByMonth} />
-        </div>
-      </div>
+          <Panel>
+            <PanelHeader>
+              <PanelTitle>Monthly P&L</PanelTitle>
+            </PanelHeader>
+            <PanelBody className="p-3">
+              <MonthlyReturnsGrid monthlyByMonth={monthlyByMonth} />
+            </PanelBody>
+          </Panel>
+        </PanelBody>
+      </Panel>
 
-      <div className="space-y-3 rounded-xl border bg-card p-4">
-        <div>
-          <h3 className="text-sm font-semibold">Loss analysis</h3>
-          <p className="text-xs text-muted-foreground">
+      <Panel>
+        <PanelHeader>
+          <PanelTitle>Loss analysis</PanelTitle>
+        </PanelHeader>
+        <PanelBody className="space-y-3 p-3">
+          <p className="text-2xs text-muted-foreground">
             Where losses actually concentrate - fixing what's here does more for the bottom line than chasing
             more winners.
           </p>
-        </div>
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <StatCard label="Losing trades" value={losingTrades.length} />
-          <StatCard label="Avg loss" value={inr(avgLoss)} valueClassName="text-down" />
-          <StatCard label="Longest losing streak" value={streaks.longest} />
-          <StatCard
-            label="Current streak"
-            value={streaks.current}
-            valueClassName={streaks.current > 0 ? 'text-down' : ''}
-          />
-        </div>
+          <StatStrip bordered>
+            <StatCard label="Losing trades" value={losingTrades.length} />
+            <StatCard label="Avg loss" value={inr(avgLoss)} valueClassName="text-down" />
+            <StatCard label="Longest losing streak" value={streaks.longest} />
+            <StatCard
+              label="Current streak"
+              value={streaks.current}
+              valueClassName={streaks.current > 0 ? 'text-down' : ''}
+            />
+          </StatStrip>
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <StatCard
-            label="Stop not honored"
-            value={lossesWithStop.length ? `${stopBreachCount}/${lossesWithStop.length}` : '—'}
-          />
-          <StatCard label="Likely revenge trades" value={revengeTrades.length} />
-          <StatCard
-            label="Loss from revenge trades"
-            value={grossLoss > 0 ? `${revengeLossPct}%` : '—'}
-            valueClassName="text-down"
-          />
-          <StatCard
-            label="Avg losing R / winning R"
-            value={avgLosingR != null && avgWinningR != null ? `${avgLosingR}R / ${avgWinningR}R` : '—'}
-            valueClassName={
-              avgLosingR != null && avgWinningR != null && Math.abs(avgLosingR) > avgWinningR
-                ? 'text-down'
-                : ''
-            }
-          />
-        </div>
+          <StatStrip bordered>
+            <StatCard
+              label="Stop not honored"
+              value={lossesWithStop.length ? `${stopBreachCount}/${lossesWithStop.length}` : '—'}
+            />
+            <StatCard label="Likely revenge trades" value={revengeTrades.length} />
+            <StatCard
+              label="Loss from revenge trades"
+              value={grossLoss > 0 ? `${revengeLossPct}%` : '—'}
+              valueClassName="text-down"
+            />
+            <StatCard
+              label="Avg losing R / winning R"
+              value={avgLosingR != null && avgWinningR != null ? `${avgLosingR}R / ${avgWinningR}R` : '—'}
+              valueClassName={
+                avgLosingR != null && avgWinningR != null && Math.abs(avgLosingR) > avgWinningR
+                  ? 'text-down'
+                  : ''
+              }
+            />
+          </StatStrip>
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          <ConcentrationCard title="Loss concentration" trades={losingTrades} tone="down" />
-          <TagLossCard losingTrades={losingTrades} />
-        </div>
-      </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <ConcentrationCard title="Loss concentration" trades={losingTrades} tone="down" />
+            <TagLossCard losingTrades={losingTrades} />
+          </div>
+        </PanelBody>
+      </Panel>
 
-      <div className="space-y-3 rounded-xl border bg-card p-4">
-        <div>
-          <h3 className="text-sm font-semibold">Risk &amp; expectancy</h3>
-          <p className="text-xs text-muted-foreground">
+      <Panel>
+        <PanelHeader>
+          <PanelTitle>Risk &amp; expectancy</PanelTitle>
+        </PanelHeader>
+        <PanelBody className="space-y-3 p-3">
+          <p className="text-2xs text-muted-foreground">
             The only forward-looking section here — everything above measures trades you already took, these
             ask what your numbers imply about the ones you haven't. Driven by your actual win rate ({winRate}
             %), payoff ({model.payoff}R) and risk per trade ({model.riskPct}%).
           </p>
-        </div>
 
-        {closed.length < 5 ? (
-          <p className="text-sm text-muted-foreground">
-            Needs at least 5 closed trades — below that the win rate and payoff are too noisy to model
-            anything useful from.
-          </p>
-        ) : (
-          <>
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <StatCard
-                label="Expectancy / trade"
-                value={`${Math.round(expectancyR(model.winRate, model.payoff) * 100) / 100}R`}
-                valueClassName={expectancyR(model.winRate, model.payoff) >= 0 ? 'text-up' : 'text-down'}
-              />
-              <StatCard
-                label="Breakeven win rate"
-                value={`${Math.round(breakevenWinRate(model.payoff) * 1000) / 10}%`}
-                sub={`you: ${winRate}%`}
-              />
-              <StatCard label="Payoff ratio" value={`${model.payoff}R`} />
-              <StatCard label="Risk / trade" value={`${model.riskPct}%`} />
-            </div>
+          {closed.length < 5 ? (
+            <p className="text-sm text-muted-foreground">
+              Needs at least 5 closed trades — below that the win rate and payoff are too noisy to model
+              anything useful from.
+            </p>
+          ) : (
+            <>
+              <StatStrip bordered>
+                <StatCard
+                  label="Expectancy / trade"
+                  value={`${Math.round(expectancyR(model.winRate, model.payoff) * 100) / 100}R`}
+                  valueClassName={expectancyR(model.winRate, model.payoff) >= 0 ? 'text-up' : 'text-down'}
+                />
+                <StatCard
+                  label="Breakeven win rate"
+                  value={`${Math.round(breakevenWinRate(model.payoff) * 1000) / 10}%`}
+                  sub={`you: ${winRate}%`}
+                />
+                <StatCard label="Payoff ratio" value={`${model.payoff}R`} />
+                <StatCard label="Risk / trade" value={`${model.riskPct}%`} />
+              </StatStrip>
 
-            <div className="grid gap-4 lg:grid-cols-2">
-              <ExpectancyGridCard winRate={model.winRate} payoff={model.payoff} />
-              <StreakSurvivalCard
-                winRate={model.winRate}
-                payoff={model.payoff}
-                riskPct={model.riskPct}
-                streakLen={model.streakLen}
-              />
-            </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <ExpectancyGridCard winRate={model.winRate} payoff={model.payoff} />
+                <StreakSurvivalCard
+                  winRate={model.winRate}
+                  payoff={model.payoff}
+                  riskPct={model.riskPct}
+                  streakLen={model.streakLen}
+                />
+              </div>
 
-            <div className="grid gap-4 lg:grid-cols-2">
-              <RiskPathsCard winRate={model.winRate} payoff={model.payoff} />
-              <AchievableWinRateCard winRate={model.winRate} payoff={model.payoff} />
-            </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <RiskPathsCard winRate={model.winRate} payoff={model.payoff} />
+                <AchievableWinRateCard winRate={model.winRate} payoff={model.payoff} />
+              </div>
 
-            <div className="grid gap-4 lg:grid-cols-2">
-              <CompoundingCard gainPct={model.gainPct} lossPct={model.lossPct} />
-              <DrawdownRiskCard winRate={model.winRate} payoff={model.payoff} />
-            </div>
-          </>
-        )}
-      </div>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <CompoundingCard gainPct={model.gainPct} lossPct={model.lossPct} />
+                <DrawdownRiskCard winRate={model.winRate} payoff={model.payoff} />
+              </div>
+            </>
+          )}
+        </PanelBody>
+      </Panel>
 
       <CalendarHeatmap dailyByDay={dailyByDay} latestDay={sortedDays.at(-1)?.[0] ?? null} />
 

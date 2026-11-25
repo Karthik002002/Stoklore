@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react'
 import type { TradeAccount } from '@/lib/types'
-import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Badge, Dialog, DialogContent, DialogHeader, DialogTitle } from '@/design-system'
 import { inr } from '@/lib/format'
 import { positionSizeCap } from '@/lib/tradeAccounts'
 import { accountHasCosts, roundTripCost } from '@/lib/tradeCosts'
@@ -66,7 +65,7 @@ export default function StrategyDialog({
         ) : (
           <div className="space-y-4">
             {account.strategy_explanation ? (
-              <div className="rounded-lg border bg-muted/40 p-3">
+              <div className="rounded-md border border-border bg-muted/40 p-3">
                 <p className="text-sm whitespace-pre-wrap">{account.strategy_explanation}</p>
               </div>
             ) : (

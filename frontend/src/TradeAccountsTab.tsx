@@ -5,9 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { PlusIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
 import { DateField, Field, SelectField, TextAreaField, TextField } from '@/components/form'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Button, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/design-system'
 import { formatDate, inr } from '@/lib/format'
 import type { z } from 'zod'
 import type { FieldError, UseFormReturn } from 'react-hook-form'
@@ -115,8 +113,8 @@ function CostFields({ form }: { form: AccountForm }) {
   )
 
   return (
-    <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/[0.04] p-3">
-      <p className="text-sm font-medium text-amber-600 dark:text-amber-400">Trading costs</p>
+    <div className="space-y-2 rounded-md border border-warning/40 bg-warning/[0.04] p-3">
+      <p className="text-sm font-medium text-warning">Trading costs</p>
       <p className="text-xs text-muted-foreground">
         Charged on both sides of every trade filed under this account. Net P&amp;L is recomputed from these
         settings each time — change a rate and your whole history re-prices.
@@ -182,12 +180,10 @@ function CostFields({ form }: { form: AccountForm }) {
         />
       </div>
 
-      <p className="border-t border-amber-500/30 pt-2 text-xs text-muted-foreground">
+      <p className="border-t border-warning/30 pt-2 text-xs text-muted-foreground">
         A round trip of {PREVIEW_QTY} shares at {inr(PREVIEW_PRICE)} costs{' '}
-        <span className="font-semibold text-amber-600 tabular-nums dark:text-amber-400">
-          {inr(preview.total)}
-        </span>{' '}
-        — {inr(preview.slippage)} slippage · {inr(preview.brokerage)} brokerage · {inr(preview.charges)}{' '}
+        <span className="font-semibold text-warning tabular-nums">{inr(preview.total)}</span> —{' '}
+        {inr(preview.slippage)} slippage · {inr(preview.brokerage)} brokerage · {inr(preview.charges)}{' '}
         charges.
       </p>
     </div>
@@ -203,8 +199,8 @@ function VolumeSpikeFields({ form }: { form: AccountForm }) {
   const lookback = Number(form.watch('vol_spike_lookback')) || 10
 
   return (
-    <div className="space-y-2 rounded-lg border border-sky-500/40 bg-sky-500/[0.04] p-3">
-      <p className="text-sm font-medium text-sky-600 dark:text-sky-400">Volume spike</p>
+    <div className="space-y-2 rounded-md border border-accent/40 bg-accent/[0.04] p-3">
+      <p className="text-sm font-medium text-accent">Volume spike</p>
       <p className="text-xs text-muted-foreground">
         Captured once per trade, from the bars before entry. Changing these re-scans nothing — trades already
         logged keep the reading (and the threshold) they were saved with.
@@ -234,10 +230,10 @@ function VolumeSpikeFields({ form }: { form: AccountForm }) {
         />
       </div>
 
-      <p className="border-t border-sky-500/30 pt-2 text-xs text-muted-foreground">
+      <p className="border-t border-accent/30 pt-2 text-xs text-muted-foreground">
         A trade is flagged when any of the {lookback} bars before entry traded at least{' '}
-        <span className="font-semibold text-sky-600 tabular-nums dark:text-sky-400">{multiple}×</span> the
-        average volume of the 20 bars before those.
+        <span className="font-semibold text-accent tabular-nums">{multiple}×</span> the average volume of the
+        20 bars before those.
       </p>
     </div>
   )
@@ -278,7 +274,7 @@ function AccountForm({
   return (
     <form
       onSubmit={form.handleSubmit((values) => save.mutate(values))}
-      className="space-y-3 rounded-xl border bg-card p-3"
+      className="space-y-3 rounded-md border border-border bg-card p-3"
     >
       <div className="grid grid-cols-2 gap-2">
         <TextField form={form} name="name" label="Account name" placeholder="e.g. Swing account" />
@@ -501,7 +497,7 @@ function AccountCard({
   })
 
   return (
-    <div className="space-y-3 rounded-xl border bg-card p-3">
+    <div className="rounded-md border border-border bg-card space-y-3 p-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-medium">{account.name}</p>

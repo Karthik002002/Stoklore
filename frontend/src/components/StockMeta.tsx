@@ -1,4 +1,4 @@
-import { Badge } from '@/components/ui/badge'
+import { Badge } from '@/design-system'
 import type { StockMasterRow } from '@/lib/types'
 
 // "What is this ticker, exactly" - shared by every symbol search in the app (SymbolCombobox,
@@ -27,24 +27,24 @@ export function StockBadges({
   return (
     <span className={`flex shrink-0 items-center gap-1 ${className}`}>
       {showExchange && (
-        <Badge variant="outline" className="px-1 py-0 text-[10px] font-normal text-muted-foreground">
+        <Badge variant="outline" className="px-1 py-0 text-[11px] font-normal text-muted-foreground">
           NSE
         </Badge>
       )}
       {sme && (
         <Badge
           variant="outline"
-          className="border-amber-500/60 px-1 py-0 text-[10px] text-amber-600 dark:text-amber-400"
+          className="border-warning/60 px-1 py-0 text-[11px] text-warning"
         >
           SME
         </Badge>
       )}
       {series && (
-        <Badge variant="outline" className="px-1 py-0 text-[10px] font-normal">
+        <Badge variant="outline" className="px-1 py-0 text-[11px] font-normal">
           {series}
         </Badge>
       )}
-      {lot && <span className="text-[10px] text-muted-foreground">lot {lot}</span>}
+      {lot && <span className="text-[11px] text-muted-foreground">lot {lot}</span>}
     </span>
   )
 }
@@ -57,5 +57,5 @@ export function StockSubline({ stock }: { stock?: Partial<StockMasterRow> | null
     stock?.board === 'SME' && stock?.market_lot ? `lot ${stock.market_lot}` : null,
   ].filter(Boolean)
   if (!bits.length) return null
-  return <span className="truncate text-[10px] text-muted-foreground">{bits.join(' · ')}</span>
+  return <span className="truncate text-[11px] text-muted-foreground">{bits.join(' · ')}</span>
 }

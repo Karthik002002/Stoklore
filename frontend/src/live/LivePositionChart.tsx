@@ -6,8 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
 import { ArrowLeftIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
+import { Button, Spinner } from '@/design-system'
 import { fmt, inr } from '@/lib/format'
 import { useChartAlerts } from '@/lib/useChartAlerts'
 import { usePageTitle } from '@/lib/usePageTitle'
@@ -70,7 +69,7 @@ function Metric({
 }) {
   return (
     <div>
-      <p className="text-[11px] tracking-wide text-muted-foreground uppercase">{label}</p>
+      <p className="text-[12px] tracking-wide text-muted-foreground uppercase">{label}</p>
       <p
         className={`text-sm font-semibold tabular-nums ${
           tone === 'up' ? 'text-up' : tone === 'down' ? 'text-down' : ''
@@ -78,7 +77,7 @@ function Metric({
       >
         {value}
       </p>
-      {sub && <p className="text-[11px] text-muted-foreground tabular-nums">{sub}</p>}
+      {sub && <p className="text-[12px] text-muted-foreground tabular-nums">{sub}</p>}
     </div>
   )
 }
@@ -235,7 +234,7 @@ export default function LivePositionChart() {
       </div>
 
       {position && (
-        <div className="grid grid-cols-2 gap-3 rounded-xl border bg-card p-3 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="rounded-md border border-border bg-card grid grid-cols-2 gap-3 p-3 sm:grid-cols-3 lg:grid-cols-6">
           <Metric label="Average" value={inr(entry)} />
           <Metric
             label="Last"
@@ -261,7 +260,7 @@ export default function LivePositionChart() {
         </div>
       )}
 
-      <div className="relative min-h-0 flex-1 overflow-hidden rounded-xl border bg-card">
+      <div className="rounded-md border border-border bg-card relative min-h-0 flex-1 overflow-hidden">
         {chartPending || isPending ? (
           <p className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground">
             <Spinner className="size-4" /> Loading {symbol}…

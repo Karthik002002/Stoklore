@@ -8,12 +8,23 @@ import { Link, useNavigate, useParams } from '@tanstack/react-router'
 import { ArrowLeftIcon, PlayIcon, ScanEyeIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
 import { ChartButton, PRIORITY, resumeScan, startScan } from '@/components/ChartModal'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Badge,
+  Button,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/design-system'
 import { formatDateTime, inr } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { cn } from '@/lib/utils'
@@ -33,7 +44,11 @@ function ScanWatchlist() {
   const [list, setList] = useState<string | null>(null)
   const chosen = lists.find(([n]) => n === list) ?? lists[0]
   if (!lists.length)
-    return <p className="text-sm text-muted-foreground">No watchlists yet - add stocks to one from the home page.</p>
+    return (
+      <p className="text-sm text-muted-foreground">
+        No watchlists yet - add stocks to one from the home page.
+      </p>
+    )
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Select value={chosen?.[0] ?? ''} onValueChange={(v) => setList(v as string)}>
@@ -48,11 +63,16 @@ function ScanWatchlist() {
           ))}
         </SelectContent>
       </Select>
-      <Button size="sm" disabled={!chosen} onClick={() => chosen && startScan(`${chosen[0]} · ${today()}`, `watchlist:${chosen[0]}`, chosen[1])}>
+      <Button
+        size="sm"
+        disabled={!chosen}
+        onClick={() => chosen && startScan(`${chosen[0]} · ${today()}`, `watchlist:${chosen[0]}`, chosen[1])}
+      >
         <PlayIcon /> Scan {chosen?.[1].length ?? 0} stocks
       </Button>
       <span className="text-xs text-muted-foreground">
-        Or use <PlayIcon className="inline size-3" /> Scan on any stock table to scan exactly the rows it shows.
+        Or use <PlayIcon className="inline size-3" /> Scan on any stock table to scan exactly the rows it
+        shows.
       </span>
     </div>
   )
@@ -74,15 +94,15 @@ export function ScansList() {
           <ScanEyeIcon className="size-4" /> Scans
         </h1>
         <p className="text-sm text-muted-foreground">
-          A list of stocks, one chart at a time: <kbd>→</kbd> or the timer flips, <kbd>1</kbd>/<kbd>2</kbd>/<kbd>3</kbd> marks
-          A/B/C, <kbd>N</kbd> adds a note. Marks are saved as you go.
+          A list of stocks, one chart at a time: <kbd>→</kbd> or the timer flips, <kbd>1</kbd>/<kbd>2</kbd>/
+          <kbd>3</kbd> marks A/B/C, <kbd>N</kbd> adds a note. Marks are saved as you go.
         </p>
       </div>
-      <section className="space-y-2 rounded-xl border bg-card p-4">
+      <section className="space-y-2 rounded-md border border-border bg-card p-4">
         <p className="text-sm font-medium">Scan a watchlist</p>
         <ScanWatchlist />
       </section>
-      <div className="overflow-x-auto rounded-xl border">
+      <div className="overflow-x-auto rounded-md border border-border">
         <Table>
           <TableHeader>
             <TableRow>
@@ -111,16 +131,26 @@ export function ScansList() {
               scans.map((s) => (
                 <TableRow key={s.id}>
                   <TableCell>
-                    <Link to="/scans/$scanId" params={{ scanId: String(s.id) }} className="font-medium hover:underline">
+                    <Link
+                      to="/scans/$scanId"
+                      params={{ scanId: String(s.id) }}
+                      className="font-medium hover:underline"
+                    >
                       {s.name}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{s.source.replace(/^watchlist:/, 'watchlist ')}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {s.source.replace(/^watchlist:/, 'watchlist ')}
+                  </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {s.finished_at ? <Badge variant="secondary">done · {s.symbols.length}</Badge> : `${s.position + 1} / ${s.symbols.length}`}
+                    {s.finished_at ? (
+                      <Badge variant="secondary">done · {s.symbols.length}</Badge>
+                    ) : (
+                      `${s.position + 1} / ${s.symbols.length}`
+                    )}
                   </TableCell>
                   <TableCell>
-                    <span className="flex gap-1 font-mono text-[11px]">
+                    <span className="flex gap-1 font-mono text-[12px]">
                       {(['A', 'B', 'C'] as const).map((p) => (
                         <span key={p} className={cn('rounded border px-1', PRIORITY[p].className)}>
                           {p} {s[p.toLowerCase() as 'a' | 'b' | 'c']}
@@ -128,12 +158,19 @@ export function ScansList() {
                       ))}
                     </span>
                   </TableCell>
-                  <TableCell className="text-xs text-muted-foreground">{formatDateTime(s.created_at)}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {formatDateTime(s.created_at)}
+                  </TableCell>
                   <TableCell className="text-right whitespace-nowrap">
                     <Button size="sm" variant="ghost" onClick={() => resumeScan(s.id)}>
                       <PlayIcon /> {s.finished_at ? 'Scan again' : 'Resume'}
                     </Button>
-                    <Button size="icon-sm" variant="ghost" aria-label="Delete scan" onClick={() => remove.mutate(s.id)}>
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label="Delete scan"
+                      onClick={() => remove.mutate(s.id)}
+                    >
                       <Trash2Icon />
                     </Button>
                   </TableCell>
@@ -149,11 +186,16 @@ export function ScansList() {
 
 function MarkCard({ m, onOpen }: { m: ScanMark; onOpen: () => void }) {
   return (
-    <div className="flex items-start gap-2 rounded-lg border p-2 text-sm">
+    <div className="flex items-start gap-2 rounded-md border border-border p-2 text-sm">
       <ChartButton symbol={m.symbol} className="mt-0.5" />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <button type="button" onClick={onOpen} className="font-semibold hover:underline" title="Open in the scan">
+          <button
+            type="button"
+            onClick={onOpen}
+            className="font-semibold hover:underline"
+            title="Open in the scan"
+          >
             {m.symbol}
           </button>
           {m.price != null && <span className="text-xs text-muted-foreground">at {inr(m.price)}</span>}
@@ -169,7 +211,11 @@ export function ScanReview() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const id = Number(scanId)
-  const { data: scan, error } = useQuery({ queryKey: ['scan', id], queryFn: () => getScan(id), refetchOnWindowFocus: true })
+  const { data: scan, error } = useQuery({
+    queryKey: ['scan', id],
+    queryFn: () => getScan(id),
+    refetchOnWindowFocus: true,
+  })
   usePageTitle(scan ? `Scan · ${scan.name}` : 'Scan')
   const [save, setSave] = useState<ScanPriority[]>(['A', 'B'])
   const [listName, setListName] = useState<string | null>(null)
@@ -191,7 +237,10 @@ export function ScanReview() {
   })
 
   const back = (
-    <Link to="/scans" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+    <Link
+      to="/scans"
+      className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+    >
       <ArrowLeftIcon className="size-4" /> Scans
     </Link>
   )
@@ -218,7 +267,9 @@ export function ScanReview() {
           <p className="text-xs text-muted-foreground">
             {scan.source.replace(/^watchlist:/, 'watchlist ')} · {scan.symbols.length} stocks · started{' '}
             {formatDateTime(scan.created_at)}
-            {scan.finished_at ? ` · finished ${formatDateTime(scan.finished_at)}` : ` · at ${scan.position + 1} / ${scan.symbols.length}`}
+            {scan.finished_at
+              ? ` · finished ${formatDateTime(scan.finished_at)}`
+              : ` · at ${scan.position + 1} / ${scan.symbols.length}`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -240,7 +291,7 @@ export function ScanReview() {
         </div>
       </div>
 
-      <section className="flex flex-wrap items-center gap-2 rounded-xl border bg-card p-3 text-sm">
+      <section className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-card p-3 text-sm">
         <span className="font-medium">Save to a watchlist</span>
         {(['A', 'B', 'C'] as const).map((p) => (
           <label key={p} className="flex items-center gap-1 text-xs">

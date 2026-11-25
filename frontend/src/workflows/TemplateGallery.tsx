@@ -9,11 +9,16 @@ import {
   NewspaperIcon,
   SparklesIcon,
 } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Spinner } from '@/components/ui/spinner'
+import {
+  Badge,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Spinner,
+} from '@/design-system'
 import { createFromScreen, createFromTemplate, getWorkflowTemplates } from '@/services/api'
 import type { WorkflowTemplate } from '@/services/api'
 
@@ -104,7 +109,7 @@ export default function TemplateGallery({
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
           <form
-            className="rounded-xl border border-dashed bg-muted/30 p-3"
+            className="rounded-md border border-dashed border-input bg-muted/30 p-3"
             onSubmit={(e) => {
               e.preventDefault()
               if (screenUrl.trim()) fromScreen.mutate()
@@ -114,7 +119,7 @@ export default function TemplateGallery({
               <SparklesIcon className="size-4 text-primary" />
               Generate from a screener.in screen
             </p>
-            <p className="mb-2 text-[11px] text-muted-foreground">
+            <p className="mb-2 text-[12px] text-muted-foreground">
               Paste any public screen. It runs daily, keeps what it matched, and only files a summary when
               something matches.
             </p>
@@ -174,7 +179,7 @@ export default function TemplateGallery({
                     type="button"
                     disabled={clone.isPending}
                     onClick={() => clone.mutate(t.id)}
-                    className="flex h-full flex-col rounded-xl border bg-card p-3 text-left transition-colors hover:border-primary hover:bg-muted/40 disabled:opacity-60"
+                    className="flex h-full flex-col rounded-md border border-border bg-card p-3 text-left transition-colors hover:border-primary hover:bg-muted/40 disabled:opacity-60"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-sm font-medium">{t.name}</p>
@@ -182,10 +187,10 @@ export default function TemplateGallery({
                         {t.category}
                       </Badge>
                     </div>
-                    <p className="mt-1 line-clamp-3 flex-1 text-[11px] text-muted-foreground">
+                    <p className="mt-1 line-clamp-3 flex-1 text-[12px] text-muted-foreground">
                       {t.description}
                     </p>
-                    <p className="mt-2 flex items-center gap-1 text-[11px] text-primary">
+                    <p className="mt-2 flex items-center gap-1 text-[12px] text-primary">
                       <Icon className="size-3" />
                       {triggerText(t)} · {t.nodes} nodes
                     </p>

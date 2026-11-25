@@ -37,12 +37,17 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
-import { Button, buttonVariants } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
-import { Textarea } from '@/components/ui/textarea'
+  Button,
+  buttonVariants,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+  Textarea,
+} from '@/design-system'
 import { formatDuration, timeAgoShort } from '@/lib/format'
 import { useShortcut, useShortcutLabel } from '@/lib/shortcuts'
 import { useAppliedTheme } from '@/lib/theme'
@@ -88,8 +93,8 @@ const KIND_TINT: Record<string, string> = {
   trigger: 'border-primary/50 bg-primary/5',
   tool: 'border-border bg-card',
   agent: 'border-up/40 bg-up/5',
-  condition: 'border-amber-500/50 bg-amber-500/5',
-  collect: 'border-sky-500/50 bg-sky-500/5',
+  condition: 'border-warning/50 bg-warning/5',
+  collect: 'border-accent/50 bg-accent/5',
   output: 'border-down/40 bg-down/5',
 }
 
@@ -112,7 +117,7 @@ function EditorNode({ data, selected }: NodeProps<Node<NodeData>>) {
     data.kind
   return (
     <div
-      className={`w-44 rounded-xl border-2 px-3 py-2 shadow-sm transition-shadow hover:shadow-md ${KIND_TINT[data.kind]} ${
+      className={`w-44 rounded-md border-2 px-3 py-2 shadow-sm transition-shadow hover:shadow-md ${KIND_TINT[data.kind]} ${
         selected ? 'ring-2 ring-primary' : ''
       }`}
     >
@@ -120,8 +125,8 @@ function EditorNode({ data, selected }: NodeProps<Node<NodeData>>) {
         <Icon className="size-3.5 shrink-0 text-muted-foreground" />
         <span className="truncate">{data.label || data.kind}</span>
       </p>
-      <p className="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">{subtitle}</p>
-      {data.for_each && <p className="mt-0.5 truncate text-[10px] text-primary">for each {data.for_each}</p>}
+      <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{subtitle}</p>
+      {data.for_each && <p className="mt-0.5 truncate text-[11px] text-primary">for each {data.for_each}</p>}
       {/* A trigger has no input and an output has no output, so the graph can only be wired one
           sensible way round. */}
       {data.kind !== 'trigger' && <Handle type="target" position={Position.Left} className="!size-2" />}
@@ -419,7 +424,7 @@ export default function WorkflowEditor() {
               type="button"
               title={t.description}
               onClick={() => add('tool', { tool: t.name, label: t.name, args: {} })}
-              className="w-full truncate rounded-lg px-2 py-1 text-left font-mono text-[11px] hover:bg-muted"
+              className="w-full truncate rounded-lg px-2 py-1 text-left font-mono text-[12px] hover:bg-muted"
             >
               {t.name}
             </button>
@@ -463,7 +468,7 @@ export default function WorkflowEditor() {
               />
               {dirty && (
                 <span
-                  className="absolute top-1/2 right-2 size-2 -translate-y-1/2 rounded-full bg-amber-500"
+                  className="absolute top-1/2 right-2 size-2 -translate-y-1/2 rounded-full bg-warning"
                   title="Unsaved changes"
                 />
               )}
@@ -517,7 +522,7 @@ export default function WorkflowEditor() {
                   {enabled ? 'Armed — will run on its own' : 'Off — arm it to run unattended'}
                 </Button>
               )}
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[12px] text-muted-foreground">
                 Saving stores the trigger and the arm state together. A workflow runs with nobody watching, so
                 arming is the standing permission.
               </p>
@@ -531,7 +536,7 @@ export default function WorkflowEditor() {
                     to="/workflows/$workflowId/runs/$runId"
                     params={{ workflowId, runId: r.id }}
                     title={r.error ?? new Date(r.created_at).toLocaleString('en-IN')}
-                    className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-[11px] transition-colors hover:bg-muted"
+                    className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left text-[12px] transition-colors hover:bg-muted"
                   >
                     {r.status === 'running' ? (
                       <Spinner className="size-3 text-primary" />
@@ -555,7 +560,7 @@ export default function WorkflowEditor() {
                 ))}
               </Section>
             )}
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[12px] text-muted-foreground">
               Click a node to configure it. Drag between the dots to wire one into the next.
             </p>
           </>
@@ -646,7 +651,7 @@ export default function WorkflowEditor() {
                       />
                     </Field>
                   )}
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-[12px] text-muted-foreground">
                     When this doesn't hold, every node downstream is <strong>skipped</strong> — not failed.
                     The run finishes quietly and files nothing.
                   </p>
@@ -671,7 +676,7 @@ export default function WorkflowEditor() {
                       className="h-8 font-mono text-xs"
                     />
                   </Field>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-[12px] text-muted-foreground">
                     A list appends as many rows; anything else as one. Shows up under <strong>Data</strong> on
                     the workflow list.
                   </p>
@@ -690,7 +695,7 @@ export default function WorkflowEditor() {
                 </Field>
               )}
             </Section>
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[12px] text-muted-foreground">
               <code>{'{{ nodeId.field }}'}</code> reads a node you're wired to. Inside a for-each,{' '}
               <code>{'{{ item }}'}</code> is the current one.
             </p>
@@ -728,7 +733,7 @@ export default function WorkflowEditor() {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <p className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{title}</p>
+      <p className="text-[12px] font-medium tracking-wide text-muted-foreground uppercase">{title}</p>
       {children}
     </div>
   )
@@ -737,7 +742,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
-      <p className="font-mono text-[11px] text-muted-foreground">{label}</p>
+      <p className="font-mono text-[12px] text-muted-foreground">{label}</p>
       {children}
     </div>
   )

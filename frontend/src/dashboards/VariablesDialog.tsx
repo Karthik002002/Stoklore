@@ -1,9 +1,19 @@
 import { useQuery } from '@tanstack/react-query'
 import { PlusIcon, Trash2Icon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/design-system'
 import { DASHBOARD_ALL, getDashboardFields, getDashboardParams } from '@/services/api'
 import type { DashboardVariable } from '@/services/api'
 
@@ -42,7 +52,7 @@ function VariableRow({
     onChange({ ...variable, query: { ...variable.query, params: next } })
 
   return (
-    <div className="space-y-2 rounded-lg border p-3">
+    <div className="space-y-2 rounded-md border border-border p-3">
       <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
         <Input
           id={`var-name-${variable.name}`}

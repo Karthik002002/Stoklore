@@ -1,6 +1,5 @@
 import { FlameIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@/design-system'
 import { inr } from '@/lib/format'
 import type { TradeAccount } from '@/lib/types'
 
@@ -50,7 +49,7 @@ export default function LossStreakDialog({
           {/* The account's own words, if it has any. Re-reading the plan you wrote calmly is the
               cheapest available intervention, and it beats anything this dialog could invent. */}
           {account?.strategy_explanation ? (
-            <div className="rounded-lg border bg-muted/40 p-3">
+            <div className="rounded-md border border-border bg-muted/40 p-3">
               <p className="mb-1 text-xs tracking-wide text-muted-foreground uppercase">
                 What this account trades
               </p>

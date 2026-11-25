@@ -21,7 +21,7 @@ export function useHoverTip() {
       ? createPortal(
           <div
             role="tooltip"
-            className="pointer-events-none fixed z-50 max-w-64 -translate-x-1/2 -translate-y-full rounded-md border bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md"
+            className="pointer-events-none fixed z-50 max-w-64 -translate-x-1/2 -translate-y-full rounded-md border bg-popover px-2 py-1 text-[12px] text-popover-foreground shadow-md"
             style={{
               // Clamped to the window so a mark at the right edge doesn't push the tooltip off-screen.
               left: Math.min(Math.max(tip.x, 80), window.innerWidth - 80),

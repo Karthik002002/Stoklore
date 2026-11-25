@@ -10,11 +10,18 @@ import { F, Seg, TicketFooter } from '@/components/OrderTicketParts'
 import { cn } from '@/lib/utils'
 import MoveToAccount from './MoveToAccount'
 import SymbolCombobox from '@/components/SymbolCombobox'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Badge,
+  Button,
+  Input,
+  Spinner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/design-system'
 import { Controller } from 'react-hook-form'
 import { downloadXlsx } from '@/lib/exportFile'
 import { tradeSheet } from '@/lib/tradeExport'
@@ -49,7 +56,7 @@ type LegField = 'stopLosses' | 'targets'
 const ErrorText = ({ error }: { error?: { message?: string } | { root?: { message?: string } } }) => {
   const message =
     (error as { message?: string })?.message ?? (error as { root?: { message?: string } })?.root?.message
-  return message ? <p className="text-[11px] text-down">{message}</p> : null
+  return message ? <p className="text-[12px] text-down">{message}</p> : null
 }
 
 // One rung of a laddered exit. The point of the ladder is partial exits - "half at target 1, the
@@ -83,7 +90,7 @@ function LegRows({
   return (
     <div
       className={cn(
-        'rounded-lg border',
+        'rounded-md border border-border',
         fields.length > 0 && (tone === 'down' ? 'border-down/30' : 'border-up/30'),
       )}
     >
@@ -93,14 +100,14 @@ function LegRows({
         {fields.length > 0 ? (
           <span
             className={cn(
-              'text-[11px] tabular-nums',
+              'text-[12px] tabular-nums',
               covered > quantity ? 'text-down' : 'text-muted-foreground',
             )}
           >
             {covered}/{quantity || '—'} covered
           </span>
         ) : (
-          <span className="truncate text-[11px] text-muted-foreground">{empty}</span>
+          <span className="truncate text-[12px] text-muted-foreground">{empty}</span>
         )}
         <Button
           type="button"
@@ -132,7 +139,7 @@ function LegRows({
                   {pct != null && (
                     <span
                       className={cn(
-                        'pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-[11px] tabular-nums',
+                        'pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-[12px] tabular-nums',
                         tone === 'down' ? 'text-down' : 'text-up',
                       )}
                     >
@@ -442,7 +449,7 @@ export function OrderPanel({
   return (
     <form
       onSubmit={form.handleSubmit((v) => place.mutate(v))}
-      className={cn('flex flex-col gap-3', className ?? 'rounded-xl border bg-card p-4')}
+      className={cn('flex flex-col gap-3', className ?? 'rounded-md border border-border bg-card p-4')}
     >
       {/* header: what, at what price, against which wallet */}
       <div className="flex items-start justify-between gap-2">
@@ -453,8 +460,8 @@ export function OrderPanel({
             cash {f.available == null ? '—' : inr(f.available)}
           </p>
         </div>
-        <span className="flex max-w-36 shrink-0 items-center gap-1.5 truncate rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[11px] font-medium text-sky-600 dark:text-sky-400">
-          <span className="size-1.5 shrink-0 rounded-full bg-sky-500" />
+        <span className="flex max-w-36 shrink-0 items-center gap-1.5 truncate rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[12px] font-medium text-accent">
+          <span className="size-1.5 shrink-0 rounded-full bg-accent" />
           <span className="truncate">Paper · {f.account?.name ?? 'account'}</span>
         </span>
       </div>
@@ -519,7 +526,7 @@ export function OrderPanel({
             maxQty > 0 && (
               <button
                 type="button"
-                className="text-[11px] text-primary hover:underline"
+                className="text-[12px] text-primary hover:underline"
                 title="As many as the account's cash pays for at this price"
                 onClick={(e) => {
                   e.preventDefault()
@@ -638,7 +645,7 @@ function HistoryLog({ trades, accountId }: { trades: Trade[]; accountId: number 
   const accountName = accounts.find((a) => a.id === trades[0]?.account_id)?.name ?? 'paper'
   if (trades.length === 0) {
     return (
-      <p className="rounded-xl border bg-card py-12 text-center text-sm text-muted-foreground">
+      <p className="rounded-md border border-border bg-card py-12 text-center text-sm text-muted-foreground">
         No closed paper trades yet.
       </p>
     )
@@ -654,7 +661,7 @@ function HistoryLog({ trades, accountId }: { trades: Trade[]; accountId: number 
           <FileSpreadsheetIcon className="size-4" /> Excel
         </Button>
       </div>
-      <div className="overflow-x-auto rounded-xl border bg-card">
+      <div className="rounded-md border border-border bg-card overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">

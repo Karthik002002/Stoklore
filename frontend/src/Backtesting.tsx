@@ -10,7 +10,7 @@ export default function Backtesting() {
 }
 
 // import { useNavigate, useSearch } from '@tanstack/react-router'
-// import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
+// import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/design-system'
 // import { usePageTitle } from '@/lib/usePageTitle'
 // import AutoBacktesting from './AutoBacktesting'
 // import ManualBacktesting from './ManualBacktesting'

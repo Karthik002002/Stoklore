@@ -2,8 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { XIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
+import { Button, Spinner } from '@/design-system'
 import { drillPanel } from '@/services/api'
 import type { DashboardPanel } from '@/services/api'
 import { formatSlot } from '@/workflows/status'
@@ -19,7 +18,7 @@ function RowLinks({ row, workflowId }: { row: Record<string, unknown>; workflowI
   const wid = typeof row.workflow_id === 'string' ? row.workflow_id : workflowId
   const run = typeof row.run_id === 'string' ? row.run_id : undefined
   const symbol = typeof row.symbol === 'string' && /^[A-Z0-9&-]+$/.test(row.symbol) ? row.symbol : undefined
-  const link = 'text-sky-500 hover:underline'
+  const link = 'text-accent hover:underline'
   return (
     <span className="flex gap-2" onClick={(e) => e.stopPropagation()}>
       {wid && run && (
@@ -93,7 +92,7 @@ export default function DrillDrawer({
       <header className="flex items-start gap-2 border-b px-4 py-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{panel.title}</p>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             {what}
             {data && !row && ` · ${data.total} row${data.total === 1 ? '' : 's'}`}
           </p>
@@ -110,7 +109,7 @@ export default function DrillDrawer({
                 <dt className="text-muted-foreground">{k}</dt>
                 <dd className="break-all">
                   {v != null && typeof v === 'object' ? (
-                    <pre className="font-mono text-[11px] whitespace-pre-wrap">
+                    <pre className="font-mono text-[12px] whitespace-pre-wrap">
                       {JSON.stringify(v, null, 2)}
                     </pre>
                   ) : (

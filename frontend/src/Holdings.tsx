@@ -1,47 +1,43 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { RefreshCwIcon, TrendingDownIcon, TrendingUpIcon } from 'lucide-react'
+import { RefreshCwIcon, WalletIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import AllocationDonut from '@/components/AllocationDonut'
-import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tabs, TabsIndicator, TabsList, TabsTab } from '@/components/ui/tabs'
+import {
+  Button,
+  Change,
+  EmptyState,
+  Panel,
+  PanelHeader,
+  PanelTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+  Stat,
+  StatStrip,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tabs,
+  TabsIndicator,
+  TabsList,
+  TabsTab,
+} from '@/design-system'
 import LiveOrderTicket from '@/live/LiveOrderTicket'
 import { LiveOrdersTable, LivePositionsTable, LiveStateBar } from '@/live/LiveTrading'
 import type { HoldingsView } from '@/router'
 import type { Broker } from '@/BrokerLogo'
 import { BrokerLogo, brokerLabel } from '@/BrokerLogo'
-import { fmt, inr } from '@/lib/format'
+import { inr } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { getHoldings, setActiveBroker } from '@/services/api'
-
-function StatCard({ label, value, sub }: { label: string; value: React.ReactNode; sub?: React.ReactNode }) {
-  return (
-    <div className="rounded-xl border bg-card p-4">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="mt-1 text-xl font-semibold tabular-nums">{value}</p>
-      {sub}
-    </div>
-  )
-}
-
-function ChangeLine({ pct }: { pct: number | null }) {
-  if (pct == null) return null
-  const up = pct >= 0
-  const Icon = up ? TrendingUpIcon : TrendingDownIcon
-  return (
-    <span
-      className={`inline-flex items-center gap-1 text-sm font-medium tabular-nums ${up ? 'text-up' : 'text-down'}`}
-    >
-      <Icon className="size-3.5" />
-      {up ? '+' : ''}
-      {fmt(pct)}%
-    </span>
-  )
-}
 
 // The active broker lives in the URL (?broker=dhan) - shareable/bookmarkable, and survives a
 // refresh without a round trip to read it back from settings first. Still persisted server-side
@@ -84,7 +80,10 @@ export default function Holdings() {
   // Positions / Orders / Trade are Dhan's live account - Kite only ever shows holdings here.
   const view: HoldingsView = broker === 'dhan' ? (viewParam ?? 'holdings') : 'holdings'
   const setView = (next: string) =>
-    navigate({ search: (prev) => ({ ...prev, view: next === 'holdings' ? undefined : (next as HoldingsView) }), replace: true })
+    navigate({
+      search: (prev) => ({ ...prev, view: next === 'holdings' ? undefined : (next as HoldingsView) }),
+      replace: true,
+    })
   const navigate = useNavigate({ from: '/holdings' })
   const queryClient = useQueryClient()
   const [reloading, setReloading] = useState(false)
@@ -132,7 +131,7 @@ export default function Holdings() {
   const winners = holdings.filter((h) => (h.ltp ?? h.avg_price ?? 0) >= (h.avg_price ?? 0)).length
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       <div className="flex items-center justify-between">
         {broker === 'dhan' ? (
           <Tabs value={view} onValueChange={setView}>
@@ -145,13 +144,13 @@ export default function Holdings() {
             </TabsList>
           </Tabs>
         ) : (
-          <h2 className="text-sm font-medium text-muted-foreground">Holdings</h2>
+          <h2 className="text-label font-semibold text-muted-foreground">Holdings</h2>
         )}
         <div className="flex items-center gap-2">
           <BrokerSelect broker={broker} onChange={setBroker} />
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icon-xs"
             aria-label="Reload holdings"
             onClick={reload}
             disabled={reloading}
@@ -162,18 +161,26 @@ export default function Holdings() {
       </div>
 
       {view !== 'holdings' && (
-        <div className="space-y-4">
+        <div className="space-y-2">
           <LiveStateBar />
           {view === 'positions' && <LivePositionsTable />}
           {view === 'orders' && <LiveOrdersTable />}
           {view === 'trade' && (
-            <div className="grid gap-4 lg:grid-cols-[22rem_1fr]">
-              <LiveOrderTicket className="h-fit rounded-xl border bg-card p-3" />
+            <div className="grid gap-2 lg:grid-cols-[22rem_1fr]">
+              <LiveOrderTicket className="h-fit rounded-md border border-border bg-card p-3" />
               <div className="min-w-0 space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">Working orders</p>
-                <LiveOrdersTable openOnly />
-                <p className="pt-2 text-xs font-medium text-muted-foreground">Open positions</p>
-                <LivePositionsTable />
+                <Panel>
+                  <PanelHeader>
+                    <PanelTitle>Working orders</PanelTitle>
+                  </PanelHeader>
+                  <LiveOrdersTable openOnly />
+                </Panel>
+                <Panel>
+                  <PanelHeader>
+                    <PanelTitle>Open positions</PanelTitle>
+                  </PanelHeader>
+                  <LivePositionsTable />
+                </Panel>
               </div>
             </div>
           )}
@@ -181,16 +188,21 @@ export default function Holdings() {
       )}
 
       {view === 'holdings' && error && (
-        <div className="flex flex-col items-center gap-3 py-24 text-center text-muted-foreground">
-          <p>{error.message}</p>
+        <EmptyState
+          bordered
+          icon={WalletIcon}
+          title="Can't load holdings"
+          description={error.message}
+          className="py-16"
+        >
           <Button
             size="sm"
             variant="outline"
             onClick={() => navigate({ to: '/settings', search: { tab: 'broker', broker } })}
           >
-            Configure
+            Configure broker
           </Button>
-        </div>
+        </EmptyState>
       )}
 
       {view === 'holdings' && !error && !data && (
@@ -201,27 +213,37 @@ export default function Holdings() {
 
       {view === 'holdings' && !error && data && (
         <>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-            <StatCard label="Available balance" value={inr(data.available_balance)} />
-            <StatCard label="Invested value" value={inr(investedValue)} />
-            <StatCard label="Current value" value={inr(currentValue)} />
-            <StatCard label="P&L" value={inr(pnl)} sub={<ChangeLine pct={pnlPct} />} />
-            <StatCard
+          <StatStrip bordered>
+            <Stat label="Available balance" value={inr(data.available_balance)} />
+            <Stat label="Invested value" value={inr(investedValue)} />
+            <Stat label="Current value" value={inr(currentValue)} />
+            <Stat
+              label="P&L"
+              value={inr(pnl)}
+              tone={pnl >= 0 ? 'up' : 'down'}
+              delta={<Change value={pnlPct} />}
+            />
+            <Stat
               label="Positions"
               value={holdings.length}
-              sub={
+              delta={
                 holdings.length > 0 && (
-                  <p className="mt-0.5 text-xs text-muted-foreground">
+                  <>
                     <span className="text-up">{winners} up</span> ·{' '}
                     <span className="text-down">{holdings.length - winners} down</span>
-                  </p>
+                  </>
                 )
               }
             />
-          </div>
+          </StatStrip>
 
           {holdings.length === 0 && (
-            <p className="py-24 text-center text-muted-foreground">No holdings found for this broker.</p>
+            <EmptyState
+              bordered
+              icon={WalletIcon}
+              title="No holdings"
+              description="Nothing held with this broker yet."
+            />
           )}
 
           {holdings.length > 0 && (
@@ -235,7 +257,12 @@ export default function Holdings() {
           )}
 
           {holdings.length > 0 && (
-            <div className="overflow-hidden rounded-xl border bg-card">
+            <Panel>
+              <PanelHeader>
+                <PanelTitle hint={`${holdings.length} stocks · click a row for its page`}>
+                  Holdings
+                </PanelTitle>
+              </PanelHeader>
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
@@ -273,20 +300,18 @@ export default function Holdings() {
                         <TableCell className="text-right tabular-nums">{inr(h.ltp)}</TableCell>
                         <TableCell className="text-right tabular-nums">{inr(invested)}</TableCell>
                         <TableCell className="text-right tabular-nums">{inr(current)}</TableCell>
-                        <TableCell
-                          className={`text-right tabular-nums ${rowPnl >= 0 ? 'text-up' : 'text-down'}`}
-                        >
+                        <TableCell className={`text-right ${rowPnl >= 0 ? 'text-up' : 'text-down'}`}>
                           {inr(rowPnl)}
                         </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          <ChangeLine pct={rowPnlPct} />
+                        <TableCell className="text-right">
+                          <Change value={rowPnlPct} variant="pill" />
                         </TableCell>
                       </TableRow>
                     )
                   })}
                 </TableBody>
               </Table>
-            </div>
+            </Panel>
           )}
         </>
       )}

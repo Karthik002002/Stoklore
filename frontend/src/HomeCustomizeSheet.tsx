@@ -1,6 +1,5 @@
 import { LayoutDashboardIcon, MoveIcon, RotateCcwIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import { Button, Dialog, DialogContent, DialogDescription, DialogTitle } from '@/design-system'
 import { HOME_PANELS, useHomeLayout } from '@/lib/homeLayout'
 import { cn } from '@/lib/utils'
 
@@ -75,7 +74,7 @@ export default function HomeCustomizeSheet({
         </p>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
-          <p className="px-2 pb-1.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+          <p className="px-2 pb-1.5 text-[12px] font-medium tracking-wide text-muted-foreground uppercase">
             Panels
           </p>
           {HOME_PANELS.map((p) => {
@@ -90,7 +89,7 @@ export default function HomeCustomizeSheet({
                     {p.label}
                     {!p.layout && (
                       <span
-                        className="rounded border px-1 text-[10px] font-normal text-muted-foreground"
+                        className="rounded border px-1 text-[11px] font-normal text-muted-foreground"
                         title="A full-width strip outside the grid - it can be shown or hidden, not moved"
                       >
                         strip

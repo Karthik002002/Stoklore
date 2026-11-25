@@ -4,10 +4,17 @@ import SurveillanceBadge from '@/components/SurveillanceBadge'
 import { Link } from '@tanstack/react-router'
 import { AlertTriangleIcon, OctagonXIcon, RefreshCwIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Badge,
+  Button,
+  Spinner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/design-system'
 import { inr } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
 import LiveOrderTicket from './LiveOrderTicket'
@@ -69,7 +76,7 @@ function StateBar({
 
   return (
     <div
-      className={`flex flex-wrap items-center gap-2 rounded-xl border p-3 ${
+      className={`flex flex-wrap items-center gap-2 rounded-md border border-border p-3 ${
         blocked ? 'border-dashed' : 'border-primary/40 bg-primary/5'
       }`}
     >
@@ -187,7 +194,7 @@ export function LiveStateBar() {
         onToggle={(enabled) => toggle.mutate(enabled)}
       />
       {(status?.unconfirmed?.length ?? 0) > 0 && status && (
-        <div className="space-y-1.5 rounded-xl border border-destructive/50 bg-destructive/5 p-3">
+        <div className="space-y-1.5 rounded-md border border-destructive/50 bg-destructive/5 p-3">
           <p className="flex items-center gap-1.5 text-sm font-medium text-destructive">
             <AlertTriangleIcon className="size-4" />
             {status.unconfirmed.length} order
@@ -224,7 +231,7 @@ export function LivePositionsTable() {
   const close = useLiveAction(closeLivePosition)
   const open = positions.filter((p) => p.net_qty)
   return (
-    <div className="overflow-x-auto rounded-xl border">
+    <div className="overflow-x-auto rounded-md border border-border">
       <Table>
         <TableHeader>
           <TableRow>
@@ -301,7 +308,7 @@ export function LiveOrdersTable({ openOnly = false }: { openOnly?: boolean }) {
   )
   const orders = openOnly ? all.filter((o) => OPEN_STATUSES.includes(o.status)) : all
   return (
-    <div className="overflow-x-auto rounded-xl border">
+    <div className="overflow-x-auto rounded-md border border-border">
       <Table>
         <TableHeader>
           <TableRow>
@@ -400,7 +407,7 @@ export default function LiveTrading() {
 
       <LiveStateBar />
       <div className="grid gap-4 lg:grid-cols-[22rem_1fr]">
-        <LiveOrderTicket className="h-fit rounded-xl border bg-card p-3" />
+        <LiveOrderTicket className="h-fit rounded-md border border-border bg-card p-3" />
         <div className="min-w-0 space-y-4">
           <LivePositionsTable />
           <LiveOrdersTable />

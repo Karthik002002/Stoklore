@@ -1,9 +1,19 @@
 import { useMemo, useState } from 'react'
 import { ChevronLeftIcon, ChevronRightIcon, SearchIcon } from 'lucide-react'
 import MdActions from '@/components/MdActions'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Button,
+  Input,
+  Panel as DsPanel,
+  PanelBody,
+  PanelHeader,
+  PanelTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/design-system'
 import type { Trade } from '@/lib/types'
 import { mdTable } from '@/lib/exportFile'
 import { fmt, inr } from '@/lib/format'
@@ -38,8 +48,9 @@ const PERIODS = { week: { label: 'Week' }, month: { label: 'Month' } }
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const WEEKDAY_ORDER = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
-const UP = '#22c55e'
-const DOWN = '#ef4444'
+// SVG fills and DOM backgrounds take CSS variables, so these follow the theme.
+const UP = 'var(--up)'
+const DOWN = 'var(--down)'
 const MAX_ROWS = 15
 
 const formatValue = (v: number | string | null | undefined, format?: string) => {
@@ -90,6 +101,7 @@ function Picker({
   )
 }
 
+/** A titled section: the design system's panel, with this page's title / hint / controls props. */
 function Panel({
   title,
   hint,
@@ -104,16 +116,17 @@ function Panel({
   className?: string
 }) {
   return (
-    <div className={`rounded-xl border bg-card p-4 ${className}`}>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <p className="text-sm font-medium">{title}</p>
-          {hint && <p className="mt-0.5 text-xs text-muted-foreground">{hint}</p>}
-        </div>
-        {controls && <div className="flex items-center gap-2">{controls}</div>}
-      </div>
-      {children}
-    </div>
+    <DsPanel className={className}>
+      <PanelHeader>
+        <PanelTitle>{title}</PanelTitle>
+        <span className="flex-1" />
+        {controls && <div className="flex items-center gap-1.5">{controls}</div>}
+      </PanelHeader>
+      <PanelBody className="p-3">
+        {hint && <p className="mb-2 text-2xs text-muted-foreground">{hint}</p>}
+        {children}
+      </PanelBody>
+    </DsPanel>
   )
 }
 
@@ -287,13 +300,13 @@ function DistributionPanel({ trades }: { trades: Trade[] }) {
         <div className="flex h-44 items-end gap-1">
           {bins.map((b) => (
             <div key={b.from} className="flex flex-1 flex-col items-center justify-end gap-1">
-              <span className="text-[10px] tabular-nums text-muted-foreground">{b.count || ''}</span>
+              <span className="text-[11px] tabular-nums text-muted-foreground">{b.count || ''}</span>
               <div
                 className={`w-full rounded-t ${(b.from ?? 0) < 0 ? 'bg-down' : 'bg-up'}`}
                 style={{ height: `${(b.count / maxCount) * 100}%`, minHeight: b.count ? '2px' : '0' }}
                 title={`${formatValue(b.from, format)} to ${formatValue(b.to, format)}: ${b.count} trades`}
               />
-              <span className="w-full truncate text-center text-[9px] text-muted-foreground">
+              <span className="w-full truncate text-center text-[10px] text-muted-foreground">
                 {formatValue(b.from, format)}
               </span>
             </div>
@@ -358,10 +371,10 @@ function LineChart({
           />
         ))}
       </svg>
-      <span className="absolute top-0 right-0 text-[10px] tabular-nums text-muted-foreground">
+      <span className="absolute top-0 right-0 text-[11px] tabular-nums text-muted-foreground">
         {formatValue(max, format)}
       </span>
-      <span className="absolute right-0 bottom-0 text-[10px] tabular-nums text-muted-foreground">
+      <span className="absolute right-0 bottom-0 text-[11px] tabular-nums text-muted-foreground">
         {formatValue(min, format)}
       </span>
     </div>
@@ -383,7 +396,7 @@ function CumulativePanel({ trades }: { trades: Trade[] }) {
         series={[{ label: 'cumulative', values: points.map((p) => p.value), color: UP }]}
         format={METRICS[metric].format}
       />
-      <p className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+      <p className="mt-1 flex justify-between text-[11px] text-muted-foreground">
         <span>{points[0]?.label}</span>
         <span>{points.at(-1)?.label}</span>
       </p>
@@ -405,11 +418,16 @@ function TrendPanel({ trades }: { trades: Trade[] }) {
       <LineChart
         series={[
           { label: 'per trade', values: points.map((p) => p.value), color: UP },
-          { label: 'moving avg', values: movingAverage.map((p) => p.value), color: '#9ca3af', dashed: true },
+          {
+            label: 'moving avg',
+            values: movingAverage.map((p) => p.value),
+            color: 'var(--muted-foreground)',
+            dashed: true,
+          },
         ]}
         format={TREND_BASES[basis].format}
       />
-      <p className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+      <p className="mt-1 flex justify-between text-[11px] text-muted-foreground">
         <span>Trade 1</span>
         <span>Trade {points.length}</span>
       </p>
@@ -556,10 +574,10 @@ function ComparePanel({ trades }: { trades: Trade[] }) {
               />
             ))}
           </svg>
-          <span className="absolute top-0 left-0 text-[10px] text-muted-foreground">
+          <span className="absolute top-0 left-0 text-[11px] text-muted-foreground">
             {TRADE_AXES[yKey].label} {formatValue(Math.max(...ys), TRADE_AXES[yKey].format)}
           </span>
-          <span className="absolute right-0 bottom-0 text-[10px] text-muted-foreground">
+          <span className="absolute right-0 bottom-0 text-[11px] text-muted-foreground">
             {TRADE_AXES[xKey].label} {formatValue(Math.max(...xs), TRADE_AXES[xKey].format)}
           </span>
         </div>
@@ -615,7 +633,7 @@ function CalendarHeatmap({ trades }: { trades: Trade[] }) {
       </div>
       <div className="grid grid-cols-7 gap-1">
         {WEEKDAY_LABELS.map((d) => (
-          <div key={d} className="pb-1 text-center text-[10px] text-muted-foreground">
+          <div key={d} className="pb-1 text-center text-[11px] text-muted-foreground">
             {d}
           </div>
         ))}
@@ -632,15 +650,13 @@ function CalendarHeatmap({ trades }: { trades: Trade[] }) {
               className={`flex h-12 flex-col items-center justify-center rounded text-xs ${c.future ? 'opacity-30' : ''}`}
               style={{
                 backgroundColor: c.count
-                  ? `${up ? UP : DOWN}${Math.round((0.15 + intensity * 0.65) * 255)
-                      .toString(16)
-                      .padStart(2, '0')}`
+                  ? `color-mix(in oklab, ${up ? UP : DOWN} ${Math.round((0.15 + intensity * 0.65) * 100)}%, transparent)`
                   : undefined,
               }}
             >
               <span className="tabular-nums">{Number(c.date.slice(-2))}</span>
               {c.count > 0 && (
-                <span className="text-[9px] tabular-nums text-muted-foreground">
+                <span className="text-[10px] tabular-nums text-muted-foreground">
                   {formatValue(c.b, heat.metricB.format)}
                 </span>
               )}
@@ -659,25 +675,25 @@ const QUADRANTS: { key: Quadrant; title: string; verdict: string; tone: string }
     key: 'keep',
     title: 'Good strategy + good execution',
     verdict: 'Keep collecting data',
-    tone: 'bg-emerald-500/10',
+    tone: 'bg-up/10',
   },
   {
     key: 'fixBehavior',
     title: 'Good strategy + poor execution',
     verdict: 'Fix behaviour',
-    tone: 'bg-amber-500/10',
+    tone: 'bg-warning/10',
   },
   {
     key: 'reviewStrategy',
     title: 'Poor strategy + good execution',
     verdict: 'Review the strategy',
-    tone: 'bg-orange-500/10',
+    tone: 'bg-warning/10',
   },
   {
     key: 'undiagnosed',
     title: 'Poor strategy + poor execution',
     verdict: "Don't diagnose the strategy yet",
-    tone: 'bg-red-500/10',
+    tone: 'bg-down/10',
   },
 ]
 
@@ -698,7 +714,7 @@ function StrategyBehaviorPanel({ trades }: { trades: Trade[] }) {
             {QUADRANTS.map((q) => {
               const c = m.cells[q.key]
               return (
-                <div key={q.key} className={`rounded-lg border p-3 ${q.tone}`}>
+                <div key={q.key} className={`rounded-md border border-border p-3 ${q.tone}`}>
                   <p className="text-xs text-muted-foreground">{q.title}</p>
                   <p className="text-sm font-semibold">{q.verdict}</p>
                   <p className="mt-1 text-sm tabular-nums">
@@ -846,17 +862,17 @@ function PatternsPanel({ trades }: { trades: Trade[] }) {
             <span className="text-muted-foreground">(vs {inr(conc.net)} with)</span>
           </p>
           {conc.net > 0 && conc.netWithoutTop < 0 && (
-            <p className="text-xs text-amber-600">
+            <p className="text-xs text-warning">
               The result rests on a handful of trades. Worth knowing before trusting the average.
             </p>
           )}
         </div>
         <div>
           <p className="text-xs font-medium">Streak effects</p>
-          <p className="mb-1 text-[11px] text-muted-foreground">
+          <p className="mb-1 text-[12px] text-muted-foreground">
             The trade right after {streaks.run}+ losses or wins in a row, in the order you logged them.
           </p>
-          <div className="grid grid-cols-4 gap-2 border-b pb-1 text-[11px] text-muted-foreground">
+          <div className="grid grid-cols-4 gap-2 border-b pb-1 text-[12px] text-muted-foreground">
             <span />
             <span className="text-right">Trades</span>
             <span className="text-right">Win rate</span>
@@ -903,7 +919,7 @@ function OverallStatistics({ trades }: { trades: Trade[] }) {
         <div className="space-y-2">
           {filtered.map((section) => (
             // <details> rather than a state-driven accordion - the browser already does this.
-            <details key={section.group} open className="rounded-lg border">
+            <details key={section.group} open className="rounded-md border border-border">
               <summary className="cursor-pointer px-3 py-2 text-sm font-medium">{section.group}</summary>
               <dl className="grid grid-cols-1 gap-x-6 gap-y-1 px-3 pt-1 pb-3 sm:grid-cols-2 lg:grid-cols-3">
                 {section.stats.map((stat) => (
@@ -979,7 +995,7 @@ export default function ManualStatistics({
 
   if (!trades?.length) {
     return (
-      <div className="rounded-xl border bg-card">
+      <div className="rounded-md border border-border bg-card">
         <Empty>Log a trade to see statistics.</Empty>
       </div>
     )

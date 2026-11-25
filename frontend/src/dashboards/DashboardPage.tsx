@@ -29,11 +29,16 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
-import { Button, buttonVariants } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
+  Button,
+  buttonVariants,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+} from '@/design-system'
 import { cn } from '@/lib/utils'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { DASHBOARD_ALL, getDashboard, getDashboardValues, saveDashboard } from '@/services/api'
@@ -132,7 +137,7 @@ export function PanelFrame({
   return (
     <section
       className={cn(
-        'group flex h-full flex-col overflow-hidden rounded-xl border bg-card',
+        'group flex h-full flex-col overflow-hidden rounded-md border border-border bg-card',
         edit && 'border-dashed',
       )}
     >
@@ -217,7 +222,7 @@ function VariablePicker({
   })
   return (
     <label className="flex items-center gap-1.5">
-      <span className="text-[11px] text-muted-foreground">{variable.label || variable.name}</span>
+      <span className="text-[12px] text-muted-foreground">{variable.label || variable.name}</span>
       <Select value={value} onValueChange={(v) => onChange(String(v))}>
         <SelectTrigger className="h-8 w-32" aria-label={variable.label || variable.name}>
           <SelectValue />
@@ -432,14 +437,14 @@ export default function DashboardPage() {
 
   if (isLoading || (saved && !draft)) {
     return (
-      <div className="flex h-[calc(100vh-5rem)] items-center justify-center rounded-xl border bg-card">
+      <div className="rounded-md border border-border bg-card flex h-[calc(100vh-5rem)] items-center justify-center">
         <Spinner className="size-5" />
       </div>
     )
   }
   if (isError || !draft) {
     return (
-      <div className="flex h-[calc(100vh-5rem)] flex-col items-center justify-center gap-3 rounded-xl border bg-card text-sm text-muted-foreground">
+      <div className="rounded-md border border-border bg-card flex h-[calc(100vh-5rem)] flex-col items-center justify-center gap-3 text-sm text-muted-foreground">
         <p>This dashboard doesn't exist — it may have been deleted.</p>
         <Link to="/dashboards" className={buttonVariants({ size: 'sm', variant: 'outline' })}>
           <ArrowLeftIcon className="size-4" />
@@ -454,7 +459,7 @@ export default function DashboardPage() {
   const rowPanel = panels.find((p) => p.id === openRow?.panel)
 
   return (
-    <div className="flex h-[calc(100vh-5rem)] flex-col overflow-hidden rounded-xl border bg-card">
+    <div className="rounded-md border border-border bg-card flex h-[calc(100vh-5rem)] flex-col overflow-hidden">
       <header className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2">
         <Link
           to="/dashboards"
@@ -475,7 +480,7 @@ export default function DashboardPage() {
         ) : (
           <h2 className="max-w-[36ch] truncate font-medium">{draft.name}</h2>
         )}
-        {dirty && <span className="size-2 shrink-0 rounded-full bg-amber-500" title="Unsaved changes" />}
+        {dirty && <span className="size-2 shrink-0 rounded-full bg-warning" title="Unsaved changes" />}
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {draft.variables.map((variable) => (

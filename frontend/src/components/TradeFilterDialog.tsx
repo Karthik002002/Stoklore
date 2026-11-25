@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import type * as React from 'react'
 import { ChevronRightIcon, SearchIcon, SlidersHorizontalIcon, XIcon } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { DateRangePicker } from '@/components/DatePicker'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
+import {
+  Badge,
+  Button,
+  DateRangePicker,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Input,
+} from '@/design-system'
 import {
   activeCount,
   EMPTY_FILTERS,
@@ -162,7 +167,7 @@ export default function TradeFilterDialog<Row = Trade>({
                   className="h-8"
                 />
               </div>
-              <p className="text-[11px] text-muted-foreground">{spec.range.hint}</p>
+              <p className="text-[12px] text-muted-foreground">{spec.range.hint}</p>
             </div>
 
             {spec.dates && (
@@ -185,7 +190,7 @@ export default function TradeFilterDialog<Row = Trade>({
                     Clear dates
                   </Button>
                 )}
-                <p className="text-[11px] text-muted-foreground">{spec.dates.hint}</p>
+                <p className="text-[12px] text-muted-foreground">{spec.dates.hint}</p>
               </div>
             )}
           </nav>
@@ -194,7 +199,7 @@ export default function TradeFilterDialog<Row = Trade>({
             <div className="space-y-2 border-b p-4">
               <div className="flex items-center justify-between gap-2">
                 <p className="font-medium">{facet.label}</p>
-                <div className="flex overflow-hidden rounded-lg border text-xs">
+                <div className="flex overflow-hidden rounded-md border border-border text-xs">
                   {(['include', 'exclude'] as const).map((mode) => (
                     <button
                       key={mode}

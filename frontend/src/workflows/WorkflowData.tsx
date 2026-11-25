@@ -2,15 +2,21 @@ import { useMemo } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import type { UTCTimestamp } from 'lightweight-charts'
-import DataTable from '@/components/DataTable'
+import {
+  DataTable,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+  Button,
+} from '@/design-system'
 import SeriesChart from '@/components/charts/SeriesChart'
 import { seriesColor } from '@/components/charts/colors'
 import type { Dataset } from '@/components/charts/colors'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
 import { LayoutGridIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
 import { createDashboardFromWorkflow, getWorkflowSeries } from '@/services/api'
 
 // What a workflow has gathered: its collected series as a chart and a table. Whether it is still
@@ -185,12 +191,12 @@ export default function WorkflowData() {
           </div>
 
           {data.numeric.length > 0 && (
-            <div className="mb-4 rounded-xl border bg-card p-3">
+            <div className="rounded-md border border-border bg-card mb-4 p-3">
               {datasets.length ? (
                 <>
                   <SeriesChart datasets={datasets} />
                   {runCount === 1 && (
-                    <p className="mt-2 text-[11px] text-muted-foreground">
+                    <p className="mt-2 text-[12px] text-muted-foreground">
                       One run so far, so each line is a single point — every run adds the next one.
                     </p>
                   )}

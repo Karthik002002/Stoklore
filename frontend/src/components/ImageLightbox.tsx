@@ -1,5 +1,4 @@
-import { Dialog, DialogContent } from '@/components/ui/dialog'
-
+import { Dialog, DialogContent } from '@/design-system'
 // Full-screen image viewer - a Dialog sized to fit the viewport instead of the usual max-w-sm.
 // Keeps an opaque background (not bg-transparent) - Bar Replay's chart screenshots are captured
 // off a transparent canvas (see ReplayChart.jsx's chart background option), so without a solid

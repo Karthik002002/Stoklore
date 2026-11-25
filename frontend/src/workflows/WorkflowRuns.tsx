@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
-import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Spinner, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/design-system'
 import { formatDateTime, formatDuration } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { getWorkflowHealth } from '@/services/api'
@@ -56,7 +55,7 @@ export default function WorkflowRuns() {
             </Link>
           )
         })}
-        <span className="ml-auto text-[11px] text-muted-foreground">
+        <span className="ml-auto text-[12px] text-muted-foreground">
           The last {runs.length} runs are kept
         </span>
       </div>

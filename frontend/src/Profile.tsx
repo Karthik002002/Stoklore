@@ -1,16 +1,20 @@
 import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { IconUserCircle } from '@tabler/icons-react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import {
+  Badge,
+  Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog'
+  Panel,
+  PanelBody,
+  PanelHeader,
+  PanelTitle,
+} from '@/design-system'
 import UsageCommitGraph from '@/components/UsageCommitGraph'
 import { readStore, secondsOn, subscribeLive } from '@/lib/activityTime'
 import { formatDuration } from '@/lib/format'
@@ -18,11 +22,15 @@ import { getActivitySummary } from '@/services/api'
 
 function StatCard({ label, value, sub }: { label: string; value: React.ReactNode; sub?: React.ReactNode }) {
   return (
-    <div className="rounded-xl border bg-card p-4">
-      <p className="text-xl font-semibold tabular-nums">{value}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{label}</p>
-      {sub}
-    </div>
+    <Panel>
+      <PanelHeader>
+        <PanelTitle>{value}</PanelTitle>
+      </PanelHeader>
+      <PanelBody className="p-3">
+        <p className="mt-1 text-xs text-muted-foreground">{label}</p>
+        {sub}
+      </PanelBody>
+    </Panel>
   )
 }
 
@@ -73,7 +81,7 @@ export default function Profile() {
       >
         <IconUserCircle className="size-4" />
         {daysBehind > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-destructive text-[9px] font-medium text-destructive-foreground">
+          <span className="absolute -top-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-destructive text-[10px] font-medium text-destructive-foreground">
             {daysBehind > 9 ? '9+' : daysBehind}
           </span>
         )}

@@ -1,11 +1,11 @@
 import { ExternalLinkIcon, MoreVerticalIcon, TagIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
 import {
+  Button,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+} from '@/design-system'
 import { tagInChat } from './ChatWidget'
 
 // Shared "..." menu for any event/news/top-news card: Open (redirect to the source) and Tag

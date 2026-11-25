@@ -21,10 +21,11 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
-import { Badge } from '@/components/ui/badge'
-import { Button, buttonVariants } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
+  Badge,
+  Button,
+  buttonVariants,
+  Spinner,
+} from '@/design-system'
 import { formatDateTime, formatDuration, timeAgoShort } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import type { Workflow } from '@/services/api'
@@ -183,7 +184,7 @@ export default function WorkflowList() {
       {isLoading ? (
         <div className="space-y-2">
           {[0, 1, 2].map((i) => (
-            <div key={i} className="h-[4.25rem] animate-pulse rounded-xl border bg-muted/30" />
+            <div key={i} className="h-[4.25rem] animate-pulse rounded-md border border-border bg-muted/30" />
           ))}
         </div>
       ) : isError ? (
@@ -217,7 +218,7 @@ export default function WorkflowList() {
               <div
                 key={w.id}
                 className={cn(
-                  'flex items-center gap-3 rounded-xl border bg-card p-3 transition-colors hover:border-foreground/20 hover:bg-muted/20',
+                  'flex items-center gap-3 rounded-md border border-border bg-card p-3 transition-colors hover:border-foreground/20 hover:bg-muted/20',
                   state === 'failed' && 'border-down/30',
                 )}
               >
@@ -268,7 +269,7 @@ export default function WorkflowList() {
                 >
                   <BellIcon className="size-3.5" />
                   {!!w.unread && (
-                    <span className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-primary px-1 text-[10px] leading-4 font-medium text-primary-foreground tabular-nums">
+                    <span className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-primary px-1 text-[11px] leading-4 font-medium text-primary-foreground tabular-nums">
                       {w.unread}
                     </span>
                   )}
@@ -368,12 +369,12 @@ function CountTile({
       onClick={onClick}
       aria-pressed={active}
       className={cn(
-        'rounded-xl border bg-card px-3 py-2 text-left transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
+        'rounded-md border border-border bg-card px-3 py-2 text-left transition-colors hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none',
         active && 'border-primary/60 bg-primary/5',
         tone === 'bad' && !active && 'border-down/40',
       )}
     >
-      <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
         {children}
         {label}
       </p>

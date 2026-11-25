@@ -5,12 +5,22 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { XIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import {
+  Badge,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  Spinner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/design-system'
 import { inr } from '@/lib/format'
 import type { PaperPosition } from '@/services/api'
 import { closePaperPosition, modifyPaperPosition } from '@/services/api'
@@ -223,7 +233,7 @@ export default function PaperHoldings({
   // request is still in flight tells the user their book is empty when it isn't.
   if (isPending) {
     return (
-      <p className="flex items-center justify-center gap-2 rounded-xl border bg-card py-16 text-center text-sm text-muted-foreground">
+      <p className="flex items-center justify-center gap-2 rounded-md border border-border bg-card py-16 text-center text-sm text-muted-foreground">
         <Spinner className="size-4" /> Loading positions…
       </p>
     )
@@ -231,7 +241,7 @@ export default function PaperHoldings({
 
   if (positions.length === 0) {
     return (
-      <p className="rounded-xl border bg-card py-16 text-center text-sm text-muted-foreground">
+      <p className="rounded-md border border-border bg-card py-16 text-center text-sm text-muted-foreground">
         No open paper positions — place an order from the Trades tab.
       </p>
     )
@@ -239,7 +249,7 @@ export default function PaperHoldings({
 
   return (
     <>
-      <div className="overflow-x-auto rounded-xl border bg-card">
+      <div className="rounded-md border border-border bg-card overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">

@@ -5,8 +5,7 @@ import { useQueries, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import type { Layout } from 'react-grid-layout'
 import { ExternalLinkIcon, LayoutGridIcon, PencilIcon, PinOffIcon, RefreshCwIcon } from 'lucide-react'
-import { Button, buttonVariants } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
+import { Button, buttonVariants, Spinner } from '@/design-system'
 import { cn } from '@/lib/utils'
 import { DASHBOARD_ALL, getDashboard } from '@/services/api'
 import type { Dashboard, DashboardPanel, HomePin } from '@/services/api'
@@ -35,7 +34,7 @@ function Gone({ edit, what, onUnpin }: { edit: boolean; what: string; onUnpin: (
   return (
     <section
       className={cn(
-        'flex h-full flex-col items-center justify-center gap-2 rounded-xl border bg-card p-3 text-center text-xs text-muted-foreground',
+        'flex h-full flex-col items-center justify-center gap-2 rounded-md border border-border bg-card p-3 text-center text-xs text-muted-foreground',
         edit && 'panel-drag cursor-move border-dashed',
       )}
     >
@@ -64,7 +63,7 @@ function DashboardTile({
   return (
     <section
       className={cn(
-        'flex h-full flex-col overflow-hidden rounded-xl border bg-card',
+        'flex h-full flex-col overflow-hidden rounded-md border border-border bg-card',
         edit && 'border-dashed',
       )}
     >
@@ -177,7 +176,7 @@ export default function HomeBoard() {
     const result = byId.get(pin.dashboard_id)
     if (!result || result.isLoading) {
       return (
-        <div className="flex h-full items-center justify-center rounded-xl border bg-card">
+        <div className="rounded-md border border-border bg-card flex h-full items-center justify-center">
           <Spinner className="size-4" />
         </div>
       )
@@ -223,14 +222,14 @@ export default function HomeBoard() {
 
   if (isLoading) {
     return (
-      <div className="flex h-[calc(100vh-7rem)] items-center justify-center rounded-xl border bg-card">
+      <div className="rounded-md border border-border bg-card flex h-[calc(100vh-7rem)] items-center justify-center">
         <Spinner className="size-5" />
       </div>
     )
   }
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] flex-col overflow-hidden rounded-xl border bg-card">
+    <div className="rounded-md border border-border bg-card flex h-[calc(100vh-7rem)] flex-col overflow-hidden">
       <header className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
         <p className="text-sm font-medium">My board</p>
         <p className="text-xs text-muted-foreground">

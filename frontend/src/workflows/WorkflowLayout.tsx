@@ -1,7 +1,6 @@
 import { Link, Outlet, useLocation, useParams } from '@tanstack/react-router'
 import { ArrowLeftIcon, PlayIcon, PowerIcon } from 'lucide-react'
-import { Button, buttonVariants } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
+import { Button, buttonVariants, Spinner } from '@/design-system'
 import { cn } from '@/lib/utils'
 import { usePageTitle } from '@/lib/usePageTitle'
 import {
@@ -24,7 +23,7 @@ import StateIcon from './StateIcon'
 export function WorkflowsShell() {
   usePageTitle('Workflows')
   return (
-    <div className="h-[calc(100vh-5rem)] overflow-hidden rounded-xl border bg-card">
+    <div className="rounded-md border border-border bg-card h-[calc(100vh-5rem)] overflow-hidden">
       <Outlet />
     </div>
   )
@@ -153,7 +152,7 @@ export default function WorkflowLayout() {
             >
               {tab.label}
               {tab.key === 'notifications' && !!workflow.unread && (
-                <span className="rounded-full bg-primary px-1.5 text-[10px] font-medium text-primary-foreground tabular-nums">
+                <span className="rounded-full bg-primary px-1.5 text-[11px] font-medium text-primary-foreground tabular-nums">
                   {workflow.unread}
                 </span>
               )}

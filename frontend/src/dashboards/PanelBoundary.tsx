@@ -1,8 +1,7 @@
 import { Component } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
 import { TriangleAlertIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-
+import { Button } from '@/design-system'
 // A panel that throws while drawing takes the whole page down with it - the router's boundary
 // replaces the dashboard with an error screen, so one bad panel loses the other eleven. This keeps
 // the failure inside the panel that caused it, says so, and offers to draw it again.
@@ -36,7 +35,7 @@ export default class PanelBoundary extends Component<Props, State> {
       <div className="flex h-full flex-col items-center justify-center gap-2 p-2 text-center">
         <TriangleAlertIcon className="size-4 text-down" />
         <p className="text-xs font-medium">This panel couldn't be drawn</p>
-        <p className="max-w-[40ch] truncate text-[11px] text-muted-foreground" title={error.message}>
+        <p className="max-w-[40ch] truncate text-[12px] text-muted-foreground" title={error.message}>
           {error.message}
         </p>
         <Button size="sm" variant="outline" onClick={() => this.setState({ error: null })}>

@@ -2,10 +2,7 @@ import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Spinner } from '@/components/ui/spinner'
+import { Badge, Button, Input, Spinner } from '@/design-system'
 import { getEngineSettings, updateEngineSettings } from '@/services/api'
 
 // Settings > Algo engine: where the external C++ engine lives and what to call it. Every field

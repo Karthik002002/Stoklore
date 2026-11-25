@@ -6,9 +6,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { ArrowLeftIcon, ChevronDownIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
+import { Button, Spinner } from '@/design-system'
 import { cn } from '@/lib/utils'
-import { Spinner } from '@/components/ui/spinner'
 import { fmt, inr } from '@/lib/format'
 import { useChartAlerts } from '@/lib/useChartAlerts'
 import { usePageTitle } from '@/lib/usePageTitle'
@@ -348,7 +347,7 @@ export function PaperChart({
       >
         <span
           className={cn(
-            'rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide uppercase',
+            'rounded px-1.5 py-0.5 text-[11px] font-semibold tracking-wide uppercase',
             position.direction === 'long' ? 'bg-up/15 text-up' : 'bg-down/15 text-down',
           )}
         >

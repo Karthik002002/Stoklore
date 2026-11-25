@@ -1,6 +1,5 @@
 import { AlertTriangleIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Button, Dialog, DialogContent, DialogHeader, DialogTitle } from '@/design-system'
 import { inr } from '@/lib/format'
 import type { ReplayOrder } from './store'
 
@@ -34,13 +33,13 @@ export default function ConfirmOrderDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <AlertTriangleIcon className="size-4 text-amber-500" />
+            <AlertTriangleIcon className="size-4 text-warning" />
             Check this position
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-3">
-          <div className="rounded-lg border bg-muted/40 p-3 text-sm">
+          <div className="rounded-md border border-border bg-muted/40 p-3 text-sm">
             <span className={isLong ? 'font-semibold text-up' : 'font-semibold text-down'}>
               {isLong ? 'Buy' : 'Sell'}
             </span>{' '}
@@ -51,7 +50,7 @@ export default function ConfirmOrderDialog({
 
           <ul className="space-y-1.5">
             {warnings.map((w) => (
-              <li key={w} className="flex gap-2 text-sm text-amber-600 dark:text-amber-400">
+              <li key={w} className="flex gap-2 text-sm text-warning">
                 <span aria-hidden="true">•</span>
                 <span>{w}</span>
               </li>

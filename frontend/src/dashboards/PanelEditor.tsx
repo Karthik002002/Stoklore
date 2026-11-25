@@ -1,9 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { PlusIcon, Trash2Icon, XIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Button, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/design-system'
 import { cn } from '@/lib/utils'
 import { getDashboardFields, getDashboardParams, getDashboardSources } from '@/services/api'
 import type { DashboardPanel, PanelOp, PanelQuery, PanelType } from '@/services/api'
@@ -49,9 +47,9 @@ const uses = (type: PanelType) => ({
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
-      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="text-[12px] text-muted-foreground">{label}</p>
       {children}
-      {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+      {hint && <p className="text-[12px] text-muted-foreground">{hint}</p>}
     </div>
   )
 }
@@ -59,7 +57,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="space-y-2.5 border-t px-4 py-3">
-      <h3 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{title}</h3>
+      <h3 className="text-[12px] font-medium tracking-wide text-muted-foreground uppercase">{title}</h3>
       {children}
     </section>
   )
@@ -148,7 +146,7 @@ export default function PanelEditor({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="h-52 border-b bg-muted/20 p-3">
-          <div className="flex h-full flex-col rounded-lg border bg-card p-2">
+          <div className="flex h-full flex-col rounded-md border border-border bg-card p-2">
             <p className="mb-1 truncate text-xs font-medium">{panel.title || 'Untitled panel'}</p>
             <div className="min-h-0 flex-1">
               <PanelBody panel={panel} ctx={ctx} onDrill={() => {}} onOpenRow={() => {}} />
@@ -176,8 +174,8 @@ export default function PanelEditor({
                     aria-pressed={panel.type === type}
                     onClick={() => changeType(type)}
                     className={cn(
-                      'flex flex-col items-center gap-1 rounded-md border px-1 py-1.5 text-[10px] transition-colors hover:bg-muted',
-                      panel.type === type && 'border-sky-500 bg-sky-500/10',
+                      'flex flex-col items-center gap-1 rounded-md border px-1 py-1.5 text-[11px] transition-colors hover:bg-muted',
+                      panel.type === type && 'border-accent bg-accent/10',
                     )}
                   >
                     <meta.icon className="size-4" />
@@ -457,7 +455,7 @@ export default function PanelEditor({
               Add filter
             </Button>
             {variableNames.length > 0 && (
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[12px] text-muted-foreground">
                 Use {variableNames.map((n) => `$${n}`).join(', ')} as a value to follow the dropdown at the
                 top — set to All, the filter drops out.
               </p>

@@ -8,7 +8,7 @@ import { BellIcon, CircleCheckIcon, CircleXIcon } from 'lucide-react'
 import SeriesChart from '@/components/charts/SeriesChart'
 import { chartTime, seriesColor } from '@/components/charts/colors'
 import { squarify } from '@/components/charts/squarify'
-import { Spinner } from '@/components/ui/spinner'
+import { Spinner } from '@/design-system'
 import { formatDuration, timeAgoShort } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { queryPanel } from '@/services/api'
@@ -163,7 +163,7 @@ function Sparkline({ values }: { values: number[] }) {
     <svg
       viewBox="0 0 100 30"
       preserveAspectRatio="none"
-      className="h-8 w-full text-sky-500"
+      className="h-8 w-full text-accent"
       aria-hidden="true"
     >
       <polygon points={`0,30 ${points} 100,30`} fill="currentColor" opacity="0.12" />
@@ -214,7 +214,7 @@ function StatViz({
             <span className="text-muted-foreground">vs {formatValue(data.previous, panel.options)}</span>
           </p>
         )}
-        {data.at && <p className="text-[11px] text-muted-foreground">{formatSlot(data.at)}</p>}
+        {data.at && <p className="text-[12px] text-muted-foreground">{formatSlot(data.at)}</p>}
       </div>
       <Sparkline values={data.spark.map((p) => p.value)} />
     </button>
@@ -256,7 +256,11 @@ export function RowsTable({
         <tr>
           {symbolCol && (
             <th className="w-6 border-b py-1 pl-1">
-              <ScanButton symbols={rows.flatMap((r) => symbolOf(r) ?? [])} name="Panel rows" source="dashboard" />
+              <ScanButton
+                symbols={rows.flatMap((r) => symbolOf(r) ?? [])}
+                name="Panel rows"
+                source="dashboard"
+              />
             </th>
           )}
           {extra && <th className="border-b px-2 py-1" />}
@@ -279,7 +283,9 @@ export function RowsTable({
             className={cn(onOpenRow && 'cursor-pointer', 'hover:bg-muted/40')}
           >
             {symbolCol && (
-              <td className="border-b py-1 pl-1">{symbolOf(row) && <ChartButton symbol={symbolOf(row)!} />}</td>
+              <td className="border-b py-1 pl-1">
+                {symbolOf(row) && <ChartButton symbol={symbolOf(row)!} />}
+              </td>
             )}
             {extra && <td className="border-b px-2 py-1 whitespace-nowrap">{extra(row)}</td>}
             {columns.map((c) => (
@@ -308,7 +314,7 @@ function TableViz({ data, onOpenRow }: { data: ShapedRows; onOpenRow: Props['onO
     <div className="h-full overflow-auto">
       <RowsTable rows={data.rows} columns={data.columns.map((c) => c.name)} onOpenRow={onOpenRow} />
       {data.total > data.rows.length && (
-        <p className="px-2 py-1 text-[11px] text-muted-foreground">
+        <p className="px-2 py-1 text-[12px] text-muted-foreground">
           Showing {data.rows.length} of {data.total} — raise the limit in the panel to see more.
         </p>
       )}
@@ -351,7 +357,7 @@ function BarViz({
             <span
               className={cn(
                 'block h-full rounded-sm transition-[width] duration-300',
-                item.value < 0 ? 'bg-down' : 'bg-sky-500',
+                item.value < 0 ? 'bg-down' : 'bg-accent',
               )}
               style={{ width: `${(Math.abs(item.value) / max) * 100}%` }}
             />
@@ -440,8 +446,9 @@ function PieViz({
 
 const heat = (value: number, maxAbs: number, diverging: boolean) => {
   const strength = 0.15 + 0.85 * Math.min(1, Math.abs(value) / maxAbs)
-  if (!diverging) return `rgba(14, 165, 233, ${strength})`
-  return value >= 0 ? `rgba(34, 197, 94, ${strength})` : `rgba(239, 68, 68, ${strength})`
+  const pct = Math.round(strength * 100)
+  if (!diverging) return `color-mix(in oklab, var(--accent) ${pct}%, transparent)`
+  return `color-mix(in oklab, var(--${value >= 0 ? 'up' : 'down'}) ${pct}%, transparent)`
 }
 
 function HeatmapViz({
@@ -463,7 +470,7 @@ function HeatmapViz({
     <div className="h-full overflow-auto" onMouseLeave={tip.hide}>
       {tip.node}
       <div
-        className="grid gap-px text-[10px]"
+        className="grid gap-px text-[11px]"
         style={{
           gridTemplateColumns: `minmax(3.5rem, max-content) repeat(${data.x.length}, minmax(1.4rem, 1fr))`,
         }}
@@ -526,15 +533,12 @@ function useBoxSize() {
   return [ref, box] as const
 }
 
-// Neutral slate at zero, deepening to green or red as the move grows - the stock-heatmap convention.
-const NEUTRAL = [71, 85, 105]
-const UP = [22, 163, 74]
-const DOWN = [220, 38, 38]
+// Neutral at zero, deepening to the theme's up or down color as the move grows - the
+// stock-heatmap convention. CSS color-mix, so it follows the theme.
 const tileColor = (value: number | null, scale: number) => {
-  if (value == null) return `rgb(${NEUTRAL.join(',')})`
+  if (value == null) return 'var(--muted)'
   const t = Math.min(1, Math.abs(value) / (scale || 1))
-  const to = value >= 0 ? UP : DOWN
-  return `rgb(${NEUTRAL.map((c, i) => Math.round(c + (to[i] - c) * t)).join(',')})`
+  return `color-mix(in oklab, var(--${value >= 0 ? 'up' : 'down'}) ${Math.round(25 + t * 65)}%, var(--muted))`
 }
 
 function TreemapViz({
@@ -586,14 +590,14 @@ function TreemapViz({
               <span
                 className={cn(
                   'max-w-full truncate font-semibold',
-                  w > 120 && h > 60 ? 'text-sm' : 'text-[11px]',
+                  w > 120 && h > 60 ? 'text-sm' : 'text-[12px]',
                 )}
               >
                 {item.key}
               </span>
             )}
             {detail && item.color != null && (
-              <span className="text-[11px] tabular-nums opacity-90">
+              <span className="text-[12px] tabular-nums opacity-90">
                 {formatValue(item.color, panel.options)}
               </span>
             )}
@@ -616,7 +620,7 @@ function HealthViz({ data }: { data: ShapedRows }) {
             r.seconds != null ? ` · ${formatDuration(Number(r.seconds))}` : ''
           }${r.error ? `\n${r.error}` : ''}`
           const tone =
-            status === 'failed' ? 'bg-down' : status === 'running' ? 'animate-pulse bg-sky-500' : 'bg-up'
+            status === 'failed' ? 'bg-down' : status === 'running' ? 'animate-pulse bg-accent' : 'bg-up'
           const cls = cn(
             'h-full w-2 shrink-0 origin-bottom rounded-sm transition-transform hover:scale-y-110',
             tone,
@@ -641,7 +645,7 @@ function HealthViz({ data }: { data: ShapedRows }) {
 const EVENT = {
   failure: { icon: CircleXIcon, tone: 'text-down' },
   success: { icon: CircleCheckIcon, tone: 'text-up' },
-  output: { icon: BellIcon, tone: 'text-sky-500' },
+  output: { icon: BellIcon, tone: 'text-accent' },
 } as const
 
 function NotificationsViz({ data }: { data: ShapedRows }) {
@@ -659,7 +663,7 @@ function NotificationsViz({ data }: { data: ShapedRows }) {
               >
                 {String(n.message ?? '')}
               </span>
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-[12px] text-muted-foreground">
                 {String(n.workflow ?? '')} · {timeAgoShort(String(n.triggered_at))} ago
               </span>
             </span>

@@ -10,10 +10,17 @@ import TradeReviewFields, {
   reviewPayload,
   type ReviewValue,
 } from '@/components/TradeReviewFields'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Spinner } from '@/components/ui/spinner'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Spinner,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/design-system'
 import { inr } from '@/lib/format'
 import { autoResult, EMOTIONS, NEUTRAL_PNL_BAND, tradePnl } from '@/lib/manualTrades'
 import { tradeCosts, tradeNetPnl } from '@/lib/tradeCosts'
@@ -237,7 +244,7 @@ export default function CloseTradeDialog({
             {reason && reason !== 'manual' && (
               <p className="text-xs font-medium text-muted-foreground">{CLOSE_REASON_LABEL[reason]}</p>
             )}
-            <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-3 text-sm">
+            <div className="flex items-center justify-between rounded-md border border-border bg-muted/30 p-3 text-sm">
               <span>
                 {quantity} @ {inr(order.entryPrice)} → {inr(exitPrice)}
               </span>
@@ -250,7 +257,7 @@ export default function CloseTradeDialog({
                   {inr(pnl)}
                 </span>
                 {(costs?.total ?? 0) > 0 && (
-                  <span className="block text-[11px] text-muted-foreground tabular-nums">
+                  <span className="block text-[12px] text-muted-foreground tabular-nums">
                     {inr(net)} net · {inr(costs?.total)} costs
                   </span>
                 )}
@@ -306,7 +313,7 @@ export default function CloseTradeDialog({
           />
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch md:col-span-2">
-            <label className="flex flex-1 items-start gap-2 rounded-lg border bg-muted/20 p-2.5 text-xs">
+            <label className="flex flex-1 items-start gap-2 rounded-md border border-border bg-muted/20 p-2.5 text-xs">
               <input
                 type="checkbox"
                 className="mt-0.5 size-3.5 shrink-0 accent-primary"

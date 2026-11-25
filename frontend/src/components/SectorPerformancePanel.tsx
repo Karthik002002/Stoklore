@@ -15,9 +15,7 @@ import { ChevronRightIcon, RefreshCwIcon } from 'lucide-react'
 import { openChart } from '@/components/ChartModal'
 import SectorHoverCard, { BUCKETS, hideTip, hoverProps } from '@/components/SectorHoverCard'
 import TerminalPanel from '@/components/TerminalPanel'
-import SortTh from '@/components/SortTh'
-import { Button } from '@/components/ui/button'
-import { Spinner } from '@/components/ui/spinner'
+import { TableSortHead as SortTh, Button, Spinner } from '@/design-system'
 import { fmt } from '@/lib/format'
 import { dockLayout } from '@/lib/dock'
 import { breadth, bucketShares, croreShort, heatColor, sectorSummary } from '@/lib/sectors'
@@ -159,7 +157,7 @@ function SortSelect({
         value={`${value.key}:${value.dir}`}
         onChange={(e) => onChange(e.target.value)}
         aria-label={label}
-        className="h-6 rounded border bg-background px-1 font-mono text-[10px] text-foreground"
+        className="h-6 rounded border bg-background px-1 font-mono text-[11px] text-foreground"
       >
         {options.map(([v, text]) => (
           <option key={v} value={v}>
@@ -250,7 +248,7 @@ function MemberTiles({
     .sort((a, b) => b.change_pct! - a.change_pct!)
   return (
     <div className="space-y-2 px-2 py-2">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-muted-foreground uppercase">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground uppercase">
         <span>
           {members.length} members · <span className="text-up">{up} up</span> ·{' '}
           <span className="text-down">{down} down</span>
@@ -293,8 +291,8 @@ function MemberTiles({
               background: heatColor(m.change_pct),
             }}
           >
-            <p className="truncate text-[11px] font-semibold text-foreground">{m.name}</p>
-            <p className="flex justify-between gap-1 text-[10px] text-foreground/80 tabular-nums">
+            <p className="truncate text-[12px] font-semibold text-foreground">{m.name}</p>
+            <p className="flex justify-between gap-1 text-[11px] text-foreground/80 tabular-nums">
               <span>{pctText(m.change_pct)}</span>
               <span className="truncate">{m.symbol ?? `₹${fmt(m.price)}`}</span>
             </p>
@@ -373,19 +371,19 @@ export default function SectorPerformancePanel() {
   return (
     <TerminalPanel
       title="Sector Performance"
-      accent="text-cyan-500"
+      accent="text-accent"
       actions={
         <>
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filter sector / company"
-            className="h-6 w-44 rounded border bg-background px-1.5 font-mono text-[10px] outline-none focus:border-ring"
+            className="h-6 w-44 rounded border bg-background px-1.5 font-mono text-[11px] outline-none focus:border-ring"
           />
           <select
             value={exchange}
             onChange={(e) => setExchange(e.target.value as 'NSE' | 'BSE')}
-            className="h-6 rounded border bg-background px-1 font-mono text-[10px] uppercase"
+            className="h-6 rounded border bg-background px-1 font-mono text-[11px] uppercase"
             aria-label="Exchange"
           >
             <option value="NSE">NSE</option>
@@ -412,7 +410,7 @@ export default function SectorPerformancePanel() {
       ) : (
         <>
           {/* the day in one line */}
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b bg-muted/20 px-2 py-1.5 font-mono text-[11px]">
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b bg-muted/20 px-2 py-1.5 font-mono text-[12px]">
             <span>
               <span className="text-up">{summary.up} ▲</span>{' '}
               <span className="text-down">{summary.down} ▼</span>
@@ -442,13 +440,13 @@ export default function SectorPerformancePanel() {
                 </span>
               </span>
             )}
-            <span className="ml-auto text-[10px] text-muted-foreground">
+            <span className="ml-auto text-[11px] text-muted-foreground">
               ET Markets · {sectors[0]?.updated ?? '—'}
             </span>
           </div>
 
           {/* the map: every sector, sized by market cap, coloured by its day; click opens its row */}
-          <div className="flex items-center justify-between gap-2 px-2 pt-1.5 font-mono text-[10px] text-muted-foreground uppercase">
+          <div className="flex items-center justify-between gap-2 px-2 pt-1.5 font-mono text-[11px] text-muted-foreground uppercase">
             <span>Sector map · size = market cap</span>
             <SortSelect
               value={mapSort}
@@ -474,8 +472,8 @@ export default function SectorPerformancePanel() {
                   background: heatColor(s.change_pct),
                 }}
               >
-                <p className="truncate font-mono text-[10px] font-semibold text-foreground">{s.name}</p>
-                <p className="font-mono text-[10px] text-foreground/80 tabular-nums">
+                <p className="truncate font-mono text-[11px] font-semibold text-foreground">{s.name}</p>
+                <p className="font-mono text-[11px] text-foreground/80 tabular-nums">
                   {pctText(s.change_pct)}
                 </p>
               </button>
@@ -485,7 +483,7 @@ export default function SectorPerformancePanel() {
           <div className="max-h-[600px] overflow-auto">
             <table className="w-full min-w-[56rem] font-mono text-xs">
               <thead className="sticky top-0 z-10 bg-background">
-                <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
+                <tr className="border-b text-[11px] tracking-widest text-muted-foreground uppercase">
                   <th className="w-6" />
                   <SortTh label="Sector" k="name" sort={sort} onSort={setSort} align="left" first="asc" />
                   <SortTh label="Mcap" k="mcap" sort={sort} onSort={setSort} />
@@ -561,7 +559,7 @@ function SectorRow({
           <span className="font-semibold" {...hoverProps({ kind: 'sector', s })}>
             {s.name}
           </span>
-          <span className="ml-1.5 text-[10px] text-muted-foreground">{s.members.length}</span>
+          <span className="ml-1.5 text-[11px] text-muted-foreground">{s.members.length}</span>
         </td>
         <td className="px-2 py-1.5 text-right tabular-nums">{croreShort(s.mcap_cr)}</td>
         <td className={cn('px-2 py-1.5 text-right tabular-nums', pctClass(s.mcap_change_cr))}>
@@ -577,7 +575,7 @@ function SectorRow({
         </td>
         <td className="w-44 px-2 py-1.5">
           <BreadthBar s={s} />
-          <p className="mt-0.5 text-[10px] tabular-nums">
+          <p className="mt-0.5 text-[11px] tabular-nums">
             <span className="text-up">{s.advance ?? 0}▲</span>{' '}
             <span className="text-down">{s.decline ?? 0}▼</span>
             {(s.unchanged ?? 0) > 0 && <span className="text-muted-foreground"> {s.unchanged}─</span>}
@@ -586,7 +584,7 @@ function SectorRow({
         <td className="w-56 px-2 py-1.5">
           <MemberStrip sector={s} />
         </td>
-        <td className="max-w-56 px-2 py-1.5 text-[10px]">
+        <td className="max-w-56 px-2 py-1.5 text-[11px]">
           {best && (
             <p className="truncate">
               <span className="text-up">▲ {pctText(best.change_pct)}</span> <MemberName m={best} sector={s} />

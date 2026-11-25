@@ -4,10 +4,12 @@ import { getStrengthStatus, getStrengthStocks } from '@/services/api'
 import type { StrengthStock } from '@/services/api'
 
 /** The market-wide strength table (RS, trend template, VCP), once the bhavcopy history is in. Its
- *  status is polled while the first-run backfill is still filling. */
-export function useStrength() {
+ *  status is polled while the first-run backfill is still filling. `enabled: false` keeps an
+ *  always-mounted caller (the command palette) from polling while it's closed. */
+export function useStrength(enabled = true) {
   const status = useQuery({
     queryKey: ['strengthStatus'],
+    enabled,
     queryFn: getStrengthStatus,
     refetchInterval: (q) => (q.state.data?.sync.running || !q.state.data?.ready ? 5_000 : 300_000),
   })
@@ -18,7 +20,7 @@ export function useStrength() {
   const table = useQuery({
     queryKey: ['strengthStocks', status.data?.ready ? status.data.last : Math.floor(days / 10)],
     queryFn: getStrengthStocks,
-    enabled: usable,
+    enabled: enabled && usable,
     placeholderData: (prev) => prev,
     staleTime: 3_600_000,
   })

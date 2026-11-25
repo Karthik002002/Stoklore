@@ -44,7 +44,7 @@ export default function UsageCommitGraph({ days }: { days: ActivityDay[] }) {
           </div>
         ))}
       </div>
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
         Less
         <span className="size-2.5 rounded-[2px] bg-muted/40" />
         <span className="size-2.5 rounded-[2px] bg-success/25" />

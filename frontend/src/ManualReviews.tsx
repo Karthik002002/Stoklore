@@ -2,11 +2,16 @@ import { useEffect, useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
-import DatePicker from '@/components/DatePicker'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Spinner } from '@/components/ui/spinner'
-import { Textarea } from '@/components/ui/textarea'
+import {
+  DatePicker,
+  Button,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  Spinner,
+  Textarea,
+} from '@/design-system'
 import { fmt, formatDate, inr } from '@/lib/format'
 import { seriesFor } from '@/lib/tradeStats'
 import { beforeAfter, localDay, summarize, topMistakes, tradesInPeriod } from '@/lib/tradeReview'
@@ -19,19 +24,19 @@ import { deleteTradeReview, getTradeReviews, saveTradeReview } from '@/services/
 // to the next change, so two changes never get credit for each other.
 
 const PROMPTS = [
-  { key: 'keep', label: 'Keep', hint: 'What works?', tone: 'border-emerald-500/40 bg-emerald-500/[0.06]' },
-  { key: 'stop', label: 'Stop', hint: 'What hurts results?', tone: 'border-red-500/40 bg-red-500/[0.06]' },
+  { key: 'keep', label: 'Keep', hint: 'What works?', tone: 'border-up/40 bg-up/[0.06]' },
+  { key: 'stop', label: 'Stop', hint: 'What hurts results?', tone: 'border-down/40 bg-down/[0.06]' },
   {
     key: 'improve',
     label: 'Improve',
     hint: 'What can be executed better?',
-    tone: 'border-sky-500/40 bg-sky-500/[0.06]',
+    tone: 'border-accent/40 bg-accent/[0.06]',
   },
   {
     key: 'test',
     label: 'Test',
     hint: 'What deserves study?',
-    tone: 'border-violet-500/40 bg-violet-500/[0.06]',
+    tone: 'border-chart-5/40 bg-chart-5/[0.06]',
   },
 ] as const
 
@@ -75,7 +80,7 @@ function Numbers({ s }: { s: ReturnType<typeof summarize> }) {
     <dl className="grid grid-cols-3 gap-2 sm:grid-cols-6">
       {items.map(([label, value]) => (
         <div key={label} className="rounded-md border bg-card px-2 py-1.5">
-          <dt className="text-[10px] tracking-wide text-muted-foreground uppercase">{label}</dt>
+          <dt className="text-[11px] tracking-wide text-muted-foreground uppercase">{label}</dt>
           <dd className="text-sm font-medium tabular-nums">{value}</dd>
         </div>
       ))}
@@ -150,7 +155,7 @@ function Compare({
   ]
   const show = (v: number | null, f: (v: number) => string) => (v == null ? '—' : f(v))
   return (
-    <div className="overflow-hidden rounded-lg border text-xs">
+    <div className="overflow-hidden rounded-md border border-border text-xs">
       <div className="grid grid-cols-3 border-b bg-muted/40 px-3 py-1.5 font-medium">
         <span />
         <span className="text-right">Before{prev ? ` (from ${formatDate(prev)})` : ''}</span>
@@ -257,7 +262,7 @@ function ReviewDialog({
 
           <div className="grid gap-2 sm:grid-cols-2">
             {PROMPTS.map((p) => (
-              <label key={p.key} className={`space-y-1 rounded-lg border p-2.5 ${p.tone}`}>
+              <label key={p.key} className={`space-y-1 rounded-md border border-border p-2.5 ${p.tone}`}>
                 <span className="block text-xs font-semibold">
                   {p.label}: <span className="font-normal text-muted-foreground">{p.hint}</span>
                 </span>
@@ -271,7 +276,7 @@ function ReviewDialog({
             ))}
           </div>
 
-          <div className="space-y-2 rounded-lg border p-3">
+          <div className="space-y-2 rounded-md border border-border p-3">
             <p className="text-sm font-medium">The one change</p>
             <Textarea
               rows={2}
@@ -346,14 +351,14 @@ export default function ManualReviews({ trades, accountId }: { trades: Trade[]; 
       </div>
 
       {reviews.length === 0 ? (
-        <div className="rounded-xl border bg-card py-10 text-center text-sm text-muted-foreground">
+        <div className="rounded-md border border-border bg-card py-10 text-center text-sm text-muted-foreground">
           No reviews for this account yet.
         </div>
       ) : (
         reviews.map((r) => {
           const i = r.change_from ? changes.indexOf(r.change_from) : -1
           return (
-            <div key={r.id} className="space-y-3 rounded-xl border bg-card p-4">
+            <div key={r.id} className="space-y-3 rounded-md border border-border bg-card p-4">
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="font-medium">
@@ -390,7 +395,7 @@ export default function ManualReviews({ trades, accountId }: { trades: Trade[]; 
 
               <div className="grid gap-2 sm:grid-cols-4">
                 {PROMPTS.map((p) => (
-                  <div key={p.key} className={`rounded-lg border p-2.5 text-sm ${p.tone}`}>
+                  <div key={p.key} className={`rounded-md border border-border p-2.5 text-sm ${p.tone}`}>
                     <p className="text-xs font-semibold">{p.label}</p>
                     <p className="whitespace-pre-wrap">
                       {r[p.key] || <span className="text-muted-foreground">—</span>}

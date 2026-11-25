@@ -1,8 +1,7 @@
 import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import type { DataTableColumns } from '@/components/DataTable'
-import DataTable from '@/components/DataTable'
-import { Spinner } from '@/components/ui/spinner'
+import { DataTable, Spinner } from '@/design-system'
+import type { DataTableColumns } from '@/design-system'
 import { compact, fmt } from '@/lib/format'
 import type { Financials } from '@/services/api'
 import { getStockFinancials } from '@/services/api'
@@ -18,7 +17,7 @@ function Cell({ value, prevValue }: { value: number | null; prevValue?: number |
     const pct = ((value - prevValue) / Math.abs(prevValue)) * 100
     const up = pct >= 0
     change = (
-      <span className={`ml-1.5 inline-flex items-center gap-0.5 text-[10px] ${up ? 'text-up' : 'text-down'}`}>
+      <span className={`ml-1.5 inline-flex items-center gap-0.5 text-[11px] ${up ? 'text-up' : 'text-down'}`}>
         {up ? '+' : ''}
         {fmt(pct)}%
       </span>
@@ -75,7 +74,7 @@ export default function StockFinancials({ symbol }: { symbol: string }) {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center gap-2 rounded-xl border bg-card py-16 text-muted-foreground">
+      <div className="flex items-center justify-center gap-2 py-12 text-muted-foreground">
         <Spinner className="size-4" /> Loading financials…
       </div>
     )
@@ -83,7 +82,7 @@ export default function StockFinancials({ symbol }: { symbol: string }) {
 
   if (error || !data) {
     return (
-      <p className="rounded-xl border bg-card py-16 text-center text-sm text-muted-foreground">
+      <p className="py-12 text-center text-muted-foreground">
         No quarterly financials available for this stock.
       </p>
     )
@@ -95,7 +94,7 @@ export default function StockFinancials({ symbol }: { symbol: string }) {
       data={data.rows}
       getRowId={(row) => row.label}
       resizable
-      containerClassName="max-h-[500px] rounded-xl border bg-card"
+      containerClassName="max-h-[500px]"
     />
   )
 }

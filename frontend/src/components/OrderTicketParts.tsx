@@ -3,7 +3,7 @@
 // toggle, a labelled field with something on the right of its label, a price input that shows its
 // distance from entry, and the summary footer that stays in view at the bottom of a scrolling panel.
 import { AlertTriangleIcon } from 'lucide-react'
-import { Input } from '@/components/ui/input'
+import { Input } from '@/design-system'
 import { fmt, inr } from '@/lib/format'
 import { useTicketCautions } from '@/lib/surveillance'
 import { cn } from '@/lib/utils'
@@ -187,7 +187,7 @@ export function TicketFooter({
         </div>
       )}
       {[...cautions, ...warnings].map((w) => (
-        <p key={w} className="flex gap-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+        <p key={w} className="flex gap-1.5 text-[12px] text-warning">
           <AlertTriangleIcon className="mt-0.5 size-3 shrink-0" />
           {w}
         </p>

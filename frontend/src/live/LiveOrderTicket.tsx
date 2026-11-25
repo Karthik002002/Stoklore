@@ -12,11 +12,15 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
+  Button,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+} from '@/design-system'
 import { fmt, inr } from '@/lib/format'
 import { positionSize, ticketErrors } from '@/lib/liveSizing'
 import { cn } from '@/lib/utils'
@@ -279,14 +283,14 @@ export default function LiveOrderTicket({
             wallet {balance == null ? '—' : inr(balance)}
           </p>
         </div>
-        <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-down/40 bg-down/10 px-2 py-0.5 text-[11px] font-medium text-down">
+        <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-down/40 bg-down/10 px-2 py-0.5 text-[12px] font-medium text-down">
           <span className="size-1.5 animate-pulse rounded-full bg-down" />
           {status?.sandbox ? 'Dhan sandbox' : 'Dhan · real money'}
         </span>
       </div>
 
       {blocked && (
-        <div className="flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-2 text-xs text-amber-700 dark:text-amber-300">
+        <div className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-2 text-xs text-warning">
           <AlertTriangleIcon className="size-3.5 shrink-0" />
           <span className="flex-1">
             {!status?.configured
@@ -338,7 +342,7 @@ export default function LiveOrderTicket({
 
       <div className="space-y-1">
         <Seg value={productValue} onChange={setProduct} options={PRODUCTS} />
-        <p className="px-0.5 text-[11px] text-muted-foreground">{productHint}</p>
+        <p className="px-0.5 text-[12px] text-muted-foreground">{productHint}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
@@ -363,7 +367,7 @@ export default function LiveOrderTicket({
             maxQty > 0 && (
               <button
                 type="button"
-                className="text-[11px] text-primary hover:underline"
+                className="text-[12px] text-primary hover:underline"
                 title="As many as the wallet pays for at this price"
                 onClick={(e) => {
                   e.preventDefault()
@@ -392,7 +396,7 @@ export default function LiveOrderTicket({
       </div>
 
       {/* Super Order: a switch, since it changes what kind of order this is */}
-      <div className={cn('rounded-lg border', superUsed && 'border-primary/40 bg-primary/5')}>
+      <div className={cn('rounded-md border border-border', superUsed && 'border-primary/40 bg-primary/5')}>
         <button
           type="button"
           role="switch"
@@ -416,7 +420,7 @@ export default function LiveOrderTicket({
           </span>
           <span className="min-w-0">
             <span className="block text-xs font-medium">Stop-loss &amp; target</span>
-            <span className="block text-[11px] text-muted-foreground">
+            <span className="block text-[12px] text-muted-foreground">
               {superAllowed ? 'Super Order - both held at the broker' : 'Only on a Day market or limit order'}
             </span>
           </span>
@@ -436,7 +440,7 @@ export default function LiveOrderTicket({
         )}
       </div>
 
-      <details className="group rounded-lg border text-xs">
+      <details className="group rounded-md border border-border text-xs">
         <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2.5 py-2 select-none">
           <ChevronRightIcon className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
           <span className="font-medium">More options</span>
@@ -523,7 +527,7 @@ export default function LiveOrderTicket({
             ? 'Fix the order to continue'
             : `${buy ? 'Buy' : 'Sell'}${order.quantity > 0 ? ` ${order.quantity}` : ''}${symbol ? ` ${symbol}` : ''} · review`}
         </Button>
-        {missing && <p className="text-center text-[11px] text-muted-foreground">{missing}</p>}
+        {missing && <p className="text-center text-[12px] text-muted-foreground">{missing}</p>}
       </TicketFooter>
 
       <ConfirmLiveOrder
@@ -620,7 +624,7 @@ function ConfirmLiveOrder({
             be undone from here once it fills.
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-lg border p-3 text-sm">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-md border border-border p-3 text-sm">
           {rows.map(([k, v]) => (
             <div key={k} className="contents">
               <dt className="text-muted-foreground">{k}</dt>
@@ -629,7 +633,7 @@ function ConfirmLiveOrder({
           ))}
         </dl>
         {warnings.map((w) => (
-          <p key={w} className="flex gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+          <p key={w} className="flex gap-1.5 text-xs text-warning">
             <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0" />
             {w}
           </p>

@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Trash2Icon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
 import {
+  Button,
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -12,8 +12,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
-
+} from '@/design-system'
 export default function DeleteStockButton({
   symbol,
   onDeleted,

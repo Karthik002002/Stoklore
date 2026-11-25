@@ -17,6 +17,36 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { usePageTitle } from '@/lib/usePageTitle'
+import {
+  ThemeCustomizer,
+  ThemeSelector,
+  Badge,
+  Button,
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Tabs,
+  TabsIndicator,
+  TabsList,
+  TabsPanel,
+  TabsTab,
+} from '@/design-system'
 import { BrokerLogo } from '@/BrokerLogo'
 import ChartTemplatesTab from '@/ChartTemplatesTab'
 import EngineSettingsTab from '@/EngineSettingsTab'
@@ -25,23 +55,8 @@ import TradeAccountsTab from '@/TradeAccountsTab'
 import SourceSelect from '@/components/SourceSelect'
 import StockMasterCombobox from '@/components/StockMasterCombobox'
 import TagInput from '@/components/TagInput'
-import { Badge } from '@/components/ui/badge'
 import { TextAreaField, TextField } from '@/components/form'
 import { watchRuleSchema } from '@/lib/schemas'
-import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tabs, TabsIndicator, TabsList, TabsPanel, TabsTab } from '@/components/ui/tabs'
 import type { RuleCheck, WatchRule } from '@/services/api'
 import {
   addStock,
@@ -539,7 +554,7 @@ function AccountTab() {
         </p>
       </div>
 
-      <div className="space-y-2 rounded-lg border p-3">
+      <div className="space-y-2 rounded-md border border-border p-3">
         <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           Confirm it's you
         </p>
@@ -561,7 +576,7 @@ function AccountTab() {
         <p className="text-xs text-muted-foreground">Needed for both actions below.</p>
       </div>
 
-      <div className="space-y-2 rounded-lg border p-3">
+      <div className="space-y-2 rounded-md border border-border p-3">
         <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">New credentials</p>
         <Input placeholder="Display name" value={username} onChange={(e) => setUsername(e.target.value)} />
         <Input
@@ -595,7 +610,7 @@ function AccountTab() {
         </p>
       </div>
 
-      <div className="space-y-2 rounded-lg border p-3">
+      <div className="space-y-2 rounded-md border border-border p-3">
         <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Recovery code</p>
         <p className="text-xs text-muted-foreground">
           {status?.has_recovery_code
@@ -660,7 +675,7 @@ function ClassifierTab() {
         </span>
       </label>
       {!config.installed && (
-        <p className="rounded-md bg-amber-500/10 px-2 py-1.5 text-xs text-amber-600">
+        <p className="rounded-md bg-warning/10 px-2 py-1.5 text-xs text-warning">
           The <code>laya</code> package isn't installed in the backend's environment — run{' '}
           <code>pip install -r requirements.txt</code> and restart.
         </p>
@@ -754,7 +769,7 @@ function TelegramTab() {
         </Button>
       </div>
       {config?.last_error && (
-        <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+        <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
           Last send failed: {config.last_error}
         </p>
       )}
@@ -1029,7 +1044,7 @@ function WatchRulesTab() {
         {(rules ?? []).map((rule) => {
           const result = results[rule.id]
           return (
-            <div key={rule.id} className="rounded-lg border p-2 text-sm">
+            <div key={rule.id} className="rounded-md border border-border p-2 text-sm">
               <div className="flex items-center justify-between gap-2">
                 <span className="min-w-0">
                   <span className="font-medium">{rule.name}</span>
@@ -1132,7 +1147,7 @@ function DataCollectionTab() {
         <label className="text-xs text-muted-foreground">Symbols</label>
         <StockMasterCombobox selected={symbols} onSelect={toggleSymbol} />
         {symbols.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-input p-2">
+          <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input p-2">
             {symbols.map((symbol) => (
               <span
                 key={symbol}
@@ -1158,7 +1173,7 @@ function DataCollectionTab() {
       </Button>
 
       {status && (status.running || status.results?.length > 0) && (
-        <div className="space-y-2 rounded-lg border p-3">
+        <div className="space-y-2 rounded-md border border-border p-3">
           <p className="text-sm">
             {status.done}/{status.total} done
             {status.current_symbol ? ` - collecting ${status.current_symbol}…` : ''}
@@ -1619,7 +1634,7 @@ function StocksMasterTab() {
               </TableCell>
               <TableCell>
                 {s.board === 'SME' ? (
-                  <span className="text-amber-600 dark:text-amber-400">SME</span>
+                  <span className="text-warning">SME</span>
                 ) : (
                   <span className="text-muted-foreground">Main</span>
                 )}
@@ -1629,7 +1644,7 @@ function StocksMasterTab() {
                   quotes stay on the NSE line. */}
               <TableCell className="text-xs whitespace-nowrap">
                 {s.exchange === 'BSE' ? (
-                  <span className="text-sky-600 dark:text-sky-400">BSE</span>
+                  <span className="text-accent">BSE</span>
                 ) : s.bse_code ? (
                   <span className="text-muted-foreground" title={`BSE code ${s.bse_code}`}>
                     NSE + BSE
@@ -1676,6 +1691,30 @@ function StocksMasterTab() {
   )
 }
 
+/** Theme preset + live color editor (design system). Edits save in this browser; "Copy as preset"
+ *  gives a block for src/design-system/tokens/themes.ts so a fork can ship its own theme. */
+function AppearanceTab() {
+  return (
+    <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-card px-3 py-2">
+          <div>
+            <div className="font-medium">Theme</div>
+            <div className="text-xs text-muted-foreground">A preset; your color edits sit on top of it.</div>
+          </div>
+          <ThemeSelector />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Change any color, the corner radius or the density on the right - every page updates as you edit. To
+          make it the default for everyone running this repo, use <b>Copy as preset</b> and paste it into{' '}
+          <code>src/design-system/tokens/themes.ts</code>.
+        </p>
+      </div>
+      <ThemeCustomizer className="h-[70vh] min-h-[480px]" />
+    </div>
+  )
+}
+
 export default function Settings() {
   const { tab } = useSearch({ from: '/settings' })
   const navigate = useNavigate({ from: '/settings' })
@@ -1685,7 +1724,7 @@ export default function Settings() {
     navigate({ search: (prev) => ({ ...prev, tab: next as typeof tab }), replace: true })
 
   return (
-    <div className="flex h-[calc(100vh-1.5rem)] flex-col gap-3 overflow-hidden rounded-xl border bg-card p-4">
+    <div className="rounded-md border border-border bg-card flex h-[calc(100vh-1.5rem)] flex-col gap-3 overflow-hidden p-3">
       <div className="shrink-0">
         <h1 className="font-medium">Settings</h1>
         <p className="text-sm text-muted-foreground">
@@ -1701,6 +1740,7 @@ export default function Settings() {
       >
         <TabsList className="w-44 shrink-0 self-start !h-full">
           <TabsIndicator />
+          <TabsTab value="appearance">Appearance</TabsTab>
           <TabsTab value="account">Account</TabsTab>
           <TabsTab value="model">Model</TabsTab>
           <TabsTab value="litellm">LiteLLM</TabsTab>
@@ -1722,6 +1762,9 @@ export default function Settings() {
           <TabsTab value="chart-templates">Chart templates</TabsTab>
         </TabsList>
         <div className="min-w-0 flex-1 overflow-y-auto pr-1">
+          <TabsPanel value="appearance">
+            <AppearanceTab />
+          </TabsPanel>
           <TabsPanel value="account">
             <AccountTab />
           </TabsPanel>

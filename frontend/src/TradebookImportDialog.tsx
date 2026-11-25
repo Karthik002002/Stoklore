@@ -6,10 +6,20 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { FileUpIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+} from '@/design-system'
 import { fmt, inr } from '@/lib/format'
 import type { TradeAccount } from '@/lib/types'
 import { cn } from '@/lib/utils'
@@ -36,7 +46,7 @@ const when = (iso: string | null | undefined) =>
 function TradeRows({ rows, open }: { rows: TradebookTrade[]; open?: boolean }) {
   return (
     <table className="w-full font-mono text-xs">
-      <thead className="sticky top-0 bg-background text-[10px] text-muted-foreground uppercase">
+      <thead className="sticky top-0 bg-background text-[11px] text-muted-foreground uppercase">
         <tr className="border-b">
           <th className="py-1 text-left font-medium">Symbol</th>
           <th className="text-left font-medium">Side</th>
@@ -196,7 +206,7 @@ export default function TradebookImportDialog({
               {p.duplicates > 0 && ` · ${p.duplicates} already in the journal`}
               {p.open.length > 0 && ` · ${p.open.length} still open`}
               {p.ambiguous.length > 0 && (
-                <span className="text-amber-600 dark:text-amber-400"> · {p.ambiguous.length} need you</span>
+                <span className="text-warning"> · {p.ambiguous.length} need you</span>
               )}
               {skipped.map(([why, n]) => ` · ${n} skipped (${why})`)}
             </p>
@@ -211,7 +221,7 @@ export default function TradebookImportDialog({
             )}
             {p.ambiguous.length > 0 && (
               <section>
-                <h3 className="mb-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                <h3 className="mb-1 text-xs font-semibold text-warning">
                   Not imported - the file doesn't say what happened
                 </h3>
                 <ul className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2 text-xs">

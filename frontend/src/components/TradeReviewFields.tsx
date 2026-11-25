@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { SparklesIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { Spinner } from '@/components/ui/spinner'
+import { Spinner } from '@/design-system'
 import { CHECKS, scoreFromChecks } from '@/lib/tradeReview'
 import type { ExecutionChecks, Trade } from '@/lib/types'
 import { getClassifierConfig, suggestReview } from '@/services/api'
@@ -94,7 +94,7 @@ export default function TradeReviewFields({
   }
 
   return (
-    <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+    <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3">
       <div className="space-y-1.5">
         <div className="flex items-center justify-between gap-2">
           <p className="text-xs font-medium">Mistakes</p>
@@ -106,14 +106,14 @@ export default function TradeReviewFields({
                 notes?.trim() ? 'Read the notes with the local Laya classifier' : 'Write some notes first'
               }
               onClick={() => suggest.mutate()}
-              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+              className="inline-flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-50"
             >
               {suggest.isPending ? <Spinner className="size-3" /> : <SparklesIcon className="size-3" />}
               Suggest from notes
             </button>
           )}
         </div>
-        {suggested && <p className="text-[11px] text-muted-foreground">{suggested}</p>}
+        {suggested && <p className="text-[12px] text-muted-foreground">{suggested}</p>}
         <div className="flex flex-wrap gap-1.5">
           {mistakeOptions.map((m) => {
             const on = value.mistakes?.includes(m)
@@ -133,7 +133,7 @@ export default function TradeReviewFields({
           })}
         </div>
         {!compact && (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             Pick what actually went wrong. A loss that followed the plan is a Normal loss, not a mistake.
           </p>
         )}
@@ -155,7 +155,7 @@ export default function TradeReviewFields({
           ))}
         </div>
         {value.checks == null && Object.keys(prefill).length > 0 && (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             Sizing and stop are pre-ticked from the trade's numbers. Saved once you tick anything.
           </p>
         )}
@@ -167,7 +167,7 @@ export default function TradeReviewFields({
           {value.scoreManual && (
             <button
               type="button"
-              className="text-[11px] text-muted-foreground underline"
+              className="text-[12px] text-muted-foreground underline"
               onClick={() => onChange({ ...value, scoreManual: false, score: null })}
             >
               Use checklist ({derived ?? '—'})
@@ -190,7 +190,7 @@ export default function TradeReviewFields({
           ))}
         </div>
         {!compact && (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             {value.scoreManual
               ? 'Set by hand — no longer follows the checklist.'
               : 'From the checklist. A winner can have poor execution, a loser excellent execution.'}
@@ -214,7 +214,7 @@ export function ChecksReadout({ trade }: { trade: Trade }) {
       <span className="text-down">✗</span>
     )
   return (
-    <div className="overflow-hidden rounded-lg border text-xs">
+    <div className="overflow-hidden rounded-md border border-border text-xs">
       <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 border-b bg-muted/40 px-3 py-1.5 font-medium">
         <span>Check</span>
         <span className="w-14 text-center">{pre ? 'Planned' : ''}</span>
@@ -225,7 +225,7 @@ export function ChecksReadout({ trade }: { trade: Trade }) {
         return (
           <div
             key={c.key}
-            className={`grid grid-cols-[1fr_auto_auto] gap-x-4 px-3 py-1 ${drifted ? 'bg-amber-500/10' : ''}`}
+            className={`grid grid-cols-[1fr_auto_auto] gap-x-4 px-3 py-1 ${drifted ? 'bg-warning/10' : ''}`}
           >
             <span>{c.label}</span>
             <span className="w-14 text-center">{pre ? mark(pre[c.key]) : ''}</span>

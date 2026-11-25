@@ -11,13 +11,24 @@ import { toast } from 'sonner'
 import SeriesChart from '@/components/charts/SeriesChart'
 import { seriesColor } from '@/components/charts/colors'
 import type { Dataset } from '@/components/charts/colors'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Textarea } from '@/components/ui/textarea'
+import {
+  Badge,
+  Button,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+  Textarea,
+} from '@/design-system'
 import { excursions, histogram, istTime, pinnedRange, runAnalytics, runSheets, tradeCost } from '@/lib/engine'
 import type { RunAnalytics, RunBucket, RunTrade } from '@/lib/engine'
 import { fmt, formatDateTime, inr } from '@/lib/format'
@@ -32,14 +43,24 @@ import {
   saveEngineRunNotes,
 } from '@/services/api'
 import type { EngineBacktestRequest, EngineRun } from '@/services/api'
-import { DailyBars, ExecutionsChart, ExportMenu, HistoryLine, PREFILL_KEY, Stat, pnlClass, runName } from './engineUi'
+import {
+  DailyBars,
+  ExecutionsChart,
+  ExportMenu,
+  HistoryLine,
+  PREFILL_KEY,
+  Stat,
+  pnlClass,
+  runName,
+} from './engineUi'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 const PAGE = 100
 const MAX_BAR_SYMBOLS = 10 // MAE/MFE loads each symbol's bars; past this it'd be a lot of fetching
 export const pct = (v: number | null | undefined, d = 1) => (v == null ? '—' : `${fmt(v, d)}%`)
 export const num = (v: number | null | undefined, d = 2) => (v == null ? '—' : fmt(v, d))
-export const hold = (min: number) => (min < 60 ? `${fmt(min, 0)}m` : min < 1440 ? `${fmt(min / 60, 1)}h` : `${fmt(min / 1440, 1)}d`)
+export const hold = (min: number) =>
+  min < 60 ? `${fmt(min, 0)}m` : min < 1440 ? `${fmt(min / 60, 1)}h` : `${fmt(min / 1440, 1)}d`
 export const points = (xs: [number, number][]) => xs.map(([t, v]) => ({ time: t as UTCTimestamp, value: v }))
 
 /** The exact request that makes this run again: its own when it kept one (with this run's params,
@@ -62,14 +83,22 @@ function rerunRequest(run: EngineRun): EngineBacktestRequest {
   }
 }
 
-export function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+export function Section({
+  title,
+  hint,
+  children,
+}: {
+  title: string
+  hint?: string
+  children: React.ReactNode
+}) {
   return (
     <section className="space-y-2 break-inside-avoid">
       <h2 className="text-sm font-medium">
         {title}
         {hint && <span className="font-normal text-muted-foreground"> · {hint}</span>}
       </h2>
-      <div className="rounded-xl border bg-card p-4">{children}</div>
+      <div className="rounded-md border border-border bg-card p-3">{children}</div>
     </section>
   )
 }
@@ -124,7 +153,7 @@ export function ReturnsHeatmap({ a }: { a: RunAnalytics }) {
         key={key}
         className="rounded p-1 text-center tabular-nums"
         style={{
-          background: `rgba(${pnl >= 0 ? '34,197,94' : '239,68,68'},${0.12 + (0.6 * Math.abs(pnl)) / max})`,
+          background: `color-mix(in oklab, var(--${pnl >= 0 ? 'up' : 'down'}) ${Math.round((0.12 + (0.6 * Math.abs(pnl)) / max) * 100)}%, transparent)`,
         }}
         title={inr(pnl)}
       >
@@ -155,7 +184,10 @@ export function ReturnsHeatmap({ a }: { a: RunAnalytics }) {
                   const hit = a.monthly.find((x) => x.year === y && x.month === m)
                   return cell(m, hit?.pnl, hit?.pct)
                 })}
-                <td className={cn('p-1 text-center font-medium tabular-nums', pnlClass(yr?.pnl ?? 0))} title={inr(yr?.pnl)}>
+                <td
+                  className={cn('p-1 text-center font-medium tabular-nums', pnlClass(yr?.pnl ?? 0))}
+                  title={inr(yr?.pnl)}
+                >
                   {yr?.pct == null ? fmt(yr?.pnl ?? 0, 0) : fmt(yr.pct, 1)}
                 </td>
               </tr>
@@ -204,14 +236,17 @@ export function Histogram({ values }: { values: number[] }) {
           return (
             <div
               key={i}
-              className={cn('flex-1 rounded-t-sm', lo + h.width / 2 >= 0 ? 'bg-success/70' : 'bg-destructive/70')}
+              className={cn(
+                'flex-1 rounded-t-sm',
+                lo + h.width / 2 >= 0 ? 'bg-success/70' : 'bg-destructive/70',
+              )}
               style={{ height: `${(100 * c) / max}%` }}
               title={`${fmt(lo, 0)} to ${fmt(lo + h.width, 0)}: ${c} trades`}
             />
           )
         })}
       </div>
-      <div className="mt-1 flex justify-between text-[11px] text-muted-foreground tabular-nums">
+      <div className="mt-1 flex justify-between text-[12px] text-muted-foreground tabular-nums">
         <span>{inr(h.lo)}</span>
         <span>net P&L per trade</span>
         <span>{inr(h.hi)}</span>
@@ -257,7 +292,16 @@ export function TradeLog({
       }
     })
     const val = (r: (typeof all)[number]) =>
-      ({ exit: r.t[2], entry: r.t[1], net: r.net, ret: r.ret, hold: r.hold, qty: Math.abs(r.t[3]), mae: r.mae ?? 0, mfe: r.mfe ?? 0 })[sort.key]
+      ({
+        exit: r.t[2],
+        entry: r.t[1],
+        net: r.net,
+        ret: r.ret,
+        hold: r.hold,
+        qty: Math.abs(r.t[3]),
+        mae: r.mae ?? 0,
+        mfe: r.mfe ?? 0,
+      })[sort.key]
     return all
       .filter(
         (r) =>
@@ -273,7 +317,7 @@ export function TradeLog({
     <TableHead
       className={cn('cursor-pointer select-none whitespace-nowrap', right && 'text-right')}
       onClick={() => {
-        setSort((s) => ({ key, dir: s.key === key ? ((-s.dir) as 1 | -1) : -1 }))
+        setSort((s) => ({ key, dir: s.key === key ? (-s.dir as 1 | -1) : -1 }))
         setPage(0)
       }}
     >
@@ -304,12 +348,23 @@ export function TradeLog({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-        {pick(symbol, setSymbol, [['all', 'All symbols'], ...run.symbols.map((s): [string, string] => [s, s])])}
-        {pick(side, setSide, [['all', 'Long & short'], ['long', 'Long'], ['short', 'Short']])}
-        {pick(result, setResult, [['all', 'Wins & losses'], ['win', 'Wins'], ['loss', 'Losses']])}
+        {pick(symbol, setSymbol, [
+          ['all', 'All symbols'],
+          ...run.symbols.map((s): [string, string] => [s, s]),
+        ])}
+        {pick(side, setSide, [
+          ['all', 'Long & short'],
+          ['long', 'Long'],
+          ['short', 'Short'],
+        ])}
+        {pick(result, setResult, [
+          ['all', 'Wins & losses'],
+          ['win', 'Wins'],
+          ['loss', 'Losses'],
+        ])}
         <span>
-          {fmt(rows.length, 0)} trade{rows.length === 1 ? '' : 's'} · net {inr(rows.reduce((s, r) => s + r.net, 0))} · click a
-          row to zoom the chart onto it
+          {fmt(rows.length, 0)} trade{rows.length === 1 ? '' : 's'} · net{' '}
+          {inr(rows.reduce((s, r) => s + r.net, 0))} · click a row to zoom the chart onto it
         </span>
         {pages > 1 && (
           <span className="ml-auto flex items-center gap-1">
@@ -323,7 +378,7 @@ export function TradeLog({
           </span>
         )}
       </div>
-      <div className="max-h-[36rem] overflow-auto rounded-lg border">
+      <div className="max-h-[36rem] overflow-auto rounded-md border border-border">
         <Table>
           <TableHeader className="sticky top-0 bg-card">
             <TableRow className="hover:bg-transparent">
@@ -362,12 +417,24 @@ export function TradeLog({
                   <TableCell className="whitespace-nowrap tabular-nums">{istTime(tout)}</TableCell>
                   <TableCell className="text-right tabular-nums">{fmt(pout)}</TableCell>
                   <TableCell className="text-right tabular-nums">{hold(r.hold)}</TableCell>
-                  <TableCell className={cn('text-right tabular-nums', pnlClass(gross))}>{fmt(gross)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">{fmt(r.cost)}</TableCell>
-                  <TableCell className={cn('text-right font-medium tabular-nums', pnlClass(r.net))}>{fmt(r.net)}</TableCell>
-                  <TableCell className={cn('text-right tabular-nums', pnlClass(r.ret))}>{pct(r.ret, 2)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-destructive">{r.mae == null ? '—' : fmt(r.mae)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-success">{r.mfe == null ? '—' : fmt(r.mfe)}</TableCell>
+                  <TableCell className={cn('text-right tabular-nums', pnlClass(gross))}>
+                    {fmt(gross)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">
+                    {fmt(r.cost)}
+                  </TableCell>
+                  <TableCell className={cn('text-right font-medium tabular-nums', pnlClass(r.net))}>
+                    {fmt(r.net)}
+                  </TableCell>
+                  <TableCell className={cn('text-right tabular-nums', pnlClass(r.ret))}>
+                    {pct(r.ret, 2)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-destructive">
+                    {r.mae == null ? '—' : fmt(r.mae)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-success">
+                    {r.mfe == null ? '—' : fmt(r.mfe)}
+                  </TableCell>
                 </TableRow>
               )
             })}
@@ -387,7 +454,10 @@ function Notes({ run }: { run: EngineRun }) {
       saveEngineRunNotes(
         run.id,
         note.trim() || null,
-        tags.split(',').map((t) => t.trim()).filter(Boolean),
+        tags
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean),
       ),
     onSuccess: (r) => {
       queryClient.setQueryData<EngineRun>(['engineRun', run.id], (old) => old && { ...old, ...r })
@@ -453,7 +523,8 @@ function Compare({ run }: { run: EngineRun }) {
         <SelectContent>
           {choices.map((r) => (
             <SelectItem key={r.id} value={r.id}>
-              {runName(r)} · {r.symbols.length > 2 ? `${r.symbols.length} stocks` : r.symbols.join(', ')} · {inr(r.summary.net)}
+              {runName(r)} · {r.symbols.length > 2 ? `${r.symbols.length} stocks` : r.symbols.join(', ')} ·{' '}
+              {inr(r.summary.net)}
             </SelectItem>
           ))}
         </SelectContent>
@@ -478,12 +549,16 @@ function Compare({ run }: { run: EngineRun }) {
               {[run, that].map((r) => (
                 <TableRow key={r.id}>
                   <TableCell className="max-w-64 truncate font-medium">{runName(r)}</TableCell>
-                  <TableCell className={cn('text-right tabular-nums', pnlClass(r.summary.net))}>{inr(r.summary.net)}</TableCell>
+                  <TableCell className={cn('text-right tabular-nums', pnlClass(r.summary.net))}>
+                    {inr(r.summary.net)}
+                  </TableCell>
                   <TableCell className="text-right tabular-nums">{r.summary.trades}</TableCell>
                   <TableCell className="text-right tabular-nums">{pct(r.summary.win_rate)}</TableCell>
                   <TableCell className="text-right tabular-nums">{num(r.summary.profit_factor)}</TableCell>
                   <TableCell className="text-right tabular-nums">{num(r.summary.sharpe)}</TableCell>
-                  <TableCell className="text-right tabular-nums text-destructive">{inr(r.summary.max_dd)}</TableCell>
+                  <TableCell className="text-right tabular-nums text-destructive">
+                    {inr(r.summary.max_dd)}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -508,7 +583,10 @@ export default function EngineRunPage() {
   const a = useMemo(() => (run ? runAnalytics(run) : null), [run])
 
   // MAE/MFE need the bars each trade was held over: the same bars (and cache entries) as the chart
-  const period = run && { start: istTime(run.summary.from).slice(0, 10), end: istTime(run.summary.to).slice(0, 10) }
+  const period = run && {
+    start: istTime(run.summary.from).slice(0, 10),
+    end: istTime(run.summary.to).slice(0, 10),
+  }
   const barSymbols = run && run.symbols.length <= MAX_BAR_SYMBOLS ? run.symbols : []
   const barQueries = useQueries({
     queries: barSymbols.map((sym) => ({
@@ -551,7 +629,11 @@ export default function EngineRunPage() {
   })
 
   const back = (
-    <Link to="/engine" search={{ tab: 'backtest', run: runId }} className="no-print inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+    <Link
+      to="/engine"
+      search={{ tab: 'backtest', run: runId }}
+      className="no-print inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+    >
       <ArrowLeftIcon className="size-4" /> Algo engine
     </Link>
   )
@@ -573,7 +655,9 @@ export default function EngineRunPage() {
   const s = run.summary
   const sized = run.sizing && run.sizing.mode !== 'fixed'
   const equity: Dataset[] = [{ key: 'Equity', color: seriesColor(0), points: points(run.equity) }]
-  const underwater: Dataset[] = [{ key: 'Under water %', color: seriesColor(3), points: points(a.underwater) }]
+  const underwater: Dataset[] = [
+    { key: 'Under water %', color: seriesColor(3), points: points(a.underwater) },
+  ]
   const bySymbolCurves: Dataset[] = a.bySymbol
     .slice(0, 8)
     .map((x, i) => ({ key: x.symbol, color: seriesColor(i), points: points(dedupe(x.curve)) }))
@@ -585,11 +669,19 @@ export default function EngineRunPage() {
           <div className="space-y-1">
             <h1 className="text-lg font-medium">{runName(run)}</h1>
             <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-              <Badge variant={run.source === 'live' ? 'destructive' : run.source === 'paper' ? 'secondary' : 'outline'}>
+              <Badge
+                variant={
+                  run.source === 'live' ? 'destructive' : run.source === 'paper' ? 'secondary' : 'outline'
+                }
+              >
                 {run.source}
               </Badge>
               {run.halted && <Badge variant="destructive">halted</Badge>}
-              {sized && <Badge>{run.sizing!.mode === 'all_in' ? 'All-in' : 'Scale qty'} · {inr(run.sizing!.capital)}</Badge>}
+              {sized && (
+                <Badge>
+                  {run.sizing!.mode === 'all_in' ? 'All-in' : 'Scale qty'} · {inr(run.sizing!.capital)}
+                </Badge>
+              )}
               {run.job != null && (
                 <Link to="/engine" search={{ tab: 'jobs' }}>
                   <Badge variant="secondary">job #{run.job}</Badge>
@@ -607,7 +699,11 @@ export default function EngineRunPage() {
               {run.batch && (
                 <>
                   {' · batch '}
-                  <Link to="/engine" search={{ tab: 'backtest', batch: run.batch, run: run.id }} className="text-primary hover:underline">
+                  <Link
+                    to="/engine"
+                    search={{ tab: 'backtest', batch: run.batch, run: run.id }}
+                    className="text-primary hover:underline"
+                  >
                     {run.batch}
                   </Link>
                 </>
@@ -617,7 +713,12 @@ export default function EngineRunPage() {
           <div className="no-print flex flex-wrap items-center gap-2">
             {run.source === 'backtest' && (
               <>
-                <Button size="sm" disabled={rerun.isPending} onClick={() => rerun.mutate()} title="Same strategy, params, symbols, sizing and bars">
+                <Button
+                  size="sm"
+                  disabled={rerun.isPending}
+                  onClick={() => rerun.mutate()}
+                  title="Same strategy, params, symbols, sizing and bars"
+                >
                   {rerun.isPending ? <Spinner className="size-3.5" /> : <PlayIcon />} Re-run
                 </Button>
                 <Button
@@ -643,7 +744,10 @@ export default function EngineRunPage() {
         </div>
       </div>
 
-      <Section title="Performance" hint={`% figures on ${inr(a.capital)} - ${a.capitalBasis === 'compound' ? 'the Compound capital' : 'the most notional this run had open at once'}`}>
+      <Section
+        title="Performance"
+        hint={`% figures on ${inr(a.capital)} - ${a.capitalBasis === 'compound' ? 'the Compound capital' : 'the most notional this run had open at once'}`}
+      >
         <MetricsGrid run={run} a={a} />
       </Section>
 
@@ -669,7 +773,10 @@ export default function EngineRunPage() {
             <p className="mb-1 text-xs text-muted-foreground">Rolling Sharpe · 63 sessions</p>
             {a.rollingSharpe.length ? (
               <div className="h-44">
-                <SeriesChart datasets={[{ key: 'Sharpe', color: seriesColor(1), points: points(a.rollingSharpe) }]} fill />
+                <SeriesChart
+                  datasets={[{ key: 'Sharpe', color: seriesColor(1), points: points(a.rollingSharpe) }]}
+                  fill
+                />
               </div>
             ) : (
               <p className="text-xs text-muted-foreground">Needs at least 63 sessions.</p>
@@ -700,12 +807,20 @@ export default function EngineRunPage() {
                   <TableRow key={d.start}>
                     <TableCell className="tabular-nums">{istTime(d.start).slice(0, 10)}</TableCell>
                     <TableCell className="tabular-nums">{istTime(d.trough).slice(0, 10)}</TableCell>
-                    <TableCell className="tabular-nums">{d.end ? istTime(d.end).slice(0, 10) : <span className="text-destructive">not yet</span>}</TableCell>
+                    <TableCell className="tabular-nums">
+                      {d.end ? (
+                        istTime(d.end).slice(0, 10)
+                      ) : (
+                        <span className="text-destructive">not yet</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums text-destructive">
                       {inr(-d.depth)} · {pct(d.pct)}
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{d.days}d</TableCell>
-                    <TableCell className="text-right tabular-nums">{d.recovery == null ? '—' : `${d.recovery}d`}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {d.recovery == null ? '—' : `${d.recovery}d`}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -735,7 +850,9 @@ export default function EngineRunPage() {
                 <TableRow key={x.symbol}>
                   <TableCell className="font-medium">{x.symbol}</TableCell>
                   <TableCell className="text-right tabular-nums">{x.trades}</TableCell>
-                  <TableCell className={cn('text-right tabular-nums', pnlClass(x.net))}>{inr(x.net)}</TableCell>
+                  <TableCell className={cn('text-right tabular-nums', pnlClass(x.net))}>
+                    {inr(x.net)}
+                  </TableCell>
                   <TableCell className="text-right tabular-nums">{pct(x.share)}</TableCell>
                   <TableCell className="text-right tabular-nums">{pct(x.winRate)}</TableCell>
                   <TableCell className="text-right tabular-nums">{num(x.profitFactor)}</TableCell>
@@ -794,7 +911,11 @@ export default function EngineRunPage() {
             {sized && (
               <>
                 <Stat label="Starting capital" value={inr(run.sizing!.capital)} />
-                <Stat label="Ending account" value={inr(run.sizing!.capital + s.net)} className={pnlClass(s.net)} />
+                <Stat
+                  label="Ending account"
+                  value={inr(run.sizing!.capital + s.net)}
+                  className={pnlClass(s.net)}
+                />
                 <Stat label="Sizing" value={run.sizing!.mode === 'all_in' ? 'All-in' : 'Scale qty'} />
               </>
             )}
@@ -803,7 +924,11 @@ export default function EngineRunPage() {
             Shares per trade, at entry{sized ? ' - compounding moves it with the account' : ''}
           </p>
           <div className="h-44">
-            <SeriesChart datasets={[{ key: 'Qty', color: seriesColor(4), points: points(dedupe(a.sizes)) }]} fill format={(v) => fmt(v, 0)} />
+            <SeriesChart
+              datasets={[{ key: 'Qty', color: seriesColor(4), points: points(dedupe(a.sizes)) }]}
+              fill
+              format={(v) => fmt(v, 0)}
+            />
           </div>
         </Section>
 
@@ -831,11 +956,18 @@ export default function EngineRunPage() {
                         <TableCell className="tabular-nums">{c.from}</TableCell>
                         <TableCell className="tabular-nums">{c.to}</TableCell>
                         <TableCell className="text-right tabular-nums">{c.sessions}</TableCell>
-                        <TableCell className={cn('text-right tabular-nums', c.missing?.sessions && 'text-destructive')} title={c.missing ? `${c.missing.from} → ${c.missing.to}` : undefined}>
+                        <TableCell
+                          className={cn('text-right tabular-nums', c.missing?.sessions && 'text-destructive')}
+                          title={c.missing ? `${c.missing.from} → ${c.missing.to}` : undefined}
+                        >
                           {c.missing?.sessions ?? 0}
                         </TableCell>
-                        <TableCell className="text-xs">{c.adjusted?.map((x) => `${x.date} ×${fmt(x.ratio, 3)}`).join(', ') || '—'}</TableCell>
-                        <TableCell className="text-xs text-destructive">{c.jumps?.map((x) => `${x.date} ${pct(x.move * 100, 0)}`).join(', ') || '—'}</TableCell>
+                        <TableCell className="text-xs">
+                          {c.adjusted?.map((x) => `${x.date} ×${fmt(x.ratio, 3)}`).join(', ') || '—'}
+                        </TableCell>
+                        <TableCell className="text-xs text-destructive">
+                          {c.jumps?.map((x) => `${x.date} ${pct(x.move * 100, 0)}`).join(', ') || '—'}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -843,7 +975,9 @@ export default function EngineRunPage() {
               )}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">A {run.source} session: its bars are the live market's, not a stored range.</p>
+            <p className="text-sm text-muted-foreground">
+              A {run.source} session: its bars are the live market's, not a stored range.
+            </p>
           )}
         </Section>
       </div>
@@ -856,7 +990,13 @@ export default function EngineRunPage() {
             <dt className="text-muted-foreground">Created</dt>
             <dd>{formatDateTime(run.created)}</dd>
             <dt className="text-muted-foreground">Started by</dt>
-            <dd>{run.job != null ? `background job #${run.job}` : run.source === 'backtest' ? 'Run now' : `the ${run.source} engine`}</dd>
+            <dd>
+              {run.job != null
+                ? `background job #${run.job}`
+                : run.source === 'backtest'
+                  ? 'Run now'
+                  : `the ${run.source} engine`}
+            </dd>
             {run.engine && (
               <>
                 <dt className="text-muted-foreground">Engine build</dt>
@@ -871,7 +1011,9 @@ export default function EngineRunPage() {
                     variant="ghost"
                     aria-label="Copy command"
                     className="no-print"
-                    onClick={() => navigator.clipboard.writeText(run.engine!.cmd).then(() => toast.success('Copied'))}
+                    onClick={() =>
+                      navigator.clipboard.writeText(run.engine!.cmd).then(() => toast.success('Copied'))
+                    }
                   >
                     <CopyIcon />
                   </Button>
@@ -880,10 +1022,14 @@ export default function EngineRunPage() {
             )}
           </dl>
           {!run.engine && run.source === 'backtest' && (
-            <p className="mt-2 text-xs text-muted-foreground">Runs made before this page existed didn't record their engine command or build.</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Runs made before this page existed didn't record their engine command or build.
+            </p>
           )}
           <details className="mt-3 text-xs">
-            <summary className="cursor-pointer text-muted-foreground hover:text-foreground">Every param and the request</summary>
+            <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+              Every param and the request
+            </summary>
             <pre className="mt-2 max-h-72 overflow-auto rounded bg-muted p-2">
               {JSON.stringify({ params: run.params, request: run.request ?? rerunRequest(run) }, null, 2)}
             </pre>

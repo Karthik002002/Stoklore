@@ -3,14 +3,25 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { Link } from '@tanstack/react-router'
 import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, RefreshCwIcon } from 'lucide-react'
 import { toast } from 'sonner'
-import { DateRangePicker } from '@/components/DatePicker'
+import {
+  DateRangePicker,
+  Badge,
+  Button,
+  Input,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Spinner,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/design-system'
 import TradeFilterDialog, { FilterButton, FilterChips } from '@/components/TradeFilterDialog'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Spinner } from '@/components/ui/spinner'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { compact, formatDate } from '@/lib/format'
 import { EMPTY_FILTERS, filterTrades, setFacet } from '@/lib/tradeFilters'
 import { usePageTitle } from '@/lib/usePageTitle'
@@ -367,7 +378,7 @@ export default function Shareholding() {
       </div>
 
       {running && (
-        <p className="rounded-lg border bg-card p-2.5 text-xs text-muted-foreground">
+        <p className="rounded-md border border-border bg-card p-2.5 text-xs text-muted-foreground">
           {status.phase === 'detail'
             ? `Reading filing detail — ${status.done}/${status.total}`
             : `Sweeping filings — window ${status.done}/${status.total}`}
@@ -431,13 +442,13 @@ export default function Shareholding() {
       {isLoading ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : rows.length === 0 ? (
-        <p className="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground">
+        <p className="rounded-md border border-dashed border-input p-8 text-center text-sm text-muted-foreground">
           {coverage?.filings
             ? 'No company matches these filters.'
             : 'Nothing collected yet — hit Collect to pull the filings NSE has published.'}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-xl border">
+        <div className="overflow-x-auto rounded-md border border-border">
           <Table>
             <TableHeader>
               <TableRow>

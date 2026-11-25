@@ -12,10 +12,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@/components/ui/alert-dialog'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Spinner } from '@/components/ui/spinner'
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  Spinner,
+} from '@/design-system'
 import { timeAgoShort } from '@/lib/format'
 import { usePageTitle } from '@/lib/usePageTitle'
 import {
@@ -91,7 +95,7 @@ export default function DashboardList() {
   const starters = (
     <div className="grid gap-4 md:grid-cols-2">
       <section className="space-y-2">
-        <h3 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+        <h3 className="text-[12px] font-medium tracking-wide text-muted-foreground uppercase">
           Start from a template
         </h3>
         {(['Trading', 'Market', 'Workflows'] as const).map((category) => {
@@ -99,14 +103,14 @@ export default function DashboardList() {
           if (!group.length) return null
           return (
             <div key={category} className="space-y-1.5">
-              <p className="text-[11px] text-muted-foreground">{category}</p>
+              <p className="text-[12px] text-muted-foreground">{category}</p>
               {group.map((t) => (
                 <button
                   key={t.id}
                   type="button"
                   disabled={create.isPending}
                   onClick={() => create.mutate({ kind: 'template', id: t.id })}
-                  className="block w-full rounded-lg border px-3 py-2 text-left transition-colors hover:bg-muted/50 disabled:opacity-60"
+                  className="block w-full rounded-md border border-border px-3 py-2 text-left transition-colors hover:bg-muted/50 disabled:opacity-60"
                 >
                   <p className="text-sm font-medium">{t.name}</p>
                   <p className="text-xs text-muted-foreground">{t.description}</p>
@@ -117,7 +121,7 @@ export default function DashboardList() {
         })}
       </section>
       <section className="space-y-2">
-        <h3 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+        <h3 className="text-[12px] font-medium tracking-wide text-muted-foreground uppercase">
           Build from a workflow
         </h3>
         <div className="max-h-72 space-y-1 overflow-y-auto">
@@ -127,7 +131,7 @@ export default function DashboardList() {
               type="button"
               disabled={create.isPending}
               onClick={() => create.mutate({ kind: 'workflow', id: w.id })}
-              className="flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50 disabled:opacity-60"
+              className="flex w-full items-center gap-2 rounded-md border border-border px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50 disabled:opacity-60"
             >
               <WorkflowIcon className="size-3.5 text-muted-foreground" />
               <span className="truncate">{w.name}</span>
@@ -135,7 +139,7 @@ export default function DashboardList() {
           ))}
           {!workflows.length && <p className="text-xs text-muted-foreground">No workflows yet.</p>}
         </div>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[12px] text-muted-foreground">
           A stat and a line per number it collects, a top 10, a table, a heatmap and its run health — with a
           dropdown for the field that names things.
         </p>
@@ -144,7 +148,7 @@ export default function DashboardList() {
   )
 
   return (
-    <div className="h-[calc(100vh-5rem)] overflow-y-auto rounded-xl border bg-card p-4">
+    <div className="rounded-md border border-border bg-card h-[calc(100vh-5rem)] overflow-y-auto p-3">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="font-medium">Dashboards</h2>
@@ -168,7 +172,7 @@ export default function DashboardList() {
       {isLoading ? (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {[0, 1, 2].map((i) => (
-            <div key={i} className="h-24 animate-pulse rounded-xl border bg-muted/30" />
+            <div key={i} className="h-24 animate-pulse rounded-md border border-border bg-muted/30" />
           ))}
         </div>
       ) : dashboards.length === 0 ? (
@@ -183,14 +187,14 @@ export default function DashboardList() {
           {dashboards.map((d) => (
             <div
               key={d.id}
-              className="group relative rounded-xl border bg-card transition-colors hover:border-foreground/20 hover:bg-muted/20"
+              className="group relative rounded-md border border-border bg-card transition-colors hover:border-foreground/20 hover:bg-muted/20"
             >
               <Link to="/dashboards/$dashboardId" params={{ dashboardId: d.id }} className="block p-4">
                 <p className="truncate pr-8 font-medium">{d.name}</p>
                 {d.description && (
                   <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{d.description}</p>
                 )}
-                <p className="mt-2 text-[11px] text-muted-foreground">
+                <p className="mt-2 text-[12px] text-muted-foreground">
                   {d.panel_count} panel{d.panel_count === 1 ? '' : 's'} · updated {timeAgoShort(d.updated_at)}{' '}
                   ago
                 </p>

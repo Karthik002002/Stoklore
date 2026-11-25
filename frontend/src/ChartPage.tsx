@@ -4,7 +4,15 @@
 // timeframe, alerts and positions come with it. Trading happens here too: the account picker in
 // the top bar and the sidebar's Trade tab are the chart modal's (components/TradeAccount), so an
 // order never needs a second chart opened over this one.
-import RsPill from '@/components/RsPill'
+import {
+  RsPill,
+  TableSortHead as SortTh,
+  Button,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  Spinner,
+} from '@/design-system'
 import { useStrength } from '@/lib/useStrength'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -20,11 +28,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { AccountSelect, TradeTicket, useTradeAccount } from '@/components/TradeAccount'
-import SortTh from '@/components/SortTh'
 import SymbolCombobox from '@/components/SymbolCombobox'
-import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { Spinner } from '@/components/ui/spinner'
 import { compact, fmt } from '@/lib/format'
 import { sortRows } from '@/lib/sortRows'
 import type { Sort } from '@/lib/sortRows'
@@ -116,7 +120,7 @@ function DetailCard({ symbol }: { symbol: string }) {
       </div>
       {where != null && (
         <div>
-          <div className="flex justify-between text-[10px] text-muted-foreground uppercase">
+          <div className="flex justify-between text-[11px] text-muted-foreground uppercase">
             <span>52W low ₹{fmt(lo)}</span>
             <span>high ₹{fmt(hi)}</span>
           </div>
@@ -136,7 +140,7 @@ function DetailCard({ symbol }: { symbol: string }) {
           ['P/E', q.trailingPE == null ? '—' : fmt(q.trailingPE as number, 1)],
         ].map(([k, v]) => (
           <div key={k} className="min-w-0">
-            <dt className="text-[10px] text-muted-foreground uppercase">{k}</dt>
+            <dt className="text-[11px] text-muted-foreground uppercase">{k}</dt>
             <dd className="truncate font-medium tabular-nums">{v}</dd>
           </div>
         ))}
@@ -255,7 +259,9 @@ export default function ChartPage() {
   // keep the selected list's tab in view when there are more lists than fit
   const listsRef = useRef<HTMLDivElement>(null)
   useEffect(() => {
-    listsRef.current?.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    listsRef.current
+      ?.querySelector('[aria-pressed="true"]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }, [list])
 
   const refresh = () =>
@@ -358,7 +364,7 @@ export default function ChartPage() {
                           aria-pressed={active}
                           onClick={() => go({ list: l })}
                           className={cn(
-                            'flex size-8 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold transition-colors',
+                            'flex size-8 shrink-0 items-center justify-center rounded-full border text-[12px] font-semibold transition-colors',
                             active
                               ? 'border-foreground bg-foreground text-background'
                               : 'border-border text-muted-foreground hover:border-foreground/50 hover:text-foreground',
@@ -375,7 +381,6 @@ export default function ChartPage() {
                 )
               })}
             </div>
-           
           </div>
           <div className="border-b p-2">
             <SymbolCombobox
@@ -384,7 +389,7 @@ export default function ChartPage() {
               className="w-full"
             />
             {add.isPending && (
-              <p className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <p className="mt-1 flex items-center gap-1.5 text-[12px] text-muted-foreground">
                 <Spinner className="size-3" /> Adding…
               </p>
             )}
@@ -393,7 +398,7 @@ export default function ChartPage() {
           <div className="min-h-0 flex-1 overflow-y-auto">
             <table className="w-full font-mono text-xs">
               <thead className="sticky top-0 z-10 bg-background">
-                <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
+                <tr className="border-b text-[11px] tracking-widest text-muted-foreground uppercase">
                   <SortTh label="Symbol" k="symbol" sort={sort} onSort={setSort} align="left" first="asc" />
                   <SortTh label="Last" k="last" sort={sort} onSort={setSort} />
                   <SortTh label="Chg" k="chg" sort={sort} onSort={setSort} />

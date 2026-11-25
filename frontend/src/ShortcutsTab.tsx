@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { RotateCcwIcon } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/design-system'
 import {
   SHORTCUT_SCOPES,
   SHORTCUTS,
@@ -80,7 +80,7 @@ export default function ShortcutsTab() {
       </div>
 
       {clashing.size > 0 && (
-        <p className="rounded-lg border border-destructive/40 bg-destructive/[0.06] p-2.5 text-xs text-destructive">
+        <p className="rounded-md border border-destructive/40 bg-destructive/[0.06] p-2.5 text-xs text-destructive">
           Two actions share a key — only one of them will fire. The clashing rows are marked below.
         </p>
       )}
@@ -90,7 +90,7 @@ export default function ShortcutsTab() {
           <p className="mb-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
             {scope}
           </p>
-          <div className="rounded-xl border">
+          <div className="rounded-md border border-border">
             {SHORTCUTS.filter((s) => s.scope === scope).map((shortcut) => {
               const binding = bindingFor(bindings, shortcut.id)
               const changed = binding !== defaultFor(shortcut.id)

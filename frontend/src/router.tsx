@@ -54,6 +54,7 @@ const oneOf = <T extends string>(allowed: readonly T[], value: unknown): value i
 const numeric = (value: unknown) => (Number.isFinite(Number(value)) && value ? Number(value) : undefined)
 
 const SETTINGS_TABS = [
+  'appearance',
   'account',
   'model',
   'litellm',

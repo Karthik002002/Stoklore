@@ -3,8 +3,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import RsPill from '@/components/RsPill'
-import { Spinner } from '@/components/ui/spinner'
+import { RsPill, Spinner } from '@/design-system'
 import { daysUntil } from '@/lib/bookRisk'
 import { usePageTitle } from '@/lib/usePageTitle'
 import { useStrength } from '@/lib/useStrength'
@@ -158,7 +157,7 @@ export default function EarningsPage() {
           {/* exposure first: the one thing that needs action */}
           <div
             className={cn(
-              'rounded-lg border px-3 py-2 text-sm',
+              'rounded-md border border-border px-3 py-2 text-sm',
               held.length ? 'border-down/50 bg-down/10' : 'border-up/40 bg-up/5',
             )}
           >
@@ -185,7 +184,7 @@ export default function EarningsPage() {
           </div>
 
           {/* two weeks at a glance: bar = meetings that day, coloured part = yours, red dot = a holding */}
-          <div className="rounded-lg border p-3">
+          <div className="rounded-md border border-border p-3">
             <div className="flex h-36 items-end gap-1.5">
               {strip.map((s) => {
                 const d = new Date(`${s.date}T00:00:00`)
@@ -202,7 +201,7 @@ export default function EarningsPage() {
                       focus && !active && 'opacity-40',
                     )}
                   >
-                    <span className="text-[10px] tabular-nums text-muted-foreground">{s.all || ''}</span>
+                    <span className="text-[11px] tabular-nums text-muted-foreground">{s.all || ''}</span>
                     <div
                       className="flex w-full max-w-10 flex-col justify-end overflow-hidden rounded-sm bg-foreground/15"
                       style={{ height: `${(s.all / peak) * 70}%`, minHeight: s.all ? 3 : 0 }}
@@ -215,7 +214,7 @@ export default function EarningsPage() {
                     <span className={cn('size-1.5 rounded-full', s.held ? 'bg-down' : 'bg-transparent')} />
                     <span
                       className={cn(
-                        'text-[10px] leading-tight',
+                        'text-[11px] leading-tight',
                         daysUntil(s.date) === 0 ? 'font-semibold text-foreground' : 'text-muted-foreground',
                       )}
                     >
@@ -227,7 +226,7 @@ export default function EarningsPage() {
                 )
               })}
             </div>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
               <span className="flex items-center gap-1">
                 <span className="size-2 rounded-sm bg-foreground/15" /> all meetings
               </span>
@@ -284,10 +283,10 @@ export default function EarningsPage() {
                             <span className="truncate font-semibold text-sm">{r.symbol}</span>
                             <RsPill rs={st?.rs} />
                           </div>
-                          <span className="truncate text-[10px] text-muted-foreground">
+                          <span className="truncate text-[11px] text-muted-foreground">
                             {sectorOf.get(r.symbol) ?? '—'}
                           </span>
-                          <div className="flex items-center justify-between text-[10px] tabular-nums">
+                          <div className="flex items-center justify-between text-[11px] tabular-nums">
                             <span className={cn(st && (st.r1m >= 0 ? 'text-up' : 'text-down'))}>
                               1M {st ? `${st.r1m >= 0 ? '+' : ''}${st.r1m.toFixed(1)}%` : '—'}
                             </span>
@@ -300,7 +299,7 @@ export default function EarningsPage() {
                               <div
                                 className={cn(
                                   'h-full',
-                                  fromHigh > -10 ? 'bg-up' : fromHigh > -25 ? 'bg-amber-500' : 'bg-down',
+                                  fromHigh > -10 ? 'bg-up' : fromHigh > -25 ? 'bg-warning' : 'bg-down',
                                 )}
                                 style={{
                                   width: `${Math.max(4, 100 + Math.max(-60, fromHigh) * (100 / 60))}%`,
@@ -310,7 +309,7 @@ export default function EarningsPage() {
                           )}
                           {tag && (
                             <span
-                              className={cn('truncate text-[10px]', isHeld ? 'text-down' : 'text-primary')}
+                              className={cn('truncate text-[11px]', isHeld ? 'text-down' : 'text-primary')}
                             >
                               {tag}
                             </span>

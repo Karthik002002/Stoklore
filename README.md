@@ -1100,6 +1100,9 @@ on **balances, not transactions**: one value per account per month.
   every mutual fund, demat account, bond and NPS scheme is recorded at the statement date
   (parsed by [casparser](https://github.com/codereverser/casparser)). It is re-importable monthly;
   the same holding updates the same item, and the PDF and password are never stored
+- **Live value**: CAS holdings are repriced between statements from the units in the last one:
+  stocks and ETFs from live NSE quotes, mutual funds from AMFI's daily NAV. A **Live net worth**
+  card sits next to the last recorded one, and a **Live** column shows each item's change
 - **Link trading accounts**: a journal account becomes a net-worth item whose value is pre-filled
   from the journal's live balance
 - **Goals**: target, date, priority, expected return, planned SIP, and which share of which items

@@ -2674,6 +2674,16 @@ const sendJson = (url: string, method: string, body?: unknown) =>
   }).then(json)
 
 export const getFinance = () => fetch('/api/finance').then(json<FinanceData>)
+// Today's value of CAS items repriced from their last statement's units (app/core/fin_live.py).
+export type FinLiveValue = {
+  value: number
+  statement_value: number
+  priced: number
+  count: number
+  as_of: string | null
+}
+export const getFinanceLive = (fresh = false) =>
+  fetch(`/api/finance/live${fresh ? '?fresh=true' : ''}`).then(json<{ items: Record<string, FinLiveValue> }>)
 export const saveFinItem = (item: FinItemInput, id?: number) =>
   id ? sendJson(`/api/finance/items/${id}`, 'PUT', item) : sendJson('/api/finance/items', 'POST', item)
 export const deleteFinItem = (id: number) => sendJson(`/api/finance/items/${id}`, 'DELETE')

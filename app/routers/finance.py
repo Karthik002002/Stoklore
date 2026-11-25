@@ -4,7 +4,8 @@ from datetime import date
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
-from app.core import cas, db
+from app.core import cas, db, fin_live
+from app.services.quotes import paper_prices, paper_quotes
 from app.schemas import FinGoalRequest, FinItemRequest, FinMonthlyUpdateRequest, FinSettingsRequest
 
 router = APIRouter(tags=["finance"])
@@ -125,6 +126,10 @@ def import_cas(file: UploadFile = File(...), password: str = Form(...)):
              "interest_pct": None, "archived": False},
             source="cas", external_key=r["key"],
         )
+        for p in r["positions"]:
+            if not p["symbol"] and r["kind"] == "stock":
+                p["symbol"] = fin_live.nse_symbol(p["isin"])
+        db.set_fin_item_holdings(item_id, r["positions"] or None)
         snapshots.append((item_id, as_of, r["value"]))
         imported.append({"name": existing["name"] if existing else r["name"], "value": r["value"], "new": not existing})
     db.upsert_fin_snapshots(snapshots)
@@ -133,6 +138,24 @@ def import_cas(file: UploadFile = File(...), password: str = Form(...)):
                if i["source"] == "cas" and not i["archived"] and i["external_key"] not in seen]
     return {"as_of": as_of, "file_type": data.get("file_type"), "imported": imported, "missing": missing,
             "warnings": [*(data.get("parse_warnings") or []), *cas.coverage_warnings(data, rows)]}
+
+
+@router.get("/api/finance/live")
+def finance_live(fresh: bool = False):
+    """Today's value of every CAS item, from the units in its last statement - see fin_live.
+    Read-only: the page shows it beside the statement value, nothing is written.
+    fresh: the page's refresh button - fetch quotes now instead of serving the stored ones and
+    refreshing them in the background (paper_quotes' default, right for the 60s poll)."""
+    items = [i for i in db.list_fin_items() if i.get("holdings") and not i["archived"]]
+    if not items:
+        return {"items": {}}
+    positions = [p for i in items for p in i["holdings"]]
+    symbols = [p["symbol"] for p in positions if p.get("symbol")]
+    if fresh:
+        paper_prices(symbols)  # writes the store that paper_quotes reads back below
+    quotes = paper_quotes(symbols)
+    unquoted = any(not (quotes.get(p.get("symbol")) or {}).get("price") for p in positions)
+    return {"items": fin_live.revalue(items, quotes, fin_live.amfi_navs() if unquoted else {})}
 
 
 @router.post("/api/finance/link-trade-account/{account_id}")

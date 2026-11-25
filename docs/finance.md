@@ -42,6 +42,30 @@ When you re-import:
 
 The PDF and password are never stored.
 
+### Live value between statements
+
+A statement is weeks old by the time it arrives, but the units in it are still correct. Each
+import saves the units, ISIN and symbol behind every CAS item (`fin_items.holdings`), and
+`GET /api/finance/live` reprices them on every page load and once a minute after that. The
+↻ button on the **Live net worth** card fetches quotes on the spot (`?fresh=true`) instead of
+waiting for the next minute:
+
+| Holding | Price source |
+|---|---|
+| Stocks and ETFs with an NSE symbol | The app's quote cache (`services/quotes.paper_quotes`), the same one paper trading uses. casparser supplies the symbol from its ISIN database, and Yahoo's ISIN search fills any it doesn't know (mostly ETFs) at import. |
+| Mutual funds, and anything without a symbol | AMFI's daily `NAVAll.txt`, fetched once and cached for 6 hours |
+| Neither available | The statement's own price, counted as unpriced |
+
+The page shows **Live net worth** next to **Net worth (last update)**, and a **Live** column with
+the change against the recorded value. Hover a cell to see how many of its holdings are live and
+how old the prices are. Linked journal accounts show their current journal balance in the same
+column.
+
+Live values are display only: they are never written as snapshots, so the history and goals stay
+on what you recorded. NPS schemes, bonds and manual items have no live price, so they keep their
+last recorded value. Items imported before live tracking existed have no units saved; re-import the
+statement once to enable them.
+
 ## Items
 
 | Field | Meaning |
@@ -147,6 +171,7 @@ is worse than p10. The upgrade path is to bootstrap from real Nifty monthly retu
 | Tables | `fin_items`, `fin_snapshots` (unique per item+date), `fin_goals` (funding as JSONB), `fin_cashflow` (one row per month), and the `finance` key in `settings` for the targets |
 | API | `app/routers/finance.py`: `GET /api/finance` returns everything in one call. Writes go to `/items`, `/monthly-update`, `/goals`, `/settings`, `/cas` and `/link-trade-account/{id}`. |
 | CAS mapping | `app/core/cas.py`. Self-check: `.venv/bin/python -m app.core.cas` |
+| Live repricing | `app/core/fin_live.py` (AMFI NAVs, ISIN→NSE symbol, `revalue`), served by `GET /api/finance/live`. Self-check: `.venv/bin/python -m app.core.fin_live` |
 | Arithmetic | `frontend/src/lib/goalMath.ts`. Self-check: `node frontend/src/lib/goalMath.selfcheck.mjs` |
 | Page | `frontend/src/FinancePage.tsx`, with tabs at `?view=networth\|goals\|focus\|projection` |
 

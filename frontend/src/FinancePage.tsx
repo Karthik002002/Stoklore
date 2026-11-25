@@ -5,13 +5,23 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import { FileUpIcon, LinkIcon, PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react'
+import {
+  FileTextIcon,
+  FileUpIcon,
+  LinkIcon,
+  PencilIcon,
+  PlusIcon,
+  RefreshCwIcon,
+  Trash2Icon,
+  XIcon,
+} from 'lucide-react'
 import AllocationDonut from '@/components/AllocationDonut'
 import SeriesChart from '@/components/charts/SeriesChart'
 import { chartTime, seriesColor } from '@/components/charts/colors'
 import {
   Button,
   Dialog,
+  DialogBody,
   DialogContent,
   DialogFooter,
   DialogHeader,
@@ -39,7 +49,7 @@ import {
   TabsPanel,
   TabsTab,
 } from '@/design-system'
-import { formatDate, inr } from '@/lib/format'
+import { formatDate, formatDateTime, inr } from '@/lib/format'
 import type {
   AssetClass,
   FinGoal,
@@ -73,6 +83,7 @@ import {
   deleteFinItem,
   getBalanceAdjustments,
   getFinance,
+  getFinanceLive,
   getManualTrades,
   getTradeAccounts,
   importCas,
@@ -129,14 +140,14 @@ function Card({
   sub,
   tone,
 }: {
-  label: string
+  label: React.ReactNode
   value: React.ReactNode
   sub?: React.ReactNode
   tone?: 'up' | 'down'
 }) {
   return (
     <div className="rounded-md border border-border bg-card p-3">
-      <p className="text-xs text-muted-foreground">{label}</p>
+      <div className="text-xs text-muted-foreground">{label}</div>
       <p
         className={cn(
           'mt-1 text-xl font-semibold tabular-nums',
@@ -213,7 +224,7 @@ function ItemDialog({ item, onClose }: { item: FinItem | 'new'; onClose: () => v
         <DialogHeader>
           <DialogTitle>{existing ? 'Edit item' : 'Add item'}</DialogTitle>
         </DialogHeader>
-        <div className="grid gap-3">
+        <DialogBody className="grid gap-3">
           <Field label="Name">
             <Input
               value={form.name}
@@ -275,7 +286,7 @@ function ItemDialog({ item, onClose }: { item: FinItem | 'new'; onClose: () => v
               Archived - closed account; hidden from the monthly update, history kept. Record a final 0 first.
             </label>
           )}
-        </div>
+        </DialogBody>
         <DialogFooter>
           <Button disabled={!form.name.trim() || save.isPending} onClick={() => save.mutate(undefined)}>
             Save
@@ -308,6 +319,65 @@ function useTradeBalances(enabled: boolean) {
   }, [accounts.data, trades.data, adjustments.data, enabled])
 }
 
+const isPdf = (f: File) => f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')
+
+/** Drop zone for one PDF: drag it in or click to browse. Once picked it shows the file with a
+ *  remove button. The <label> wrapping a hidden <input> gives click, keyboard and the native
+ *  picker for free. */
+function PdfDrop({ file, onChange }: { file: File | null; onChange: (f: File | null) => void }) {
+  const [over, setOver] = useState(false)
+  if (file)
+    return (
+      <div className="flex items-center gap-3 rounded-md border border-border bg-muted/40 px-3 py-2.5">
+        <FileTextIcon className="size-5 shrink-0 text-accent" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-xs font-medium">{file.name}</p>
+          <p className="text-[11px] text-muted-foreground">{(file.size / 1024).toFixed(0)} KB · PDF</p>
+        </div>
+        <Button variant="ghost" size="icon-sm" aria-label="Remove file" onClick={() => onChange(null)}>
+          <XIcon />
+        </Button>
+      </div>
+    )
+  return (
+    <label
+      onDragOver={(e) => {
+        e.preventDefault()
+        setOver(true)
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        e.preventDefault()
+        setOver(false)
+        const f = e.dataTransfer.files[0]
+        if (f && isPdf(f)) onChange(f)
+        else toast.error('Drop a PDF file')
+      }}
+      className={cn(
+        'flex cursor-pointer flex-col items-center gap-1.5 rounded-md border border-dashed px-4 py-6 text-center transition-colors focus-within:ring-2 focus-within:ring-ring',
+        over
+          ? 'border-accent bg-accent-subtle'
+          : 'border-border hover:border-muted-foreground hover:bg-muted/40',
+      )}
+    >
+      <FileUpIcon className={cn('size-6', over ? 'text-accent' : 'text-muted-foreground')} />
+      <span className="text-xs">
+        <span className="font-medium text-accent">Choose a CAS PDF</span> or drag it here
+      </span>
+      <span className="text-[11px] text-muted-foreground">CAMS, KFintech, NSDL or CDSL · up to 20 MB</span>
+      <input
+        type="file"
+        accept="application/pdf,.pdf"
+        className="sr-only"
+        onChange={(e) => {
+          onChange(e.target.files?.[0] ?? null)
+          e.target.value = ''
+        }}
+      />
+    </label>
+  )
+}
+
 function CasDialog({ onClose }: { onClose: () => void }) {
   const [file, setFile] = useState<File | null>(null)
   const [password, setPassword] = useState('')
@@ -327,67 +397,65 @@ function CasDialog({ onClose }: { onClose: () => void }) {
         <DialogHeader>
           <DialogTitle>Import CAS statement</DialogTitle>
         </DialogHeader>
-        {!result ? (
-          <>
-            <p className="text-xs text-muted-foreground">
-              The Consolidated Account Statement PDF. CDSL/NSDL email one every month (stocks, bonds, demat
-              MFs, NPS); CAMS/KFintech send every mutual fund folio on request (MF Central or camsonline.com).
-              The password is usually your PAN in capitals. Neither the PDF nor the password is stored.
-            </p>
-            <Field label="CAS PDF">
-              <Input
-                type="file"
-                accept="application/pdf,.pdf"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              />
-            </Field>
-            <Field label="PDF password">
-              <Input
-                type="password"
-                autoComplete="off"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </Field>
-            <DialogFooter>
-              <Button disabled={!file || !password || run.isPending} onClick={() => run.mutate()}>
-                {run.isPending ? <Spinner /> : 'Import'}
-              </Button>
-            </DialogFooter>
-          </>
-        ) : (
-          <div className="space-y-2 text-xs">
-            <p>
-              {result.file_type ?? 'CAS'} statement as of <b>{formatDate(result.as_of)}</b> -{' '}
-              {result.imported.length} holding(s) recorded.
-            </p>
-            <div className="max-h-[40vh] space-y-1 overflow-y-auto">
-              {result.imported.map((r) => (
-                <div key={r.name} className="flex justify-between gap-2">
-                  <span className="truncate">
-                    {r.name}
-                    {r.new && <span className="ml-1 text-up">new</span>}
-                  </span>
-                  <span className="tabular-nums">{inr(r.value)}</span>
-                </div>
+        <DialogBody className="space-y-3">
+          {!result ? (
+            <>
+              <p className="text-xs text-muted-foreground">
+                The Consolidated Account Statement PDF. CDSL/NSDL email one every month (stocks, bonds, demat
+                MFs, NPS); CAMS/KFintech send every mutual fund folio on request (MF Central or
+                camsonline.com). The password is usually your PAN in capitals. Neither the PDF nor the
+                password is stored.
+              </p>
+              <PdfDrop file={file} onChange={setFile} />
+              <Field label="PDF password">
+                <Input
+                  type="password"
+                  autoComplete="off"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </Field>
+            </>
+          ) : (
+            <div className="space-y-2 text-xs">
+              <p>
+                {result.file_type ?? 'CAS'} statement as of <b>{formatDate(result.as_of)}</b> -{' '}
+                {result.imported.length} holding(s) recorded.
+              </p>
+              <div className="max-h-[40vh] space-y-1 overflow-y-auto">
+                {result.imported.map((r) => (
+                  <div key={r.name} className="flex justify-between gap-2">
+                    <span className="truncate">
+                      {r.name}
+                      {r.new && <span className="ml-1 text-up">new</span>}
+                    </span>
+                    <span className="tabular-nums">{inr(r.value)}</span>
+                  </div>
+                ))}
+              </div>
+              {result.missing.length > 0 && (
+                <p className="text-warning">
+                  Not in this statement: {result.missing.join(', ')}. If you sold them, set them to 0 in the
+                  monthly update and archive them; if they come from a different kind of CAS, ignore this.
+                </p>
+              )}
+              {result.warnings.map((w) => (
+                <p key={w} className="text-muted-foreground">
+                  {w}
+                </p>
               ))}
             </div>
-            {result.missing.length > 0 && (
-              <p className="text-warning">
-                Not in this statement: {result.missing.join(', ')}. If you sold them, set them to 0 in the
-                monthly update and archive them; if they come from a different kind of CAS, ignore this.
-              </p>
-            )}
-            {result.warnings.map((w) => (
-              <p key={w} className="text-muted-foreground">
-                {w}
-              </p>
-            ))}
-            <DialogFooter>
-              <Button onClick={onClose}>Done</Button>
-            </DialogFooter>
-          </div>
-        )}
+          )}
+        </DialogBody>
+        <DialogFooter>
+          {!result ? (
+            <Button disabled={!file || !password || run.isPending} onClick={() => run.mutate()}>
+              {run.isPending ? <Spinner /> : 'Import'}
+            </Button>
+          ) : (
+            <Button onClick={onClose}>Done</Button>
+          )}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
@@ -403,32 +471,34 @@ function LinkAccountsDialog({ data, onClose }: { data: FinanceData; onClose: () 
         <DialogHeader>
           <DialogTitle>Link trading accounts</DialogTitle>
         </DialogHeader>
-        <p className="text-xs text-muted-foreground">
-          Journal accounts that hold real money. The monthly update pre-fills them with the journal's current
-          balance. Paper accounts aren't listed - simulated money isn't net worth.
-        </p>
-        <div className="space-y-1.5">
-          {accounts.map((a) => (
-            <div key={a.id} className="flex items-center justify-between gap-2 text-xs">
-              <span>
-                {a.name} <span className="text-muted-foreground">{inr(balances.get(a.id))}</span>
-              </span>
-              {linked.has(String(a.id)) ? (
-                <span className="text-muted-foreground">linked</span>
-              ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={link.isPending}
-                  onClick={() => link.mutate(a.id)}
-                >
-                  Link
-                </Button>
-              )}
-            </div>
-          ))}
-          {!accounts.length && <p className="text-xs text-muted-foreground">No journal accounts.</p>}
-        </div>
+        <DialogBody className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Journal accounts that hold real money. The monthly update pre-fills them with the journal's
+            current balance. Paper accounts aren't listed - simulated money isn't net worth.
+          </p>
+          <div className="space-y-1.5">
+            {accounts.map((a) => (
+              <div key={a.id} className="flex items-center justify-between gap-2 text-xs">
+                <span>
+                  {a.name} <span className="text-muted-foreground">{inr(balances.get(a.id))}</span>
+                </span>
+                {linked.has(String(a.id)) ? (
+                  <span className="text-muted-foreground">linked</span>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={link.isPending}
+                    onClick={() => link.mutate(a.id)}
+                  >
+                    Link
+                  </Button>
+                )}
+              </div>
+            ))}
+            {!accounts.length && <p className="text-xs text-muted-foreground">No journal accounts.</p>}
+          </div>
+        </DialogBody>
       </DialogContent>
     </Dialog>
   )
@@ -481,41 +551,43 @@ function MonthlyUpdateDialog({ data, onClose }: { data: FinanceData; onClose: ()
         <DialogHeader>
           <DialogTitle>Monthly update</DialogTitle>
         </DialogHeader>
-        <p className="text-xs text-muted-foreground">
-          Pre-filled with each item's last value - change what moved. A blank row is skipped. Liabilities are
-          the amount outstanding, as a positive number.
-        </p>
-        <Field label="As of">
-          <Input type="date" value={asOf} max={today()} onChange={(e) => setAsOf(e.target.value)} />
-        </Field>
-        <div className="max-h-[45vh] space-y-1.5 overflow-y-auto pr-1">
-          {items.map((i) => (
-            <div key={i.id} className="flex items-center gap-2">
-              <span className="min-w-0 flex-1 truncate text-xs">
-                {i.name}
-                <span className="ml-1 text-muted-foreground">· {KIND_DEFAULTS[i.kind].label}</span>
-                {live(i) != null && <span className="ml-1 text-up">· live from journal</span>}
-              </span>
-              <Input
-                className="w-36 text-right tabular-nums"
-                type="number"
-                min="0"
-                step="any"
-                value={values[i.id] ?? ''}
-                onChange={(e) => setValues((v) => ({ ...v, [i.id]: e.target.value }))}
-              />
-            </div>
-          ))}
-          {!items.length && <p className="text-xs text-muted-foreground">Add an item first.</p>}
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <Field label={`Income in ${month.slice(0, 7)}`}>
-            <Input type="number" min="0" value={income} onChange={(e) => setIncome(e.target.value)} />
+        <DialogBody className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Pre-filled with each item's last value - change what moved. A blank row is skipped. Liabilities
+            are the amount outstanding, as a positive number.
+          </p>
+          <Field label="As of">
+            <Input type="date" value={asOf} max={today()} onChange={(e) => setAsOf(e.target.value)} />
           </Field>
-          <Field label={`Expenses in ${month.slice(0, 7)}`}>
-            <Input type="number" min="0" value={expenses} onChange={(e) => setExpenses(e.target.value)} />
-          </Field>
-        </div>
+          <div className="max-h-[45vh] space-y-1.5 overflow-y-auto pr-1">
+            {items.map((i) => (
+              <div key={i.id} className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-xs">
+                  {i.name}
+                  <span className="ml-1 text-muted-foreground">· {KIND_DEFAULTS[i.kind].label}</span>
+                  {live(i) != null && <span className="ml-1 text-up">· live from journal</span>}
+                </span>
+                <Input
+                  className="w-36 text-right tabular-nums"
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={values[i.id] ?? ''}
+                  onChange={(e) => setValues((v) => ({ ...v, [i.id]: e.target.value }))}
+                />
+              </div>
+            ))}
+            {!items.length && <p className="text-xs text-muted-foreground">Add an item first.</p>}
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label={`Income in ${month.slice(0, 7)}`}>
+              <Input type="number" min="0" value={income} onChange={(e) => setIncome(e.target.value)} />
+            </Field>
+            <Field label={`Expenses in ${month.slice(0, 7)}`}>
+              <Input type="number" min="0" value={expenses} onChange={(e) => setExpenses(e.target.value)} />
+            </Field>
+          </div>
+        </DialogBody>
         <DialogFooter>
           <Button disabled={bad || !asOf || save.isPending} onClick={() => save.mutate(undefined)}>
             Save
@@ -523,6 +595,65 @@ function MonthlyUpdateDialog({ data, onClose }: { data: FinanceData; onClose: ()
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+type LiveValue = { value: number; as_of: string | null; note: string }
+
+// Live value per item: CAS items repriced by the server from their statement units, and linked
+// journal accounts at their current balance. Display only - snapshots stay what was recorded.
+function useLiveValues(data: FinanceData) {
+  const hasCas = data.items.some((i) => i.source === 'cas' && !i.archived)
+  const linked = useMemo(
+    () => data.items.filter((i) => i.source === 'trade_account' && !i.archived),
+    [data.items],
+  )
+  const cas = useQuery({
+    queryKey: ['finance', 'live'],
+    queryFn: () => getFinanceLive(),
+    enabled: hasCas,
+    refetchInterval: 60_000,
+  })
+  const { balances } = useTradeBalances(linked.length > 0)
+  const queryClient = useQueryClient()
+  const refresh = useMutation({
+    mutationFn: () => getFinanceLive(true),
+    onSuccess: (d) => queryClient.setQueryData(['finance', 'live'], d),
+    onError: (e: Error) => toast.error(e.message),
+  })
+  const live = useMemo(() => {
+    const out = new Map<number, LiveValue>()
+    for (const [id, l] of Object.entries(cas.data?.items ?? {}))
+      out.set(Number(id), {
+        value: l.value,
+        as_of: l.as_of,
+        note: l.priced === l.count ? 'all live' : `${l.priced}/${l.count} live, rest at statement price`,
+      })
+    for (const i of linked) {
+      const b = balances.get(Number(i.external_key))
+      if (b != null) out.set(i.id, { value: b, as_of: null, note: 'journal balance' })
+    }
+    return out
+  }, [cas.data, balances, linked])
+  return { live, refresh: () => refresh.mutate(), refreshing: refresh.isPending }
+}
+
+function LiveCell({ live, statement }: { live?: LiveValue; statement?: number }) {
+  if (!live) return <TableCell className="text-right text-muted-foreground">—</TableCell>
+  const pct = statement ? (live.value / statement - 1) * 100 : null
+  return (
+    <TableCell
+      className="text-right tabular-nums"
+      title={`${live.note}${live.as_of ? ` · prices ${formatDateTime(live.as_of)}` : ''}`}
+    >
+      {inr(Math.round(live.value))}
+      {pct != null && (
+        <span className={cn('ml-1 text-[11px]', pct >= 0 ? 'text-up' : 'text-down')}>
+          {pct >= 0 ? '+' : ''}
+          {pct.toFixed(1)}%
+        </span>
+      )}
+    </TableCell>
   )
 }
 
@@ -548,6 +679,15 @@ function NetWorthTab({ data }: { data: FinanceData }) {
   )
   const lastDate = series.at(-1)?.as_of
   const prev = series.at(-2)
+  const { live, refresh, refreshing } = useLiveValues(data)
+  const liveNw = useMemo(() => {
+    if (!live.size) return null
+    const today = new Date().toISOString().slice(0, 10)
+    return netWorth(data.items, [
+      ...data.snapshots.filter((s) => !live.has(s.item_id)),
+      ...[...live].map(([item_id, l]) => ({ item_id, as_of: today, value: l.value })),
+    ])
+  }, [data, live])
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
@@ -564,9 +704,31 @@ function NetWorthTab({ data }: { data: FinanceData }) {
           <LinkIcon /> Link trading accounts
         </Button>
       </div>
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+      <div className={cn('grid grid-cols-2 gap-2', liveNw ? 'md:grid-cols-5' : 'md:grid-cols-4')}>
+        {liveNw && (
+          <Card
+            label={
+              <span className="flex items-center justify-between">
+                Live net worth
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Refresh live prices"
+                  title="Refresh live prices"
+                  disabled={refreshing}
+                  onClick={refresh}
+                >
+                  <RefreshCwIcon className={cn(refreshing && 'animate-spin')} />
+                </Button>
+              </span>
+            }
+            value={inr(Math.round(liveNw.net))}
+            sub={`${liveNw.net - nw.net >= 0 ? '+' : ''}${inr(Math.round(liveNw.net - nw.net))} vs last update`}
+            tone={liveNw.net >= nw.net ? 'up' : 'down'}
+          />
+        )}
         <Card
-          label="Net worth"
+          label={liveNw ? 'Net worth (last update)' : 'Net worth'}
           value={inr(Math.round(nw.net))}
           sub={
             prev
@@ -613,6 +775,7 @@ function NetWorthTab({ data }: { data: FinanceData }) {
             <TableHead>Class</TableHead>
             <TableHead className="text-right">Value</TableHead>
             <TableHead>As of</TableHead>
+            {live.size > 0 && <TableHead className="text-right">Live</TableHead>}
             <TableHead />
           </TableRow>
         </TableHeader>
@@ -640,6 +803,7 @@ function NetWorthTab({ data }: { data: FinanceData }) {
                   {s ? inr(Math.round(isLiability(i.kind) ? -s.value : s.value)) : '—'}
                 </TableCell>
                 <TableCell>{s ? formatDate(s.as_of) : '—'}</TableCell>
+                {live.size > 0 && <LiveCell live={live.get(i.id)} statement={s?.value} />}
                 <TableCell className="text-right">
                   <Button variant="ghost" size="icon-sm" onClick={() => setEditing(i)} aria-label="Edit">
                     <PencilIcon />
@@ -665,7 +829,7 @@ function NetWorthTab({ data }: { data: FinanceData }) {
           })}
           {!data.items.length && (
             <TableRow>
-              <TableCell colSpan={6} className="text-center text-xs text-muted-foreground">
+              <TableCell colSpan={7} className="text-center text-xs text-muted-foreground">
                 Add your bank accounts, investments and loans, then run a monthly update.
               </TableCell>
             </TableRow>
@@ -728,7 +892,7 @@ function GoalDialog({
         <DialogHeader>
           <DialogTitle>{existing ? 'Edit goal' : 'Add goal'}</DialogTitle>
         </DialogHeader>
-        <div className="grid max-h-[65vh] gap-3 overflow-y-auto pr-1">
+        <DialogBody className="grid max-h-[65vh] gap-3">
           <div className="grid grid-cols-2 gap-2">
             <Field label="Name">
               <Input
@@ -826,7 +990,7 @@ function GoalDialog({
               <span className={STATUS_TONE[preview.status]}>{preview.status}</span>
             </p>
           )}
-        </div>
+        </DialogBody>
         <DialogFooter>
           <Button
             disabled={!form.name.trim() || !(form.target_amount > 0) || !form.target_date || save.isPending}
@@ -957,7 +1121,10 @@ function FocusTab({ data }: { data: FinanceData }) {
       </p>
       <div className="space-y-2">
         {findings.map((f) => (
-          <div key={f.title} className={cn('rounded-lg border border-l-4 bg-card p-3', LEVEL_STYLE[f.level])}>
+          <div
+            key={f.title}
+            className={cn('rounded-md border border-border border-l-4 bg-card p-3', LEVEL_STYLE[f.level])}
+          >
             <p className="text-sm font-medium">{f.title}</p>
             <p className="text-xs text-muted-foreground">{f.detail}</p>
           </div>

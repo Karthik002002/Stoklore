@@ -897,6 +897,10 @@ CREATE TABLE IF NOT EXISTS fin_items (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (source, external_key)
 );
+-- holdings: a CAS item's positions from its latest statement - [{isin, name, units, price, symbol}]
+-- - so /api/finance/live can reprice it between statements (app/core/fin_live.py). NULL for
+-- anything without units (manual items, NPS, bonds).
+ALTER TABLE fin_items ADD COLUMN IF NOT EXISTS holdings JSONB;
 CREATE TABLE IF NOT EXISTS fin_snapshots (
   id SERIAL PRIMARY KEY,
   item_id INTEGER NOT NULL REFERENCES fin_items(id) ON DELETE CASCADE,
@@ -3778,6 +3782,11 @@ def update_fin_item(item_id, fields):
 def delete_fin_item(item_id):
     with connect() as conn:
         conn.execute("DELETE FROM fin_items WHERE id = %s", (item_id,))
+
+
+def set_fin_item_holdings(item_id, holdings):
+    with connect() as conn:
+        conn.execute("UPDATE fin_items SET holdings = %s WHERE id = %s", (Jsonb(holdings), item_id))
 
 
 def find_fin_item(source, external_key):

@@ -50,34 +50,45 @@ def holdings(data):
     Returns (as_of date | None, [row]) with one row per item key, values summed."""
     rows = {}
 
-    def add(key, name, kind, asset_class, value):
-        row = rows.setdefault(key, {"key": key, "name": name, "kind": kind, "asset_class": asset_class, "value": 0.0})
+    def add(key, name, kind, asset_class, value, position=None):
+        row = rows.setdefault(key, {"key": key, "name": name, "kind": kind, "asset_class": asset_class,
+                                    "value": 0.0, "positions": []})
         row["value"] += _float(value)
+        if position and position["isin"] and _float(position["units"]):
+            row["positions"].append({**position, "units": _float(position["units"]), "price": _float(position["price"])})
 
-    def add_folio_mf(isin, name, scheme_type, value, fallback_key):
+    def add_folio_mf(isin, name, scheme_type, value, fallback_key, units, nav):
         key = f"isin:{isin}" if isin else fallback_key
-        add(key, _clean(name), "mf", _mf_class(scheme_type, name), value)
+        add(key, _clean(name), "mf", _mf_class(scheme_type, name), value,
+            {"isin": isin, "name": _clean(name), "units": units, "price": nav, "symbol": None})
 
     for folio in data.get("folios") or []:  # CAMS / KFintech
         for s in folio.get("schemes") or []:
-            add_folio_mf(s.get("isin"), s.get("scheme"), s.get("type"), (s.get("valuation") or {}).get("value"),
-                         f"folio:{folio.get('folio')}:{s.get('scheme')}")
+            v = s.get("valuation") or {}
+            add_folio_mf(s.get("isin"), s.get("scheme"), s.get("type"), v.get("value"),
+                         f"folio:{folio.get('folio')}:{s.get('scheme')}", s.get("close"), v.get("nav"))
 
     for acct in data.get("accounts") or []:  # NSDL / CDSL
         if "folio" in (acct.get("type") or "").lower():  # "Mutual Fund Folios" - SoA, same as CAMS
             for mf in acct.get("mutual_funds") or []:
                 add_folio_mf(mf.get("isin"), mf.get("name"), mf.get("type"), mf.get("value"),
-                             f"folio:{mf.get('folio')}:{mf.get('name')}")
+                             f"folio:{mf.get('folio')}:{mf.get('name')}", mf.get("balance"), mf.get("nav"))
             continue
         acct_id = f"{acct.get('dp_id') or ''}{acct.get('client_id') or ''}" or acct.get("name")
         label = f"{acct.get('name')} ({acct.get('type')})"
         for eq in acct.get("equities") or []:
-            add(f"demat:{acct_id}:equity", f"{label} stocks", "stock", "equity", eq.get("value"))
+            # casparser backfills the trading symbol from its ISIN db; only NSE ones price through
+            # our quote path as-is (fin_live.nse_symbol fills the rest at import).
+            add(f"demat:{acct_id}:equity", f"{label} stocks", "stock", "equity", eq.get("value"),
+                {"isin": eq.get("isin"), "name": _clean(eq.get("name")), "units": eq.get("num_shares"),
+                 "price": eq.get("price"), "symbol": eq.get("symbol") if eq.get("exchange") == "NSE" else None})
         for b in acct.get("bonds") or []:
             add(f"demat:{acct_id}:bonds", f"{label} bonds", "other", "debt", b.get("value"))
         for mf in acct.get("mutual_funds") or []:
             add(f"demat:{acct_id}:mf:{mf.get('isin')}", f"{_clean(mf.get('name'))} (demat)", "mf",
-                _mf_class(mf.get("type"), mf.get("name")), mf.get("value"))
+                _mf_class(mf.get("type"), mf.get("name")), mf.get("value"),
+                {"isin": mf.get("isin"), "name": _clean(mf.get("name")), "units": mf.get("balance"),
+                 "price": mf.get("nav"), "symbol": None})
 
     for s in (data.get("nps") or {}).get("schemes") or []:
         add(f"nps:{s.get('scheme')}", f"NPS {s.get('scheme')}", "nps",
@@ -146,11 +157,11 @@ if __name__ == "__main__":  # self-check: .venv/bin/python -m app.core.cas
         "statement_period": {"from": "01-Jan-2020", "to": "31-Oct-2026"},
         "folios": [
             {"folio": "1", "schemes": [
-                {"scheme": "Axis Bluechip", "isin": "INF0", "type": "EQUITY", "valuation": {"value": "1000.5"}},
+                {"scheme": "Axis Bluechip", "isin": "INF0", "type": "EQUITY", "close": "10", "valuation": {"nav": "100.05", "value": "1000.5"}},
                 {"scheme": "HDFC Liquid", "isin": "INF1", "type": "DEBT", "valuation": {"value": "200"}},
             ]},
             {"folio": "2", "schemes": [
-                {"scheme": "Axis Bluechip", "isin": "INF0", "type": "EQUITY", "valuation": {"value": "500"}},
+                {"scheme": "Axis Bluechip", "isin": "INF0", "type": "EQUITY", "close": "5", "valuation": {"nav": "100", "value": "500"}},
                 {"scheme": "Old fund", "isin": None, "type": None, "valuation": {"value": "0"}},
             ]},
         ],
@@ -159,6 +170,8 @@ if __name__ == "__main__":  # self-check: .venv/bin/python -m app.core.cas
     by = {r["key"]: r for r in rows}
     assert str(as_of) == "2026-10-31"
     assert by["isin:INF0"]["value"] == 1500.5  # two folios, one item
+    assert [p["units"] for p in by["isin:INF0"]["positions"]] == [10.0, 5.0]
+    assert by["folio:2:Old fund"]["positions"] == []  # no ISIN - nothing to reprice
     assert by["isin:INF1"]["asset_class"] == "debt"
     assert "folio:2:Old fund" in by
 
@@ -166,7 +179,9 @@ if __name__ == "__main__":  # self-check: .venv/bin/python -m app.core.cas
         "statement_period": {"from": "01/10/2026", "to": "31/10/2026"},
         "accounts": [
             {"name": "ZERODHA", "type": "CDSL Demat Account", "dp_id": "12", "client_id": "34",
-             "equities": [{"value": "100"}, {"value": "50"}], "mutual_funds": [
+             "equities": [{"isin": "INE1", "num_shares": "2", "price": "50", "value": "100", "symbol": "RELIANCE", "exchange": "NSE"},
+                          {"isin": "INE2", "num_shares": "1", "price": "50", "value": "50", "symbol": "500325", "exchange": "BSE"}],
+             "mutual_funds": [
                  {"name": "Nifty ETF FoF", "isin": "INF9", "type": "EQUITY", "value": "10"}],
              "bonds": [{"value": "70"}]},
             {"name": "MF", "type": "Mutual Fund Folios", "equities": [], "bonds": [],
@@ -179,7 +194,8 @@ if __name__ == "__main__":  # self-check: .venv/bin/python -m app.core.cas
     by = {r["key"]: r for r in rows}
     assert str(as_of) == "2026-10-31"
     assert by["demat:1234:equity"]["value"] == 150 and by["demat:1234:equity"]["kind"] == "stock"
-    assert by["demat:1234:bonds"]["asset_class"] == "debt"
+    assert by["demat:1234:bonds"]["asset_class"] == "debt" and by["demat:1234:bonds"]["positions"] == []
+    assert [p["symbol"] for p in by["demat:1234:equity"]["positions"]] == ["RELIANCE", None]  # BSE code dropped
     assert by["demat:1234:mf:INF9"]["value"] == 10
     assert by["isin:INF0"]["value"] == 1500.5  # same key as the CAMS statement - no double count
     assert by["nps:SBI E"]["asset_class"] == "equity" and by["nps:SBI G"]["asset_class"] == "debt"

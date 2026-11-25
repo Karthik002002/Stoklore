@@ -224,7 +224,7 @@ export default function TopNews() {
       )}
 
       {!error && visible && visible.length > 0 && (
-        <div className="rounded-lg border">
+        <div className="rounded-md border border-border">
           {visible.map((n) => (
             <NewsRow key={n.url} n={n} />
           ))}

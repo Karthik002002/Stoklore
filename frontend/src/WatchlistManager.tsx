@@ -72,7 +72,7 @@ function StockNode({ data, selected }: NodeProps<Node<StockNodeData>>) {
   const { remove, deleted } = useContext(StockActions)
   return (
     <div
-      className={`group relative w-44 rounded-lg border bg-card px-3 py-1.5 shadow-sm ${selected ? 'ring-2 ring-primary' : ''}`}
+      className={`group relative w-44 rounded-md border border-border bg-card px-3 py-1.5 shadow-sm ${selected ? 'ring-2 ring-primary' : ''}`}
     >
       {list && (
         // nodrag/nopan: a press here is a click, not the start of a drag or a pan

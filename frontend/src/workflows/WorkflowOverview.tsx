@@ -55,7 +55,7 @@ const cardLink = 'text-primary hover:underline'
 
 function Stat({ label, value, tone }: { label: string; value: string; tone?: 'bad' }) {
   return (
-    <div className="rounded-lg border px-2.5 py-1.5">
+    <div className="rounded-md border border-border px-2.5 py-1.5">
       <p className="text-[10px] text-muted-foreground">{label}</p>
       <p className={cn('truncate text-sm font-medium', tone === 'bad' && 'text-down')}>{value}</p>
     </div>

@@ -554,7 +554,7 @@ function AccountTab() {
         </p>
       </div>
 
-      <div className="space-y-2 rounded-lg border p-3">
+      <div className="space-y-2 rounded-md border border-border p-3">
         <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           Confirm it's you
         </p>
@@ -576,7 +576,7 @@ function AccountTab() {
         <p className="text-xs text-muted-foreground">Needed for both actions below.</p>
       </div>
 
-      <div className="space-y-2 rounded-lg border p-3">
+      <div className="space-y-2 rounded-md border border-border p-3">
         <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">New credentials</p>
         <Input placeholder="Display name" value={username} onChange={(e) => setUsername(e.target.value)} />
         <Input
@@ -610,7 +610,7 @@ function AccountTab() {
         </p>
       </div>
 
-      <div className="space-y-2 rounded-lg border p-3">
+      <div className="space-y-2 rounded-md border border-border p-3">
         <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Recovery code</p>
         <p className="text-xs text-muted-foreground">
           {status?.has_recovery_code
@@ -769,7 +769,7 @@ function TelegramTab() {
         </Button>
       </div>
       {config?.last_error && (
-        <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+        <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
           Last send failed: {config.last_error}
         </p>
       )}
@@ -1044,7 +1044,7 @@ function WatchRulesTab() {
         {(rules ?? []).map((rule) => {
           const result = results[rule.id]
           return (
-            <div key={rule.id} className="rounded-lg border p-2 text-sm">
+            <div key={rule.id} className="rounded-md border border-border p-2 text-sm">
               <div className="flex items-center justify-between gap-2">
                 <span className="min-w-0">
                   <span className="font-medium">{rule.name}</span>
@@ -1147,7 +1147,7 @@ function DataCollectionTab() {
         <label className="text-xs text-muted-foreground">Symbols</label>
         <StockMasterCombobox selected={symbols} onSelect={toggleSymbol} />
         {symbols.length > 0 && (
-          <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-input p-2">
+          <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input p-2">
             {symbols.map((symbol) => (
               <span
                 key={symbol}
@@ -1173,7 +1173,7 @@ function DataCollectionTab() {
       </Button>
 
       {status && (status.running || status.results?.length > 0) && (
-        <div className="space-y-2 rounded-lg border p-3">
+        <div className="space-y-2 rounded-md border border-border p-3">
           <p className="text-sm">
             {status.done}/{status.total} done
             {status.current_symbol ? ` - collecting ${status.current_symbol}…` : ''}

@@ -153,7 +153,7 @@ export function Stat({
   className?: string
 }) {
   return (
-    <div className="rounded-lg border p-3">
+    <div className="rounded-md border border-border p-3">
       <p className={cn('text-lg font-semibold tabular-nums', className)}>{value}</p>
       <p className="mt-0.5 text-xs text-muted-foreground">{label}</p>
     </div>
@@ -314,16 +314,16 @@ export function ExecutionsChart({ run, focus }: { run: EngineRun; focus: RunTrad
         )}
       </div>
       {error ? (
-        <p className="rounded-lg border p-4 text-sm text-destructive">
+        <p className="rounded-md border border-border p-4 text-sm text-destructive">
           {error instanceof Error ? error.message : 'Could not load bars'}
         </p>
       ) : isLoading ? (
-        <div className="flex h-96 items-center justify-center gap-2 rounded-lg border text-sm text-muted-foreground">
+        <div className="flex h-96 items-center justify-center gap-2 rounded-md border border-border text-sm text-muted-foreground">
           <Spinner className="size-4" /> Loading {symbol} {run.interval} bars — the first fetch of a symbol
           takes a few seconds
         </div>
       ) : (
-        <div ref={ref} className="h-96 rounded-lg border" />
+        <div ref={ref} className="h-96 rounded-md border border-border" />
       )}
     </div>
   )

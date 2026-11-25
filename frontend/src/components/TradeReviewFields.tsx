@@ -94,7 +94,7 @@ export default function TradeReviewFields({
   }
 
   return (
-    <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+    <div className="space-y-3 rounded-md border border-border bg-muted/20 p-3">
       <div className="space-y-1.5">
         <div className="flex items-center justify-between gap-2">
           <p className="text-xs font-medium">Mistakes</p>
@@ -214,7 +214,7 @@ export function ChecksReadout({ trade }: { trade: Trade }) {
       <span className="text-down">✗</span>
     )
   return (
-    <div className="overflow-hidden rounded-lg border text-xs">
+    <div className="overflow-hidden rounded-md border border-border text-xs">
       <div className="grid grid-cols-[1fr_auto_auto] gap-x-4 border-b bg-muted/40 px-3 py-1.5 font-medium">
         <span>Check</span>
         <span className="w-14 text-center">{pre ? 'Planned' : ''}</span>

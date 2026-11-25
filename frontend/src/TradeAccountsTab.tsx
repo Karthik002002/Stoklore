@@ -113,7 +113,7 @@ function CostFields({ form }: { form: AccountForm }) {
   )
 
   return (
-    <div className="space-y-2 rounded-lg border border-warning/40 bg-warning/[0.04] p-3">
+    <div className="space-y-2 rounded-md border border-warning/40 bg-warning/[0.04] p-3">
       <p className="text-sm font-medium text-warning">Trading costs</p>
       <p className="text-xs text-muted-foreground">
         Charged on both sides of every trade filed under this account. Net P&amp;L is recomputed from these
@@ -199,7 +199,7 @@ function VolumeSpikeFields({ form }: { form: AccountForm }) {
   const lookback = Number(form.watch('vol_spike_lookback')) || 10
 
   return (
-    <div className="space-y-2 rounded-lg border border-accent/40 bg-accent/[0.04] p-3">
+    <div className="space-y-2 rounded-md border border-accent/40 bg-accent/[0.04] p-3">
       <p className="text-sm font-medium text-accent">Volume spike</p>
       <p className="text-xs text-muted-foreground">
         Captured once per trade, from the bars before entry. Changing these re-scans nothing — trades already

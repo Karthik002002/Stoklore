@@ -157,7 +157,7 @@ function CurrentPeriod({
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {progress.cells.map(({ goal, actual, pct }) => (
-          <div key={goal.id} className="flex items-center gap-3 rounded-lg border p-2.5">
+          <div key={goal.id} className="flex items-center gap-3 rounded-md border border-border p-2.5">
             <Gauge pct={pct} />
             <div className="min-w-0">
               <p className="truncate text-sm font-medium">{goalLabel(goal)}</p>

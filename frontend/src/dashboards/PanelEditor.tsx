@@ -146,7 +146,7 @@ export default function PanelEditor({
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="h-52 border-b bg-muted/20 p-3">
-          <div className="flex h-full flex-col rounded-lg border bg-card p-2">
+          <div className="flex h-full flex-col rounded-md border border-border bg-card p-2">
             <p className="mb-1 truncate text-xs font-medium">{panel.title || 'Untitled panel'}</p>
             <div className="min-h-0 flex-1">
               <PanelBody panel={panel} ctx={ctx} onDrill={() => {}} onOpenRow={() => {}} />

@@ -24,7 +24,7 @@ export default function TagInput({
   const removeTag = (tag: string) => onChange(value.filter((t) => t !== tag))
 
   return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-input px-2.5 py-1.5 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
+    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-input px-2.5 py-1.5 focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
       {value.map((tag) => (
         <span key={tag} className="flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs">
           {tag}

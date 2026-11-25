@@ -374,7 +374,7 @@ export default function SectorHoverCard() {
     <div
       ref={ref}
       role="tooltip"
-      className="pointer-events-none fixed z-[60] w-72 space-y-2 rounded-lg border bg-popover/95 p-3 text-xs text-popover-foreground shadow-xl backdrop-blur-sm"
+      className="pointer-events-none fixed z-[60] w-72 space-y-2 rounded-md border border-border bg-popover/95 p-3 text-xs text-popover-foreground shadow-xl backdrop-blur-sm"
       style={{ left, top }}
     >
       {tip.kind === 'member' && <MemberCard m={tip.m} sector={tip.sector} />}

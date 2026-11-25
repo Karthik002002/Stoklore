@@ -290,7 +290,7 @@ export default function LiveOrderTicket({
       </div>
 
       {blocked && (
-        <div className="flex items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-2.5 py-2 text-xs text-warning">
+        <div className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-2 text-xs text-warning">
           <AlertTriangleIcon className="size-3.5 shrink-0" />
           <span className="flex-1">
             {!status?.configured
@@ -396,7 +396,7 @@ export default function LiveOrderTicket({
       </div>
 
       {/* Super Order: a switch, since it changes what kind of order this is */}
-      <div className={cn('rounded-lg border', superUsed && 'border-primary/40 bg-primary/5')}>
+      <div className={cn('rounded-md border border-border', superUsed && 'border-primary/40 bg-primary/5')}>
         <button
           type="button"
           role="switch"
@@ -440,7 +440,7 @@ export default function LiveOrderTicket({
         )}
       </div>
 
-      <details className="group rounded-lg border text-xs">
+      <details className="group rounded-md border border-border text-xs">
         <summary className="flex cursor-pointer list-none items-center gap-1.5 px-2.5 py-2 select-none">
           <ChevronRightIcon className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
           <span className="font-medium">More options</span>
@@ -624,7 +624,7 @@ function ConfirmLiveOrder({
             be undone from here once it fills.
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-lg border p-3 text-sm">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-md border border-border p-3 text-sm">
           {rows.map(([k, v]) => (
             <div key={k} className="contents">
               <dt className="text-muted-foreground">{k}</dt>

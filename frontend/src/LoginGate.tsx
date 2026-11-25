@@ -61,7 +61,7 @@ function RecoveryCode({ code, onDone }: { code: string; onDone: () => void }) {
           <p className="text-xs text-muted-foreground">Shown once. Put it in your password manager.</p>
         </div>
       </div>
-      <p className="rounded-lg border bg-muted/40 p-3 text-center font-mono text-sm tracking-wider select-all">
+      <p className="rounded-md border border-border bg-muted/40 p-3 text-center font-mono text-sm tracking-wider select-all">
         {code}
       </p>
       <p className="text-xs text-muted-foreground">

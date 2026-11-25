@@ -39,7 +39,7 @@ export default function ConfirmOrderDialog({
         </DialogHeader>
 
         <div className="space-y-3">
-          <div className="rounded-lg border bg-muted/40 p-3 text-sm">
+          <div className="rounded-md border border-border bg-muted/40 p-3 text-sm">
             <span className={isLong ? 'font-semibold text-up' : 'font-semibold text-down'}>
               {isLong ? 'Buy' : 'Sell'}
             </span>{' '}

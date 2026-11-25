@@ -174,7 +174,8 @@ Stories set `parameters.fullBleed` to drop the canvas padding.
    `SeriesChart`, engine and paper/journal mini charts) read `useChartColors()` - the theme as
    rgb strings, recomputed on every theme change - and rebuild/re-apply when it changes. SVG and
    DOM charts (journal stats, heatmaps, engine P&L cells) use `var(--up)` / `color-mix()` directly.
-   Bar Replay's candle colors stay user settings; only its text/grid/markers follow the theme.
+   Bar Replay's candle, wick, border, volume and oscillator-band colors follow the theme's up/down
+   while they are still at the old built-in green/red defaults; a color the user picked stays theirs.
 
    **Palette classes:** 138 hardcoded Tailwind hue classes in 36 files (`text-amber-600 dark:text-amber-400`,
    `bg-sky-500/10`…) became tokens - amber/yellow/orange → `warning`, sky/blue/cyan → `accent`,
@@ -188,16 +189,18 @@ Stories set `parameters.fullBleed` to drop the canvas padding.
    title-and-controls row) became `Panel` + `PanelHeader` (title, controls) + `PanelBody`; grids
    made only of stat cards became `StatStrip`; the rest - cards with dynamic class names, dashed
    empty boxes, workflow nodes - kept their markup but took the flat panel look
-   (`rounded-md border border-border`). `rounded-lg border` inner boxes and floating shadows
-   (chat widget, popups) are left as they are.
+   (`rounded-md border border-border`), and so did the ~100 smaller `rounded-lg border` inner boxes
+   (a box that already set its own border color keeps it). Floating shadows (chat widget, popups)
+   are left as they are.
 
 5. ✅ **Command palette:** `CommandPalette.tsx` is the Storybook palette on real data, keeping
    `lib/navTargets.ts` as its index: source tabs (All · Stocks · Pages · Page tabs · Actions ·
    Settings · Theme; Tab cycles), stock filter chips (Watchlist, Held, Gainers, Losers, Results
-   soon, Surveillance) with clear-filters and sort-by-change, recents (last 5, per browser),
+   soon, Surveillance, RS 80+) with clear-filters and sort-by-change, recents (last 5, per browser),
    tracked stocks with price/change and held / surveillance / results badges (from `/api/stocks`,
-   the watchlist, paper positions, the results calendar and NSE surveillance - queries the app
-   already caches), every page with a one-line hint and its route, page tabs and settings with
+   the watchlist, paper positions, the results calendar, NSE surveillance and the market-wide
+   strength table for RS - queries the app already caches; `useStrength(open)` keeps the strength
+   poll off while the palette is closed), every page with a one-line hint and its route, page tabs and settings with
    breadcrumbs, quick actions with real shortcuts from `lib/shortcuts.ts`, every theme preset with
    a swatch tile, "Ask the agent" (`askInChat`), and a footer whose keys work: ⌘↵ opens the
    highlighted item in a new tab, ⌘L copies its link, the gear opens Settings › Shortcuts.

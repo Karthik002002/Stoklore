@@ -14,6 +14,7 @@ import {
   IconCornerDownLeft,
   IconEye,
   IconFilter,
+  IconFlame,
   IconFolders,
   IconLayoutDashboard,
   IconLayoutGrid,
@@ -62,6 +63,7 @@ import type { ThemePreset } from '@/design-system'
 import { daysUntil } from '@/lib/bookRisk'
 import { useShortcut, useShortcutLabel } from '@/lib/shortcuts'
 import { surveillanceLabel } from '@/lib/surveillance'
+import { useStrength } from '@/lib/useStrength'
 import { cn } from '@/lib/utils'
 import {
   BACKTEST_TABS,
@@ -128,6 +130,8 @@ type StockFlags = {
   resultsIn: number | null
   surveillance: string | null
   reports: number
+  /** NSE relative-strength rating 1-99, from the market-wide strength table; null until it's in. */
+  rs: number | null
 }
 
 const SCOPES: { value: Scope; label: string; icon?: Icon }[] = [
@@ -145,6 +149,7 @@ const CHIPS = [
   { value: 'held', label: 'Held', icon: IconWallet },
   { value: 'up', label: 'Gainers', icon: IconTrendingUp },
   { value: 'down', label: 'Losers', icon: IconTrendingDown },
+  { value: 'rs', label: 'RS 80+', icon: IconFlame },
   { value: 'results', label: 'Results soon', icon: IconCalendarEvent },
   { value: 'asm', label: 'Surveillance', icon: IconShieldExclamation },
 ]
@@ -154,6 +159,7 @@ const CHIP_TEST: Record<string, (s: StockFlags) => boolean> = {
   held: (s) => s.held != null,
   up: (s) => (s.change ?? 0) > 0,
   down: (s) => (s.change ?? 0) < 0,
+  rs: (s) => (s.rs ?? 0) >= 80,
   results: (s) => s.resultsIn != null && s.resultsIn <= 14,
   asm: (s) => s.surveillance != null,
 }
@@ -295,6 +301,8 @@ export default function CommandPalette() {
     enabled: open,
   })
   const results = useNextResults()
+  // RS for the stock rows and the RS 80+ chip - the same cached table Leaders uses
+  const { bySymbol: strength } = useStrength(open)
   const { data: dashboards = [] } = useQuery({
     queryKey: ['dashboards'],
     queryFn: getDashboards,
@@ -331,6 +339,7 @@ export default function CommandPalette() {
         held: held.get(symbol) ?? null,
         resultsIn: date ? daysUntil(date) : null,
         surveillance: asm?.length ? surveillanceLabel(asm) : null,
+        rs: strength.get(symbol)?.rs ?? null,
       }
     }
     const base = stockMode
@@ -345,7 +354,18 @@ export default function CommandPalette() {
     const out = base.filter((s) => chips.every((c) => CHIP_TEST[c]?.(s) ?? true))
     if (sortByChange) out.sort((a, b) => (b.change ?? -Infinity) - (a.change ?? -Infinity))
     return out
-  }, [tracked, watchlist, paper, surveillance, results, searchMatches, stockMode, chips, sortByChange])
+  }, [
+    tracked,
+    watchlist,
+    paper,
+    surveillance,
+    results,
+    strength,
+    searchMatches,
+    stockMode,
+    chips,
+    sortByChange,
+  ])
 
   const exactStockMatch = stocks.some((s) => s.symbol === typed)
 

@@ -348,7 +348,7 @@ function NotificationDrawer({
               to="/workflows/$workflowId/runs/$runId"
               params={{ workflowId, runId }}
               search={{ node: failedNode }}
-              className="flex items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs transition-colors hover:bg-muted/50"
+              className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2 text-xs transition-colors hover:bg-muted/50"
             >
               <span>
                 <span
@@ -404,7 +404,7 @@ function NotificationDrawer({
                   columns={columns as never}
                   data={collected.rows as never}
                   sortable
-                  containerClassName="max-h-72 rounded-lg border"
+                  containerClassName="max-h-72 rounded-md border border-border"
                 />
               </>
             ) : (
@@ -413,7 +413,7 @@ function NotificationDrawer({
           </section>
         )}
 
-        <section className="rounded-lg border bg-muted/20 p-3 text-xs">
+        <section className="rounded-md border border-border bg-muted/20 p-3 text-xs">
           <div className="mb-2 flex items-center justify-between">
             <h3 className="text-[11px] font-medium text-muted-foreground">The workflow</h3>
             <Link
@@ -536,7 +536,7 @@ function RulesPanel({ workflow }: { workflow: Workflow }) {
           Mute until I turn it back on
         </Check>
         {snoozedUntil ? (
-          <div className="flex items-center justify-between gap-2 rounded-lg border px-2 py-1.5 text-xs">
+          <div className="flex items-center justify-between gap-2 rounded-md border border-border px-2 py-1.5 text-xs">
             <span>Snoozed until {formatSlot(snoozedUntil)}</span>
             <Button size="xs" variant="ghost" onClick={() => update({ snooze_until: null })}>
               Resume
@@ -618,7 +618,7 @@ function RulesPanel({ workflow }: { workflow: Workflow }) {
       </section>
 
       {isArmed(workflow) || workflow.trigger.kind === 'manual' ? null : (
-        <p className="rounded-lg border border-dashed px-3 py-2 text-[11px] text-muted-foreground">
+        <p className="rounded-md border border-dashed border-input px-3 py-2 text-[11px] text-muted-foreground">
           This workflow is off, so it won't run on its own — these rules apply when you run it.
         </p>
       )}

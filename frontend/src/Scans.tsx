@@ -186,7 +186,7 @@ export function ScansList() {
 
 function MarkCard({ m, onOpen }: { m: ScanMark; onOpen: () => void }) {
   return (
-    <div className="flex items-start gap-2 rounded-lg border p-2 text-sm">
+    <div className="flex items-start gap-2 rounded-md border border-border p-2 text-sm">
       <ChartButton symbol={m.symbol} className="mt-0.5" />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">

@@ -52,7 +52,7 @@ function VariableRow({
     onChange({ ...variable, query: { ...variable.query, params: next } })
 
   return (
-    <div className="space-y-2 rounded-lg border p-3">
+    <div className="space-y-2 rounded-md border border-border p-3">
       <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
         <Input
           id={`var-name-${variable.name}`}

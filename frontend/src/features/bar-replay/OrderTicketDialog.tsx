@@ -266,7 +266,7 @@ export default function OrderTicketDialog({
               </p>
             </div>
           ) : (
-            <div className="flex items-center justify-between rounded-lg border bg-muted/30 p-3 text-sm">
+            <div className="flex items-center justify-between rounded-md border border-border bg-muted/30 p-3 text-sm">
               <span className="text-muted-foreground">Market price</span>
               <span className="font-semibold tabular-nums">{inr(entry)}</span>
             </div>
@@ -302,7 +302,7 @@ export default function OrderTicketDialog({
             )}
           </div>
 
-          <div className="space-y-1.5 rounded-lg border p-2.5">
+          <div className="space-y-1.5 rounded-md border border-border p-2.5">
             <label className="flex items-center justify-between text-sm font-medium">
               Take profit
               <input
@@ -341,7 +341,7 @@ export default function OrderTicketDialog({
             )}
           </div>
 
-          <div className="space-y-1.5 rounded-lg border p-2.5">
+          <div className="space-y-1.5 rounded-md border border-border p-2.5">
             <label className="flex items-center justify-between text-sm font-medium">
               Stop loss
               <input
@@ -395,7 +395,7 @@ export default function OrderTicketDialog({
             )}
           </div>
 
-          <div className="space-y-1 rounded-lg border p-2.5 text-sm">
+          <div className="space-y-1 rounded-md border border-border p-2.5 text-sm">
             <div className="flex items-center justify-between">
               <span className="text-muted-foreground">Order value</span>
               <span className="font-semibold tabular-nums">
@@ -435,7 +435,7 @@ export default function OrderTicketDialog({
             </div>
           </div>
 
-          <div className="space-y-1 rounded-lg border p-2.5">
+          <div className="space-y-1 rounded-md border border-border p-2.5">
             <p className="text-xs font-medium">
               Before you enter{' '}
               <span className="font-normal text-muted-foreground">— optional, saved with the trade</span>
@@ -458,7 +458,7 @@ export default function OrderTicketDialog({
           </div>
 
           {warnings.length > 0 && (
-            <ul className="space-y-1 rounded-lg border border-warning/40 bg-warning/[0.06] p-2.5 text-xs text-warning">
+            <ul className="space-y-1 rounded-md border border-warning/40 bg-warning/[0.06] p-2.5 text-xs text-warning">
               {warnings.map((w) => (
                 <li key={w}>{w}</li>
               ))}

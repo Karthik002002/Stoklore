@@ -90,7 +90,7 @@ function LegRows({
   return (
     <div
       className={cn(
-        'rounded-lg border',
+        'rounded-md border border-border',
         fields.length > 0 && (tone === 'down' ? 'border-down/30' : 'border-up/30'),
       )}
     >

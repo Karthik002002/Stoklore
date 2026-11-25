@@ -155,7 +155,7 @@ function Compare({
   ]
   const show = (v: number | null, f: (v: number) => string) => (v == null ? '—' : f(v))
   return (
-    <div className="overflow-hidden rounded-lg border text-xs">
+    <div className="overflow-hidden rounded-md border border-border text-xs">
       <div className="grid grid-cols-3 border-b bg-muted/40 px-3 py-1.5 font-medium">
         <span />
         <span className="text-right">Before{prev ? ` (from ${formatDate(prev)})` : ''}</span>
@@ -262,7 +262,7 @@ function ReviewDialog({
 
           <div className="grid gap-2 sm:grid-cols-2">
             {PROMPTS.map((p) => (
-              <label key={p.key} className={`space-y-1 rounded-lg border p-2.5 ${p.tone}`}>
+              <label key={p.key} className={`space-y-1 rounded-md border border-border p-2.5 ${p.tone}`}>
                 <span className="block text-xs font-semibold">
                   {p.label}: <span className="font-normal text-muted-foreground">{p.hint}</span>
                 </span>
@@ -276,7 +276,7 @@ function ReviewDialog({
             ))}
           </div>
 
-          <div className="space-y-2 rounded-lg border p-3">
+          <div className="space-y-2 rounded-md border border-border p-3">
             <p className="text-sm font-medium">The one change</p>
             <Textarea
               rows={2}
@@ -395,7 +395,7 @@ export default function ManualReviews({ trades, accountId }: { trades: Trade[]; 
 
               <div className="grid gap-2 sm:grid-cols-4">
                 {PROMPTS.map((p) => (
-                  <div key={p.key} className={`rounded-lg border p-2.5 text-sm ${p.tone}`}>
+                  <div key={p.key} className={`rounded-md border border-border p-2.5 text-sm ${p.tone}`}>
                     <p className="text-xs font-semibold">{p.label}</p>
                     <p className="whitespace-pre-wrap">
                       {r[p.key] || <span className="text-muted-foreground">—</span>}

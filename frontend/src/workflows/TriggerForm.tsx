@@ -460,7 +460,10 @@ export default function TriggerForm({
       )}
 
       {kind !== 'manual' && (
-        <div className="space-y-1.5 rounded-lg border bg-background/60 p-2 text-[11px]" aria-live="polite">
+        <div
+          className="space-y-1.5 rounded-md border border-border bg-background/60 p-2 text-[11px]"
+          aria-live="polite"
+        >
           {preview?.error ? (
             <p className="text-down">{preview.error}</p>
           ) : isTime ? (

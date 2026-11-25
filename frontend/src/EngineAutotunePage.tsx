@@ -108,7 +108,7 @@ function CellTable({
         Every combination, traded unchanged in every window (hindsight) · {cells.length} combinations
         {cells.length > rows.length ? `, top ${rows.length} shown` : ''} · highlighted = the tuner picked it
       </p>
-      <div className="max-h-80 overflow-auto rounded-lg border">
+      <div className="max-h-80 overflow-auto rounded-md border border-border">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
@@ -326,7 +326,7 @@ function WalkForward({ r }: { r: EngineAutotuneReport }) {
             <p className="mb-1 text-xs text-muted-foreground">
               What the tuner picked - each parameter set it traded, and what those windows made out-of-sample
             </p>
-            <div className="max-h-80 overflow-auto rounded-lg border">
+            <div className="max-h-80 overflow-auto rounded-md border border-border">
               <Table>
                 <TableHeader>
                   <TableRow className="hover:bg-transparent">
@@ -366,7 +366,7 @@ function WalkForward({ r }: { r: EngineAutotuneReport }) {
             {r.cells?.length ? (
               <CellTable cells={r.cells} axes={swept} sort={cellSort} onSort={setCellSort} />
             ) : (
-              <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">
+              <p className="rounded-md border border-dashed border-input p-4 text-xs text-muted-foreground">
                 Every combination's out-of-sample result is kept on walk-forwards run from now on - re-run
                 this one to see which parameter sets held up across all its windows.
               </p>
@@ -415,7 +415,7 @@ function WalkForward({ r }: { r: EngineAutotuneReport }) {
           {r.oos.trades ? (
             <div className="space-y-2">
               {execRun && <ExecutionsChart key={`${side}-${selected}`} run={execRun} focus={focus} />}
-              <div className="max-h-80 overflow-auto rounded-lg border">
+              <div className="max-h-80 overflow-auto rounded-md border border-border">
                 <Table>
                   <TableHeader>
                     <TableRow className="hover:bg-transparent">
@@ -478,7 +478,7 @@ function WalkForward({ r }: { r: EngineAutotuneReport }) {
               )}
             </div>
           ) : (
-            <p className="rounded-lg border border-dashed p-4 text-xs text-muted-foreground">
+            <p className="rounded-md border border-dashed border-input p-4 text-xs text-muted-foreground">
               Executed trades are kept on walk-forwards run from now on - re-run this one to see them on the
               chart.
             </p>
@@ -506,7 +506,7 @@ function WalkForward({ r }: { r: EngineAutotuneReport }) {
             Windows · click one to see its trades on the chart · <em>pick rank</em> is where the tuner's
             choice finished among every combination on that window's unseen bars
           </p>
-          <div className="max-h-[28rem] overflow-auto rounded-lg border">
+          <div className="max-h-[28rem] overflow-auto rounded-md border border-border">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
@@ -1433,7 +1433,7 @@ export default function EngineAutotuneRunPage() {
             {idle ? ` · ${idle} never traded` : ''}
           </span>
         </div>
-        <div className="max-h-[32rem] overflow-auto rounded-lg border">
+        <div className="max-h-[32rem] overflow-auto rounded-md border border-border">
           <Table>
             <TableHeader className="sticky top-0 bg-card">
               <TableRow className="hover:bg-transparent">

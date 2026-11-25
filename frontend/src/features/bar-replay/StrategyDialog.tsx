@@ -65,7 +65,7 @@ export default function StrategyDialog({
         ) : (
           <div className="space-y-4">
             {account.strategy_explanation ? (
-              <div className="rounded-lg border bg-muted/40 p-3">
+              <div className="rounded-md border border-border bg-muted/40 p-3">
                 <p className="text-sm whitespace-pre-wrap">{account.strategy_explanation}</p>
               </div>
             ) : (

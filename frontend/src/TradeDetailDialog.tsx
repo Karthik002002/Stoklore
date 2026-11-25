@@ -52,7 +52,7 @@ function Stat({
   sub?: React.ReactNode
 }) {
   return (
-    <div className="rounded-lg border bg-card p-3">
+    <div className="rounded-md border border-border bg-card p-3">
       <p className="text-xs tracking-wide text-muted-foreground uppercase">{label}</p>
       <p className={`mt-0.5 font-semibold tabular-nums ${(tone && TONE_CLASS[tone]) ?? ''}`}>
         {value ?? '—'}
@@ -405,7 +405,7 @@ export default function TradeDetailDialog({
               {hasContext(trade) ? (
                 <div className="grid gap-2 sm:grid-cols-2">
                   {readings.map((x) => (
-                    <div key={x.label} className="rounded-lg border bg-card p-3">
+                    <div key={x.label} className="rounded-md border border-border bg-card p-3">
                       <div className="flex items-baseline justify-between gap-2">
                         <p className="text-xs tracking-wide text-muted-foreground uppercase">{x.label}</p>
                         <p className={`text-sm font-semibold ${TONE_CLASS[x.tone] ?? ''}`}>{x.value}</p>
@@ -466,7 +466,7 @@ export default function TradeDetailDialog({
                         <img
                           src={src}
                           alt={`Chart ${label.toLowerCase()}`}
-                          className="max-h-64 w-full cursor-pointer rounded-lg border object-contain"
+                          className="max-h-64 w-full cursor-pointer rounded-md border border-border object-contain"
                           onClick={() => setLightboxSrc(src)}
                         />
                         <figcaption className="text-xs text-muted-foreground">{label}</figcaption>

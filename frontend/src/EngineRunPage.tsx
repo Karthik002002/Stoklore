@@ -378,7 +378,7 @@ export function TradeLog({
           </span>
         )}
       </div>
-      <div className="max-h-[36rem] overflow-auto rounded-lg border">
+      <div className="max-h-[36rem] overflow-auto rounded-md border border-border">
         <Table>
           <TableHeader className="sticky top-0 bg-card">
             <TableRow className="hover:bg-transparent">

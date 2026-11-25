@@ -83,7 +83,7 @@ function OrderRow({
 
   if (order.status === 'pending') {
     return (
-      <div className="space-y-1 rounded-lg border border-dashed border-warning/60 bg-warning/5 p-2 text-sm">
+      <div className="space-y-1 rounded-md border border-dashed border-input border-warning/60 bg-warning/5 p-2 text-sm">
         <div className="flex items-center justify-between">
           <span className="capitalize">
             {order.direction} limit {order.quantity} @ {inr(order.entryPrice)}
@@ -120,7 +120,7 @@ function OrderRow({
       })
     : null
   return (
-    <div className="space-y-1 rounded-lg border p-2 text-sm">
+    <div className="space-y-1 rounded-md border border-border p-2 text-sm">
       <div className="flex items-center justify-between">
         <span className="font-medium capitalize">
           {order.direction} {order.quantity} @ {inr(order.entryPrice)}
@@ -211,7 +211,7 @@ function PortfolioSummary({ orders, lastBar }: { orders: ReplayOrder[]; lastBar:
   const totalExposure = openOrders.reduce((s, o) => s + o.entryPrice * o.quantity, 0)
 
   return (
-    <div className="flex items-center gap-3 rounded-lg border bg-muted/30 px-2.5 py-1.5 text-xs">
+    <div className="flex items-center gap-3 rounded-md border border-border bg-muted/30 px-2.5 py-1.5 text-xs">
       <span>
         <span className="text-muted-foreground">P&amp;L </span>
         <span className={`font-semibold tabular-nums ${unrealized >= 0 ? 'text-up' : 'text-down'}`}>

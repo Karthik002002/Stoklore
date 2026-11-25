@@ -74,7 +74,7 @@ function AttentionPanel({ attention }: { attention: AttentionScore[] | null }) {
             key={a.symbol}
             to="/stock/$exchange/$symbol"
             params={{ exchange: 'NSE', symbol: a.symbol }}
-            className="flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm hover:bg-muted/50"
+            className="flex items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-sm hover:bg-muted/50"
           >
             <span className="font-semibold">{a.symbol}</span>
             <Badge variant={a.is_new_attention ? 'secondary' : 'outline'}>
@@ -252,7 +252,7 @@ export default function EventsFeed() {
       </div>
 
       {scanStatus?.running && (
-        <div className="flex items-center gap-2 rounded-lg border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
+        <div className="flex items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-2 text-sm text-muted-foreground">
           <Spinner className="size-4" />
           Scanning watchlist for events… {scanStatus.done}/{scanStatus.total || '?'}
         </div>
@@ -290,7 +290,10 @@ export default function EventsFeed() {
       {(eventsList?.length ?? 0) > 0 && eventsList && (
         <div className="space-y-2">
           {(onlyMaterial ? eventsList.filter((e) => isMaterial(e.laya_tags)) : eventsList).map((e) => (
-            <div key={e.id} className="flex items-start gap-3 rounded-lg border bg-card px-3 py-2.5 text-sm">
+            <div
+              key={e.id}
+              className="flex items-start gap-3 rounded-md border border-border bg-card px-3 py-2.5 text-sm"
+            >
               <Badge variant="outline" className="mt-0.5 shrink-0">
                 {EVENT_LABELS[e.event_type]}
               </Badge>

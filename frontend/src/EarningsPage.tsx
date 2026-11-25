@@ -157,7 +157,7 @@ export default function EarningsPage() {
           {/* exposure first: the one thing that needs action */}
           <div
             className={cn(
-              'rounded-lg border px-3 py-2 text-sm',
+              'rounded-md border border-border px-3 py-2 text-sm',
               held.length ? 'border-down/50 bg-down/10' : 'border-up/40 bg-up/5',
             )}
           >
@@ -184,7 +184,7 @@ export default function EarningsPage() {
           </div>
 
           {/* two weeks at a glance: bar = meetings that day, coloured part = yours, red dot = a holding */}
-          <div className="rounded-lg border p-3">
+          <div className="rounded-md border border-border p-3">
             <div className="flex h-36 items-end gap-1.5">
               {strip.map((s) => {
                 const d = new Date(`${s.date}T00:00:00`)

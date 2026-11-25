@@ -303,7 +303,7 @@ export default function RunDiagram({
             <button
               type="button"
               onClick={() => onSelect?.(failed[0].id)}
-              className="flex items-center gap-2 rounded-lg border border-down/40 bg-card px-3 py-1.5 text-xs shadow-sm transition-colors hover:bg-muted"
+              className="flex items-center gap-2 rounded-md border border-down/40 bg-card px-3 py-1.5 text-xs shadow-sm transition-colors hover:bg-muted"
             >
               <AlertTriangleIcon className="size-3.5 text-down" />
               {failed.length === 1 ? '1 step failed' : `${failed.length} steps failed`}
@@ -413,7 +413,7 @@ function NodeDrawer({ node, onClose }: { node: WorkflowNode; onClose: () => void
           </Block>
         )}
         {fix && (
-          <section className="rounded-lg border border-primary/40 bg-primary/5 p-3">
+          <section className="rounded-md border border-primary/40 bg-primary/5 p-3">
             <p className="text-xs font-medium">{fix.title}</p>
             <p className="mt-1 text-[11px] text-muted-foreground">{fix.body}</p>
             <Button
@@ -427,7 +427,7 @@ function NodeDrawer({ node, onClose }: { node: WorkflowNode; onClose: () => void
           </section>
         )}
         {status === 'skipped' && (
-          <p className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
+          <p className="rounded-md border border-dashed border-input px-3 py-2 text-xs text-muted-foreground">
             Skipped — a condition upstream didn't hold, so this step never ran. That is a quiet run, not a
             failure.
           </p>
@@ -438,7 +438,7 @@ function NodeDrawer({ node, onClose }: { node: WorkflowNode; onClose: () => void
           </p>
         )}
         {itemErrors > 0 && (
-          <p className="rounded-lg border border-down/30 bg-down/5 px-3 py-2 text-xs text-down">
+          <p className="rounded-md border border-down/30 bg-down/5 px-3 py-2 text-xs text-down">
             {itemErrors} of {(d.result as unknown[]).length} items failed. Each failure is that item's entry
             under Returned.
           </p>
@@ -528,7 +528,7 @@ export function Block({
       </div>
       <div
         className={cn(
-          'rounded-lg border bg-muted/30 px-3 py-2',
+          'rounded-md border border-border bg-muted/30 px-3 py-2',
           tone === 'bad' && 'border-down/40 bg-down/5 text-down',
         )}
       >

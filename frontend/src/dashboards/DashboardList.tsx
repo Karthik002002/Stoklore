@@ -110,7 +110,7 @@ export default function DashboardList() {
                   type="button"
                   disabled={create.isPending}
                   onClick={() => create.mutate({ kind: 'template', id: t.id })}
-                  className="block w-full rounded-lg border px-3 py-2 text-left transition-colors hover:bg-muted/50 disabled:opacity-60"
+                  className="block w-full rounded-md border border-border px-3 py-2 text-left transition-colors hover:bg-muted/50 disabled:opacity-60"
                 >
                   <p className="text-sm font-medium">{t.name}</p>
                   <p className="text-xs text-muted-foreground">{t.description}</p>
@@ -131,7 +131,7 @@ export default function DashboardList() {
               type="button"
               disabled={create.isPending}
               onClick={() => create.mutate({ kind: 'workflow', id: w.id })}
-              className="flex w-full items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50 disabled:opacity-60"
+              className="flex w-full items-center gap-2 rounded-md border border-border px-3 py-2 text-left text-sm transition-colors hover:bg-muted/50 disabled:opacity-60"
             >
               <WorkflowIcon className="size-3.5 text-muted-foreground" />
               <span className="truncate">{w.name}</span>

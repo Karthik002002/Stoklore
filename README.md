@@ -150,10 +150,10 @@ to guard rails you can see and control.
 | **Home** — indices, your watchlist, recent events, NSE movers | **Trading journal dashboard** — P&L after costs, win rate, each account's equity curve |
 | ![Market pulse dashboard: sector heatmap](docs/screenshots/dashboard-market-pulse.png) | ![Market movers dashboard: treemap by turnover](docs/screenshots/dashboard-market-movers.png) |
 | **Market pulse** — every NSE sector as a heatmap, breadth, 30-day and 1-year moves | **Market movers** — gainers and losers sized by turnover |
-| ![Bar Replay: a COFORGE short with its stop and two targets, Bollinger bands and MACD](docs/screenshots/bar-replay-coforge.png) | ![Bar Replay: a SHRIRAMFIN long with laddered targets, EMA 9/21 and ADX](docs/screenshots/bar-replay-shriramfin.png) |
-| **Bar Replay** — a short on real NSE history: stop, two target legs, R and open P&L on the chart | **Bar Replay** — a long riding a breakout, with laddered targets |
-| ![Bar Replay positions panel: open P&L, risk, exposure and a pending limit order](docs/screenshots/bar-replay-positions.png) | ![Bar Replay: a TCS short with EMA 20/50 and RSI](docs/screenshots/bar-replay-tcs.png) |
-| **Positions** — open P&L, risk and exposure, stop-to-breakeven, partial exits, a pending limit | **Bar Replay** — 36 indicators, each oscillator in its own pane |
+| ![Bar Replay: COFORGE daily candles mid-replay with EMA, volume pane and the replay toolbar](docs/screenshots/bar-replay-coforge.png) | ![Bar Replay: SHRIRAMFIN daily candles mid-replay](docs/screenshots/bar-replay-shriramfin.png) |
+| **Bar Replay** — real NSE history revealed bar by bar: step, play, jump to a date or a random bar, buy/sell from the toolbar | **Bar Replay** — any NSE symbol, any timeframe, candles in the theme's up/down colors |
+| ![Bar Replay: CASTROLIND daily candles mid-replay with the positions panel open](docs/screenshots/bar-replay-castrolind.png) | ![Bar Replay: TCS daily candles mid-replay](docs/screenshots/bar-replay-tcs.png) |
+| **Positions** — open P&L, risk and exposure, stop-to-breakeven, partial exits and pending limits live in this panel | **Bar Replay** — 36 indicators, each oscillator in its own pane |
 | ![Manual trade journal overview](docs/screenshots/journal.png) | ![Algo Engine: a backtest sweep run with summary tiles, equity and drawdown, daily P&L](docs/screenshots/engine-run.png) |
 | **Trade journal** — P&L, win rate, profit factor, balance curve | **Algo Engine** — a C++ strategy backtested on Stoklore's bars: net vs gross after costs, equity, drawdown, daily P&L |
 | ![Algo Engine executions: 5m candles with buy and sell arrows on the exact fill bars](docs/screenshots/engine-executions.png) | |

@@ -199,7 +199,7 @@ export default function TradeFilterDialog<Row = Trade>({
             <div className="space-y-2 border-b p-4">
               <div className="flex items-center justify-between gap-2">
                 <p className="font-medium">{facet.label}</p>
-                <div className="flex overflow-hidden rounded-lg border text-xs">
+                <div className="flex overflow-hidden rounded-md border border-border text-xs">
                   {(['include', 'exclude'] as const).map((mode) => (
                     <button
                       key={mode}

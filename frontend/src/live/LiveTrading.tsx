@@ -194,7 +194,7 @@ export function LiveStateBar() {
         onToggle={(enabled) => toggle.mutate(enabled)}
       />
       {(status?.unconfirmed?.length ?? 0) > 0 && status && (
-        <div className="space-y-1.5 rounded-md border border-border border-destructive/50 bg-destructive/5 p-3">
+        <div className="space-y-1.5 rounded-md border border-destructive/50 bg-destructive/5 p-3">
           <p className="flex items-center gap-1.5 text-sm font-medium text-destructive">
             <AlertTriangleIcon className="size-4" />
             {status.unconfirmed.length} order

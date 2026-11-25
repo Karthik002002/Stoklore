@@ -111,7 +111,7 @@ function SizingFields({
     byPct && (balance ?? 0) > 0 && (price ?? 0) > 0 ? preferredQuantity(draft, balance, price) : null
 
   return (
-    <div className="space-y-3 rounded-lg border p-3">
+    <div className="space-y-3 rounded-md border border-border p-3">
       <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Order sizing</p>
       <div className="space-y-2">
         <label className="flex items-center gap-2 text-sm">
@@ -232,7 +232,7 @@ export default function SettingsDialog({
             value="chart"
             className="grid h-[min(34rem,70vh)] content-start items-start gap-3 overflow-y-auto pt-3 md:grid-cols-3"
           >
-            <div className="space-y-2 rounded-lg border p-3">
+            <div className="space-y-2 rounded-md border border-border p-3">
               <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Candles</p>
               <ColorField label="Body up" value={draft.bodyUpColor} onChange={set('bodyUpColor')} />
               <ColorField label="Body down" value={draft.bodyDownColor} onChange={set('bodyDownColor')} />
@@ -258,7 +258,7 @@ export default function SettingsDialog({
               )}
             </div>
 
-            <div className="space-y-2 rounded-lg border p-3">
+            <div className="space-y-2 rounded-md border border-border p-3">
               <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">Canvas</p>
               <OptionalColorField
                 label="Background"
@@ -296,7 +296,7 @@ export default function SettingsDialog({
               />
             </div>
 
-            <div className="space-y-2 rounded-lg border p-3">
+            <div className="space-y-2 rounded-md border border-border p-3">
               <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                 Oscillator levels
               </p>
@@ -352,7 +352,7 @@ export default function SettingsDialog({
             className="grid h-[min(34rem,70vh)] content-start items-start gap-3 overflow-y-auto pt-3 md:grid-cols-2"
           >
             <SizingFields draft={draft} set={set} balance={balance} price={price} />
-            <label className="flex items-start gap-2 rounded-lg border p-3 text-sm">
+            <label className="flex items-start gap-2 rounded-md border border-border p-3 text-sm">
               <input
                 type="checkbox"
                 className="mt-0.5"
@@ -368,7 +368,7 @@ export default function SettingsDialog({
                 </span>
               </span>
             </label>
-            <label className="flex items-start gap-2 rounded-lg border p-3 text-sm">
+            <label className="flex items-start gap-2 rounded-md border border-border p-3 text-sm">
               <input
                 type="checkbox"
                 className="mt-0.5"

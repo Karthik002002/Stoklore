@@ -378,7 +378,7 @@ export default function Shareholding() {
       </div>
 
       {running && (
-        <p className="rounded-lg border bg-card p-2.5 text-xs text-muted-foreground">
+        <p className="rounded-md border border-border bg-card p-2.5 text-xs text-muted-foreground">
           {status.phase === 'detail'
             ? `Reading filing detail — ${status.done}/${status.total}`
             : `Sweeping filings — window ${status.done}/${status.total}`}

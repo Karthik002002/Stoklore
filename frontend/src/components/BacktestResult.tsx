@@ -106,7 +106,7 @@ export function PlotsResultView({ plots }: { plots: Record<string, PlotPoint[]> 
       {names.map((name) => {
         const values = plots[name].slice(-10)
         return (
-          <div key={name} className="rounded-lg border bg-card p-3 text-sm">
+          <div key={name} className="rounded-md border border-border bg-card p-3 text-sm">
             <p className="mb-1 font-medium">{name}</p>
             <p className="text-muted-foreground tabular-nums">
               {values.map((v) => fmt(typeof v === 'number' ? v : (v?.value ?? null), 2)).join(', ')}

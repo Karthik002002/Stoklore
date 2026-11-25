@@ -80,7 +80,7 @@ export default function ShortcutsTab() {
       </div>
 
       {clashing.size > 0 && (
-        <p className="rounded-lg border border-destructive/40 bg-destructive/[0.06] p-2.5 text-xs text-destructive">
+        <p className="rounded-md border border-destructive/40 bg-destructive/[0.06] p-2.5 text-xs text-destructive">
           Two actions share a key — only one of them will fire. The clashing rows are marked below.
         </p>
       )}

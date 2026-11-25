@@ -95,7 +95,7 @@ function SlashMenuPlugin({
       menuRenderFn={(_ref, { selectedIndex, selectOptionAndCleanUp, setHighlightedIndex }) => {
         if (queryString === null || options.length === 0) return null
         return (
-          <div className="absolute inset-x-0 bottom-full z-20 mb-2 overflow-hidden rounded-lg border bg-popover shadow-lg">
+          <div className="absolute inset-x-0 bottom-full z-20 mb-2 overflow-hidden rounded-md border border-border bg-popover shadow-lg">
             {options.map((option, index) => (
               <button
                 key={option.key}
@@ -193,7 +193,7 @@ function TagMenuPlugin({
       menuRenderFn={(_ref, { selectedIndex, selectOptionAndCleanUp, setHighlightedIndex }) => {
         if (queryString === null) return null
         return (
-          <div className="absolute inset-x-0 bottom-full z-20 mb-2 max-h-64 overflow-y-auto rounded-lg border bg-popover shadow-lg">
+          <div className="absolute inset-x-0 bottom-full z-20 mb-2 max-h-64 overflow-y-auto rounded-md border border-border bg-popover shadow-lg">
             {options.length === 0 && (
               <p className="px-3 py-2 text-xs text-muted-foreground">
                 No stocks, events, or watch rules match.
@@ -334,7 +334,7 @@ function ChatInputInner({
           contentEditable={
             <ContentEditable
               aria-label="Chat message"
-              className="field-sizing-content max-h-48 min-h-16 w-full resize-none rounded-lg border bg-transparent px-3 py-2 text-sm outline-none focus:border-ring"
+              className="field-sizing-content max-h-48 min-h-16 w-full resize-none rounded-md border border-border bg-transparent px-3 py-2 text-sm outline-none focus:border-ring"
             />
           }
           placeholder={

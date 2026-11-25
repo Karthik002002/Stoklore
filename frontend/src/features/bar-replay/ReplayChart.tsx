@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
-import { currentChartColors, useChartColors } from '@/design-system'
+import { currentChartColors, themeStore, toRgb, useChartColors } from '@/design-system'
 import type * as React from 'react'
 import type { ReactNode } from 'react'
 import { BellIcon } from 'lucide-react'
@@ -81,15 +81,32 @@ const PRICE_PANE_KEY = 'price'
 
 // Maps the user-configurable chart settings (see store.js) onto lightweight-charts'
 // candlestick series options - shared by the initial creation and the reactive re-apply below.
+// The replay's color settings ship with fixed green/red defaults (and persist them). A color still
+// at that default follows the theme's up/down instead; one the user picked stays theirs.
+const OLD_UP = '#22c55e'
+const OLD_DOWN = '#ef4444'
+const toHex = (color: string) =>
+  `#${toRgb(color)
+    .map((x) => x.toString(16).padStart(2, '0'))
+    .join('')}`
+function themed(color: string): string
+function themed(color: string | undefined): string | undefined
+function themed(color: string | undefined) {
+  const c = color?.toLowerCase()
+  if (c === OLD_UP) return toHex(themeStore.resolved().colors.up)
+  if (c === OLD_DOWN) return toHex(themeStore.resolved().colors.down)
+  return color
+}
+
 function candleOptionsFrom(settings: ChartSettings) {
   return {
-    upColor: settings.bodyUpColor,
-    downColor: settings.bodyDownColor,
-    wickUpColor: settings.wickUpColor,
-    wickDownColor: settings.wickDownColor,
+    upColor: themed(settings.bodyUpColor),
+    downColor: themed(settings.bodyDownColor),
+    wickUpColor: themed(settings.wickUpColor),
+    wickDownColor: themed(settings.wickDownColor),
     borderVisible: settings.borderVisible,
-    borderUpColor: settings.borderUpColor,
-    borderDownColor: settings.borderDownColor,
+    borderUpColor: themed(settings.borderUpColor),
+    borderDownColor: themed(settings.borderDownColor),
     priceLineVisible: settings.lastPriceLine !== false,
   }
 }
@@ -667,7 +684,7 @@ const ReplayChart = forwardRef(function ReplayChart(
   // chart (which would wipe zoom/pan) - the creation effect above only sets them once, at mount.
   useEffect(() => {
     candleSeriesRef.current?.applyOptions(candleOptionsFrom(settings))
-  }, [settings])
+  }, [settings, themeColors])
 
   // The canvas: background, axis text, grid and the volume overlay. Same reasoning as the candle
   // colours - applied in place, so a live preview from the settings dialog never resets the zoom.
@@ -1154,8 +1171,8 @@ const ReplayChart = forwardRef(function ReplayChart(
               midpoint == null || level === midpoint
                 ? COLORS.text
                 : level > midpoint
-                  ? (settings.levelUpperColor ?? settings.bodyDownColor)
-                  : (settings.levelLowerColor ?? settings.bodyUpColor)
+                  ? themed(settings.levelUpperColor ?? settings.bodyDownColor)
+                  : themed(settings.levelLowerColor ?? settings.bodyUpColor)
             series.createPriceLine({
               price: level,
               color,
@@ -1180,7 +1197,7 @@ const ReplayChart = forwardRef(function ReplayChart(
       pane.setStretchFactor(heights[key] ?? fallback)
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [indicators, resetKey, ...levelDeps])
+  }, [indicators, resetKey, themeColors, ...levelDeps])
 
   // Data updates - runs on every bar step, but only ever calls .setData() on already-existing
   // series, never recreates the chart. The initial framing only fires once per resetKey (first
@@ -1212,7 +1229,10 @@ const ReplayChart = forwardRef(function ReplayChart(
       bars.map((b) => ({
         time: b.time,
         value: b.volume ?? 0,
-        color: b.close >= b.open ? fade(settings.bodyUpColor, 0.5) : fade(settings.bodyDownColor, 0.5),
+        color:
+          b.close >= b.open
+            ? fade(themed(settings.bodyUpColor), 0.5)
+            : fade(themed(settings.bodyDownColor), 0.5),
       })) as never,
     )
     // Full bars, not a {time, close} projection: the moving averages only read `close`, but the
@@ -1273,7 +1293,16 @@ const ReplayChart = forwardRef(function ReplayChart(
     // Deps must stay a superset of the series-creating effect's: anything that makes that effect
     // tear down and rebuild the series (rsiLevels, resetKey) has to re-run this one too, or the
     // freshly created series sit there with no data until the next bar step.
-  }, [bars, indicators, markers, resetKey, settings.bodyUpColor, settings.bodyDownColor, ...levelDeps])
+  }, [
+    bars,
+    indicators,
+    markers,
+    resetKey,
+    settings.bodyUpColor,
+    settings.bodyDownColor,
+    themeColors,
+    ...levelDeps,
+  ])
 
   // Restores each pane's saved price scale. Per pane rather than once for the whole chart: an
   // oscillator pane added mid-session (adding RSI after the chart is already up) doesn't exist when

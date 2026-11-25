@@ -714,7 +714,7 @@ function StrategyBehaviorPanel({ trades }: { trades: Trade[] }) {
             {QUADRANTS.map((q) => {
               const c = m.cells[q.key]
               return (
-                <div key={q.key} className={`rounded-lg border p-3 ${q.tone}`}>
+                <div key={q.key} className={`rounded-md border border-border p-3 ${q.tone}`}>
                   <p className="text-xs text-muted-foreground">{q.title}</p>
                   <p className="text-sm font-semibold">{q.verdict}</p>
                   <p className="mt-1 text-sm tabular-nums">
@@ -919,7 +919,7 @@ function OverallStatistics({ trades }: { trades: Trade[] }) {
         <div className="space-y-2">
           {filtered.map((section) => (
             // <details> rather than a state-driven accordion - the browser already does this.
-            <details key={section.group} open className="rounded-lg border">
+            <details key={section.group} open className="rounded-md border border-border">
               <summary className="cursor-pointer px-3 py-2 text-sm font-medium">{section.group}</summary>
               <dl className="grid grid-cols-1 gap-x-6 gap-y-1 px-3 pt-1 pb-3 sm:grid-cols-2 lg:grid-cols-3">
                 {section.stats.map((stat) => (

@@ -126,7 +126,7 @@ export function ToolCallChip({ part }: { part: ToolPart }) {
         <ChevronDownIcon className={`size-3 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="max-w-xs space-y-1.5 rounded-lg border bg-muted/30 px-2.5 py-2 font-mono text-[11px] whitespace-pre-wrap text-muted-foreground">
+        <div className="max-w-xs space-y-1.5 rounded-md border border-border bg-muted/30 px-2.5 py-2 font-mono text-[11px] whitespace-pre-wrap text-muted-foreground">
           {part.input !== undefined && (
             <div>
               <span className="text-foreground">input </span>
@@ -182,7 +182,7 @@ function ConfirmToolCard({
     )
   }
   return (
-    <div className="flex flex-col gap-2 rounded-lg border bg-muted/50 px-3 py-2 text-xs">
+    <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/50 px-3 py-2 text-xs">
       <span className="flex items-center gap-1.5 font-medium text-foreground">
         <WrenchIcon className="size-3" />
         Run {tool}?

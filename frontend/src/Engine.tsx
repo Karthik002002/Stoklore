@@ -440,7 +440,7 @@ function SymbolChips({ value, onChange }: { value: string[]; onChange: (v: strin
   if (!value.length) return null
   const listed = new Set((watchlist ?? []).map((w) => w.symbol))
   return (
-    <div className="flex flex-wrap items-center gap-1.5 rounded-lg border border-dashed px-2 py-1.5">
+    <div className="flex flex-wrap items-center gap-1.5 rounded-md border border-dashed border-input px-2 py-1.5">
       <span className="mr-1 text-xs text-muted-foreground">
         {value.length} stock{value.length === 1 ? '' : 's'}
       </span>
@@ -985,7 +985,7 @@ function RunDetail({ id, onClose }: { id: string; onClose: () => void }) {
             {run.trades.length > trades.length ? `(latest ${trades.length} of ${run.trades.length})` : ''}
             {' · click a row to zoom the chart above onto it'}
           </p>
-          <div className="max-h-96 overflow-auto rounded-lg border">
+          <div className="max-h-96 overflow-auto rounded-md border border-border">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">
@@ -1216,7 +1216,7 @@ function SweepHeatmap({
               columns · each cell shows its best run over the other params
             </div>
           )}
-          <div className="overflow-x-auto rounded-lg border">
+          <div className="overflow-x-auto rounded-md border border-border">
             <table className="w-full text-xs tabular-nums">
               <thead>
                 <tr>
@@ -1464,7 +1464,7 @@ function EquityFan({
   const ends = [0, shown.length - 1]
 
   return (
-    <div className="rounded-lg border p-3">
+    <div className="rounded-md border border-border p-3">
       <p className="mb-1 flex flex-wrap items-baseline gap-x-2 text-sm">
         <span className="font-medium">Equity of every run</span>
         <span className="text-xs text-muted-foreground">
@@ -1540,7 +1540,7 @@ function MetricSpread({
   const median = sorted[Math.floor(sorted.length / 2)]
 
   return (
-    <div className="rounded-lg border p-3">
+    <div className="rounded-md border border-border p-3">
       <p className="mb-2 flex flex-wrap items-baseline gap-x-2 text-sm">
         <span className="font-medium">{m.label} across the sweep</span>
         <span className="text-xs text-muted-foreground">
@@ -1806,7 +1806,7 @@ function SweepView({
             </div>
             <div className="grid gap-4 lg:grid-cols-2">
               {series.map((s) => (
-                <div key={s.param} className="rounded-lg border p-3">
+                <div key={s.param} className="rounded-md border border-border p-3">
                   <p className="mb-1 text-sm">
                     <span className="font-mono font-medium">{s.param}</span>{' '}
                     <span className="text-xs text-muted-foreground">
@@ -1848,7 +1848,7 @@ function SweepView({
                 columns · each cell shows its best run over the other params
               </div>
             )}
-            <div className="max-h-[28rem] overflow-auto rounded-lg border">
+            <div className="max-h-[28rem] overflow-auto rounded-md border border-border">
               <table className="w-full text-xs tabular-nums">
                 <thead>
                   <tr>
@@ -1915,7 +1915,7 @@ function SweepView({
             · click a row to open it as a full backtest with charts and trades
             {deadCount > 0 ? ' · runs that took no trades sit at the bottom' : ''}
           </p>
-          <div className="max-h-[32rem] overflow-auto rounded-lg border">
+          <div className="max-h-[32rem] overflow-auto rounded-md border border-border">
             <Table>
               <TableHeader>
                 <TableRow className="hover:bg-transparent">

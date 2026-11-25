@@ -527,7 +527,7 @@ function ScreenshotField({
               <img
                 src={current}
                 alt={label}
-                className="mt-2 max-h-24 cursor-pointer rounded-lg border"
+                className="mt-2 max-h-24 cursor-pointer rounded-md border border-border"
                 onClick={() => onView(current)}
               />
             )}

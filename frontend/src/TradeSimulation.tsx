@@ -320,7 +320,7 @@ function PathsCanvas({
       />
       {hovered && tooltip && (
         <div
-          className="pointer-events-none absolute z-10 w-52 rounded-lg border bg-popover p-2 text-xs shadow-md"
+          className="pointer-events-none absolute z-10 w-52 rounded-md border border-border bg-popover p-2 text-xs shadow-md"
           style={{
             left: Math.min((hover?.x ?? 0) + 12, Math.max(width - 220, 0)),
             top: Math.min((hover?.y ?? 0) + 12, height - 40),

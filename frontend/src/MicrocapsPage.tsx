@@ -411,7 +411,7 @@ function ThesisEditor({ row, thesis }: { row: Microcap; thesis?: MicrocapThesis 
     onError: (e) => toast.error(e.message),
   })
   return (
-    <section className="space-y-2 rounded-lg border p-3">
+    <section className="space-y-2 rounded-md border border-border p-3">
       <h3 className="text-sm font-semibold">{thesis ? 'Your thesis' : 'Add to long-term list'}</h3>
       {thesis && thesis.breaches.length > 0 && (
         <ul className="space-y-0.5 text-xs text-down">
@@ -644,13 +644,13 @@ export default function MicrocapsPage() {
         </Button>
       </div>
       {st && !st.has_cookie && (
-        <p className="rounded-lg border border-warning/40 p-2 text-xs">
+        <p className="rounded-md border border-warning/40 p-2 text-xs">
           Paste your screener.in <code>sessionid</code> cookie in Settings › Screener - the universe comes
           from one screener.in query that needs you signed in.
         </p>
       )}
       {st?.error && (
-        <p className="rounded-lg border border-down/40 p-2 text-xs text-down">Last pull failed: {st.error}</p>
+        <p className="rounded-md border border-down/40 p-2 text-xs text-down">Last pull failed: {st.error}</p>
       )}
 
       <div className="flex flex-wrap items-center gap-1.5">

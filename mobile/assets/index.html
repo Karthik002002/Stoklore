@@ -1,0 +1,440 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stoklore</title>
+<!--
+  Stoklore's home-page Sector Performance panel (frontend/src/components/SectorPerformancePanel.tsx),
+  laid out for a phone. Same feed: ET Markets' sector performance, fetched by MainActivity.java, mapped
+  the way app/core/scraper.py::_sector_row maps it. Same arithmetic as frontend/src/lib/sectors.ts.
+-->
+<style>
+  /* Terminal Dark (frontend/src/design-system/tokens/themes.ts) */
+  :root {
+    --background: #0a0c0f; --card: #15181c; --panel-head: #101316; --muted: #1c1f24;
+    --foreground: #d5d9de; --muted-foreground: #7d848d; --border: #23272c; --input: #30353b;
+    --accent: #5b9cf5; --up: #2ebd85; --down: #ef5350; --radius: 3px;
+    --mono: ui-monospace, "Roboto Mono", "Droid Sans Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--background); color: var(--foreground); }
+  body { font: 12px/1.35 var(--mono); -webkit-tap-highlight-color: transparent; font-variant-numeric: tabular-nums; }
+  button, select, input { font: inherit; color: inherit; }
+  .up { color: var(--up); } .down { color: var(--down); } .mute { color: var(--muted-foreground); }
+  .b { font-weight: 600; } .fg { color: var(--foreground); }
+
+  header { position: sticky; top: 0; z-index: 10; background: var(--panel-head); border-bottom: 1px solid var(--border); padding: 8px 10px; }
+  .title { display: flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+  .title .logo { width: 22px; height: 22px; border-radius: 6px; padding: 3px; }
+  /* the website's sidebar logo tile: favicon on a drifting purple → blue gradient (App.tsx) */
+  .logo { background-image: linear-gradient(135deg, rgba(126,20,255,.4), rgba(134,59,255,.4), rgba(71,191,255,.4), rgba(126,20,255,.4)); background-size: 200% 200%; animation: gradient-move 4s ease-in-out infinite; }
+  .logo img { display: block; width: 100%; height: 100%; }
+  @keyframes gradient-move { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+
+  /* opening animation: logo pops in, wordmark rises, then the whole card lifts away once data is in */
+  #intro { position: fixed; inset: 0; z-index: 50; background: var(--background); display: grid; place-items: center; transition: opacity .45s ease, visibility .45s; }
+  #intro .card { display: flex; flex-direction: column; align-items: center; transition: transform .45s cubic-bezier(.4,0,.2,1); }
+  #intro .logo { width: 96px; height: 96px; border-radius: 26px; padding: 22px; animation: pop .7s cubic-bezier(.34,1.56,.64,1) both, gradient-move 2.4s ease-in-out infinite, glow 2.4s ease-in-out infinite; }
+  #intro .word { margin-top: 18px; font: 600 26px/1 system-ui, sans-serif; letter-spacing: .02em; display: flex; }
+  #intro .word span { display: inline-block; animation: rise .5s cubic-bezier(.2,.8,.2,1) both; }
+  #intro .sub { margin-top: 8px; font-size: 11px; letter-spacing: .22em; text-transform: uppercase; color: var(--muted-foreground); animation: fade .6s .75s both; }
+  #intro .load { margin-top: 22px; width: 120px; height: 2px; border-radius: 1px; background: var(--muted); overflow: hidden; animation: fade .4s .9s both; }
+  #intro .load i { display: block; width: 40%; height: 100%; background: linear-gradient(90deg, #7e14ff, #47bfff); animation: slide 1s ease-in-out infinite; }
+  #intro.done { opacity: 0; visibility: hidden; }
+  #intro.done .card { transform: scale(1.12); }
+  @keyframes pop { from { transform: scale(.4) rotate(-12deg); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes glow { 0%, 100% { box-shadow: 0 0 24px rgba(126,20,255,.25); } 50% { box-shadow: 0 0 44px rgba(71,191,255,.35); } }
+  @keyframes rise { from { transform: translateY(14px); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+  main, header { transition: opacity .4s ease .1s; }
+  body.booting main, body.booting header { opacity: 0; }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; } }
+  .title .name { color: var(--accent); font-weight: 600; flex: 1; }
+  .controls { display: flex; gap: 6px; margin-top: 8px; }
+  .controls input { flex: 1; min-width: 0; height: 32px; border: 1px solid var(--input); border-radius: var(--radius); background: var(--background); padding: 0 8px; outline: none; }
+  .controls input:focus { border-color: var(--accent); }
+  .seg { display: flex; border: 1px solid var(--input); border-radius: var(--radius); overflow: hidden; }
+  .seg button { border: 0; background: transparent; padding: 0 10px; height: 30px; color: var(--muted-foreground); }
+  .seg button.on { background: var(--muted); color: var(--foreground); font-weight: 600; }
+  .icon { width: 32px; height: 32px; border: 1px solid var(--input); border-radius: var(--radius); background: transparent; display: grid; place-items: center; padding: 0; }
+  .icon svg { width: 14px; height: 14px; }
+  .spin svg { animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .summary { display: flex; flex-wrap: wrap; gap: 3px 14px; padding: 8px 10px; background: rgba(28,31,36,.35); border-bottom: 1px solid var(--border); }
+  .summary .src { width: 100%; font-size: 11px; }
+  .bar-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px 4px; font-size: 11px; text-transform: uppercase; color: var(--muted-foreground); }
+  .bar-head select { height: 26px; border: 1px solid var(--input); border-radius: var(--radius); background: var(--background); color: var(--foreground); font-size: 11px; padding: 0 4px; text-transform: none; max-width: 60%; }
+
+  .tiles { display: flex; flex-wrap: wrap; gap: 2px; padding: 4px 8px 8px; }
+  .tile { min-width: 4rem; overflow: hidden; border: 0; border-radius: 2px; padding: 4px 6px; text-align: left; }
+  .tile.open { box-shadow: inset 0 0 0 1px rgba(213,217,222,.6); }
+  .tile p { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11px; }
+  .tile p:first-child { font-weight: 600; color: var(--foreground); }
+  .tile p + p { color: rgba(213,217,222,.8); display: flex; justify-content: space-between; gap: 4px; }
+  .map { border-bottom: 1px solid var(--border); }
+
+  .row { border-bottom: 1px solid rgba(35,39,44,.6); padding: 9px 10px; }
+  .row.open { background: rgba(28,31,36,.3); }
+  .r1 { display: flex; align-items: baseline; gap: 6px; }
+  .r1 .chev { color: var(--muted-foreground); width: 10px; display: inline-block; transition: transform .1s; }
+  .row.open .chev { transform: rotate(90deg); }
+  .r1 .nm { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+  .r1 .chg { font-weight: 600; font-size: 13px; }
+  .r2 { display: flex; gap: 12px; margin: 3px 0 6px 16px; font-size: 11px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; margin-left: 16px; align-items: center; }
+  .changebar { position: relative; height: 8px; border-radius: 2px; background: rgba(28,31,36,.5); }
+  .changebar .mid { position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--border); }
+  .changebar .fill { position: absolute; top: 0; bottom: 0; }
+  .breadth { display: flex; height: 10px; border-radius: 2px; overflow: hidden; background: var(--muted); }
+  .strip { display: flex; height: 12px; border-radius: 2px; overflow: hidden; margin: 6px 0 0 16px; }
+  .strip div { flex-basis: 0; min-width: 0; box-shadow: inset -1px 0 0 var(--background); }
+  .bw { margin: 5px 0 0 16px; font-size: 11px; }
+  .bw p { margin: 1px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .members { margin-top: 8px; }
+  .members .meta { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 11px; text-transform: uppercase; color: var(--muted-foreground); padding: 0 0 4px; }
+  .members .meta .fg { text-transform: none; }
+  .members .tiles { padding: 0; }
+  .members .tile { min-width: 4.5rem; }
+  .empty, .state { padding: 32px 12px; text-align: center; color: var(--muted-foreground); }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 0 10px 8px; font-size: 10px; color: var(--muted-foreground); }
+  .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 1px; margin-right: 4px; vertical-align: -1px; }
+
+  /* tap a member: its numbers, where the desktop shows a hover card */
+  #sheet { position: fixed; left: 8px; right: 8px; bottom: 8px; z-index: 20; background: #101316; border: 1px solid var(--border); border-radius: 6px; padding: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.6); display: none; }
+  #sheet.on { display: block; }
+  #sheet h3 { margin: 0 0 2px; font-size: 14px; }
+  #sheet .kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 14px; margin-top: 8px; }
+  #sheet .kv span:nth-child(odd) { color: var(--muted-foreground); }
+  #sheet .links { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+  #sheet .go { height: 44px; border-radius: var(--radius); border: 1px solid var(--input); background: var(--card); font-weight: 600; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; }
+  #sheet .go span { font-size: 10px; font-weight: 400; color: var(--muted-foreground); }
+  #sheet .go.tradingview:not(:disabled) { border-color: rgba(91,156,245,.55); }
+  #sheet .go.dhan:not(:disabled) { border-color: rgba(126,20,255,.55); }
+  #sheet .go:disabled { opacity: .5; }
+</style>
+</head>
+<body class="booting">
+<div id="intro" aria-hidden="true">
+  <div class="card">
+    <div class="logo"><img src="logo.svg" alt=""></div>
+    <div class="word">Stoklore</div>
+    <div class="sub">Sector Performance</div>
+    <div class="load"><i></i></div>
+  </div>
+</div>
+<header>
+  <div class="title"><span class="logo"><img src="logo.svg" alt=""></span><span class="name">Sector Performance</span><span class="mute" id="ago"></span></div>
+  <div class="controls">
+    <input id="filter" placeholder="Filter sector / company" autocomplete="off" spellcheck="false">
+    <div class="seg" id="ex"><button data-ex="NSE">NSE</button><button data-ex="BSE">BSE</button></div>
+    <button class="icon" id="refresh" aria-label="Refresh sectors">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+    </button>
+  </div>
+</header>
+<main id="main"><div class="state">Loading sectors…</div></main>
+<div id="sheet"></div>
+
+<script>
+// ---- arithmetic: same as frontend/src/lib/sectors.ts -------------------------------------------
+const heatColor = (pct) => {
+  if (pct == null || Number.isNaN(pct) || pct === 0) return 'rgba(148, 163, 184, 0.25)'
+  const a = (0.18 + 0.72 * Math.min(Math.abs(pct) / 4, 1)).toFixed(2)
+  return pct > 0 ? `rgba(34, 197, 94, ${a})` : `rgba(239, 68, 68, ${a})`
+}
+const bucketShares = (b) => { const t = b.reduce((s, n) => s + (n || 0), 0); return b.map((n) => (t ? ((n || 0) / t) * 100 : 0)) }
+const breadth = (s) => { const m = (s.advance ?? 0) + (s.decline ?? 0); return m ? (s.advance ?? 0) / m : null }
+function sectorSummary(sectors) {
+  const up = sectors.filter((s) => (s.change_pct ?? 0) > 0).length
+  const down = sectors.filter((s) => (s.change_pct ?? 0) < 0).length
+  const mcap = sectors.reduce((t, s) => t + (s.mcap_cr ?? 0), 0)
+  const change = sectors.reduce((t, s) => t + (s.mcap_change_cr ?? 0), 0)
+  const prev = mcap - change
+  const ranked = sectors.filter((s) => s.change_pct != null).sort((a, b) => b.change_pct - a.change_pct)
+  return { up, down, flat: sectors.length - up - down, mcap, change, changePct: prev > 0 ? (change / prev) * 100 : null, best: ranked[0] ?? null, worst: ranked.at(-1) ?? null }
+}
+const croreShort = (v) => v == null ? '—' : Math.abs(v) >= 1e5 ? `${(v / 1e5).toFixed(2)}L Cr` : `${Math.round(v).toLocaleString('en-IN')} Cr`
+const BUCKETS = [
+  ['Down >2%', 'rgb(220, 38, 38)'], ['Down ≤2%', 'rgba(239, 68, 68, 0.55)'], ['Unchanged', 'rgba(148, 163, 184, 0.5)'],
+  ['Up ≤2%', 'rgba(34, 197, 94, 0.55)'], ['Up >2%', 'rgb(22, 163, 74)'],
+]
+const fmt = (v, d = 2) => v == null ? '—' : Number(v).toLocaleString('en-IN', { minimumFractionDigits: d, maximumFractionDigits: d })
+const pctText = (v, d = 2) => v == null ? '—' : `${v >= 0 ? '+' : ''}${fmt(v, d)}%`
+const pctClass = (v) => v == null || v === 0 ? 'mute' : v > 0 ? 'up' : 'down'
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
+
+// ---- ET's feed -> Stoklore's shape (app/core/scraper.py::_sector_row) ----------------------------
+function sectorRow(r) {
+  const crore = (v) => v == null ? null : Math.round(v / 1e5) / 100
+  const cons = r.sectorConstituents || []
+  const members = cons.map((c) => ({
+    name: c.companyName, slug: c.seoName, id: c.companyId, price: c.current, change_pct: c.percentChange,
+    mcap_cr: c.marketCap, volume_k: c.volumeInThousand,
+  })).sort((a, b) => (b.mcap_cr || 0) - (a.mcap_cr || 0))
+  return {
+    id: r.sectorId, name: r.sectorName, mcap_cr: crore(r.marketCap), mcap_change_cr: crore(r.marketCapChange),
+    change_pct: r.marketCapPercentChange, advance: r.advance, decline: r.decline, unchanged: r.noChange,
+    buckets: [r.countLessThanMinus2, r.countBetMinus2to0, r.countEq0, r.countBet0toPlus2, r.countGreaterThanPlus2].map((n) => n || 0),
+    members, updated: cons.find((c) => c.updatedDateTime)?.updatedDateTime ?? null,
+  }
+}
+
+// ---- sorting: nulls last whichever way, like lib/sortRows ----------------------------------------
+const SECTOR_FIELDS = { mcap: (s) => s.mcap_cr, chgcr: (s) => s.mcap_change_cr, change: (s) => s.change_pct, breadth, members: (s) => s.members.length, name: (s) => s.name }
+const MEMBER_FIELDS = { mcap: (m) => m.mcap_cr, change: (m) => m.change_pct, volume: (m) => m.volume_k, price: (m) => m.price, name: (m) => m.name }
+function sortRows(rows, value, fields) {
+  const [key, dir] = value.split(':'); const get = fields[key]; if (!get) return rows
+  const sign = dir === 'asc' ? 1 : -1
+  return [...rows].sort((a, b) => {
+    const x = get(a), y = get(b)
+    if (x == null) return y == null ? 0 : 1
+    if (y == null) return -1
+    return (typeof x === 'string' ? x.localeCompare(y) : x - y) * sign
+  })
+}
+const SECTOR_SORTS = [
+  ['mcap:desc', 'Market cap · largest first'], ['mcap:asc', 'Market cap · smallest first'],
+  ['change:desc', 'Change · top gainers first'], ['change:asc', 'Change · top losers first'],
+  ['chgcr:desc', 'Δ Mcap · biggest gain first'], ['chgcr:asc', 'Δ Mcap · biggest loss first'],
+  ['breadth:desc', 'Breadth · most advancing first'], ['breadth:asc', 'Breadth · most declining first'],
+  ['members:desc', 'Members · most first'], ['members:asc', 'Members · fewest first'],
+  ['name:asc', 'Name · A → Z'], ['name:desc', 'Name · Z → A'],
+]
+const MEMBER_SORTS = [
+  ['mcap:desc', 'Market cap · largest first'], ['mcap:asc', 'Market cap · smallest first'],
+  ['change:desc', 'Change · top gainers first'], ['change:asc', 'Change · top losers first'],
+  ['volume:desc', 'Volume · highest first'], ['volume:asc', 'Volume · lowest first'],
+  ['price:desc', 'Price · highest first'], ['price:asc', 'Price · lowest first'],
+  ['name:asc', 'Name · A → Z'], ['name:desc', 'Name · Z → A'],
+]
+
+// ---- state (sorts and exchange remembered on the phone) ------------------------------------------
+const store = { get: (k, d) => { try { return localStorage.getItem(k) ?? d } catch { return d } }, set: (k, v) => { try { localStorage.setItem(k, v) } catch {} } }
+const st = {
+  exchange: store.get('sectors.exchange', 'NSE'), mapSort: store.get('sectors.mapSort', 'mcap:desc'),
+  listSort: store.get('sectors.listSort', 'change:desc'), memberSort: store.get('sectors.memberSort', 'mcap:desc'),
+  filter: '', open: new Set(), sectors: null, error: null, loading: false, fetchedAt: null, req: 0,
+}
+const $ = (id) => document.getElementById(id)
+
+// HTTP goes through MainActivity.get (ET needs its own Origin header; a page fetch hits CORS)
+const pending = new Map(); let nextReq = 0
+window.onNative = (id, status, body) => { pending.get(id)?.({ status, body }); pending.delete(id) }
+const nget = (url) => new Promise((resolve) => {
+  if (!window.Native) return resolve({ status: 0, body: 'No native bridge — open this inside the app.' })
+  const id = String(++nextReq); pending.set(id, resolve); Native.get(id, url)
+})
+const ET_SECTORS = 'https://etmarketsapis.indiatimes.com/ET_Stats/sectorperformance?pagesize=100&pageno=1&marketcap=&exchange='
+
+async function load() {
+  st.loading = true; renderChrome()
+  const id = String(++st.req)
+  const r = await nget(ET_SECTORS + st.exchange)
+  onSectors(id, r.status === 200, r.status === 200 ? r.body : r.status ? `ET answered HTTP ${r.status}` : `ET sector fetch failed: ${r.body}`)
+}
+function onSectors(id, ok, body) {
+  if (id !== String(st.req)) return // an older exchange's answer
+  st.loading = false
+  if (ok) {
+    try { st.sectors = (JSON.parse(body).searchresult || []).map(sectorRow); st.error = null; st.fetchedAt = Date.now() }
+    catch (e) { st.error = 'ET sent something that is not JSON.' }
+  } else st.error = body
+  render()
+  endIntro()
+}
+const introStart = Date.now()
+function endIntro() {
+  if (!document.body.classList.contains('booting')) return
+  setTimeout(() => { document.body.classList.remove('booting'); $('intro').classList.add('done') }, Math.max(0, 1300 - (Date.now() - introStart)))
+}
+// wordmark letters, staggered
+document.querySelector('#intro .word').innerHTML = [...'Stoklore'].map((c, i) => `<span style="animation-delay:${0.3 + i * 0.05}s">${c}</span>`).join('')
+// never stuck on the intro: show whatever is there after 8s (ET slow or offline)
+setTimeout(endIntro, 8000)
+window.onBack = () => {
+  if ($('sheet').classList.contains('on')) { $('sheet').classList.remove('on'); return true }
+  if (st.open.size) { st.open.clear(); render(); return true }
+  return false
+}
+
+function renderChrome() {
+  for (const b of $('ex').children) b.classList.toggle('on', b.dataset.ex === st.exchange)
+  $('refresh').classList.toggle('spin', st.loading)
+  $('ago').textContent = st.fetchedAt ? new Date(st.fetchedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : ''
+}
+const sortSelect = (name, value, options) =>
+  `<select data-sort="${name}">${options.map(([v, t]) => `<option value="${v}"${v === value ? ' selected' : ''}>${t}</option>`).join('')}</select>`
+
+function render() {
+  renderChrome()
+  const main = $('main')
+  if (!st.sectors) { main.innerHTML = `<div class="state">${st.error ? esc(st.error) : 'Loading sectors…'}</div>`; return }
+  const sectors = st.sectors
+  const sum = sectorSummary(sectors)
+  const maxMove = Math.max(0, ...sectors.map((s) => Math.abs(s.change_pct ?? 0)))
+  const needle = st.filter.trim().toLowerCase()
+  const shown = sortRows(needle ? sectors.filter((s) => s.name.toLowerCase().includes(needle) || s.members.some((m) => (m.name || '').toLowerCase().includes(needle))) : sectors, st.listSort, SECTOR_FIELDS)
+  let h = ''
+  if (st.error) h += `<div class="summary down">${esc(st.error)} · showing the last answer</div>`
+  h += `<div class="summary">
+    <span><span class="up">${sum.up} ▲</span> <span class="down">${sum.down} ▼</span>${sum.flat > 0 ? ` <span class="mute">${sum.flat} ─</span>` : ''}<span class="mute"> sectors</span></span>
+    <span><span class="mute">mcap </span>${croreShort(sum.mcap)} <span class="${pctClass(sum.changePct)}">${pctText(sum.changePct)} (${sum.change >= 0 ? '+' : ''}${croreShort(sum.change)})</span></span>
+    ${sum.best ? `<span><span class="mute">best </span>${esc(sum.best.name)} <span class="up">${pctText(sum.best.change_pct)}</span></span>` : ''}
+    ${sum.worst ? `<span><span class="mute">worst </span>${esc(sum.worst.name)} <span class="${pctClass(sum.worst.change_pct)}">${pctText(sum.worst.change_pct)}</span></span>` : ''}
+    <span class="src mute">ET Markets · ${st.exchange} · ${esc(sectors[0]?.updated ?? '—')}</span>
+  </div>`
+  h += `<div class="map"><div class="bar-head"><span>Sector map · size = mcap</span>${sortSelect('map', st.mapSort, SECTOR_SORTS)}</div><div class="tiles">`
+  for (const s of sortRows(sectors, st.mapSort, SECTOR_FIELDS)) {
+    const cap = Math.max(s.mcap_cr ?? 0, 0)
+    h += `<button class="tile${st.open.has(s.id) ? ' open' : ''}" data-open="${esc(s.id)}" style="flex-grow:${Math.sqrt(Math.max(cap, 1))};flex-basis:${Math.min(10, 4 + Math.sqrt(cap) / 160)}rem;background:${heatColor(s.change_pct)}"><p>${esc(s.name)}</p><p>${pctText(s.change_pct)}</p></button>`
+  }
+  h += `</div><div class="legend">breadth: ${BUCKETS.map(([l, c]) => `<span><i style="background:${c}"></i>${l}</span>`).join('')}</div></div>`
+  h += `<div class="bar-head"><span>${shown.length} sectors</span>${sortSelect('list', st.listSort, SECTOR_SORTS)}</div>`
+  if (!shown.length) h += `<div class="empty">No sector or company matches “${esc(st.filter)}”.</div>`
+  for (const s of shown) h += sectorHtml(s, maxMove)
+  main.innerHTML = h
+}
+
+function sectorHtml(s, maxMove) {
+  const open = st.open.has(s.id)
+  const ranked = s.members.filter((m) => m.change_pct != null).sort((a, b) => b.change_pct - a.change_pct)
+  const best = ranked[0], worst = ranked.length > 1 ? ranked.at(-1) : null
+  const w = s.change_pct == null || !maxMove ? 0 : Math.min(Math.abs(s.change_pct) / maxMove, 1) * 50
+  const fill = w > 0 ? `<div class="fill" style="width:${w}%;${s.change_pct >= 0 ? 'left:50%;background:rgba(46,189,133,.7)' : 'right:50%;background:rgba(239,83,80,.7)'}"></div>` : ''
+  const shares = bucketShares(s.buckets)
+  const strip = s.members.slice(0, 40).map((m, i) => `<div data-m="${esc(s.id)}:${i}" style="flex-grow:${Math.max(m.mcap_cr ?? 0, 1)};background:${heatColor(m.change_pct)}"></div>`).join('')
+  let h = `<div class="row${open ? ' open' : ''}" id="sector-${esc(s.id)}" data-open="${esc(s.id)}">
+    <div class="r1"><span class="chev">›</span><span class="nm">${esc(s.name)} <span class="mute" style="font-weight:400;font-size:11px">${s.members.length}</span></span><span class="chg ${pctClass(s.change_pct)}">${pctText(s.change_pct)}</span></div>
+    <div class="r2"><span><span class="mute">mcap </span>${croreShort(s.mcap_cr)}</span><span class="${pctClass(s.mcap_change_cr)}">${s.mcap_change_cr == null ? '—' : `${s.mcap_change_cr >= 0 ? '+' : ''}${croreShort(s.mcap_change_cr)}`}</span></div>
+    <div class="grid">
+      <div class="changebar"><div class="mid"></div>${fill}</div>
+      <div class="breadth">${shares.map((x, i) => x > 0 ? `<div style="width:${x}%;background:${BUCKETS[i][1]}"></div>` : '').join('')}</div>
+      <span></span>
+      <span style="font-size:11px"><span class="up">${s.advance ?? 0}▲</span> <span class="down">${s.decline ?? 0}▼</span>${(s.unchanged ?? 0) > 0 ? ` <span class="mute">${s.unchanged}─</span>` : ''}</span>
+    </div>
+    <div class="strip">${strip}</div>
+    <div class="bw">
+      ${best ? `<p><span class="up">▲ ${pctText(best.change_pct)}</span> ${esc(best.name)}</p>` : ''}
+      ${worst ? `<p><span class="${pctClass(worst.change_pct)}">▼ ${pctText(worst.change_pct)}</span> ${esc(worst.name)}</p>` : ''}
+    </div>`
+  if (open) h += membersHtml(s)
+  return h + '</div>'
+}
+
+function membersHtml(s) {
+  const members = sortRows(s.members, st.memberSort, MEMBER_FIELDS)
+  const up = members.filter((m) => (m.change_pct ?? 0) > 0).length
+  const down = members.filter((m) => (m.change_pct ?? 0) < 0).length
+  let h = `<div class="members"><div class="meta"><span>${members.length} members · <span class="up">${up} up</span> · <span class="down">${down} down</span></span><span style="margin-left:auto">${sortSelect('member', st.memberSort, MEMBER_SORTS)}</span></div><div class="tiles">`
+  for (const m of members) {
+    const cap = Math.max(m.mcap_cr ?? 0, 0)
+    h += `<button class="tile" data-m="${esc(s.id)}:${s.members.indexOf(m)}" style="flex-grow:${Math.sqrt(Math.max(cap, 1))};flex-basis:${Math.min(12, 4.5 + Math.sqrt(cap) / 60)}rem;background:${heatColor(m.change_pct)}"><p>${esc(m.name)}</p><p><span>${pctText(m.change_pct)}</span><span>₹${fmt(m.price)}</span></p></button>`
+  }
+  return h + '</div></div>'
+}
+
+// ---- a member's links out: TradingView needs the NSE symbol (ET's feed has none - ET's search has
+// it, matched on ET's company id); Dhan's stock page is ET's slug + "-share-price" when it exists ----
+const linkCache = new Map() // companyId -> Promise<{ symbol, dhan }>
+async function findSymbol(m) {
+  for (const q of [m.name, (m.slug || '').replace(/-/g, ' ')]) {
+    if (!q) continue
+    const r = await nget(`https://etsearch.indiatimes.com/etspeeds/ethome.ep?ticker=${encodeURIComponent(q)}&matchCompanyName=true&outputtype=json`)
+    try { const hit = JSON.parse(r.body).find((x) => String(x.tagId) === String(m.id) && x.symbol); if (hit) return hit.symbol } catch {}
+  }
+  return null
+}
+async function findDhan(m) {
+  if (!m.slug) return null
+  const url = `https://dhan.co/stocks/${m.slug}-share-price/`
+  return (await nget(url)).status === 200 ? url : null
+}
+const linksFor = (m) => {
+  if (!linkCache.has(m.id)) {
+    const p = Promise.all([findSymbol(m), findDhan(m)]).then(([symbol, dhan]) => ({ symbol, dhan }))
+    p.then((v) => { if (!v.symbol && !v.dhan) linkCache.delete(m.id) }) // a miss (or offline) is retried next time
+    linkCache.set(m.id, p)
+  }
+  return linkCache.get(m.id)
+}
+// Dhan has no per-stock app link (dhan.co/stocks/... inside the app is a 404; its site's "open app"
+// is dhan://Login), so the Dhan button copies the symbol and opens the app - MainActivity.openDhan
+const APPS = { tradingview: 'com.tradingview.tradingviewapp' }
+function linksHtml(l) {
+  const btn = (app, label, url, note, sym = '') => url
+    ? `<button class="go ${app}" data-app="${app}" data-url="${esc(url)}" data-sym="${esc(sym)}">${label}<span>${note}</span></button>`
+    : `<button class="go ${app}" disabled>${label}<span>${l ? 'not found' : 'finding…'}</span></button>`
+  return btn('tradingview', 'TradingView', l?.symbol && `https://www.tradingview.com/chart/?symbol=NSE:${encodeURIComponent(l.symbol)}`, `NSE:${l?.symbol}`)
+    + btn('dhan', 'Dhan', l?.symbol && (l.dhan || 'https://web.dhan.co/'), 'copies symbol', l?.symbol)
+}
+
+let sheetFor = null
+function showMember(s, m) {
+  sheetFor = m.id
+  linksFor(m).then((l) => {
+    if (sheetFor !== m.id || !$('sheet').classList.contains('on')) return
+    $('links').innerHTML = linksHtml(l)
+    if (l.symbol) $('sym').textContent = ` · ${l.symbol}`
+  })
+  $('sheet').innerHTML = `<h3>${esc(m.name)}</h3><div class="mute">${esc(s.name)}<span id="sym"></span></div>
+    <div class="kv"><span>Price</span><span>₹${fmt(m.price)}</span>
+    <span>Change</span><span class="${pctClass(m.change_pct)}">${pctText(m.change_pct)}</span>
+    <span>Mcap</span><span>${croreShort(m.mcap_cr)}</span>
+    <span>Share of sector</span><span>${s.mcap_cr && m.mcap_cr ? fmt((m.mcap_cr / s.mcap_cr) * 100, 1) + '%' : '—'}</span>
+    <span>Volume</span><span>${m.volume_k == null ? '—' : fmt(m.volume_k, 2) + 'K'}</span></div>
+    <div class="links" id="links">${linksHtml(null)}</div>`
+  $('sheet').classList.add('on')
+}
+
+// ---- events ------------------------------------------------------------------------------------
+document.addEventListener('click', (e) => {
+  if (e.target.closest('select')) return
+  const go = e.target.closest('[data-app]')
+  if (go) {
+    if (!window.Native) window.open(go.dataset.url)
+    else if (go.dataset.app === 'dhan') Native.openDhan(go.dataset.sym, go.dataset.url)
+    else Native.open(APPS[go.dataset.app], go.dataset.url)
+    return
+  }
+  if (e.target.closest('#sheet')) return // taps inside the card keep it open
+  const sheet = $('sheet')
+  if (sheet.classList.contains('on')) { sheet.classList.remove('on'); if (!e.target.closest('[data-m]')) return }
+  const mem = e.target.closest('[data-m]')
+  if (mem) {
+    const [sid, i] = mem.dataset.m.split(':'); const s = st.sectors.find((x) => x.id === sid)
+    if (s && s.members[+i]) showMember(s, s.members[+i])
+    return
+  }
+  if (e.target.closest('.members')) return // the opened tiles' gaps don't fold the row
+  const opener = e.target.closest('[data-open]')
+  if (opener) {
+    const id = opener.dataset.open, fromMap = opener.classList.contains('tile')
+    if (st.open.has(id)) st.open.delete(id); else st.open.add(id)
+    render()
+    if (fromMap && st.open.has(id)) {
+      if (st.filter) { st.filter = ''; $('filter').value = ''; render() }
+      document.getElementById(`sector-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }
+})
+document.addEventListener('change', (e) => {
+  const k = e.target.dataset?.sort; if (!k) return
+  const key = { map: 'mapSort', list: 'listSort', member: 'memberSort' }[k]
+  st[key] = e.target.value; store.set(`sectors.${key}`, e.target.value); render()
+})
+$('filter').addEventListener('input', (e) => { st.filter = e.target.value; render() })
+$('ex').addEventListener('click', (e) => {
+  const ex = e.target.dataset?.ex; if (!ex || ex === st.exchange) return
+  st.exchange = ex; store.set('sectors.exchange', ex); st.sectors = null; st.open.clear(); load()
+})
+$('refresh').addEventListener('click', load)
+// every 5 minutes while on screen, like the panel's refetchInterval; and on coming back to the app
+setInterval(() => { if (!document.hidden) load() }, 300_000)
+document.addEventListener('visibilitychange', () => { if (!document.hidden && st.fetchedAt && Date.now() - st.fetchedAt > 60_000) load() })
+load()
+</script>
+</body>
+</html>

@@ -47,9 +47,9 @@ const uses = (type: PanelType) => ({
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
-      <p className="text-[11px] text-muted-foreground">{label}</p>
+      <p className="text-[12px] text-muted-foreground">{label}</p>
       {children}
-      {hint && <p className="text-[11px] text-muted-foreground">{hint}</p>}
+      {hint && <p className="text-[12px] text-muted-foreground">{hint}</p>}
     </div>
   )
 }
@@ -57,7 +57,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="space-y-2.5 border-t px-4 py-3">
-      <h3 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{title}</h3>
+      <h3 className="text-[12px] font-medium tracking-wide text-muted-foreground uppercase">{title}</h3>
       {children}
     </section>
   )
@@ -174,7 +174,7 @@ export default function PanelEditor({
                     aria-pressed={panel.type === type}
                     onClick={() => changeType(type)}
                     className={cn(
-                      'flex flex-col items-center gap-1 rounded-md border px-1 py-1.5 text-[10px] transition-colors hover:bg-muted',
+                      'flex flex-col items-center gap-1 rounded-md border px-1 py-1.5 text-[11px] transition-colors hover:bg-muted',
                       panel.type === type && 'border-accent bg-accent/10',
                     )}
                   >
@@ -455,7 +455,7 @@ export default function PanelEditor({
               Add filter
             </Button>
             {variableNames.length > 0 && (
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[12px] text-muted-foreground">
                 Use {variableNames.map((n) => `$${n}`).join(', ')} as a value to follow the dropdown at the
                 top — set to All, the filter drops out.
               </p>

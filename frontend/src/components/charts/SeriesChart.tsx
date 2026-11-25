@@ -134,7 +134,7 @@ export default function SeriesChart({
             role="tooltip"
             // Flipped to the left of the pointer once it passes half way, so it never leaves the panel.
             className={cn(
-              'pointer-events-none absolute top-2 z-10 max-w-56 rounded-md border bg-popover px-2 py-1 text-[11px] text-popover-foreground shadow-md',
+              'pointer-events-none absolute top-2 z-10 max-w-56 rounded-md border bg-popover px-2 py-1 text-[12px] text-popover-foreground shadow-md',
               tip.x > (containerRef.current?.clientWidth ?? 0) / 2 ? '-translate-x-full' : '',
             )}
             style={{ left: tip.x + (tip.x > (containerRef.current?.clientWidth ?? 0) / 2 ? -12 : 12) }}
@@ -170,7 +170,7 @@ export default function SeriesChart({
                   aria-pressed={!off}
                   title="Click to hide · double-click to show only this"
                   className={cn(
-                    'flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] transition-all select-none hover:bg-muted',
+                    'flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[12px] transition-all select-none hover:bg-muted',
                     off && 'opacity-40',
                   )}
                 >
@@ -183,7 +183,7 @@ export default function SeriesChart({
               )
             })}
           </div>
-          <div className="flex shrink-0 gap-1 text-[11px]">
+          <div className="flex shrink-0 gap-1 text-[12px]">
             <button
               type="button"
               className="rounded px-1.5 py-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"

@@ -300,13 +300,13 @@ function DistributionPanel({ trades }: { trades: Trade[] }) {
         <div className="flex h-44 items-end gap-1">
           {bins.map((b) => (
             <div key={b.from} className="flex flex-1 flex-col items-center justify-end gap-1">
-              <span className="text-[10px] tabular-nums text-muted-foreground">{b.count || ''}</span>
+              <span className="text-[11px] tabular-nums text-muted-foreground">{b.count || ''}</span>
               <div
                 className={`w-full rounded-t ${(b.from ?? 0) < 0 ? 'bg-down' : 'bg-up'}`}
                 style={{ height: `${(b.count / maxCount) * 100}%`, minHeight: b.count ? '2px' : '0' }}
                 title={`${formatValue(b.from, format)} to ${formatValue(b.to, format)}: ${b.count} trades`}
               />
-              <span className="w-full truncate text-center text-[9px] text-muted-foreground">
+              <span className="w-full truncate text-center text-[10px] text-muted-foreground">
                 {formatValue(b.from, format)}
               </span>
             </div>
@@ -371,10 +371,10 @@ function LineChart({
           />
         ))}
       </svg>
-      <span className="absolute top-0 right-0 text-[10px] tabular-nums text-muted-foreground">
+      <span className="absolute top-0 right-0 text-[11px] tabular-nums text-muted-foreground">
         {formatValue(max, format)}
       </span>
-      <span className="absolute right-0 bottom-0 text-[10px] tabular-nums text-muted-foreground">
+      <span className="absolute right-0 bottom-0 text-[11px] tabular-nums text-muted-foreground">
         {formatValue(min, format)}
       </span>
     </div>
@@ -396,7 +396,7 @@ function CumulativePanel({ trades }: { trades: Trade[] }) {
         series={[{ label: 'cumulative', values: points.map((p) => p.value), color: UP }]}
         format={METRICS[metric].format}
       />
-      <p className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+      <p className="mt-1 flex justify-between text-[11px] text-muted-foreground">
         <span>{points[0]?.label}</span>
         <span>{points.at(-1)?.label}</span>
       </p>
@@ -427,7 +427,7 @@ function TrendPanel({ trades }: { trades: Trade[] }) {
         ]}
         format={TREND_BASES[basis].format}
       />
-      <p className="mt-1 flex justify-between text-[10px] text-muted-foreground">
+      <p className="mt-1 flex justify-between text-[11px] text-muted-foreground">
         <span>Trade 1</span>
         <span>Trade {points.length}</span>
       </p>
@@ -574,10 +574,10 @@ function ComparePanel({ trades }: { trades: Trade[] }) {
               />
             ))}
           </svg>
-          <span className="absolute top-0 left-0 text-[10px] text-muted-foreground">
+          <span className="absolute top-0 left-0 text-[11px] text-muted-foreground">
             {TRADE_AXES[yKey].label} {formatValue(Math.max(...ys), TRADE_AXES[yKey].format)}
           </span>
-          <span className="absolute right-0 bottom-0 text-[10px] text-muted-foreground">
+          <span className="absolute right-0 bottom-0 text-[11px] text-muted-foreground">
             {TRADE_AXES[xKey].label} {formatValue(Math.max(...xs), TRADE_AXES[xKey].format)}
           </span>
         </div>
@@ -633,7 +633,7 @@ function CalendarHeatmap({ trades }: { trades: Trade[] }) {
       </div>
       <div className="grid grid-cols-7 gap-1">
         {WEEKDAY_LABELS.map((d) => (
-          <div key={d} className="pb-1 text-center text-[10px] text-muted-foreground">
+          <div key={d} className="pb-1 text-center text-[11px] text-muted-foreground">
             {d}
           </div>
         ))}
@@ -656,7 +656,7 @@ function CalendarHeatmap({ trades }: { trades: Trade[] }) {
             >
               <span className="tabular-nums">{Number(c.date.slice(-2))}</span>
               {c.count > 0 && (
-                <span className="text-[9px] tabular-nums text-muted-foreground">
+                <span className="text-[10px] tabular-nums text-muted-foreground">
                   {formatValue(c.b, heat.metricB.format)}
                 </span>
               )}
@@ -869,10 +869,10 @@ function PatternsPanel({ trades }: { trades: Trade[] }) {
         </div>
         <div>
           <p className="text-xs font-medium">Streak effects</p>
-          <p className="mb-1 text-[11px] text-muted-foreground">
+          <p className="mb-1 text-[12px] text-muted-foreground">
             The trade right after {streaks.run}+ losses or wins in a row, in the order you logged them.
           </p>
-          <div className="grid grid-cols-4 gap-2 border-b pb-1 text-[11px] text-muted-foreground">
+          <div className="grid grid-cols-4 gap-2 border-b pb-1 text-[12px] text-muted-foreground">
             <span />
             <span className="text-right">Trades</span>
             <span className="text-right">Win rate</span>

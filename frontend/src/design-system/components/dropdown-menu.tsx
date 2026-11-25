@@ -202,7 +202,7 @@ const DropdownMenuSeparator = ({ className, ...props }: ComponentProps<typeof Me
 const DropdownMenuShortcut = ({ className, ...props }: ComponentProps<'span'>) => (
   <span
     data-slot="dropdown-menu-shortcut"
-    className={cn('ml-auto pl-3 font-mono text-[10px] tracking-wide text-muted-foreground', className)}
+    className={cn('ml-auto pl-3 font-mono text-[11px] tracking-wide text-muted-foreground', className)}
     {...props}
   />
 )

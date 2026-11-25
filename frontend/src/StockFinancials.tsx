@@ -17,7 +17,7 @@ function Cell({ value, prevValue }: { value: number | null; prevValue?: number |
     const pct = ((value - prevValue) / Math.abs(prevValue)) * 100
     const up = pct >= 0
     change = (
-      <span className={`ml-1.5 inline-flex items-center gap-0.5 text-[10px] ${up ? 'text-up' : 'text-down'}`}>
+      <span className={`ml-1.5 inline-flex items-center gap-0.5 text-[11px] ${up ? 'text-up' : 'text-down'}`}>
         {up ? '+' : ''}
         {fmt(pct)}%
       </span>

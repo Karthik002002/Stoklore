@@ -160,7 +160,7 @@ function IndicesPanel({
       ) : (
         <table className="w-full font-mono text-xs">
           <thead>
-            <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
+            <tr className="border-b text-[11px] tracking-widest text-muted-foreground uppercase">
               <SortTh label="Symbol" k="name" sort={sort} onSort={setSort} align="left" first="asc" />
               <SortTh label="Price" k="price" sort={sort} onSort={setSort} />
               <SortTh label="Chg%" k="chg" sort={sort} onSort={setSort} />
@@ -206,13 +206,13 @@ function MarketPulsePanel({ stocks }: { stocks?: TrackedStock[] }) {
       <div className="border-b px-2 py-2">
         <div className="flex items-baseline justify-between font-mono">
           <span className="text-2xl font-semibold tabular-nums">{advanceRatio ?? '—'}</span>
-          <span className="text-[10px] tracking-widest text-muted-foreground uppercase">Advance ratio</span>
+          <span className="text-[11px] tracking-widest text-muted-foreground uppercase">Advance ratio</span>
         </div>
         <div className="mt-1.5 flex h-1.5 overflow-hidden rounded-full bg-muted">
           <div className="bg-up" style={{ width: `${advanceRatio ?? 0}%` }} />
           <div className="flex-1 bg-down" />
         </div>
-        <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+        <p className="mt-1 font-mono text-[11px] text-muted-foreground">
           {advancers.length} up · {decliners.length} down · {rated.length} tracked
         </p>
       </div>
@@ -234,7 +234,7 @@ function MoverList({ title, rows }: { title: string; rows: TrackedStock[] }) {
   if (rows.length === 0) return null
   return (
     <div className="border-b last:border-0">
-      <p className="bg-muted/20 px-2 py-1 font-mono text-[10px] tracking-widest text-muted-foreground uppercase">
+      <p className="bg-muted/20 px-2 py-1 font-mono text-[11px] tracking-widest text-muted-foreground uppercase">
         {title}
       </p>
       {rows.map((s) => (
@@ -346,7 +346,7 @@ function EventsPanel({ events }: { events?: FeedEvent[] }) {
                 {e.headline}
               </span>
               <span
-                className={`ml-auto shrink-0 text-[10px] uppercase ${
+                className={`ml-auto shrink-0 text-[11px] uppercase ${
                   e.sentiment_label === 'positive'
                     ? 'text-up'
                     : e.sentiment_label === 'negative'
@@ -418,7 +418,7 @@ function MoversPanel({
             <select
               value={active?.key ?? ''}
               onChange={(e) => setBucket(e.target.value)}
-              className="h-6 rounded border bg-background px-1 font-mono text-[10px] uppercase"
+              className="h-6 rounded border bg-background px-1 font-mono text-[11px] uppercase"
               aria-label="Index bucket"
             >
               {groups.map((g) => (
@@ -436,13 +436,13 @@ function MoversPanel({
         <PanelLoading />
       ) : (
         <>
-          <div className="flex items-center gap-1 border-b bg-muted/20 px-1.5 py-1 font-mono text-[10px]">
+          <div className="flex items-center gap-1 border-b bg-muted/20 px-1.5 py-1 font-mono text-[11px]">
             {MOVER_DIRECTIONS.map((d) => (
               <Button
                 key={d.key}
                 variant={direction === d.key ? 'secondary' : 'ghost'}
                 size="sm"
-                className={`h-5 font-mono text-[10px] uppercase ${
+                className={`h-5 font-mono text-[11px] uppercase ${
                   direction === d.key ? (d.key === 'gainers' ? 'text-up' : 'text-down') : ''
                 }`}
                 onClick={() => setDirection(d.key as 'gainers' | 'losers')}
@@ -466,7 +466,7 @@ function MoversPanel({
           ) : (
             <table className="w-full font-mono text-xs">
               <thead>
-                <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
+                <tr className="border-b text-[11px] tracking-widest text-muted-foreground uppercase">
                   <th className="w-6 py-1 pl-1">
                     <ScanButton
                       symbols={rows.slice(0, 12).map((r) => r.symbol)}
@@ -499,12 +499,12 @@ function MoversPanel({
                       {/* An ex-dividend/bonus date is often the entire reason a name is in this
                           table - marking it stops a mechanical drop reading as a sell-off. */}
                       {r.ca_purpose && (
-                        <span className="ml-1 text-[9px] text-warning" title={r.ca_purpose}>
+                        <span className="ml-1 text-[10px] text-warning" title={r.ca_purpose}>
                           CA
                         </span>
                       )}
                       {r.series && r.series !== 'EQ' && (
-                        <span className="ml-1 text-[9px] text-muted-foreground">{r.series}</span>
+                        <span className="ml-1 text-[10px] text-muted-foreground">{r.series}</span>
                       )}
                     </td>
                     <td className="px-2 py-1 text-right tabular-nums">{num(r.ltp)}</td>
@@ -573,7 +573,7 @@ function MacroIndicesPanel({
             <select
               value={active?.key ?? ''}
               onChange={(e) => setGroup(e.target.value)}
-              className="h-6 rounded border bg-background px-1 font-mono text-[10px] uppercase"
+              className="h-6 rounded border bg-background px-1 font-mono text-[11px] uppercase"
               aria-label="Index category"
             >
               {groups.map((g) => (
@@ -594,7 +594,7 @@ function MacroIndicesPanel({
       ) : (
         <table className="w-full font-mono text-xs">
           <thead>
-            <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
+            <tr className="border-b text-[11px] tracking-widest text-muted-foreground uppercase">
               <SortTh label="Index" k="name" sort={sort} onSort={setSort} align="left" first="asc" />
               <SortTh label="Last" k="last" sort={sort} onSort={setSort} />
               <SortTh label="Chg%" k="chg" sort={sort} onSort={setSort} />
@@ -676,7 +676,7 @@ function StatusBar({
   // Chromium only - performance.memory is non-standard, so the panel just omits MEM elsewhere.
   const mem = (performance as Performance & { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border bg-card/40 px-3 py-1.5 font-mono text-[10px] tracking-wider text-muted-foreground uppercase">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-md border bg-card/40 px-3 py-1.5 font-mono text-[11px] tracking-wider text-muted-foreground uppercase">
       <span className="text-foreground">NSE TERMINAL</span>
       <span>
         SESSION: <span className="text-foreground tabular-nums">{clock(session)}</span>
@@ -1150,7 +1150,7 @@ export default function StocksList() {
             <Button
               variant={tab === 'All' ? 'secondary' : 'ghost'}
               size="sm"
-              className="h-6 font-mono text-[11px]"
+              className="h-6 font-mono text-[12px]"
               onClick={() => setTab('All')}
             >
               ALL
@@ -1174,7 +1174,7 @@ export default function StocksList() {
               <Button
                 variant={tab === name ? 'secondary' : 'ghost'}
                 size="sm"
-                className="h-6 font-mono text-[11px] uppercase"
+                className="h-6 font-mono text-[12px] uppercase"
                 onClick={() => setTab(name)}
               >
                 {name}
@@ -1217,7 +1217,7 @@ export default function StocksList() {
           <div className="h-[400px] overflow-y-auto">
             <table className="w-full font-mono text-xs">
               <thead className="sticky top-0 z-10 bg-background">
-                <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
+                <tr className="border-b text-[11px] tracking-widest text-muted-foreground uppercase">
                   <th className="w-6 py-1 pl-1">
                     <ScanButton
                       symbols={sortedVisible.map((s) => s.symbol)}
@@ -1267,7 +1267,7 @@ export default function StocksList() {
                     <td className="px-2 py-1 text-right text-muted-foreground tabular-nums">
                       {s.report_count}
                     </td>
-                    <td className="px-2 py-1 text-right text-[10px] text-muted-foreground">
+                    <td className="px-2 py-1 text-right text-[11px] text-muted-foreground">
                       {formatDate(s.last_scraped)}
                     </td>
                     <td className="px-1 py-1 text-right whitespace-nowrap">
@@ -1341,7 +1341,7 @@ export default function StocksList() {
             >
               {/* Drag grip: a small pill at the top centre on hover, so it never covers the panel's
                   own header buttons the way a full-width bar did. */}
-              <div className="panel-drag absolute top-0 left-1/2 z-20 flex h-5 -translate-x-1/2 cursor-move items-center gap-1 rounded-b-md border border-t-0 border-primary/40 bg-primary/15 px-2 text-[10px] font-medium opacity-0 backdrop-blur-sm transition-opacity group-hover/cell:opacity-100">
+              <div className="panel-drag absolute top-0 left-1/2 z-20 flex h-5 -translate-x-1/2 cursor-move items-center gap-1 rounded-b-md border border-t-0 border-primary/40 bg-primary/15 px-2 text-[11px] font-medium opacity-0 backdrop-blur-sm transition-opacity group-hover/cell:opacity-100">
                 <MoveIcon className="size-3" />
                 {p.label}
                 <button

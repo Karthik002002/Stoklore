@@ -114,7 +114,7 @@ function CardHeader({ className, ...props }: ComponentProps<'div'>) {
 const CardTitle = ({ className, ...props }: ComponentProps<'div'>) => (
   <div
     data-slot="card-title"
-    className={cn('text-[13px] font-semibold group-data-[size=sm]/card:text-xs', className)}
+    className={cn('text-[14px] font-semibold group-data-[size=sm]/card:text-xs', className)}
     {...props}
   />
 )
@@ -201,7 +201,7 @@ function Stat({
       <span
         className={cn(
           'tabular truncate font-medium',
-          size === 'lg' ? 'text-xl' : 'text-[15px]',
+          size === 'lg' ? 'text-xl' : 'text-[16px]',
           tone && TONE[tone],
         )}
       >
@@ -247,7 +247,7 @@ function EmptyState({
           <Icon className="size-4.5" />
         </div>
       )}
-      <div className="text-[13px] font-semibold">{title}</div>
+      <div className="text-[14px] font-semibold">{title}</div>
       {description && <p className="max-w-xs text-2xs text-muted-foreground">{description}</p>}
       {children && <div className="mt-2 flex flex-wrap justify-center gap-1.5">{children}</div>}
     </div>

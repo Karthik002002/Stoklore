@@ -392,7 +392,7 @@ function Field({
     <label className="block space-y-1">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       {children}
-      {hint && <span className="block text-[11px] text-muted-foreground">{hint}</span>}
+      {hint && <span className="block text-[12px] text-muted-foreground">{hint}</span>}
     </label>
   )
 }
@@ -416,7 +416,7 @@ function Choice({
           type="button"
           size="sm"
           variant={value === key ? 'default' : 'outline'}
-          className="h-auto flex-1 py-1.5 text-[11px] leading-tight whitespace-normal"
+          className="h-auto flex-1 py-1.5 text-[12px] leading-tight whitespace-normal"
           onClick={() => onChange(key)}
         >
           {label}
@@ -478,7 +478,7 @@ function SlippagePanel({ config, set, pool }: { config: PresetConfig; set: SetCo
         className="mt-2 w-full accent-amber-500"
         aria-label="Slippage per trade"
       />
-      <div className="flex justify-between text-[11px] text-muted-foreground">
+      <div className="flex justify-between text-[12px] text-muted-foreground">
         <span>₹0</span>
         <span>₹1,000</span>
       </div>
@@ -991,7 +991,7 @@ function CorrelationMatrixPanel({ entries, matrix }: { entries: AccountRun[]; ma
                           {fmt(cell.r, 2)}
                         </span>
                       )}
-                      <span className="block text-[10px] text-muted-foreground">{cell.overlap}d</span>
+                      <span className="block text-[11px] text-muted-foreground">{cell.overlap}d</span>
                     </td>
                   )
                 })}
@@ -1036,7 +1036,7 @@ function ComparisonView({
                 <span className="truncate">{e.name}</span>
               </p>
               <p className="mt-1 text-lg font-semibold tabular-nums">{inr(e.result.table.endBalance[2])}</p>
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[12px] text-muted-foreground">
                 median · {fmt(e.result.table.roi[2], 1)}% ROI · {e.result.pool.n} trades in pool
               </p>
             </div>

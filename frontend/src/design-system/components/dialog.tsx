@@ -121,7 +121,7 @@ function DialogFooter({
 const DialogTitle = ({ className, ...props }: ComponentProps<typeof DialogPrimitive.Title>) => (
   <DialogPrimitive.Title
     data-slot="dialog-title"
-    className={cn('text-[13px] font-semibold', className)}
+    className={cn('text-[14px] font-semibold', className)}
     {...props}
   />
 )

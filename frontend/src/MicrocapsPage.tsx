@@ -164,7 +164,7 @@ function Flags({ flags }: { flags: string[] }) {
   return (
     <span className="flex flex-wrap gap-1" title={flags.join('\n')}>
       {flags.map((f) => (
-        <span key={f} className="rounded border border-down/40 px-1 text-[9px] whitespace-nowrap text-down">
+        <span key={f} className="rounded border border-down/40 px-1 text-[10px] whitespace-nowrap text-down">
           {f}
         </span>
       ))}
@@ -230,7 +230,7 @@ function Table({
     <div ref={scrollRef} className="max-h-[72vh] overflow-auto rounded-md border border-border bg-card">
       <table className="w-full min-w-[78rem] font-mono text-xs">
         <thead className="sticky top-0 z-10 bg-background">
-          <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
+          <tr className="border-b text-[11px] tracking-widest text-muted-foreground uppercase">
             <th className="w-6" title="Pick up to five to compare" />
             <th className="w-6" />
             <SortTh label="Company" k="name" sort={sort} onSort={setSort} align="left" first="asc" />
@@ -282,12 +282,12 @@ function Table({
               <td className="max-w-56 px-2 py-1">
                 <span className="font-semibold">{r.symbol ?? r.bse_code}</span>
                 {theses.has(r.key) && (
-                  <span className="ml-1.5 rounded border border-primary/50 px-1 text-[9px] text-primary">
+                  <span className="ml-1.5 rounded border border-primary/50 px-1 text-[10px] text-primary">
                     THESIS
                   </span>
                 )}
-                {r.symbol && <SurveillanceBadge symbol={r.symbol} className="ml-1.5 py-0 text-[9px]" />}
-                <span className="block truncate font-sans text-[11px] text-muted-foreground">{r.name}</span>
+                {r.symbol && <SurveillanceBadge symbol={r.symbol} className="ml-1.5 py-0 text-[10px]" />}
+                <span className="block truncate font-sans text-[12px] text-muted-foreground">{r.name}</span>
               </td>
               <td className="px-2 py-1 text-right tabular-nums">{num(r.mcap_cr, 0)}</td>
               <td className="px-2 py-1 text-right tabular-nums">{num(r.pe)}</td>
@@ -421,7 +421,7 @@ function ThesisEditor({ row, thesis }: { row: Microcap; thesis?: MicrocapThesis 
         </ul>
       )}
       {thesis && (
-        <div className="grid grid-cols-3 gap-x-3 gap-y-1 text-[11px]">
+        <div className="grid grid-cols-3 gap-x-3 gap-y-1 text-[12px]">
           {Object.entries(thesis.since).map(([k, [a, b]]) => (
             <div key={k}>
               <span className="text-muted-foreground">{SINCE_LABELS[k] ?? k}</span>{' '}
@@ -441,7 +441,7 @@ function ThesisEditor({ row, thesis }: { row: Microcap; thesis?: MicrocapThesis 
         placeholder="Why this company? What has to stay true?"
         className="min-h-20 text-xs"
       />
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-[12px] text-muted-foreground">
         Re-checked after every weekly pull. A newly broken limit, or a new results quarter, lands in Alerts.
       </p>
       <div className="flex flex-wrap items-center gap-2">

@@ -46,7 +46,7 @@ const when = (iso: string | null | undefined) =>
 function TradeRows({ rows, open }: { rows: TradebookTrade[]; open?: boolean }) {
   return (
     <table className="w-full font-mono text-xs">
-      <thead className="sticky top-0 bg-background text-[10px] text-muted-foreground uppercase">
+      <thead className="sticky top-0 bg-background text-[11px] text-muted-foreground uppercase">
         <tr className="border-b">
           <th className="py-1 text-left font-medium">Symbol</th>
           <th className="text-left font-medium">Side</th>

@@ -42,7 +42,7 @@ function Field({
     <label className="block space-y-1">
       <span className="text-xs font-medium text-muted-foreground">{label}</span>
       <Input type={type} value={value} onChange={(e) => onChange(e.target.value)} {...rest} />
-      {hint && <span className="block text-[11px] text-muted-foreground">{hint}</span>}
+      {hint && <span className="block text-[12px] text-muted-foreground">{hint}</span>}
     </label>
   )
 }
@@ -265,7 +265,7 @@ export default function LoginGate({ children }: { children: React.ReactNode }) {
         {mode === 'unlock' && (
           <button
             type="button"
-            className="w-full text-[11px] text-muted-foreground underline"
+            className="w-full text-[12px] text-muted-foreground underline"
             onClick={() => {
               clear()
               setError(null)
@@ -277,7 +277,7 @@ export default function LoginGate({ children }: { children: React.ReactNode }) {
         )}
 
         {(mode === 'login' || mode === 'recover') && (
-          <div className="space-y-1.5 border-t pt-3 text-[11px] text-muted-foreground">
+          <div className="space-y-1.5 border-t pt-3 text-[12px] text-muted-foreground">
             {mode === 'login' ? (
               <>
                 <p>Forgot it?</p>
@@ -317,13 +317,13 @@ export default function LoginGate({ children }: { children: React.ReactNode }) {
         )}
 
         {mode === 'setup' && (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             Set this up on the machine running the app — it can't be created through a tunnel. You'll get a
             recovery code next; there's no other way back in.
           </p>
         )}
         {mode === 'unlock' && (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             This browser stays unlockable by PIN for 48 hours after a password sign-in. A few wrong PINs and
             it asks for the password again.
           </p>

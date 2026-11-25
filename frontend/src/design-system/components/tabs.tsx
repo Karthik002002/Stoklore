@@ -77,7 +77,7 @@ function TabsCount({ className, ...props }: ComponentProps<'span'>) {
   return (
     <span
       className={cn(
-        'rounded-xs bg-muted px-1 font-mono text-[10px] text-muted-foreground tabular-nums',
+        'rounded-xs bg-muted px-1 font-mono text-[11px] text-muted-foreground tabular-nums',
         className,
       )}
       {...props}

@@ -39,7 +39,7 @@ function SymbolBody({ onSelect }: { onSelect: (symbol: string) => void }) {
         placeholder="Search symbol…"
         className="uppercase placeholder:normal-case"
       />
-      <div className="flex items-center gap-1 border-b px-2 pb-2 text-[11px]">
+      <div className="flex items-center gap-1 border-b px-2 pb-2 text-[12px]">
         {BOARDS.map((b) => (
           <button
             key={b.label}

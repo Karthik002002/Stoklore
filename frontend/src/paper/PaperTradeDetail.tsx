@@ -259,7 +259,7 @@ export default function PaperTradeDetail() {
       >
         <span
           className={cn(
-            'rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide uppercase',
+            'rounded px-1.5 py-0.5 text-[11px] font-semibold tracking-wide uppercase',
             trade.direction === 'long' ? 'bg-up/15 text-up' : 'bg-down/15 text-down',
           )}
         >
@@ -334,7 +334,7 @@ export default function PaperTradeDetail() {
               />
               <Row label="Bars held" value={excursion.bars ?? '—'} />
               {excursion.stopTooWide && (
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-[12px] text-muted-foreground">
                   Never took much heat - the stop was wider than it needed to be.
                 </p>
               )}

@@ -198,7 +198,7 @@ function AlertDialog({
             {/* Said where it is chosen, not in a help page: a crossing is the one kind of
                 condition this app can genuinely miss. */}
             {meta?.stateful && (
-              <p className="text-[11px] text-muted-foreground">
+              <p className="text-[12px] text-muted-foreground">
                 Compares against the previous check. A move that crosses and comes back within one sweep is
                 invisible — use <span className="font-medium">Greater than</span> or{' '}
                 <span className="font-medium">Less than</span> when being told matters more than being told at
@@ -234,7 +234,7 @@ function AlertDialog({
             )}
           </div>
           {meta?.move && (
-            <p className="text-[11px] text-muted-foreground">
+            <p className="text-[12px] text-muted-foreground">
               Measured from the price when this was armed, and re-measured from wherever it last fired — not
               from the previous candle.
             </p>
@@ -557,7 +557,7 @@ export default function Alerts() {
               const body = (
                 <>
                   <span className={a.kind === 'order' ? 'font-medium' : ''}>{a.message}</span>
-                  <span className="ml-1.5 text-[11px] text-muted-foreground">{timeAgo(a.triggered_at)}</span>
+                  <span className="ml-1.5 text-[12px] text-muted-foreground">{timeAgo(a.triggered_at)}</span>
                 </>
               )
               // A workflow's notification opens in that workflow's inbox, with its run and data.

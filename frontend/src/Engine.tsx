@@ -1253,7 +1253,7 @@ function SweepHeatmap({
                               style={{ background: dead ? undefined : heat(value(r)) }}
                             >
                               <span className="block font-medium">{dead ? '—' : m.format(value(r))}</span>
-                              <span className="block text-[10px] opacity-70">
+                              <span className="block text-[11px] opacity-70">
                                 {dead ? 'no trades' : `${r.summary.trades} tr`}
                               </span>
                             </button>
@@ -1390,7 +1390,7 @@ function AxisBars({
           )
         })}
       </svg>
-      <div className="flex text-[10px] text-muted-foreground tabular-nums">
+      <div className="flex text-[11px] text-muted-foreground tabular-nums">
         {points.map((p, i) => (
           <span
             key={p.value}
@@ -1409,7 +1409,7 @@ function AxisBars({
 function HeatLegend({ metric, dead }: { metric: SweepMetric; dead: number }) {
   const m = SWEEP_METRICS[metric]
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
       <span className="flex items-center gap-1.5">
         worst
         <span
@@ -1509,10 +1509,10 @@ function EquityFan({
             </g>
           ))}
         </svg>
-        <span className="pointer-events-none absolute top-0 left-0 text-[10px] text-muted-foreground tabular-nums">
+        <span className="pointer-events-none absolute top-0 left-0 text-[11px] text-muted-foreground tabular-nums">
           {inr(fan.hi)}
         </span>
-        <span className="pointer-events-none absolute bottom-0 left-0 text-[10px] text-muted-foreground tabular-nums">
+        <span className="pointer-events-none absolute bottom-0 left-0 text-[11px] text-muted-foreground tabular-nums">
           {inr(fan.lo)}
         </span>
       </div>
@@ -1560,7 +1560,7 @@ function MetricSpread({
           />
         ))}
       </div>
-      <div className="mt-1 flex justify-between text-[10px] text-muted-foreground tabular-nums">
+      <div className="mt-1 flex justify-between text-[11px] text-muted-foreground tabular-nums">
         <span>{m.format(lo)}</span>
         <span>{m.format(hi)}</span>
       </div>
@@ -1887,7 +1887,7 @@ function SweepView({
                                 <span className="block font-medium">
                                   {dead ? '—' : m.format(metricOf(r, metric))}
                                 </span>
-                                <span className="block text-[10px] opacity-70">
+                                <span className="block text-[11px] opacity-70">
                                   {dead ? 'no trades' : `${fmt(r.summary.trades, 0)} tr`}
                                 </span>
                               </button>

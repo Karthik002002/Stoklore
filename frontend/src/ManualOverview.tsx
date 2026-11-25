@@ -228,7 +228,7 @@ function CalendarHeatmap({
           </Button>
         </div>
       </div>
-      <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-muted-foreground">
+      <div className="grid grid-cols-7 gap-1 text-center text-[12px] text-muted-foreground">
         {WEEKDAYS.map((d) => (
           <div key={d} className="py-1">
             {d}
@@ -789,7 +789,7 @@ function ExpectancyGridCard({ winRate, payoff }: { winRate: number; payoff: numb
     >
       <div className="overflow-x-auto">
         <div className="min-w-[380px]">
-          <div className="grid grid-cols-[2.5rem_repeat(8,1fr)] gap-0.5 text-[10px]">
+          <div className="grid grid-cols-[2.5rem_repeat(8,1fr)] gap-0.5 text-[11px]">
             <div />
             {GRID_WIN_RATES.map((w) => (
               <div key={w} className="text-center text-muted-foreground">

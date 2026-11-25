@@ -152,7 +152,7 @@ export default function WorkflowLayout() {
             >
               {tab.label}
               {tab.key === 'notifications' && !!workflow.unread && (
-                <span className="rounded-full bg-primary px-1.5 text-[10px] font-medium text-primary-foreground tabular-nums">
+                <span className="rounded-full bg-primary px-1.5 text-[11px] font-medium text-primary-foreground tabular-nums">
                   {workflow.unread}
                 </span>
               )}

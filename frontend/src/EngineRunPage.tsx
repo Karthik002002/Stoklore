@@ -246,7 +246,7 @@ export function Histogram({ values }: { values: number[] }) {
           )
         })}
       </div>
-      <div className="mt-1 flex justify-between text-[11px] text-muted-foreground tabular-nums">
+      <div className="mt-1 flex justify-between text-[12px] text-muted-foreground tabular-nums">
         <span>{inr(h.lo)}</span>
         <span>net P&L per trade</span>
         <span>{inr(h.hi)}</span>

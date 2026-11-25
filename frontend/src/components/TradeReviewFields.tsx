@@ -106,14 +106,14 @@ export default function TradeReviewFields({
                 notes?.trim() ? 'Read the notes with the local Laya classifier' : 'Write some notes first'
               }
               onClick={() => suggest.mutate()}
-              className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+              className="inline-flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground disabled:opacity-50"
             >
               {suggest.isPending ? <Spinner className="size-3" /> : <SparklesIcon className="size-3" />}
               Suggest from notes
             </button>
           )}
         </div>
-        {suggested && <p className="text-[11px] text-muted-foreground">{suggested}</p>}
+        {suggested && <p className="text-[12px] text-muted-foreground">{suggested}</p>}
         <div className="flex flex-wrap gap-1.5">
           {mistakeOptions.map((m) => {
             const on = value.mistakes?.includes(m)
@@ -133,7 +133,7 @@ export default function TradeReviewFields({
           })}
         </div>
         {!compact && (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             Pick what actually went wrong. A loss that followed the plan is a Normal loss, not a mistake.
           </p>
         )}
@@ -155,7 +155,7 @@ export default function TradeReviewFields({
           ))}
         </div>
         {value.checks == null && Object.keys(prefill).length > 0 && (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             Sizing and stop are pre-ticked from the trade's numbers. Saved once you tick anything.
           </p>
         )}
@@ -167,7 +167,7 @@ export default function TradeReviewFields({
           {value.scoreManual && (
             <button
               type="button"
-              className="text-[11px] text-muted-foreground underline"
+              className="text-[12px] text-muted-foreground underline"
               onClick={() => onChange({ ...value, scoreManual: false, score: null })}
             >
               Use checklist ({derived ?? '—'})
@@ -190,7 +190,7 @@ export default function TradeReviewFields({
           ))}
         </div>
         {!compact && (
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             {value.scoreManual
               ? 'Set by hand — no longer follows the checklist.'
               : 'From the checklist. A winner can have poor execution, a loser excellent execution.'}

@@ -642,7 +642,7 @@ function TradesTable({
                   {formatDate(t.created_at ?? t.traded_at)}
                   {/* Always rendered, blank when there is nothing to say: an optional second line
                       would make replay rows taller than hand-logged ones. */}
-                  <span className="block text-[11px] text-muted-foreground">
+                  <span className="block text-[12px] text-muted-foreground">
                     {marketDate(t) ? `traded ${marketDate(t)}` : '\u00A0'}
                   </span>
                 </TableCell>

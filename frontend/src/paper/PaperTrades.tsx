@@ -56,7 +56,7 @@ type LegField = 'stopLosses' | 'targets'
 const ErrorText = ({ error }: { error?: { message?: string } | { root?: { message?: string } } }) => {
   const message =
     (error as { message?: string })?.message ?? (error as { root?: { message?: string } })?.root?.message
-  return message ? <p className="text-[11px] text-down">{message}</p> : null
+  return message ? <p className="text-[12px] text-down">{message}</p> : null
 }
 
 // One rung of a laddered exit. The point of the ladder is partial exits - "half at target 1, the
@@ -100,14 +100,14 @@ function LegRows({
         {fields.length > 0 ? (
           <span
             className={cn(
-              'text-[11px] tabular-nums',
+              'text-[12px] tabular-nums',
               covered > quantity ? 'text-down' : 'text-muted-foreground',
             )}
           >
             {covered}/{quantity || '—'} covered
           </span>
         ) : (
-          <span className="truncate text-[11px] text-muted-foreground">{empty}</span>
+          <span className="truncate text-[12px] text-muted-foreground">{empty}</span>
         )}
         <Button
           type="button"
@@ -139,7 +139,7 @@ function LegRows({
                   {pct != null && (
                     <span
                       className={cn(
-                        'pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-[11px] tabular-nums',
+                        'pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-[12px] tabular-nums',
                         tone === 'down' ? 'text-down' : 'text-up',
                       )}
                     >
@@ -460,7 +460,7 @@ export function OrderPanel({
             cash {f.available == null ? '—' : inr(f.available)}
           </p>
         </div>
-        <span className="flex max-w-36 shrink-0 items-center gap-1.5 truncate rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent">
+        <span className="flex max-w-36 shrink-0 items-center gap-1.5 truncate rounded-full border border-accent/40 bg-accent/10 px-2 py-0.5 text-[12px] font-medium text-accent">
           <span className="size-1.5 shrink-0 rounded-full bg-accent" />
           <span className="truncate">Paper · {f.account?.name ?? 'account'}</span>
         </span>
@@ -526,7 +526,7 @@ export function OrderPanel({
             maxQty > 0 && (
               <button
                 type="button"
-                className="text-[11px] text-primary hover:underline"
+                className="text-[12px] text-primary hover:underline"
                 title="As many as the account's cash pays for at this price"
                 onClick={(e) => {
                   e.preventDefault()

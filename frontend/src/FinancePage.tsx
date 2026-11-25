@@ -156,7 +156,7 @@ function Field({ label, children, hint }: { label: string; children: React.React
     <label className="grid gap-1 text-xs">
       <span className="text-muted-foreground">{label}</span>
       {children}
-      {hint && <span className="text-[11px] text-muted-foreground">{hint}</span>}
+      {hint && <span className="text-[12px] text-muted-foreground">{hint}</span>}
     </label>
   )
 }
@@ -623,9 +623,9 @@ function NetWorthTab({ data }: { data: FinanceData }) {
               <TableRow key={i.id} className={cn(i.archived && 'opacity-50')}>
                 <TableCell>
                   {i.name}
-                  {i.is_liquid && <span className="ml-1 text-[11px] text-muted-foreground">liquid</span>}
+                  {i.is_liquid && <span className="ml-1 text-[12px] text-muted-foreground">liquid</span>}
                   {i.source !== 'manual' && (
-                    <span className="ml-1 text-[11px] text-muted-foreground">· {i.source}</span>
+                    <span className="ml-1 text-[12px] text-muted-foreground">· {i.source}</span>
                   )}
                 </TableCell>
                 <TableCell>{KIND_DEFAULTS[i.kind].label}</TableCell>

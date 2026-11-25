@@ -46,7 +46,7 @@ function PnlCalendar({
           <span className={cn('tabular', total >= 0 ? 'text-up' : 'text-down')}>₹{compactInr(total)}</span>
         </span>
       </div>
-      <div className="grid grid-cols-[repeat(7,1fr)_minmax(44px,auto)] gap-0.5 text-[10px]">
+      <div className="grid grid-cols-[repeat(7,1fr)_minmax(44px,auto)] gap-0.5 text-[11px]">
         {['M', 'T', 'W', 'T', 'F', 'S', 'S', 'Week'].map((d, i) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: fixed header
           <span key={i} className="pb-0.5 text-center text-muted-foreground uppercase">
@@ -140,7 +140,7 @@ function Treemap({
             }}
             className="absolute flex flex-col justify-between overflow-hidden border border-card p-1 text-left outline-none hover:brightness-125 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
           >
-            <span className={cn('truncate font-semibold', small ? 'text-[9px]' : 'text-2xs')}>
+            <span className={cn('truncate font-semibold', small ? 'text-[10px]' : 'text-2xs')}>
               {t.item.label}
             </span>
             {!small && (
@@ -167,7 +167,7 @@ function HeatLegend({
   className?: string
 }) {
   return (
-    <div className={cn('flex items-center gap-1.5 text-[10px] text-muted-foreground', className)}>
+    <div className={cn('flex items-center gap-1.5 text-[11px] text-muted-foreground', className)}>
       {low}
       <span className="h-1.5 w-20 rounded-xs bg-linear-to-r from-down via-panel-head to-up" />
       {high}

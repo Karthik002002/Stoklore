@@ -283,7 +283,7 @@ export default function LiveOrderTicket({
             wallet {balance == null ? '—' : inr(balance)}
           </p>
         </div>
-        <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-down/40 bg-down/10 px-2 py-0.5 text-[11px] font-medium text-down">
+        <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-down/40 bg-down/10 px-2 py-0.5 text-[12px] font-medium text-down">
           <span className="size-1.5 animate-pulse rounded-full bg-down" />
           {status?.sandbox ? 'Dhan sandbox' : 'Dhan · real money'}
         </span>
@@ -342,7 +342,7 @@ export default function LiveOrderTicket({
 
       <div className="space-y-1">
         <Seg value={productValue} onChange={setProduct} options={PRODUCTS} />
-        <p className="px-0.5 text-[11px] text-muted-foreground">{productHint}</p>
+        <p className="px-0.5 text-[12px] text-muted-foreground">{productHint}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
@@ -367,7 +367,7 @@ export default function LiveOrderTicket({
             maxQty > 0 && (
               <button
                 type="button"
-                className="text-[11px] text-primary hover:underline"
+                className="text-[12px] text-primary hover:underline"
                 title="As many as the wallet pays for at this price"
                 onClick={(e) => {
                   e.preventDefault()
@@ -420,7 +420,7 @@ export default function LiveOrderTicket({
           </span>
           <span className="min-w-0">
             <span className="block text-xs font-medium">Stop-loss &amp; target</span>
-            <span className="block text-[11px] text-muted-foreground">
+            <span className="block text-[12px] text-muted-foreground">
               {superAllowed ? 'Super Order - both held at the broker' : 'Only on a Day market or limit order'}
             </span>
           </span>
@@ -527,7 +527,7 @@ export default function LiveOrderTicket({
             ? 'Fix the order to continue'
             : `${buy ? 'Buy' : 'Sell'}${order.quantity > 0 ? ` ${order.quantity}` : ''}${symbol ? ` ${symbol}` : ''} · review`}
         </Button>
-        {missing && <p className="text-center text-[11px] text-muted-foreground">{missing}</p>}
+        {missing && <p className="text-center text-[12px] text-muted-foreground">{missing}</p>}
       </TicketFooter>
 
       <ConfirmLiveOrder

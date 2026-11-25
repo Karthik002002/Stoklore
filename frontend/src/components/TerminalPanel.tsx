@@ -23,7 +23,7 @@ export default function TerminalPanel({
     <div className={cn('flex flex-col overflow-hidden rounded-md border bg-card/40', className)}>
       <div className="flex shrink-0 items-center gap-1.5 border-b bg-muted/30 px-2 py-1.5">
         <span className={cn('leading-none', accent)}>▍</span>
-        <span className={cn('font-mono text-[11px] font-semibold tracking-widest uppercase', accent)}>
+        <span className={cn('font-mono text-[12px] font-semibold tracking-widest uppercase', accent)}>
           {title}
         </span>
         {actions && <div className="ml-auto flex items-center gap-1">{actions}</div>}

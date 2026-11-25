@@ -214,7 +214,7 @@ function StatViz({
             <span className="text-muted-foreground">vs {formatValue(data.previous, panel.options)}</span>
           </p>
         )}
-        {data.at && <p className="text-[11px] text-muted-foreground">{formatSlot(data.at)}</p>}
+        {data.at && <p className="text-[12px] text-muted-foreground">{formatSlot(data.at)}</p>}
       </div>
       <Sparkline values={data.spark.map((p) => p.value)} />
     </button>
@@ -314,7 +314,7 @@ function TableViz({ data, onOpenRow }: { data: ShapedRows; onOpenRow: Props['onO
     <div className="h-full overflow-auto">
       <RowsTable rows={data.rows} columns={data.columns.map((c) => c.name)} onOpenRow={onOpenRow} />
       {data.total > data.rows.length && (
-        <p className="px-2 py-1 text-[11px] text-muted-foreground">
+        <p className="px-2 py-1 text-[12px] text-muted-foreground">
           Showing {data.rows.length} of {data.total} — raise the limit in the panel to see more.
         </p>
       )}
@@ -470,7 +470,7 @@ function HeatmapViz({
     <div className="h-full overflow-auto" onMouseLeave={tip.hide}>
       {tip.node}
       <div
-        className="grid gap-px text-[10px]"
+        className="grid gap-px text-[11px]"
         style={{
           gridTemplateColumns: `minmax(3.5rem, max-content) repeat(${data.x.length}, minmax(1.4rem, 1fr))`,
         }}
@@ -590,14 +590,14 @@ function TreemapViz({
               <span
                 className={cn(
                   'max-w-full truncate font-semibold',
-                  w > 120 && h > 60 ? 'text-sm' : 'text-[11px]',
+                  w > 120 && h > 60 ? 'text-sm' : 'text-[12px]',
                 )}
               >
                 {item.key}
               </span>
             )}
             {detail && item.color != null && (
-              <span className="text-[11px] tabular-nums opacity-90">
+              <span className="text-[12px] tabular-nums opacity-90">
                 {formatValue(item.color, panel.options)}
               </span>
             )}
@@ -663,7 +663,7 @@ function NotificationsViz({ data }: { data: ShapedRows }) {
               >
                 {String(n.message ?? '')}
               </span>
-              <span className="text-[11px] text-muted-foreground">
+              <span className="text-[12px] text-muted-foreground">
                 {String(n.workflow ?? '')} · {timeAgoShort(String(n.triggered_at))} ago
               </span>
             </span>

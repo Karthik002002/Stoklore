@@ -58,7 +58,7 @@ export function TradesTable({ trades }: { trades: BacktestTrade[] }) {
               <TableCell>
                 {formatDate(t.exit_date)}
                 {t.open && (
-                  <Badge variant="outline" className="ml-1.5 text-[10px]">
+                  <Badge variant="outline" className="ml-1.5 text-[11px]">
                     Open
                   </Badge>
                 )}

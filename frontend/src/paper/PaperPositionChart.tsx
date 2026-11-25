@@ -347,7 +347,7 @@ export function PaperChart({
       >
         <span
           className={cn(
-            'rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide uppercase',
+            'rounded px-1.5 py-0.5 text-[11px] font-semibold tracking-wide uppercase',
             position.direction === 'long' ? 'bg-up/15 text-up' : 'bg-down/15 text-down',
           )}
         >

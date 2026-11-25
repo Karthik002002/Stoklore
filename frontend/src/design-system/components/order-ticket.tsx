@@ -349,7 +349,7 @@ function MarketDepth({ bids, asks, className }: { bids: Level[]; asks: Level[]; 
       </PanelHeader>
       <div className="grid grid-cols-2 text-2xs">
         <div className="grid grid-cols-[1fr_1fr_auto] border-r border-border">
-          <span className="col-span-3 grid grid-cols-subgrid border-b border-border bg-panel-head px-2 py-0.5 text-[10px] text-muted-foreground uppercase">
+          <span className="col-span-3 grid grid-cols-subgrid border-b border-border bg-panel-head px-2 py-0.5 text-[11px] text-muted-foreground uppercase">
             <span>Orders</span>
             <span className="text-right">Qty</span>
             <span className="text-right">Bid</span>
@@ -375,7 +375,7 @@ function MarketDepth({ bids, asks, className }: { bids: Level[]; asks: Level[]; 
           )}
         </div>
         <div className="grid grid-cols-[auto_1fr_1fr]">
-          <span className="col-span-3 grid grid-cols-subgrid border-b border-border bg-panel-head px-2 py-0.5 text-[10px] text-muted-foreground uppercase">
+          <span className="col-span-3 grid grid-cols-subgrid border-b border-border bg-panel-head px-2 py-0.5 text-[11px] text-muted-foreground uppercase">
             <span>Ask</span>
             <span className="text-right">Qty</span>
             <span className="text-right">Orders</span>

@@ -92,7 +92,7 @@ export default function DrillDrawer({
       <header className="flex items-start gap-2 border-b px-4 py-3">
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium">{panel.title}</p>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             {what}
             {data && !row && ` · ${data.total} row${data.total === 1 ? '' : 's'}`}
           </p>
@@ -109,7 +109,7 @@ export default function DrillDrawer({
                 <dt className="text-muted-foreground">{k}</dt>
                 <dd className="break-all">
                   {v != null && typeof v === 'object' ? (
-                    <pre className="font-mono text-[11px] whitespace-pre-wrap">
+                    <pre className="font-mono text-[12px] whitespace-pre-wrap">
                       {JSON.stringify(v, null, 2)}
                     </pre>
                   ) : (

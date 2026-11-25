@@ -77,7 +77,7 @@ function CommandInput({ className, scope, loading, trailing, ...props }: Command
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(
-          'h-full w-full bg-transparent text-[13px] outline-none placeholder:text-muted-foreground disabled:opacity-50',
+          'h-full w-full bg-transparent text-[14px] outline-none placeholder:text-muted-foreground disabled:opacity-50',
           className,
         )}
         {...props}
@@ -227,7 +227,7 @@ const CommandGroup = ({
       count != null ? (
         <>
           {heading}
-          <span className="rounded-xs bg-muted px-1 font-mono text-[10px] tracking-normal text-muted-foreground tabular-nums">
+          <span className="rounded-xs bg-muted px-1 font-mono text-[11px] tracking-normal text-muted-foreground tabular-nums">
             {count}
           </span>
         </>
@@ -279,7 +279,7 @@ function CommandItemMedia({
     <span
       data-slot="command-item-media"
       className={cn(
-        "grid size-7 shrink-0 place-items-center rounded-md text-[10px] font-bold [&_svg:not([class*='size-'])]:size-3.5",
+        "grid size-7 shrink-0 place-items-center rounded-md text-[11px] font-bold [&_svg:not([class*='size-'])]:size-3.5",
         tone === 'outline' &&
           'border border-border bg-panel-head text-muted-foreground group-data-[selected=true]/command-item:text-foreground',
         tone === 'up' && 'bg-up-subtle text-up',
@@ -346,7 +346,7 @@ const CommandShortcut = ({ className, ...props }: ComponentProps<'span'>) => (
   <span
     data-slot="command-shortcut"
     className={cn(
-      'ml-auto inline-flex h-5 shrink-0 items-center rounded-sm border border-border bg-panel-head px-1.5 font-mono text-[10px] tracking-wide text-muted-foreground',
+      'ml-auto inline-flex h-5 shrink-0 items-center rounded-sm border border-border bg-panel-head px-1.5 font-mono text-[11px] tracking-wide text-muted-foreground',
       className,
     )}
     {...props}
@@ -368,7 +368,7 @@ const CommandFooter = ({ className, ...props }: ComponentProps<'div'>) => (
 function CommandHint({ keys, children }: { keys: ReactNode; children: ReactNode }) {
   return (
     <span className="inline-flex shrink-0 items-center gap-1.5">
-      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-sm border border-border bg-card px-1 font-mono text-[10px] text-foreground [&_svg]:size-3">
+      <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-sm border border-border bg-card px-1 font-mono text-[11px] text-foreground [&_svg]:size-3">
         {keys}
       </span>
       <span>{children}</span>

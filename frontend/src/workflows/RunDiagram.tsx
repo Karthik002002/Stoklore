@@ -104,8 +104,8 @@ function TaskNode({ data, selected }: NodeProps<Node<NodeData>>) {
           <SkipForwardIcon className="ml-auto size-3.5 shrink-0 text-muted-foreground" />
         )}
       </div>
-      {detail && <p className="mt-1 truncate text-[11px] text-muted-foreground">{detail}</p>}
-      {data.error && <p className="mt-1 truncate text-[11px] text-down">{data.error}</p>}
+      {detail && <p className="mt-1 truncate text-[12px] text-muted-foreground">{detail}</p>}
+      {data.error && <p className="mt-1 truncate text-[12px] text-down">{data.error}</p>}
       {/* Both handles on every node: the server decides the wiring, so a node never needs to know
           whether it happens to be first or last. */}
       <Handle type="target" position={Position.Left} className="!size-1.5 !bg-muted-foreground" />
@@ -389,7 +389,7 @@ function NodeDrawer({ node, onClose }: { node: WorkflowNode; onClose: () => void
           <p className="truncate font-mono text-sm font-medium" title={d.label}>
             {d.label}
           </p>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             {KIND_LABEL[d.kind] ?? d.kind}
             {d.kind === 'tool' && d.items != null && ` · ${d.items} item${d.items === 1 ? '' : 's'} out`}
           </p>
@@ -415,7 +415,7 @@ function NodeDrawer({ node, onClose }: { node: WorkflowNode; onClose: () => void
         {fix && (
           <section className="rounded-md border border-primary/40 bg-primary/5 p-3">
             <p className="text-xs font-medium">{fix.title}</p>
-            <p className="mt-1 text-[11px] text-muted-foreground">{fix.body}</p>
+            <p className="mt-1 text-[12px] text-muted-foreground">{fix.body}</p>
             <Button
               size="sm"
               className="mt-2"
@@ -468,7 +468,7 @@ function NodeDrawer({ node, onClose }: { node: WorkflowNode; onClose: () => void
         )}
         {d.kind === 'tool' && status !== 'skipped' && d.result != null && (
           <Block title="Returned" copy={json(d.result)}>
-            <pre className="max-h-[28rem] overflow-auto font-mono text-[11px] leading-relaxed">
+            <pre className="max-h-[28rem] overflow-auto font-mono text-[12px] leading-relaxed">
               {json(d.result)}
             </pre>
           </Block>
@@ -486,7 +486,7 @@ function StatusPill({ status }: { status: string }) {
     skipped: ['Skipped', 'bg-muted text-muted-foreground'],
   }
   const [label, cls] = meta[status] ?? [status, 'bg-muted text-muted-foreground']
-  return <span className={cn('mt-0.5 rounded-full px-2 py-0.5 text-[11px] font-medium', cls)}>{label}</span>
+  return <span className={cn('mt-0.5 rounded-full px-2 py-0.5 text-[12px] font-medium', cls)}>{label}</span>
 }
 
 export function Block({
@@ -510,7 +510,7 @@ export function Block({
   return (
     <section>
       <div className="mb-1 flex items-center justify-between">
-        <h3 className="text-[11px] font-medium text-muted-foreground">{title}</h3>
+        <h3 className="text-[12px] font-medium text-muted-foreground">{title}</h3>
         <button
           type="button"
           onClick={() =>
@@ -519,7 +519,7 @@ export function Block({
               () => toast.error('Could not copy to the clipboard'),
             )
           }
-          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[12px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           aria-label={`Copy ${title.toLowerCase()}`}
         >
           {copied ? <CheckIcon className="size-3 text-up" /> : <CopyIcon className="size-3" />}

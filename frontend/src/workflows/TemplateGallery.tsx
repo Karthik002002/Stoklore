@@ -119,7 +119,7 @@ export default function TemplateGallery({
               <SparklesIcon className="size-4 text-primary" />
               Generate from a screener.in screen
             </p>
-            <p className="mb-2 text-[11px] text-muted-foreground">
+            <p className="mb-2 text-[12px] text-muted-foreground">
               Paste any public screen. It runs daily, keeps what it matched, and only files a summary when
               something matches.
             </p>
@@ -187,10 +187,10 @@ export default function TemplateGallery({
                         {t.category}
                       </Badge>
                     </div>
-                    <p className="mt-1 line-clamp-3 flex-1 text-[11px] text-muted-foreground">
+                    <p className="mt-1 line-clamp-3 flex-1 text-[12px] text-muted-foreground">
                       {t.description}
                     </p>
-                    <p className="mt-2 flex items-center gap-1 text-[11px] text-primary">
+                    <p className="mt-2 flex items-center gap-1 text-[12px] text-primary">
                       <Icon className="size-3" />
                       {triggerText(t)} · {t.nodes} nodes
                     </p>

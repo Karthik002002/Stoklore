@@ -89,8 +89,8 @@ function Avatar({
       data-size={size}
       className={cn(
         'relative inline-flex shrink-0 overflow-hidden rounded-md border border-border bg-muted align-middle select-none',
-        size === 'sm' && 'size-5 text-[9px]',
-        size === 'default' && 'size-6 text-[10px]',
+        size === 'sm' && 'size-5 text-[10px]',
+        size === 'default' && 'size-6 text-[11px]',
         size === 'lg' && 'size-8 text-xs',
         className,
       )}

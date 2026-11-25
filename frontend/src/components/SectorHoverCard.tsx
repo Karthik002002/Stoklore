@@ -75,9 +75,9 @@ function Move({ v }: { v: number | null | undefined }) {
 function Stat({ label, value, sub }: { label: string; value: React.ReactNode; sub?: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <p className="text-[10px] tracking-wide text-muted-foreground uppercase">{label}</p>
+      <p className="text-[11px] tracking-wide text-muted-foreground uppercase">{label}</p>
       <p className="truncate font-medium tabular-nums">{value}</p>
-      {sub && <p className="truncate text-[10px] text-muted-foreground tabular-nums">{sub}</p>}
+      {sub && <p className="truncate text-[11px] text-muted-foreground tabular-nums">{sub}</p>}
     </div>
   )
 }
@@ -92,7 +92,7 @@ function Breadth({ s }: { s: Sector }) {
         )}
       </div>
       {BUCKETS.map((b, i) => (
-        <div key={b.label} className="flex items-center gap-2 text-[11px]">
+        <div key={b.label} className="flex items-center gap-2 text-[12px]">
           <span className="size-2 shrink-0 rounded-sm" style={{ background: b.color }} />
           <span className="flex-1 text-muted-foreground">{b.label}</span>
           <span className="font-medium tabular-nums">{s.buckets[i]}</span>
@@ -120,11 +120,11 @@ function MemberCard({ m, sector }: { m: SectorMember; sector?: Sector }) {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">{m.name}</p>
-          <p className="truncate text-[11px] text-muted-foreground">{sector?.name ?? 'Sector member'}</p>
+          <p className="truncate text-[12px] text-muted-foreground">{sector?.name ?? 'Sector member'}</p>
         </div>
         <span
           className={cn(
-            'shrink-0 rounded border px-1.5 py-0.5 font-mono text-[10px]',
+            'shrink-0 rounded border px-1.5 py-0.5 font-mono text-[11px]',
             m.symbol ? 'border-primary/40 text-primary' : 'border-dashed text-muted-foreground',
           )}
         >
@@ -166,7 +166,7 @@ function MemberCard({ m, sector }: { m: SectorMember; sector?: Sector }) {
           />
         )}
       </div>
-      <p className={cn('border-t pt-1.5 text-[11px]', m.symbol ? 'text-primary' : 'text-muted-foreground')}>
+      <p className={cn('border-t pt-1.5 text-[12px]', m.symbol ? 'text-primary' : 'text-muted-foreground')}>
         {m.symbol ? 'Click to open the chart' : 'No NSE/BSE symbol matched - chart unavailable'}
       </p>
     </>
@@ -181,7 +181,7 @@ function SectorCard({ s }: { s: Sector }) {
     .reverse()
     .filter((m) => !top.includes(m))
   const row = (m: SectorMember) => (
-    <div key={m.id ?? m.name} className="flex items-center gap-2 text-[11px]">
+    <div key={m.id ?? m.name} className="flex items-center gap-2 text-[12px]">
       <span className="size-2 shrink-0 rounded-sm" style={{ background: heatColor(m.change_pct) }} />
       <span className="flex-1 truncate">{m.name}</span>
       <span className={cn('tabular-nums', tone(m.change_pct))}>{pct(m.change_pct)}</span>
@@ -192,7 +192,7 @@ function SectorCard({ s }: { s: Sector }) {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">{s.name}</p>
-          <p className="text-[11px] text-muted-foreground">{s.members.length} members</p>
+          <p className="text-[12px] text-muted-foreground">{s.members.length} members</p>
         </div>
         <Move v={s.change_pct} />
       </div>
@@ -215,16 +215,16 @@ function SectorCard({ s }: { s: Sector }) {
       {top.length > 0 && (
         <div className="grid grid-cols-2 gap-3 border-t pt-2">
           <div className="min-w-0 space-y-1">
-            <p className="text-[10px] tracking-wide text-muted-foreground uppercase">Leaders</p>
+            <p className="text-[11px] tracking-wide text-muted-foreground uppercase">Leaders</p>
             {top.map(row)}
           </div>
           <div className="min-w-0 space-y-1">
-            <p className="text-[10px] tracking-wide text-muted-foreground uppercase">Laggards</p>
+            <p className="text-[11px] tracking-wide text-muted-foreground uppercase">Laggards</p>
             {bottom.map(row)}
           </div>
         </div>
       )}
-      <p className="border-t pt-1.5 text-[11px] text-muted-foreground">Click to open its members</p>
+      <p className="border-t pt-1.5 text-[12px] text-muted-foreground">Click to open its members</p>
     </>
   )
 }
@@ -235,7 +235,7 @@ function BreadthCard({ s }: { s: Sector }) {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">{s.name} · breadth</p>
-          <p className="text-[11px] text-muted-foreground tabular-nums">
+          <p className="text-[12px] text-muted-foreground tabular-nums">
             <span className="text-up">{s.advance ?? 0} up</span> ·{' '}
             <span className="text-down">{s.decline ?? 0} down</span>
             {(s.unchanged ?? 0) > 0 && ` · ${s.unchanged} flat`}
@@ -275,18 +275,18 @@ function RotationCard({ tip }: { tip: Extract<Tip, { kind: 'rotation' }> }) {
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold">{s.name}</p>
-          <p className="text-[11px] text-muted-foreground">
+          <p className="text-[12px] text-muted-foreground">
             {tip.at ? p.date : `as of ${p.date}`} · {s.members} members
           </p>
         </div>
         <span
-          className="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold"
+          className="shrink-0 rounded px-1.5 py-0.5 text-[12px] font-semibold"
           style={{ background: `${meta.color}26`, color: meta.color }}
         >
           {meta.label}
         </span>
       </div>
-      <p className="text-[11px] text-muted-foreground">{meta.note}</p>
+      <p className="text-[12px] text-muted-foreground">{meta.note}</p>
       <div className="grid grid-cols-2 gap-x-3 border-t pt-2">
         <Stat
           label="RS-Ratio"
@@ -300,7 +300,7 @@ function RotationCard({ tip }: { tip: Extract<Tip, { kind: 'rotation' }> }) {
         />
       </div>
       <div className="border-t pt-2">
-        <p className="mb-1 text-[10px] tracking-wide text-muted-foreground uppercase">Path</p>
+        <p className="mb-1 text-[11px] tracking-wide text-muted-foreground uppercase">Path</p>
         <div className="flex gap-0.5">
           {s.tail.map((t, k) => {
             const tq = quadrantOf(t.ratio, t.momentum)
@@ -313,7 +313,7 @@ function RotationCard({ tip }: { tip: Extract<Tip, { kind: 'rotation' }> }) {
             )
           })}
         </div>
-        <p className="mt-0.5 flex justify-between text-[10px] text-muted-foreground">
+        <p className="mt-0.5 flex justify-between text-[11px] text-muted-foreground">
           <span>{s.tail[0].date}</span>
           <span>{s.tail[s.tail.length - 1].date}</span>
         </p>
@@ -338,9 +338,9 @@ function RotationCard({ tip }: { tip: Extract<Tip, { kind: 'rotation' }> }) {
       )}
       {leaders && leaders.length > 0 && (
         <div className="space-y-1 border-t pt-2">
-          <p className="text-[10px] tracking-wide text-muted-foreground uppercase">Strongest members (RS)</p>
+          <p className="text-[11px] tracking-wide text-muted-foreground uppercase">Strongest members (RS)</p>
           {leaders.map((l) => (
-            <div key={l.symbol} className="flex items-center gap-2 text-[11px]">
+            <div key={l.symbol} className="flex items-center gap-2 text-[12px]">
               <span className="w-6 rounded bg-up/15 text-center font-semibold text-up tabular-nums">
                 {l.rs}
               </span>

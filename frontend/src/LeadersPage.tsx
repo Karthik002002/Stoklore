@@ -134,7 +134,7 @@ function SectorFlowView({ sectors, recent, tf }: { sectors: SectorFlow[]; recent
         ))}
       </div>
       <div className="rounded-md border border-border bg-card overflow-hidden">
-        <div className="grid grid-cols-[minmax(8rem,14rem)_1fr_6rem_minmax(8rem,12rem)_1.5rem] items-center gap-3 border-b px-3 py-1.5 text-[10px] tracking-widest text-muted-foreground uppercase">
+        <div className="grid grid-cols-[minmax(8rem,14rem)_1fr_6rem_minmax(8rem,12rem)_1.5rem] items-center gap-3 border-b px-3 py-1.5 text-[11px] tracking-widest text-muted-foreground uppercase">
           <span>Sector</span>
           <span className="text-center">Net flow, % of turnover</span>
           <span className="text-right">₹ Cr</span>
@@ -163,7 +163,7 @@ function SectorFlowView({ sectors, recent, tf }: { sectors: SectorFlow[]; recent
                   />
                   <span
                     className={cn(
-                      'absolute top-1/2 -translate-y-1/2 text-[10px] tabular-nums',
+                      'absolute top-1/2 -translate-y-1/2 text-[11px] tabular-nums',
                       s.pct >= 0 ? 'right-[calc(50%+4px)]' : 'left-[calc(50%+4px)]',
                       tone(s.pct),
                     )}
@@ -252,7 +252,7 @@ function StockTable({ rows, sectorOf }: { rows: StrengthStock[]; sectorOf: Map<s
     <div ref={scrollRef} className="max-h-[70vh] overflow-auto rounded-md border border-border bg-card">
       <table className="w-full min-w-[60rem] font-mono text-xs">
         <thead className="sticky top-0 z-10 bg-background">
-          <tr className="border-b text-[10px] tracking-widest text-muted-foreground uppercase">
+          <tr className="border-b text-[11px] tracking-widest text-muted-foreground uppercase">
             <th className="w-6" />
             <SortTh label="Symbol" k="symbol" sort={sort} onSort={setSort} align="left" first="asc" />
             <th className="px-2 py-1 text-left font-medium">Sector</th>
@@ -286,13 +286,13 @@ function StockTable({ rows, sectorOf }: { rows: StrengthStock[]; sectorOf: Map<s
               <td className="px-2 py-1 font-semibold">
                 {s.symbol}
                 {s.vcp && (
-                  <span className="ml-1.5 rounded border border-primary/50 px-1 text-[9px] text-primary">
+                  <span className="ml-1.5 rounded border border-primary/50 px-1 text-[10px] text-primary">
                     VCP
                   </span>
                 )}
                 {s.surveillance && (
                   <span
-                    className="ml-1.5 rounded border border-down/50 px-1 text-[9px] text-down"
+                    className="ml-1.5 rounded border border-down/50 px-1 text-[10px] text-down"
                     title="Under NSE surveillance today - higher margins, a tighter band or trade-for-trade"
                   >
                     {s.surveillance}
@@ -534,7 +534,7 @@ function RrgTimeline({
     <div className="h-full overflow-auto">
       <table className="w-full text-xs">
         <thead className="sticky top-0 z-10 bg-card">
-          <tr className="text-[10px] text-muted-foreground">
+          <tr className="text-[11px] text-muted-foreground">
             <th className="px-2 py-1 text-left font-medium">Sector</th>
             {dates.map((d) => (
               <th key={d} className="px-0.5 py-1 font-normal tabular-nums">
@@ -599,7 +599,7 @@ function SectorStocksLink({ id, name }: { id: string; name: string }) {
       onClick={(e) => e.stopPropagation()}
       title={`Open ${name} on the home page - its stocks`}
       aria-label={`${name} stocks`}
-      className="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[10px] text-muted-foreground hover:bg-muted hover:text-foreground"
+      className="inline-flex shrink-0 items-center gap-0.5 rounded px-1 py-0.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
     >
       Stocks
       <ArrowUpRightIcon className="size-3" />

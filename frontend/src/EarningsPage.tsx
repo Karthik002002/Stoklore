@@ -201,7 +201,7 @@ export default function EarningsPage() {
                       focus && !active && 'opacity-40',
                     )}
                   >
-                    <span className="text-[10px] tabular-nums text-muted-foreground">{s.all || ''}</span>
+                    <span className="text-[11px] tabular-nums text-muted-foreground">{s.all || ''}</span>
                     <div
                       className="flex w-full max-w-10 flex-col justify-end overflow-hidden rounded-sm bg-foreground/15"
                       style={{ height: `${(s.all / peak) * 70}%`, minHeight: s.all ? 3 : 0 }}
@@ -214,7 +214,7 @@ export default function EarningsPage() {
                     <span className={cn('size-1.5 rounded-full', s.held ? 'bg-down' : 'bg-transparent')} />
                     <span
                       className={cn(
-                        'text-[10px] leading-tight',
+                        'text-[11px] leading-tight',
                         daysUntil(s.date) === 0 ? 'font-semibold text-foreground' : 'text-muted-foreground',
                       )}
                     >
@@ -226,7 +226,7 @@ export default function EarningsPage() {
                 )
               })}
             </div>
-            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
               <span className="flex items-center gap-1">
                 <span className="size-2 rounded-sm bg-foreground/15" /> all meetings
               </span>
@@ -283,10 +283,10 @@ export default function EarningsPage() {
                             <span className="truncate font-semibold text-sm">{r.symbol}</span>
                             <RsPill rs={st?.rs} />
                           </div>
-                          <span className="truncate text-[10px] text-muted-foreground">
+                          <span className="truncate text-[11px] text-muted-foreground">
                             {sectorOf.get(r.symbol) ?? '—'}
                           </span>
-                          <div className="flex items-center justify-between text-[10px] tabular-nums">
+                          <div className="flex items-center justify-between text-[11px] tabular-nums">
                             <span className={cn(st && (st.r1m >= 0 ? 'text-up' : 'text-down'))}>
                               1M {st ? `${st.r1m >= 0 ? '+' : ''}${st.r1m.toFixed(1)}%` : '—'}
                             </span>
@@ -309,7 +309,7 @@ export default function EarningsPage() {
                           )}
                           {tag && (
                             <span
-                              className={cn('truncate text-[10px]', isHeld ? 'text-down' : 'text-primary')}
+                              className={cn('truncate text-[11px]', isHeld ? 'text-down' : 'text-primary')}
                             >
                               {tag}
                             </span>

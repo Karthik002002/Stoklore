@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 // Same variants as components/ui/badge.tsx (success/destructive now tinted, not solid blocks),
 // plus warning and accent. `dot` adds a leading status dot (LIVE, PAPER, DRAFT).
 const badgeVariants = cva(
-  'inline-flex h-4.5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-xs border border-transparent px-1.5 text-[10.5px] font-medium whitespace-nowrap [&>svg]:pointer-events-none [&>svg]:size-2.5!',
+  'inline-flex h-4.5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-xs border border-transparent px-1.5 text-[11.5px] font-medium whitespace-nowrap [&>svg]:pointer-events-none [&>svg]:size-2.5!',
   {
     variants: {
       variant: {
@@ -66,7 +66,7 @@ function Kbd({ className, ...props }: ComponentProps<'kbd'>) {
     <kbd
       data-slot="kbd"
       className={cn(
-        'inline-grid h-4 min-w-4 place-items-center rounded-xs border border-border px-1 font-mono text-[9.5px] text-muted-foreground',
+        'inline-grid h-4 min-w-4 place-items-center rounded-xs border border-border px-1 font-mono text-[10.5px] text-muted-foreground',
         className,
       )}
       {...props}

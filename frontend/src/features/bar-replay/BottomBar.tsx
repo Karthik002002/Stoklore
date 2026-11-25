@@ -169,7 +169,7 @@ function Hint({ label, keys, children }: { label: string; keys?: string; childre
       <TooltipContent side="top">
         {label}
         {keys && (
-          <kbd data-slot="kbd" className="bg-background/20 px-1.5 py-0.5 font-mono text-[10px]">
+          <kbd data-slot="kbd" className="bg-background/20 px-1.5 py-0.5 font-mono text-[11px]">
             {keys}
           </kbd>
         )}
@@ -215,7 +215,7 @@ function SetupPopover({ setup }: { setup: SetupBag }) {
         <PopoverTrigger render={<Button variant="ghost" size="sm" className="gap-1.5" />}>
           <SlidersHorizontalIcon className="size-4" />
           {symbol ? (blind ? 'Hidden symbol' : symbol) : 'Pick a symbol'}
-          <Badge variant="outline" className="ml-1 font-mono text-[10px]">
+          <Badge variant="outline" className="ml-1 font-mono text-[11px]">
             {REPLAY_TIMEFRAMES.find((t) => t.value === timeframe)?.label ?? timeframe}
           </Badge>
         </PopoverTrigger>
@@ -327,7 +327,7 @@ function IndicatorsPopover({
         <ActivityIcon className="size-4" />
         Indicators
         {indicators.length > 0 && (
-          <Badge variant="outline" className="ml-0.5 text-[10px]">
+          <Badge variant="outline" className="ml-0.5 text-[11px]">
             {indicators.length}
           </Badge>
         )}
@@ -361,7 +361,7 @@ function DrawingsPopover({ draw }: { draw: DrawBag }) {
         <PencilIcon className="size-4" />
         Draw
         {(tool || count > 0) && (
-          <Badge variant="outline" className="ml-0.5 text-[10px]">
+          <Badge variant="outline" className="ml-0.5 text-[11px]">
             {tool ? DRAW_TOOLS[tool].label : count}
           </Badge>
         )}
@@ -383,7 +383,7 @@ function DrawingsPopover({ draw }: { draw: DrawBag }) {
             >
               <Icon className="size-4 shrink-0" />
               <span className="flex-1">{label}</span>
-              <span className="text-[10px] text-muted-foreground">{hint}</span>
+              <span className="text-[11px] text-muted-foreground">{hint}</span>
             </button>
           )
         })}
@@ -396,7 +396,7 @@ function DrawingsPopover({ draw }: { draw: DrawBag }) {
         >
           <EraserIcon className="size-4 shrink-0" />
           <span className="flex-1">Delete selected</span>
-          <kbd className="font-mono text-[10px] text-muted-foreground">Del</kbd>
+          <kbd className="font-mono text-[11px] text-muted-foreground">Del</kbd>
         </button>
         <button
           type="button"
@@ -406,9 +406,9 @@ function DrawingsPopover({ draw }: { draw: DrawBag }) {
         >
           <Trash2Icon className="size-4 shrink-0" />
           <span className="flex-1">Clear all drawings</span>
-          <span className="text-[10px] text-muted-foreground">{count}</span>
+          <span className="text-[11px] text-muted-foreground">{count}</span>
         </button>
-        <p className="px-2 pt-1 text-[11px] text-muted-foreground">
+        <p className="px-2 pt-1 text-[12px] text-muted-foreground">
           Click a drawing on the chart to select it. Drawings are kept per symbol and timeframe.
         </p>
       </PopoverContent>
@@ -598,7 +598,7 @@ function TradeControls({ trade }: { trade: TradeBag }) {
           <LayersIcon className="size-4" />
           Positions
           {openCount > 0 && (
-            <Badge variant="outline" className="ml-0.5 text-[10px]">
+            <Badge variant="outline" className="ml-0.5 text-[11px]">
               {openCount}
             </Badge>
           )}

@@ -57,7 +57,7 @@ export default function WorkflowRun() {
         </Link>
         {run && (
           <>
-            <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-medium', tone)}>
+            <span className={cn('rounded-full px-2 py-0.5 text-[12px] font-medium', tone)}>
               {run.status === 'running' && <Spinner className="mr-1 inline size-3" />}
               {label}
             </span>
@@ -69,7 +69,7 @@ export default function WorkflowRun() {
         )}
         <div className="ml-auto flex items-center gap-1">
           {runs.length > 1 && index >= 0 && (
-            <span className="mr-1 text-[11px] text-muted-foreground tabular-nums">
+            <span className="mr-1 text-[12px] text-muted-foreground tabular-nums">
               Run {runs.length - index} of {runs.length}
             </span>
           )}

@@ -91,7 +91,7 @@ const AlertDialogMedia = ({ className, ...props }: ComponentProps<'div'>) => (
 const AlertDialogTitle = ({ className, ...props }: ComponentProps<typeof AlertDialogPrimitive.Title>) => (
   <AlertDialogPrimitive.Title
     data-slot="alert-dialog-title"
-    className={cn('text-[13px] font-semibold', className)}
+    className={cn('text-[14px] font-semibold', className)}
     {...props}
   />
 )

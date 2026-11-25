@@ -65,10 +65,10 @@ export const Typography: Story = {
   render: () => (
     <div className="flex max-w-xl flex-col gap-3">
       {[
-        ['text-label uppercase text-muted-foreground', 'Panel label · 10.5px uppercase'],
-        ['text-2xs', 'Secondary · 11px — captions, sub-rows'],
-        ['text-xs', 'Body · 12px — tables, controls, everything by default'],
-        ['text-[13px] font-semibold', 'Section · 13px semibold'],
+        ['text-label uppercase text-muted-foreground', 'Panel label · 11.5px uppercase'],
+        ['text-2xs', 'Secondary · 12px — captions, sub-rows'],
+        ['text-xs', 'Body · 13px — tables, controls, everything by default'],
+        ['text-[14px] font-semibold', 'Section · 14px semibold'],
         ['text-lg font-bold', 'Symbol heading · TATAMOTORS'],
       ].map(([c, t]) => (
         <div key={t} className="flex items-baseline gap-4 border-b border-border pb-2">

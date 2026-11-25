@@ -177,9 +177,9 @@ function NavGroupIcon({
         />
       </PopoverTrigger>
       <PopoverContent side="right" align="start" sideOffset={10} className="w-52 gap-0 p-1">
-        <p className="px-2 pt-1 pb-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+        <p className="px-2 pt-1 pb-1.5 text-[12px] font-semibold tracking-wide text-muted-foreground uppercase">
           {group.label}
-          <span className="block text-[10px] font-normal tracking-normal text-muted-foreground/80 normal-case">
+          <span className="block text-[11px] font-normal tracking-normal text-muted-foreground/80 normal-case">
             {group.hint}
           </span>
         </p>

@@ -72,6 +72,13 @@ Non-color: `--radius` (every `rounded-*` derives from it), `--control-h`, `--row
 | `components/*` | components + their `*.stories.tsx` |
 | `index.ts` | public exports — app code imports from `@/design-system` |
 
+
+## Type scale
+
+Body text is 13px (`text-xs`), secondary 12px (`text-2xs`), uppercase panel labels 11.5px
+(`text-label`), set in `styles.css`. Pages that use fixed `text-[Npx]` sizes were stepped up by the
+same 1px when the scale was raised from 12/11/10.5.
+
 ## Component rules
 
 1. Colors only via tokens — never a hex value in a component.

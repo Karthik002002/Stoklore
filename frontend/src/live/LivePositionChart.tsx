@@ -69,7 +69,7 @@ function Metric({
 }) {
   return (
     <div>
-      <p className="text-[11px] tracking-wide text-muted-foreground uppercase">{label}</p>
+      <p className="text-[12px] tracking-wide text-muted-foreground uppercase">{label}</p>
       <p
         className={`text-sm font-semibold tabular-nums ${
           tone === 'up' ? 'text-up' : tone === 'down' ? 'text-down' : ''
@@ -77,7 +77,7 @@ function Metric({
       >
         {value}
       </p>
-      {sub && <p className="text-[11px] text-muted-foreground tabular-nums">{sub}</p>}
+      {sub && <p className="text-[12px] text-muted-foreground tabular-nums">{sub}</p>}
     </div>
   )
 }

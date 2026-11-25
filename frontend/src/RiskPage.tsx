@@ -294,7 +294,7 @@ export default function RiskPage() {
                             </span>
                           )}
                           {g.key === LIVE && (
-                            <span className="block text-[10px] text-muted-foreground">of available cash</span>
+                            <span className="block text-[11px] text-muted-foreground">of available cash</span>
                           )}
                         </TableCell>
                         <TableCell
@@ -356,7 +356,7 @@ export default function RiskPage() {
                           <ResultsBadge symbol={p.symbol} className="ml-1.5" />
                           <SurveillanceBadge symbol={p.symbol} className="ml-1.5" />
                           {r.uncoveredQty > 0 && (
-                            <span className="ml-1.5 inline-flex items-center gap-1 text-[10px] text-warning">
+                            <span className="ml-1.5 inline-flex items-center gap-1 text-[11px] text-warning">
                               <ShieldAlertIcon className="size-3" />
                               {r.uncoveredQty === p.quantity ? 'no stop' : `${r.uncoveredQty} unprotected`}
                             </span>

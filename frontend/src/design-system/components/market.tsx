@@ -100,7 +100,7 @@ function Quote({
 }) {
   return (
     <span className={cn('inline-flex items-baseline gap-2', className)}>
-      <TickPrice value={ltp} className={size === 'lg' ? 'text-xl' : 'text-[13px]'} />
+      <TickPrice value={ltp} className={size === 'lg' ? 'text-xl' : 'text-[14px]'} />
       <span className={cn('tabular', toneOf(change))}>
         {sign(change)}
         {INR(Math.abs(change))} ({sign(pct)}
@@ -185,7 +185,7 @@ function ResultsBadge({
   return (
     <span
       className={cn(
-        'inline-flex h-4.5 items-center gap-1 rounded-xs px-1.5 text-[10.5px] font-medium whitespace-nowrap',
+        'inline-flex h-4.5 items-center gap-1 rounded-xs px-1.5 text-[11.5px] font-medium whitespace-nowrap',
         days <= 2
           ? 'bg-down-subtle text-down'
           : days <= 7
@@ -216,7 +216,7 @@ function SurveillanceBadge({
     <span
       title={`${details ? `${details}\n\n` : ''}NSE surveillance: higher margins, a tighter price band or trade-for-trade settlement while it lasts.`}
       className={cn(
-        'inline-flex h-4.5 items-center gap-1 rounded-xs border border-down/40 bg-down-subtle px-1.5 text-[10.5px] font-medium whitespace-nowrap text-down',
+        'inline-flex h-4.5 items-center gap-1 rounded-xs border border-down/40 bg-down-subtle px-1.5 text-[11.5px] font-medium whitespace-nowrap text-down',
         className,
       )}
     >
@@ -351,7 +351,7 @@ function IndexCard({
         <span className="truncate text-label text-muted-foreground uppercase">{name}</span>
         <Change value={pct} className="text-2xs" />
       </div>
-      <span className="tabular text-[15px] font-medium">{INR(value)}</span>
+      <span className="tabular text-[16px] font-medium">{INR(value)}</span>
       {points && <Sparkline points={points} area className="mt-1 h-7 w-full" />}
     </div>
   )

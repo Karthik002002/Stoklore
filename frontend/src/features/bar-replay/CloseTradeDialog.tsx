@@ -257,7 +257,7 @@ export default function CloseTradeDialog({
                   {inr(pnl)}
                 </span>
                 {(costs?.total ?? 0) > 0 && (
-                  <span className="block text-[11px] text-muted-foreground tabular-nums">
+                  <span className="block text-[12px] text-muted-foreground tabular-nums">
                     {inr(net)} net · {inr(costs?.total)} costs
                   </span>
                 )}

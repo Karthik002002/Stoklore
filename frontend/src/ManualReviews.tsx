@@ -80,7 +80,7 @@ function Numbers({ s }: { s: ReturnType<typeof summarize> }) {
     <dl className="grid grid-cols-3 gap-2 sm:grid-cols-6">
       {items.map(([label, value]) => (
         <div key={label} className="rounded-md border bg-card px-2 py-1.5">
-          <dt className="text-[10px] tracking-wide text-muted-foreground uppercase">{label}</dt>
+          <dt className="text-[11px] tracking-wide text-muted-foreground uppercase">{label}</dt>
           <dd className="text-sm font-medium tabular-nums">{value}</dd>
         </div>
       ))}

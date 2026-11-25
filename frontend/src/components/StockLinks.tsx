@@ -50,7 +50,7 @@ export default function StockLinks({ symbol }: { symbol: string }) {
         <GlobeIcon className="size-3.5" />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-60 p-1">
-        <p className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase">
+        <p className="px-2 py-1 text-[11px] font-medium text-muted-foreground uppercase">
           {symbol} elsewhere
         </p>
         {SOURCES.map((src) => (
@@ -62,7 +62,7 @@ export default function StockLinks({ symbol }: { symbol: string }) {
             className="flex items-center gap-2 rounded px-2 py-1.5 text-sm hover:bg-foreground/10"
           >
             <span className="flex-1">{src.name}</span>
-            <span className="text-[10px] text-muted-foreground">{src.hint}</span>
+            <span className="text-[11px] text-muted-foreground">{src.hint}</span>
             <ExternalLinkIcon className="size-3 text-muted-foreground" />
           </a>
         ))}

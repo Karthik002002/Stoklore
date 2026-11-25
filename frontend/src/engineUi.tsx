@@ -295,7 +295,7 @@ export function ExecutionsChart({ run, focus }: { run: EngineRun; focus: RunTrad
           Executions on {run.interval} candles
           {total > markers.length / 2 ? ` (latest ${markers.length / 2} of ${total} trades)` : ''}
         </p>
-        <span className="text-[11px] text-muted-foreground">
+        <span className="text-[12px] text-muted-foreground">
           ▲ buy · ▼ sell · exit arrow green when that trade made money
         </span>
         {run.symbols.length > 1 && (

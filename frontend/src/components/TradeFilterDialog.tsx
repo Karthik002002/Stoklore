@@ -167,7 +167,7 @@ export default function TradeFilterDialog<Row = Trade>({
                   className="h-8"
                 />
               </div>
-              <p className="text-[11px] text-muted-foreground">{spec.range.hint}</p>
+              <p className="text-[12px] text-muted-foreground">{spec.range.hint}</p>
             </div>
 
             {spec.dates && (
@@ -190,7 +190,7 @@ export default function TradeFilterDialog<Row = Trade>({
                     Clear dates
                   </Button>
                 )}
-                <p className="text-[11px] text-muted-foreground">{spec.dates.hint}</p>
+                <p className="text-[12px] text-muted-foreground">{spec.dates.hint}</p>
               </div>
             )}
           </nav>

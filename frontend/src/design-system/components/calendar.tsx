@@ -63,7 +63,7 @@ function Calendar({
         weekday: cn('flex-1 text-label font-normal text-muted-foreground uppercase select-none', d.weekday),
         week: cn('mt-0.5 flex w-full', d.week),
         week_number_header: cn('w-(--cell-size) select-none', d.week_number_header),
-        week_number: cn('text-[10px] text-muted-foreground select-none', d.week_number),
+        week_number: cn('text-[11px] text-muted-foreground select-none', d.week_number),
         day: cn('group/day relative aspect-square h-full w-full p-0 text-center select-none', d.day),
         range_start: cn('rounded-l-sm bg-accent-subtle', d.range_start),
         range_middle: cn('rounded-none bg-accent-subtle', d.range_middle),

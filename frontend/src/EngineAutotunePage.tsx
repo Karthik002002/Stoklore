@@ -471,7 +471,7 @@ function WalkForward({ r }: { r: EngineAutotuneReport }) {
                 </Table>
               </div>
               {shownTrades.length > 1000 && (
-                <p className="text-[11px] text-muted-foreground">
+                <p className="text-[12px] text-muted-foreground">
                   Showing the latest 1,000 of {shownTrades.length} - pick a window to see its own. Export has
                   them all.
                 </p>

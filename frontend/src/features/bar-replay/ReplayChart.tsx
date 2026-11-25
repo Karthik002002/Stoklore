@@ -374,7 +374,7 @@ function MeasureBox({ measure, bars }: { measure: MeasureState; bars: ReplayBar[
         <foreignObject x={-140} y={-78} width={280} height={72} style={{ overflow: 'visible' }}>
           <div className="flex justify-center">
             <div
-              className="rounded-lg px-3 py-1.5 text-center text-[11px] leading-tight font-medium text-white tabular-nums shadow-md"
+              className="rounded-lg px-3 py-1.5 text-center text-[12px] leading-tight font-medium text-white tabular-nums shadow-md"
               style={{ backgroundColor: tone }}
             >
               <div>
@@ -1652,14 +1652,14 @@ const ReplayChart = forwardRef(function ReplayChart(
         )}
         {topLeft && <div className="pointer-events-auto">{topLeft}</div>}
         {tool && (
-          <div className="rounded border bg-background/90 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm">
+          <div className="rounded border bg-background/90 px-2 py-1 text-[12px] text-muted-foreground shadow-sm backdrop-blur-sm">
             {DRAW_TOOLS[tool].label} — {DRAW_TOOLS[tool].hint.toLowerCase()} · Esc to cancel
           </div>
         )}
         {/* Click-move-click gives no clue that a second click is what ends it, so the band says so
             while it is live, and how to get rid of it once it isn't. */}
         {measure && (
-          <div className="rounded border bg-background/90 px-2 py-1 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm">
+          <div className="rounded border bg-background/90 px-2 py-1 text-[12px] text-muted-foreground shadow-sm backdrop-blur-sm">
             {measure.locked
               ? 'Measure — click anywhere to clear · Esc'
               : 'Measure — click to lock · Esc to cancel'}
@@ -1727,7 +1727,7 @@ function OhlcvLegend({ bar, prev, blind }: { bar: ReplayBar; prev: ReplayBar | n
   const changePct = prev && prev.close && change !== null ? (change / prev.close) * 100 : null
 
   return (
-    <div className="flex flex-wrap items-center gap-x-2 rounded border bg-background/85 px-2 py-1 text-[11px] tabular-nums shadow-sm backdrop-blur-sm">
+    <div className="flex flex-wrap items-center gap-x-2 rounded border bg-background/85 px-2 py-1 text-[12px] tabular-nums shadow-sm backdrop-blur-sm">
       {!blind && <span className="text-muted-foreground">{stamp(bar)}</span>}
       {(
         [
@@ -1769,7 +1769,7 @@ const price = (v: number) =>
 
 const PILL =
   'absolute left-[80%] -translate-x-1/2 -translate-y-1/2 pointer-events-auto flex items-center ' +
-  'rounded border bg-background/90 text-[11px] whitespace-nowrap tabular-nums shadow-sm backdrop-blur-sm'
+  'rounded border bg-background/90 text-[12px] whitespace-nowrap tabular-nums shadow-sm backdrop-blur-sm'
 
 function PillButton({
   label,
@@ -1870,7 +1870,7 @@ function LegPill({
 const ALERT_COLOR = '#f59e0b'
 const ALERT_PILL =
   'absolute left-[62%] -translate-x-1/2 -translate-y-1/2 pointer-events-auto flex items-center ' +
-  'rounded border bg-background/90 text-[11px] whitespace-nowrap tabular-nums shadow-sm backdrop-blur-sm'
+  'rounded border bg-background/90 text-[12px] whitespace-nowrap tabular-nums shadow-sm backdrop-blur-sm'
 
 /** A pill on each alert level: what it watches, and ✕ to delete it. Drag the line to move it. */
 function AlertPills({ alert, onRemove }: { alert: ChartAlert; onRemove?: (id: number) => void }) {
@@ -2117,7 +2117,7 @@ function ContextMenu({
       {onNewOrder && (
         // First: on a stock you don't hold, starting a trade is the reason to right-click at all.
         <div className="border-t pt-1 first:border-t-0">
-          <div className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] uppercase text-muted-foreground">
             Trade here
           </div>
           <MenuItem onClick={() => (onNewOrder('long', price), onClose())}>
@@ -2136,7 +2136,7 @@ function ContextMenu({
       )}
       {onAddAlert && (
         <div className="border-t pt-1 first:border-t-0">
-          <div className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+          <div className="flex items-center gap-1.5 px-2 py-0.5 text-[11px] uppercase text-muted-foreground">
             <BellIcon className="size-3" style={{ color: ALERT_COLOR }} /> Alert here
           </div>
           {CHART_ALERT_KINDS.map(([kind, label]) => (
@@ -2149,7 +2149,7 @@ function ContextMenu({
       )}
       {openOrders.map((order: ReplayOrder) => (
         <div key={order.id} className="border-t pt-1 first:border-t-0">
-          <div className="px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+          <div className="px-2 py-0.5 text-[11px] uppercase text-muted-foreground">
             {order.draft
               ? `New order · ${order.direction === 'long' ? 'buy' : 'sell'} (ticket)`
               : label(order)}
@@ -2174,7 +2174,7 @@ function ContextMenu({
       ))}
       {pendingOrders.map((order: ReplayOrder) => (
         <div key={order.id} className="border-t pt-1">
-          <div className="px-2 py-0.5 text-[10px] uppercase text-muted-foreground">
+          <div className="px-2 py-0.5 text-[11px] uppercase text-muted-foreground">
             {label(order)} · pending
           </div>
           <MenuItem onClick={() => (onCancelPending?.(order.id), onClose())}>Cancel pending</MenuItem>

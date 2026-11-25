@@ -196,7 +196,7 @@ export default function WorkflowData() {
                 <>
                   <SeriesChart datasets={datasets} />
                   {runCount === 1 && (
-                    <p className="mt-2 text-[11px] text-muted-foreground">
+                    <p className="mt-2 text-[12px] text-muted-foreground">
                       One run so far, so each line is a single point — every run adds the next one.
                     </p>
                   )}

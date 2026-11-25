@@ -82,7 +82,7 @@ function Gauge({ pct, size = 52 }: { pct: number | null | undefined; size?: numb
         y="22"
         textAnchor="middle"
         dominantBaseline="central"
-        className="fill-foreground text-[10px] font-semibold"
+        className="fill-foreground text-[11px] font-semibold"
       >
         {pct == null ? '—' : `${Math.round(pct)}%`}
       </text>
@@ -205,11 +205,11 @@ function HistoryTable({
                   </Button>
                 </div>
                 <div className="mt-0.5 flex gap-1">
-                  <Badge variant="outline" className="text-[10px]">
+                  <Badge variant="outline" className="text-[11px]">
                     {goal.operator === 'gt' ? 'Target' : 'Limit'}
                   </Badge>
                   {goal.mode === 'binary' && (
-                    <Badge variant="outline" className="text-[10px]">
+                    <Badge variant="outline" className="text-[11px]">
                       All or nothing
                     </Badge>
                   )}

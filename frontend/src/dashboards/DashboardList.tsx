@@ -95,7 +95,7 @@ export default function DashboardList() {
   const starters = (
     <div className="grid gap-4 md:grid-cols-2">
       <section className="space-y-2">
-        <h3 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+        <h3 className="text-[12px] font-medium tracking-wide text-muted-foreground uppercase">
           Start from a template
         </h3>
         {(['Trading', 'Market', 'Workflows'] as const).map((category) => {
@@ -103,7 +103,7 @@ export default function DashboardList() {
           if (!group.length) return null
           return (
             <div key={category} className="space-y-1.5">
-              <p className="text-[11px] text-muted-foreground">{category}</p>
+              <p className="text-[12px] text-muted-foreground">{category}</p>
               {group.map((t) => (
                 <button
                   key={t.id}
@@ -121,7 +121,7 @@ export default function DashboardList() {
         })}
       </section>
       <section className="space-y-2">
-        <h3 className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+        <h3 className="text-[12px] font-medium tracking-wide text-muted-foreground uppercase">
           Build from a workflow
         </h3>
         <div className="max-h-72 space-y-1 overflow-y-auto">
@@ -139,7 +139,7 @@ export default function DashboardList() {
           ))}
           {!workflows.length && <p className="text-xs text-muted-foreground">No workflows yet.</p>}
         </div>
-        <p className="text-[11px] text-muted-foreground">
+        <p className="text-[12px] text-muted-foreground">
           A stat and a line per number it collects, a top 10, a table, a heatmap and its run health — with a
           dropdown for the field that names things.
         </p>
@@ -194,7 +194,7 @@ export default function DashboardList() {
                 {d.description && (
                   <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{d.description}</p>
                 )}
-                <p className="mt-2 text-[11px] text-muted-foreground">
+                <p className="mt-2 text-[12px] text-muted-foreground">
                   {d.panel_count} panel{d.panel_count === 1 ? '' : 's'} · updated {timeAgoShort(d.updated_at)}{' '}
                   ago
                 </p>

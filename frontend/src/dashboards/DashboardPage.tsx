@@ -222,7 +222,7 @@ function VariablePicker({
   })
   return (
     <label className="flex items-center gap-1.5">
-      <span className="text-[11px] text-muted-foreground">{variable.label || variable.name}</span>
+      <span className="text-[12px] text-muted-foreground">{variable.label || variable.name}</span>
       <Select value={value} onValueChange={(v) => onChange(String(v))}>
         <SelectTrigger className="h-8 w-32" aria-label={variable.label || variable.name}>
           <SelectValue />

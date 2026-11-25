@@ -120,7 +120,7 @@ export function ScanButton({
         startScan(name, source, list)
       }}
       className={cn(
-        'inline-flex h-5 items-center gap-0.5 rounded px-1 text-[10px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground',
+        'inline-flex h-5 items-center gap-0.5 rounded px-1 text-[11px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground',
         className,
       )}
     >
@@ -330,7 +330,7 @@ export default function ChartModal() {
       >
         <ChevronRightIcon className="size-4" />
       </Button>
-      <span className="ml-1 flex gap-1 font-mono text-[11px]">
+      <span className="ml-1 flex gap-1 font-mono text-[12px]">
         {(['A', 'B', 'C'] as const).map((p) => (
           <span
             key={p}
@@ -444,7 +444,7 @@ export default function ChartModal() {
               current?.priority ? (
                 <span
                   className={cn(
-                    'rounded border px-1.5 font-mono text-[11px] font-semibold',
+                    'rounded border px-1.5 font-mono text-[12px] font-semibold',
                     PRIORITY[current.priority].className,
                   )}
                 >

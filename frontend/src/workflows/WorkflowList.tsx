@@ -269,7 +269,7 @@ export default function WorkflowList() {
                 >
                   <BellIcon className="size-3.5" />
                   {!!w.unread && (
-                    <span className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-primary px-1 text-[10px] leading-4 font-medium text-primary-foreground tabular-nums">
+                    <span className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-primary px-1 text-[11px] leading-4 font-medium text-primary-foreground tabular-nums">
                       {w.unread}
                     </span>
                   )}
@@ -374,7 +374,7 @@ function CountTile({
         tone === 'bad' && !active && 'border-down/40',
       )}
     >
-      <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+      <p className="flex items-center gap-1.5 text-[12px] text-muted-foreground">
         {children}
         {label}
       </p>

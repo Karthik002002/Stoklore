@@ -150,7 +150,7 @@ export function ScansList() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <span className="flex gap-1 font-mono text-[11px]">
+                    <span className="flex gap-1 font-mono text-[12px]">
                       {(['A', 'B', 'C'] as const).map((p) => (
                         <span key={p} className={cn('rounded border px-1', PRIORITY[p].className)}>
                           {p} {s[p.toLowerCase() as 'a' | 'b' | 'c']}

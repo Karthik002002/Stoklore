@@ -135,7 +135,7 @@ function ListNode({ data, selected }: NodeProps<Node<ListNodeData>>) {
 
 function LabelNode({ data }: NodeProps<Node<{ text: string }>>) {
   return (
-    <p className="w-44 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">{data.text}</p>
+    <p className="w-44 text-[12px] font-medium tracking-wide text-muted-foreground uppercase">{data.text}</p>
   )
 }
 

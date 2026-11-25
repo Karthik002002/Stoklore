@@ -55,7 +55,7 @@ function StatementTable({ table, showChange }: { table: ScreenerTable; showChang
                 {value || <span className="text-muted-foreground">—</span>}
               </span>
               {change && (
-                <span className={`block text-[11px] ${change.up ? 'text-up' : 'text-down'}`}>
+                <span className={`block text-[12px] ${change.up ? 'text-up' : 'text-down'}`}>
                   {change.text}
                 </span>
               )}
@@ -118,7 +118,7 @@ function DocumentGroup({ title, items }: { title: string; items: ScreenerDocumen
     <div className="rounded-md border border-border bg-card p-3">
       <p className="mb-2 flex items-center gap-2 text-sm font-medium">
         {title}
-        <Badge variant="outline" className="text-[10px] text-muted-foreground">
+        <Badge variant="outline" className="text-[11px] text-muted-foreground">
           {items.length}
         </Badge>
       </p>
@@ -187,7 +187,7 @@ export default function ScreenerPanel({ symbol }: { symbol: string }) {
           <span className="text-sm font-medium">{data.name}</span>
           {/* Broad sector > sector > broad industry > industry; the last is the most specific. */}
           {data.industry?.map((tag, i) => (
-            <Badge key={i} variant="secondary" className="text-[10px]">
+            <Badge key={i} variant="secondary" className="text-[11px]">
               {tag}
             </Badge>
           ))}

@@ -142,7 +142,7 @@ export function ChartControls() {
           <ActivityIcon className="size-3.5" />
           Indicators
           {indicators.length > 0 && (
-            <Badge variant="outline" className="text-[10px]">
+            <Badge variant="outline" className="text-[11px]">
               {indicators.length}
             </Badge>
           )}

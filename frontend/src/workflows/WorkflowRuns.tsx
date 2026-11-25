@@ -55,7 +55,7 @@ export default function WorkflowRuns() {
             </Link>
           )
         })}
-        <span className="ml-auto text-[11px] text-muted-foreground">
+        <span className="ml-auto text-[12px] text-muted-foreground">
           The last {runs.length} runs are kept
         </span>
       </div>

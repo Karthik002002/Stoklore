@@ -252,8 +252,9 @@ to guard rails you can see and control.
   move against the sector; a sector's move, market cap change, the five-way breadth with counts and
   its top 3 leaders and laggards; a breadth bar's bucket counts and shares
   Also as a standalone Android app ([mobile/](mobile/README.md)) with the other no-login screens:
-  a swipe-through Feed of the day's market with ET headlines (one card per screen, 40 per page), index cards and charts, movers by size, all indices, stock search, stock charts + research links,
-  and colour themes (templates incl. monochrome, plus a custom editor).
+  a swipe-through Feed of the day's market with ET headlines and a filter (kinds, size, move, sectors), index cards and charts, movers by size, all indices, stock search, stock charts + research links,
+  and a Settings tab: colour themes (templates incl. monochrome, plus a custom editor), fonts from
+  Google Fonts (presets or any family by name) and text size.
 - **Save any stock on the home page to a watchlist** — the bookmark is on every stock row: your
   watchlist, Top Gainers / Losers, Recent Events, Unusual Attention and Market Pulse. A stock you
   don't track yet (most of NSE's movers) is tracked first, so it shows up in the list you picked

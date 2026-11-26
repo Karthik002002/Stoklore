@@ -1,7 +1,7 @@
 # Stoklore Android app — full context
 
 Everything about the `mobile/` app: what was asked, what was built, how it works, what is left.
-State as of 2026-11-26, app version **1.7** (versionCode 8).
+State as of 2026-11-26, app version **1.9** (versionCode 10).
 
 ---
 
@@ -74,7 +74,7 @@ Routes are hash URLs. The **tabs** use `location.replace`; **stack screens** use
 | `#/search` | ET search over NSE companies, debounced at 250 ms. Shows live % where the sector feed has the stock. Recent stocks are remembered (up to 12). |
 | `#/stock/<SYM>` | Quote, then the chart: 1D/5D/1M/6M/1Y/5Y ranges, line or candles, volume, and a drag crosshair showing OHLC and volume. Key stats: prev close, open, day high/low, 52W high/low, volume, 20-day average volume, market cap, 1Y change. The stock's sector and up to 8 peers; tapping the sector opens the Sectors tab with that sector expanded. Research links: Screener, TradingView (its app), ET Markets, Moneycontrol, NSE, Google Finance, Dhan. |
 | `#/index/<code>` | The four card indices only: quote, chart, today's stats (open, prev close, high, low, 52W range, advances/declines) and returns (1W, 1M, 3M, YTD, 1Y, 3Y, 5Y). |
-| `#/settings` | The theme screen (section 4). |
+| `#/settings` | **Settings**: appearance (themes, section 4), fonts (system or Google Fonts, body and headings, any family by name, text size), chart defaults, feed filter, data, about. |
 
 **Back button order:**
 1. Close the open card.

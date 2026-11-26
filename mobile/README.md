@@ -13,7 +13,11 @@ straight from the phone — no login, no Stoklore backend, works anywhere there 
   usual, with **Chart & research**, **TradingView** and **Dhan**. After 40 cards a "You're caught up"
   summary; **Show more** goes on with themed pages (sector deep dive, mid and small caps, big and
   quiet, everything else) until every stock that moved has been shown. Cards that reached the screen
-  are skipped for the rest of the day. Picked in `lib.js` (`feedPools`, `feedPage`) from the ET
+  are skipped for the rest of the day. **Filter** (funnel on the Feed's top bar): show only some of
+  indices & breadth, gainers, losers, against the tide, sector cards, big and quiet, headlines; only
+  large / mid / small caps; only moves of 2%+ / 5%+ / 10%+; only one or several sectors. A filtered
+  feed rotates through the picked kinds and shows everything that matches (not skipping today's
+  seen cards); it is remembered until cleared. Picked in `lib.js` (`feedPools`, `feedPage`) from the ET
   sector feed alone — no randomness, no tracking; design in [FEED_PLAN.md](FEED_PLAN.md).
 - **Markets** — NIFTY 50, SENSEX, BANK NIFTY and INDIA VIX cards (quote + today's sparkline; tap for the
   index screen); market breadth (advances/declines, sectors up, best/worst sector); **movers** — top 15
@@ -30,11 +34,21 @@ straight from the phone — no login, no Stoklore backend, works anywhere there 
   market cap, 1Y change), its sector and peers, and research links: Screener, TradingView, ET Markets,
   Moneycontrol, NSE, Google Finance, Dhan.
 - **Index** (`#/index/<code>`) — the four card indices: quote, the same chart, day stats, returns 1W–5Y.
-- **Theme** — templates: the web app's Terminal Dark / Terminal Light / Midnight / Amber Terminal,
-  plus Monochrome Black, Monochrome White, Ocean (blue up / orange down, colour-blind safe), Dusk and
-  Paper. **Custom**: edit any of the 12 colours (hex, the colour picker, or a quick swatch); the first
-  edit starts a custom theme from the template in use. Up/down colours drive every chart, heat tile,
-  breadth bar and price change; the status and navigation bars follow the theme. Default chart type.
+- **Settings** (last tab; jump chips for each section):
+  - **Appearance** — templates: the web app's Terminal Dark / Terminal Light / Midnight / Amber
+    Terminal, plus Monochrome Black, Monochrome White, Ocean (blue up / orange down, colour-blind safe),
+    Dusk and Paper. **Custom**: edit any of the 12 colours (hex, the colour picker, or a quick swatch);
+    the first edit starts a custom theme from the template in use. Up/down colours drive every chart,
+    heat tile, breadth bar and price change; the status and navigation bars follow the theme.
+  - **Fonts** — separate fonts for body text & numbers and for headings & big numbers: system mono /
+    sans / serif, or 18 Google Fonts (JetBrains Mono, IBM Plex Mono, Roboto Mono, Fira Code, Space Mono,
+    Source Code Pro, Inter, Roboto, Manrope, IBM Plex Sans, Space Grotesk, DM Sans, Poppins, Outfit,
+    Nunito, Merriweather, Lora, IBM Plex Serif), each chip shown in its own face. **Any Google Font**:
+    type a family name; the app checks it exists on Google Fonts before using it and keeps it in the
+    list. Loaded from `fonts.googleapis.com` on demand and cached; offline falls back to a system font
+    of the same kind. Charts use the body font. **Text size** 90–120% (WebView text zoom).
+  - **Chart** — default type and range. **Feed** — the filter, clear it, show today's seen cards again.
+    **Data** — clear recent searches, reload all data. **About** — version and data sources.
 
 **Not on the phone:** journal, watchlists, alerts and anything else behind a login; earnings, events,
 news, leaders, microcaps, scans and shareholding (they need Stoklore's own server or NSE/BSE's feeds,
@@ -58,7 +72,8 @@ editor), `src/.../MainActivity.java` (WebView + bridge: `get`, `open`, `openDhan
 
 **Branding:** named Stoklore, with the website's logo (`frontend/public/favicon.svg`, copied to
 `assets/logo.svg`) on the sidebar's drifting purple → blue tile. The launcher icon is
-`res/drawable-xxxhdpi/ic_fg.png`, rendered from `icon/launcher.svg` with
+`res/drawable-xxxhdpi/ic_fg.png` (gradient to the edges, no inset tile; the mark sits inside Android's
+66dp safe circle so round masks don't clip it), rendered from `icon/launcher.svg` with
 `qlmanage -t -s 432 -o . icon/launcher.svg` (macOS). On open: the system splash, then an intro
 (logo pops in, wordmark rises, loading bar) that lifts away once the first data arrives — at least
 1.3 s, at most 8 s.

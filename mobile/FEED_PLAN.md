@@ -279,3 +279,39 @@ Which apps go on the card is your call. TradingView and Dhan come at no cost.
 - **Placement:** a headline goes after every **5th** market card (`NEWS_EVERY`), newest first. A page stays at 40 market cards plus up to 8 headlines. Headlines count as seen for the day like stock cards, and the end card counts them separately.
 - **Card:** source, time ago, image (hidden if it fails to load), title, and the feed's summary (at most 240 characters). Tapping opens the article in the browser. The article text is never shown in the app.
 - **Not done:** linking a headline to a stock it mentions. Matching names in titles gives false hits, e.g. "Tata" or "Reliance".
+
+---
+
+## 14. Feed filter (v1.8)
+
+There is a funnel button on the Feed's top bar. It opens a panel of options; **Apply** rebuilds the feed from the top.
+
+**Options.** Within a row, nothing picked means everything:
+
+| Row | Options |
+|---|---|
+| Show | Indices & breadth, Gainers, Losers, Against the tide, Sector cards, Big and quiet, Headlines |
+| Company size | Large, Mid, Small |
+| Move at least | Any, 2%+, 5%+, 10%+ |
+| Sectors | One or several of today's sectors |
+
+**How filtered pages are built** (`feedFiltered` in `lib.js`):
+- Cards rotate through the picked kinds, one each in turn: gainer, loser, sector, … Pages are 40 cards, with the same end card.
+- Indices & breadth appear only on the first page.
+- The mixed feed's rules (at most 3 per sector, at least 5 mid/small caps, a headline every 5th card) don't apply: "only Banks" means only Banks.
+- Size, sector and move apply to stock cards. "Big and quiet" ignores the minimum move. Headlines are never filtered by sector, because there is no reliable stock-to-headline match.
+- A filtered feed shows **everything that matches**, including cards already seen today. "Only losers" means all losers.
+
+**Saved and cleared:**
+- The filter is saved as `feed.filter` until it's cleared.
+- The top bar shows what's active.
+- When nothing more matches, the last card offers **Change filter** and **Clear filter**.
+
+`check.mjs` covers:
+- picked kinds only;
+- every loser shown;
+- sector, size and move limits;
+- kinds rotating;
+- no repeats;
+- headlines only;
+- indices & breadth only on page 1.

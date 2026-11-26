@@ -21,7 +21,8 @@ const I = {
   markets: svg('<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>'),
   sectors: svg('<rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>'),
   search: svg('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>'),
-  theme: svg('<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/>'),
+  gear: svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
+  filter: svg('<path d="M3 5h18l-7 8v6l-4 2v-8z"/>'),
   feed: svg('<rect x="5" y="3" width="14" height="13" rx="2"/><path d="M8 20h8"/><path d="M10 23h4"/>'),
 }
 function toast(msg) {
@@ -111,8 +112,43 @@ function setColor(k, v) {
   return true
 }
 
+// ---- fonts: Google Fonts loaded on demand (a <link> per family), system stacks as the fallback -------------
+const fontPick = (slot) => store.get(`font.${slot}`, slot === 'body' ? 'system-mono' : 'system-sans')
+const customFonts = () => store.json('font.custom', []).filter(fontNameOk)
+const loadedFonts = new Map() // family -> Promise<boolean: the font is usable>
+function loadFont(name) {
+  if (!name || name.startsWith('system-')) return Promise.resolve(true)
+  if (!fontNameOk(name)) return Promise.resolve(false)
+  if (!loadedFonts.has(name)) {
+    const p = new Promise((resolve) => {
+      const add = (bold) => {
+        const l = document.createElement('link'); l.rel = 'stylesheet'; l.href = googleFontUrl(name, bold)
+        l.onload = () => document.fonts.load(`16px "${name}"`).then((f) => resolve(f.length > 0), () => resolve(false))
+        l.onerror = () => { l.remove(); if (bold) add(false); else resolve(false) } // 400 = no such family (or offline)
+        document.head.appendChild(l)
+      }
+      add(true); setTimeout(() => resolve(false), 10000)
+    })
+    p.then((ok) => { if (!ok) loadedFonts.delete(name) }) // retried next time
+    loadedFonts.set(name, p)
+  }
+  return loadedFonts.get(name)
+}
+let canvasFont = FONT_STACKS.mono
+function applyFonts() {
+  const body = fontPick('body'), head = fontPick('head'), r = document.documentElement.style
+  r.setProperty('--font-body', fontStack(body)); r.setProperty('--font-head', fontStack(head))
+  canvasFont = fontStack(body)
+  try { window.Native?.setTextZoom(+store.get('font.zoom', '100')) } catch {}
+  Promise.all([loadFont(body), loadFont(head)]).then(() => { // canvases don't re-render on their own
+    chart?.draw()
+    if (current.name === 'feed') repaintFeed()
+    if (current.name === 'markets') paintSparks()
+  })
+}
+
 // ---- shell: top bar, tabs, routing -----------------------------------------------------------------
-const TABS = [['feed', 'Feed', I.feed], ['markets', 'Markets', I.markets], ['sectors', 'Sectors', I.sectors], ['search', 'Search', I.search], ['settings', 'Theme', I.theme]]
+const TABS = [['feed', 'Feed', I.feed], ['markets', 'Markets', I.markets], ['sectors', 'Sectors', I.sectors], ['search', 'Search', I.search], ['settings', 'Settings', I.gear]]
 const TAB_IDS = TABS.map((t) => t[0])
 $('tabs').innerHTML = TABS.map(([id, label, ic]) => `<button data-tab="${id}">${ic}<span>${label}</span></button>`).join('')
 const refreshBtn = `<button class="icon" id="refresh" data-act="refresh" aria-label="Refresh">${I.refresh}</button>`
@@ -198,7 +234,7 @@ function drawChart(cv, bars, o) {
   if (!W) return
   cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr)
   const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H)
-  g.font = '10px ui-monospace, "Roboto Mono", monospace'; g.textBaseline = 'middle'
+  g.font = `10px ${canvasFont}`; g.textBaseline = 'middle'
   if (!bars.length) { g.fillStyle = T['muted-foreground']; g.textAlign = 'center'; g.fillText(o.msg || 'No data', W / 2, H / 2); return }
   const top = 8, volH = 40, xH = 16, pw = W - AXIS, ph = H - top - volH - xH
   let lo = Math.min(...bars.map((b) => b.l)), hi = Math.max(...bars.map((b) => b.h))
@@ -461,7 +497,7 @@ function membersHtml(s) {
 
 // ---- bottom card: a sector member, with chart / TradingView / Dhan ------------------------------------
 const sheetOn = () => $('sheet').classList.contains('on')
-const closeSheet = () => $('sheet').classList.remove('on')
+const closeSheet = () => $('sheet').classList.remove('on', 'big')
 const tvUrl = (sym) => `https://www.tradingview.com/chart/?symbol=NSE:${encodeURIComponent(sym)}`
 const TV_APP = 'com.tradingview.tradingviewapp'
 function memberLinks(m, sym, note) {
@@ -601,14 +637,21 @@ async function indexScreen(code) {
 // Only cards within 3 of the one on screen have content; the rest are empty, same-height slots.
 const todayIST = () => new Date(Date.now() + 19800e3).toISOString().slice(0, 10)
 const seenKey = () => `feed.seen.${todayIST()}`
-const fd = { day: null, cards: [], page: 0, pools: null, seen: null, viewed: null, idx: 0, scrollTop: 0, done: false }
+const fd = { day: null, cards: [], page: 0, pools: null, seen: null, viewed: null, idx: 0, scrollTop: 0, done: false, filter: store.json('feed.filter', null) }
 let feedObs = null
 function feedReset() {
   try { for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k?.startsWith('feed.seen.') && k !== seenKey()) localStorage.removeItem(k) } } catch {}
   Object.assign(fd, { day: todayIST(), cards: [], page: 0, idx: 0, scrollTop: 0, done: false, viewed: new Set(store.json(seenKey(), [])) })
-  fd.seen = new Set(fd.viewed) // what reached the screen earlier today is skipped
+  // the mixed feed skips what reached the screen earlier today; a filter shows everything that matches
+  fd.seen = filterOn(fd.filter) ? new Set() : new Set(fd.viewed)
 }
 function nextPage() { // appends the next page that has anything, or the final card
+  if (filterOn(fd.filter)) {
+    const r = feedFiltered(fd.pools, fd.page++, fd.seen, fd.filter)
+    if (r.cards.length) fd.cards.push(...r.cards)
+    else { fd.cards.push({ kind: 'final', id: 'final', filtered: true }); fd.done = true }
+    return
+  }
   for (;;) {
     const r = feedPage(fd.pools, fd.page++, fd.seen)
     if (r.cards.length) { fd.cards.push(...r.cards); return }
@@ -617,7 +660,7 @@ function nextPage() { // appends the next page that has anything, or the final c
 }
 async function feedScreen() {
   const tok = nav
-  setTop({ title: 'Feed', small: 'Today, one card at a time', right: refreshBtn })
+  setTop({ title: 'Feed', small: 'Today, one card at a time', right: `<button class="icon${filterOn(fd.filter) ? ' on' : ''}" id="ffilter" data-act="feed-filter" aria-label="Filter">${I.filter}</button>${refreshBtn}` })
   current.refresh = feedRefresh
   if (fd.day !== todayIST()) feedReset()
   view.innerHTML = '<div id="feed"></div>'
@@ -657,7 +700,7 @@ function setCurrent(i) {
   }
   const c = fd.cards[i]
   if (/^(s|sec|n):/.test(c.id) && !fd.viewed.has(c.id)) { fd.viewed.add(c.id); store.set(seenKey(), JSON.stringify([...fd.viewed])) }
-  setSmall(`Card ${i + 1} of ${fd.cards.length}${fd.done ? '' : '+'}`)
+  setSmall(`${filterOn(fd.filter) ? `${esc(filterLabel(fd.filter))} · ` : ''}Card ${i + 1} of ${fd.cards.length}${fd.done ? '' : '+'}`)
 }
 const repaintFeed = () => { for (const el of $('feed')?.children || []) if (el.dataset.on) fillCard(el) }
 function feedMore() {
@@ -675,6 +718,54 @@ async function feedRefresh(force) {
   catch (e) { toast(`ET sectors: ${e.message}`) }
   spin(false)
   if (current.name === 'feed') repaintFeed() // same cards, today's numbers
+}
+
+// ---- feed filter: a card of chips over the tab bar; Apply rebuilds the feed from the top ----------------
+let fdraft = null
+const filterLabel = (f) => {
+  if (!filterOn(f)) return 'Everything'
+  const names = new Map((fd.pools?.sectors || []).map((x) => [x.id, x.name]))
+  return [
+    f.kinds?.length ? f.kinds.map((k) => FEED_KINDS.find(([v]) => v === k)?.[1]).join(', ') : '',
+    f.caps?.length ? f.caps.map((c) => capWord[c]).join(', ') : '',
+    f.sectors?.length ? (f.sectors.length > 2 ? `${f.sectors.length} sectors` : f.sectors.map((id) => names.get(id) || id).join(', ')) : '',
+    f.minMove ? `${f.minMove}%+ moves` : '',
+  ].filter(Boolean).join(' · ')
+}
+function openFilter() {
+  fdraft = JSON.parse(JSON.stringify(fd.filter || { kinds: [], caps: [], sectors: [], minMove: 0 }))
+  for (const k of ['kinds', 'caps', 'sectors']) fdraft[k] ||= []
+  renderFilter(); $('sheet').classList.add('on', 'big')
+}
+function renderFilter() {
+  const sh = $('sheet'), top = sh.scrollTop
+  const chip = (fx, on, label) => `<button data-fx="${esc(fx)}" class="${on ? 'on' : ''}">${esc(label)}</button>`
+  const secs = [...(fd.pools?.sectors || [])].sort((a, b) => a.name.localeCompare(b.name))
+  sh.innerHTML = `<h3>Filter your feed</h3><div class="mute" style="font-size:11px">Nothing picked in a row = all of it. ${esc(filterLabel(fdraft))}</div>
+    <div class="fxh">Show</div><div class="fchips">${FEED_KINDS.map(([k, l]) => chip(`kinds:${k}`, fdraft.kinds.includes(k), l)).join('')}</div>
+    <div class="fxh">Company size</div><div class="fchips">${['large', 'mid', 'small'].map((c) => chip(`caps:${c}`, fdraft.caps.includes(c), capWord[c])).join('')}</div>
+    <div class="fxh">Move at least</div><div class="fchips">${FEED_MOVES.map(([v, l]) => chip(`move:${v}`, (fdraft.minMove || 0) === v, l)).join('')}</div>
+    <div class="fxh">Sectors${fdraft.sectors.length ? ` · ${fdraft.sectors.length} picked <button class="pill" data-fx="sectors-none">clear</button>` : ''}</div>
+    <div class="fchips">${secs.map((x) => chip(`sectors:${x.id}`, fdraft.sectors.includes(x.id), x.name)).join('')}</div>
+    <div class="note" style="padding:0 0 8px">Sizes, sectors and moves apply to stock cards; headlines are never filtered by sector.</div>
+    <div class="btnrow fxbtns"><button class="btn" data-fx="reset">Show everything</button><button class="btn primary" data-fx="apply">Apply</button></div>`
+  sh.scrollTop = top
+}
+function filterTap(el) {
+  const [k, v] = el.dataset.fx.split(/:(.*)/s)
+  if (k === 'apply' || k === 'reset') {
+    const f = k === 'reset' ? null : fdraft
+    fd.filter = filterOn(f) ? f : null
+    if (fd.filter) store.set('feed.filter', JSON.stringify(fd.filter)); else store.del('feed.filter')
+    $('sheet').classList.remove('on', 'big'); $('ffilter')?.classList.toggle('on', !!fd.filter)
+    feedReset()
+    if (current.name === 'feed') { nextPage(); mountFeed() } else renderSettings()
+    return
+  }
+  if (k === 'sectors-none') fdraft.sectors = []
+  else if (k === 'move') fdraft.minMove = +v
+  else { const list = fdraft[k]; const i = list.indexOf(v); if (i >= 0) list.splice(i, 1); else list.push(v) }
+  renderFilter()
 }
 
 // charts: at most 2 requests in flight, so a fast swipe doesn't fire twenty
@@ -780,6 +871,12 @@ function fillCard(el) {
       <div class="fstory mute">Today: <span class="up">${s.advance} ▲</span> <span class="down">${s.decline} ▼</span> · ${s.up} of ${(fd.pools?.sectors || []).length} sectors up${s.best ? ` · best ${esc(s.best.name)} ${pctSpan(s.best.change_pct)}` : ''}</div>
       <div class="btnrow" style="flex-direction:column;padding:12px 0 0"><button class="btn primary" data-act="feed-top">Back to top</button>
       ${last ? `<button class="btn" data-act="feed-more">Show more: ${esc(c.next)}</button>` : '<div class="mute">More below ↓</div>'}</div>`)
+  } else if (c.kind === 'final' && c.filtered) {
+    const none = fd.cards.length === 1
+    el.innerHTML = card(' style="justify-content:center;text-align:center"', `<div class="fk">Your filter · ${esc(filterLabel(fd.filter))}</div>
+      <div class="fname" style="font-size:22px">${none ? 'Nothing matches this filter right now' : 'That\'s everything matching your filter'}</div>
+      <div class="btnrow" style="flex-direction:column;padding:12px 0 0">${none ? '' : '<button class="btn primary" data-act="feed-top">Back to top</button>'}
+      <button class="btn${none ? ' primary' : ''}" data-act="feed-filter">Change filter</button><button class="btn" data-act="feed-clear">Clear filter</button></div>`)
   } else if (c.kind === 'final') {
     el.innerHTML = card(' style="justify-content:center;text-align:center"', `<div class="fk">End of today</div>
       <div class="fname" style="font-size:22px">That's every stock that moved today</div>
@@ -788,11 +885,15 @@ function fillCard(el) {
   }
 }
 
-// ---- Theme (Settings) ------------------------------------------------------------------------------------
+// ---- Settings: appearance, fonts, chart, feed, data, about -------------------------------------------------
 let selTok = 'up'
+const SET_SECTIONS = [['appearance', 'Appearance'], ['fonts', 'Fonts'], ['chart', 'Chart'], ['feed', 'Feed'], ['data', 'Data'], ['about', 'About']]
 function settingsScreen() {
-  setTop({ title: 'Theme', small: 'Colours for every screen and chart' })
+  setTop({ title: 'Settings', small: 'Theme, fonts, chart, feed',
+    sub: `<div class="chips setnav">${SET_SECTIONS.map(([id, l]) => `<button data-act="set-jump" data-v="${id}">${l}</button>`).join('')}</div>` })
   renderSettings(); endIntro()
+  for (const [f] of FONTS) loadFont(f) // so each font chip shows in its own face
+  for (const f of customFonts()) loadFont(f)
 }
 function renderSettings() {
   if (current.name !== 'settings') return
@@ -801,7 +902,11 @@ function renderSettings() {
     <div class="sw"><i style="background:${t.colors.up}"></i><i style="background:${t.colors.down}"></i><i style="background:${t.colors.foreground}"></i></div></div>`
   const list = [...THEMES, ...(custom ? [resolveTheme('custom', custom)] : [])]
   const tokLabel = THEME_TOKENS.find(([k]) => k === selTok)?.[1]
-  view.innerHTML = `<div class="sec">Templates</div>
+  const zoom = +store.get('font.zoom', '100'), fonts = [...FONTS.map(([f]) => f), ...customFonts()]
+  const fontRow = (slot, label) => `<div class="fxh setpad">${label}</div><div class="fchips setpad">${fonts.map((n) =>
+    `<button data-font="${slot}:${esc(n)}" class="${fontPick(slot) === n ? 'on' : ''}" style="font-family:${esc(fontStack(n))}">${esc(fontLabel(n))}</button>`).join('')}</div>`
+  const top = window.scrollY
+  view.innerHTML = `<div class="sec" id="set-appearance">Appearance · templates</div>
     <div class="themes">${list.map((t) => `<button class="theme${t.id === cur.id ? ' on' : ''}" data-theme="${t.id}">${pv(t)}<div class="nm">${esc(t.label)}</div></button>`).join('')}</div>
     <div class="sec">Preview</div>
     <div class="panel"><div class="tiles" style="padding:8px">${[-4, -2, -0.5, 0, 0.5, 2, 4].map((p) => `<div class="tile" style="flex:1;min-width:0;${tileStyle(p)}"><p>${pctText(p, 1)}</p></div>`).join('')}</div></div>
@@ -811,10 +916,36 @@ function renderSettings() {
     <div class="sec">Quick colours<span class="act mute" id="toklbl">for ${esc(tokLabel)}</span></div>
     <div class="swatches">${SWATCHES.map((c) => `<button data-swatch="${c}" style="background:${c}" aria-label="${c}"></button>`).join('')}</div>
     ${custom ? '<div class="btnrow"><button class="btn" data-act="custom-reset">Delete custom theme</button></div>' : ''}
-    <div class="sec">Chart</div><div class="btnrow">${typeSeg().replace('class="seg"', 'class="seg full"')}</div>
-    <div class="sec">About</div>
-    <div class="note">Stoklore's public market screens: index quotes and charts from Moneycontrol, sectors, movers, indices and search from ET Markets. Screens that need a login or Stoklore's own server (journal, watchlists, earnings, events, news, scans, shareholding) stay on the web app; NSE's and BSE's own feeds refuse apps outside a browser.</div>`
+
+    <div class="sec" id="set-fonts">Fonts</div>
+    <div class="panel fontprev"><div class="fph">NIFTY 50 · Reliance Industries</div><div>25,884.50 <span class="up">+65.25 (+0.25%)</span> · ₹1,412.30 <span class="down">−1.08%</span></div></div>
+    ${fontRow('body', 'Body text & numbers')}${fontRow('head', 'Headings & big numbers')}
+    <div class="sec">Any Google Font</div>
+    <div class="sub"><input class="in" id="fontname" placeholder="e.g. Ubuntu Mono, Lexend, Playfair Display" autocomplete="off" autocapitalize="words" spellcheck="false"></div>
+    <div class="btnrow"><button class="btn" data-act="font-add" data-v="body">Use for body</button><button class="btn" data-act="font-add" data-v="head">Use for headings</button></div>
+    ${customFonts().length ? '<div class="btnrow"><button class="btn" data-act="font-forget">Forget my added fonts</button></div>' : ''}
+    <div class="note">Type the family name as it appears on fonts.google.com. Fonts download once and are cached; offline, the app falls back to a system font of the same kind.</div>
+    <div class="sec">Text size</div>
+    <div class="btnrow"><div class="seg full">${[90, 100, 110, 120].map((z) => `<button data-act="font-zoom" data-v="${z}" class="${zoom === z ? 'on' : ''}">${z}%</button>`).join('')}</div></div>
+
+    <div class="sec" id="set-chart">Chart</div>
+    <div class="fxh setpad">Default type</div><div class="btnrow" style="padding-top:6px">${typeSeg().replace('class="seg"', 'class="seg full"')}</div>
+    <div class="fxh setpad">Default range</div><div class="chips" id="ranges">${Object.keys(RANGES).map((r) => `<button data-range="${r}" class="${r === chartRange() ? 'on' : ''}">${r}</button>`).join('')}</div>
+
+    <div class="sec" id="set-feed">Feed</div>
+    <div class="panel"><div class="li"><div class="grow"><div class="t1">Filter</div><div class="t2">${esc(filterLabel(fd.filter))}</div></div></div></div>
+    <div class="btnrow"><button class="btn" data-act="feed-filter">Edit filter</button>${filterOn(fd.filter) ? '<button class="btn" data-act="feed-clear">Clear filter</button>' : ''}</div>
+    <div class="btnrow"><button class="btn" data-act="feed-unsee">Show today's seen cards again</button></div>
+
+    <div class="sec" id="set-data">Data</div>
+    <div class="btnrow"><button class="btn" data-act="clear-recent">Clear recent searches</button><button class="btn" data-act="clear-cache">Reload all data</button></div>
+    <div class="note">Feeds refresh every 5 minutes on screen. Nothing you do here leaves the phone.</div>
+
+    <div class="sec" id="set-about">About</div>
+    <div class="note">Stoklore ${esc(appVersion())} · public market screens: index quotes and charts from Moneycontrol; sectors, movers, indices, search and headlines from ET Markets. Screens that need a login or Stoklore's own server (journal, watchlists, earnings, events, scans, shareholding) stay on the web app; NSE's and BSE's own feeds refuse apps outside a browser.</div>`
+  window.scrollTo(0, top)
 }
+const appVersion = () => { try { return `v${window.Native?.version() || ''}` } catch { return '' } }
 
 // ---- taps and inputs ----------------------------------------------------------------------------------
 const extOpen = (pkg, url) => window.Native ? Native.open(pkg || '', url) : window.open(url)
@@ -828,6 +959,7 @@ document.addEventListener('click', (e) => {
   if ((el = q('[data-push]'))) return push(el.dataset.push)
   if (q('[data-back]')) return history.back()
   if ((el = q('[data-tab]'))) return goTab(el.dataset.tab)
+  if ((el = q('[data-fx]'))) return filterTap(el)
   if (q('#sheet')) return // taps inside the card keep it open
   if (sheetOn()) { closeSheet(); if (!q('[data-m]')) return }
   if ((el = q('[data-member]'))) return openMember(el.dataset.member, el)
@@ -846,6 +978,10 @@ document.addEventListener('click', (e) => {
     store.set('chart.type', el.dataset.ctype)
     for (const b of el.parentNode.children) b.classList.toggle('on', b === el)
     return chart?.draw()
+  }
+  if ((el = q('[data-font]'))) {
+    const [slot, name] = el.dataset.font.split(/:(.*)/s)
+    store.set(`font.${slot}`, name); applyFonts(); return renderSettings()
   }
   if ((el = q('[data-theme]'))) { store.set('theme.id', el.dataset.theme); applyTheme(); return renderSettings() }
   if ((el = q('[data-swatch]'))) { setColor(selTok, el.dataset.swatch); return renderSettings() }
@@ -877,7 +1013,28 @@ document.addEventListener('click', (e) => {
       case 'feed-top': return $('feed')?.scrollTo({ top: 0, behavior: 'smooth' })
       case 'feed-more': return feedMore()
       case 'feed-restart': return feedRestart()
-      case 'clear-recent': store.del('search.recent'); return renderSearch()
+      case 'feed-filter':
+        if (fd.pools) return openFilter()
+        return sectorsFor('NSE').then((d) => { fd.pools = feedPools(d.rows, []); openFilter() }, (e) => toast(`ET sectors: ${e.message}`))
+      case 'feed-unsee': store.del(seenKey()); feedReset(); return toast('The feed starts fresh next time you open it')
+      case 'clear-cache': cache.clear(); return toast('Cached data cleared - screens reload fresh')
+      case 'set-jump': return document.getElementById(`set-${v}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      case 'font-zoom': store.set('font.zoom', v); applyFonts(); return renderSettings()
+      case 'font-forget':
+        for (const slot of ['body', 'head']) if (customFonts().includes(fontPick(slot))) store.del(`font.${slot}`)
+        store.del('font.custom'); applyFonts(); return renderSettings()
+      case 'font-add': {
+        const name = ($('fontname')?.value || '').trim().replace(/\s+/g, ' ')
+        if (!fontNameOk(name)) return toast('Letters, numbers and spaces only, e.g. Space Grotesk')
+        el.disabled = true; el.textContent = 'Checking Google Fonts…'
+        return loadFont(name).then((ok) => {
+          if (!ok) { toast(`"${name}" isn't on Google Fonts (or you're offline)`); return renderSettings() }
+          if (!FONTS.some(([f]) => f === name)) store.set('font.custom', JSON.stringify([name, ...customFonts().filter((f) => f !== name)].slice(0, 12)))
+          store.set(`font.${v}`, name); applyFonts(); renderSettings(); toast(`${name} is now your ${v === 'body' ? 'body' : 'heading'} font`)
+        })
+      }
+      case 'feed-clear': fdraft = null; return filterTap({ dataset: { fx: 'reset' } })
+      case 'clear-recent': store.del('search.recent'); renderSearch(); return renderSettings()
       case 'custom-reset': {
         const base = customTheme()?.base || 'terminal-dark'
         store.del('theme.custom'); if (themeId() === 'custom') store.set('theme.id', base)
@@ -920,4 +1077,5 @@ document.addEventListener('visibilitychange', () => {
 })
 
 applyTheme()
+applyFonts()
 route()

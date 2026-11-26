@@ -138,6 +138,19 @@ public class MainActivity extends Activity {
         });
     }
 
+    /** Settings' text size: scales every CSS font size, 85-130%. */
+    @JavascriptInterface
+    public void setTextZoom(final int percent) {
+        runOnUiThread(() -> web.getSettings().setTextZoom(Math.max(85, Math.min(130, percent))));
+    }
+
+    /** versionName from the manifest, for Settings' About. */
+    @JavascriptInterface
+    public String version() {
+        try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionName; }
+        catch (Exception e) { return ""; }
+    }
+
     @Override
     public void onBackPressed() {
         // back closes a card, then goes back a screen; the page answers "true" when it handled it

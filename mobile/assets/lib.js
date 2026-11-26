@@ -73,6 +73,30 @@ function resolveTheme(id, custom) {
   return THEMES.find((t) => t.id === id) || THEMES[0]
 }
 
+// ---- fonts: system stacks + Google Fonts, for body text and headings (Settings) ----------------------
+const FONT_STACKS = { mono: 'ui-monospace, "Roboto Mono", "Droid Sans Mono", monospace', sans: 'system-ui, Roboto, "Noto Sans", sans-serif', serif: 'Georgia, "Noto Serif", serif' }
+// [family, label, kind] - 'system-*' needs no download; the rest load from fonts.googleapis.com
+const FONTS = [
+  ['system-mono', 'System mono', 'mono'], ['system-sans', 'System sans', 'sans'], ['system-serif', 'System serif', 'serif'],
+  ['JetBrains Mono', 'JetBrains Mono', 'mono'], ['IBM Plex Mono', 'IBM Plex Mono', 'mono'], ['Roboto Mono', 'Roboto Mono', 'mono'],
+  ['Fira Code', 'Fira Code', 'mono'], ['Space Mono', 'Space Mono', 'mono'], ['Source Code Pro', 'Source Code Pro', 'mono'],
+  ['Inter', 'Inter', 'sans'], ['Roboto', 'Roboto', 'sans'], ['Manrope', 'Manrope', 'sans'], ['IBM Plex Sans', 'IBM Plex Sans', 'sans'],
+  ['Space Grotesk', 'Space Grotesk', 'sans'], ['DM Sans', 'DM Sans', 'sans'], ['Poppins', 'Poppins', 'sans'], ['Outfit', 'Outfit', 'sans'],
+  ['Nunito', 'Nunito', 'sans'], ['Merriweather', 'Merriweather', 'serif'], ['Lora', 'Lora', 'serif'], ['IBM Plex Serif', 'IBM Plex Serif', 'serif'],
+]
+/** A Google Fonts family name: letters, digits, spaces. It goes into a URL and a CSS string, so nothing else. */
+const fontNameOk = (n) => /^[A-Za-z0-9][A-Za-z0-9 ]{0,48}$/.test(String(n ?? '').trim())
+const fontKind = (name) => name.startsWith('system-') ? name.slice(7)
+  : FONTS.find((f) => f[0] === name)?.[2] || (/mono|code/i.test(name) ? 'mono' : /serif/i.test(name) && !/sans/i.test(name) ? 'serif' : 'sans')
+const fontLabel = (name) => FONTS.find((f) => f[0] === name)?.[1] || name
+/** The CSS font-family for a choice: the family first, then a system stack of the same kind. */
+const fontStack = (name) => {
+  if (!name || name.startsWith('system-') || !fontNameOk(name)) return FONT_STACKS[name?.slice(7)] || FONT_STACKS.mono
+  return `"${name.trim()}", ${FONT_STACKS[fontKind(name)]}`
+}
+/** css2 URL; 400 + 700 when the family has them (the caller retries without weights if not). */
+const googleFontUrl = (name, bold = true) => `https://fonts.googleapis.com/css2?family=${encodeURIComponent(name.trim()).replace(/%20/g, '+')}${bold ? ':wght@400;700' : ''}&display=swap`
+
 // ---- sectors: ET's feed -> Stoklore's shape (app/core/scraper.py::_sector_row) ------------------
 function sectorRow(r) {
   const crore = (v) => v == null ? null : Math.round(v / 1e5) / 100
@@ -333,6 +357,52 @@ function feedPage(p, page, seen) {
   return { theme, label, cards: out }
 }
 
+// ---- Feed filter: what the user picked instead of the mixed feed. Cards rotate through the picked
+// kinds (gainer, loser, tide, sector, …) so the stream stays varied; the per-sector and mid/small
+// rules don't apply - "only Banks" means only Banks. ----
+const FEED_KINDS = [['overview', 'Indices & breadth'], ['gainers', 'Gainers'], ['losers', 'Losers'], ['tide', 'Against the tide'],
+  ['sectors', 'Sector cards'], ['quiet', 'Big and quiet'], ['news', 'Headlines']]
+const FEED_MOVES = [[0, 'Any move'], [2, '2%+'], [5, '5%+'], [10, '10%+']]
+const filterOn = (f) => !!(f && (f.kinds?.length || f.caps?.length || f.sectors?.length || f.minMove))
+/** Page `page` of a filtered feed: { theme: 'filtered', label, cards } - [] when nothing (more) matches. */
+function feedFiltered(p, page, seen, f) {
+  const kinds = f.kinds?.length ? f.kinds : FEED_KINDS.map(([k]) => k)
+  const inSector = (id) => !f.sectors?.length || f.sectors.includes(id)
+  const okStock = (m, move = true) => (!f.caps?.length || f.caps.includes(m.cap)) && inSector(m.sectorId) && (!move || Math.abs(m.change_pct) >= (f.minMove || 0))
+  const stock = (kind, m, extra) => ({ kind, id: `s:${m.id}`, member: m, ...extra })
+  const pools = {
+    gainers: p.movers.filter((x) => x.m.change_pct > 0 && okStock(x.m)).map((x) => stock('mover', x.m, { story: moverStory(p, x.m) })),
+    losers: p.movers.filter((x) => x.m.change_pct < 0 && okStock(x.m)).map((x) => stock('mover', x.m, { story: moverStory(p, x.m) })),
+    tide: p.tide.filter((x) => okStock(x.m)).map((x) => stock('tide', x.m, { sector: x.s, story: tideStory(x.m, x.s) })),
+    sectors: p.secs.filter((x) => inSector(x.s.id))
+      .map((x) => ({ kind: 'sector', id: `sec:${x.s.id}`, sector: x.s, story: sectorStory(x.s) })),
+    quiet: p.quiet.filter((m) => okStock(m, false)).map((m) => stock('quiet', m, { story: `Barely moved (${pctText(m.change_pct)}) · ${croreShort(m.mcap_cr)} · ${m.sector}` })),
+    news: (p.news || []).map((n) => ({ kind: 'news', id: n.id, news: n })),
+  }
+  const cards = []
+  if (page === 0 && kinds.includes('overview')) {
+    cards.push({ kind: 'index', id: 'idx:in;NSX', code: 'in;NSX' }, { kind: 'breadth', id: 'breadth' }, { kind: 'size', id: 'size', sizes: p.sizes })
+    for (const code of ['in;SEN', 'in;nbx', 'in;IDXN']) cards.push({ kind: 'index', id: `idx:${code}`, code })
+  }
+  const order = kinds.filter((k) => pools[k]), at = Object.fromEntries(order.map((k) => [k, 0]))
+  let main = 0
+  for (let progress = true; main < FEED_PAGE && progress;) {
+    progress = false
+    for (const k of order) {
+      if (main >= FEED_PAGE) break
+      const pool = pools[k]
+      while (at[k] < pool.length && seen.has(pool[at[k]].id)) at[k]++
+      if (at[k] < pool.length) { const c = pool[at[k]++]; seen.add(c.id); cards.push(c); main++; progress = true }
+    }
+  }
+  if (!main && !cards.length) return { theme: 'filtered', label: 'Your filter', cards: [] }
+  const st = cards.filter((c) => c.member)
+  cards.push({ kind: 'end', id: `end:${page}`, page, label: 'Your filter', next: 'more matching your filter', shown: main,
+    news: cards.filter((c) => c.kind === 'news').length, up: st.filter((c) => c.member.change_pct > 0).length,
+    down: st.filter((c) => c.member.change_pct < 0).length, sectors: cards.filter((c) => c.kind === 'sector').length })
+  return { theme: 'filtered', label: 'Your filter', cards }
+}
+
 // ---- headlines: ET Markets' public RSS (phase 2). Title, summary, time and image only; the article
 // itself opens in the browser ----
 const ET_RSS = [
@@ -375,4 +445,4 @@ function barFacts(bars, volumeK) {
   return { fromHigh: hi ? (last.c / hi - 1) * 100 : null, streak, volX: avg && vol ? vol / avg : null }
 }
 
-if (typeof module !== 'undefined') module.exports = { fmt, pctText, croreShort, hexRgb, isHex, luminance, heat, bucketColors, THEMES, THEME_TOKENS, resolveTheme, sectorRow, sectorSummary, sortRows, allStocks, movers, indexRow, mcQuote, mcHistoryUrl, mcBars, barStats, ticks, researchLinks, RANGES, feedPools, feedPage, barFacts, saneSector, rssItems, mergeNews, NEWS_EVERY, FEED_PAGE1, FEED_PAGE, FEED_THEMES }
+if (typeof module !== 'undefined') module.exports = { fmt, pctText, croreShort, hexRgb, isHex, luminance, heat, bucketColors, THEMES, THEME_TOKENS, resolveTheme, sectorRow, sectorSummary, sortRows, allStocks, movers, indexRow, mcQuote, mcHistoryUrl, mcBars, barStats, ticks, researchLinks, RANGES, feedPools, feedPage, barFacts, saneSector, rssItems, mergeNews, NEWS_EVERY, feedFiltered, filterOn, FEED_KINDS, FONTS, fontNameOk, fontStack, fontKind, googleFontUrl, FEED_PAGE1, FEED_PAGE, FEED_THEMES }

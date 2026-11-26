@@ -16,10 +16,11 @@
     --accent: #5b9cf5; --up: #2ebd85; --down: #ef5350; --warning: #e9b44c; --radius: 4px;
     --mono: ui-monospace, "Roboto Mono", "Droid Sans Mono", monospace;
     --tabbar: 58px;
+    --font-body: var(--mono); --font-head: system-ui, Roboto, sans-serif;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--background); color: var(--foreground); }
-  body { font: 12px/1.35 var(--mono); -webkit-tap-highlight-color: transparent; font-variant-numeric: tabular-nums; overscroll-behavior-y: none; }
+  body { font: 12px/1.35 var(--font-body); -webkit-tap-highlight-color: transparent; font-variant-numeric: tabular-nums; overscroll-behavior-y: none; }
   button, select, input { font: inherit; color: inherit; }
   button { cursor: pointer; }
   .up { color: var(--up); } .down { color: var(--down); } .mute { color: var(--muted-foreground); } .acc { color: var(--accent); }
@@ -217,11 +218,27 @@
   .ftiles .tile { min-width: 3.6rem; }
   .flist { margin: 0; }
   .flist .li { padding: 7px 8px; }
+  #sheet.big { max-height: calc(100vh - var(--tabbar) - 70px); overflow-y: auto; }
+  .fxh { margin-top: 10px; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted-foreground); }
+  .fchips { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0 2px; }
+  .fchips button { height: 30px; padding: 0 11px; border-radius: 15px; border: 1px solid var(--input); background: transparent; color: var(--muted-foreground); }
+  .fchips button.on { border-color: var(--accent); color: var(--accent); font-weight: 600; background: var(--muted); }
+  .fxbtns { position: sticky; bottom: -12px; padding: 8px 0; margin: 0 -2px -4px; background: var(--panel-head); }
+  .icon.on { border-color: var(--accent); color: var(--accent); }
   .fimg { flex: 1; min-height: 0; max-height: 46%; border-radius: 6px; overflow: hidden; background: var(--muted); }
   .fimg img { display: block; width: 100%; height: 100%; object-fit: cover; }
   .fsizes { display: flex; flex-direction: column; gap: 14px; flex: 1; justify-content: center; }
   .fsz { display: grid; gap: 5px; }
   .note { padding: 0 10px 12px; font-size: 11px; color: var(--muted-foreground); line-height: 1.5; }
+  /* ---- settings: section jump chips, fonts ---- */
+  .setnav { padding: 0; flex: 1; }
+  .setnav button { height: 26px; padding: 0 10px; }
+  .sec[id^="set-"] { scroll-margin-top: 92px; }
+  .setpad { padding-left: 10px; padding-right: 10px; }
+  .fontprev { padding: 10px; display: grid; gap: 4px; }
+  .fontprev .fph { font: 700 17px/1.2 var(--font-head); }
+  /* headings take the heading font (after the rules above, so it wins) */
+  .fname, .fbig, .quote .p, .icard .p, #intro .word, #sheet h3, .bar h1 { font-family: var(--font-head); }
 </style>
 </head>
 <body class="booting">

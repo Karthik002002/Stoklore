@@ -104,9 +104,38 @@ assert.equal(n1.at(-1).news, 8); assert.equal(n1.at(-1).shown, 40)
 assert.deepEqual(n2.filter((c) => c.kind === 'news').map((c) => c.id), ['n:8', 'n:9', 'n:10', 'n:11'])
 assert.deepEqual(n1.filter((c) => c.kind !== 'news').map((c) => c.id), pages[0].cards.map((c) => c.id))
 
+// filter: only what was picked, rotating kinds, nothing twice, runs dry
+const fall = (f) => { const seen = new Set(), out = []; for (let pg = 0; pg < 99; pg++) { const r = L.feedFiltered(npools, pg, seen, f); if (!r.cards.length) break; out.push(...r.cards) } return out }
+assert.equal(L.filterOn({}), false); assert.equal(L.filterOn({ kinds: ['news'] }), true); assert.equal(L.filterOn({ minMove: 2 }), true)
+const losers = fall({ kinds: ['losers'] }).filter((c) => c.kind !== 'end')
+assert.ok(losers.length > 0 && losers.every((c) => c.member.change_pct < 0))
+assert.equal(losers.length, fp.movers.filter((x) => x.m.change_pct < 0).length, 'not every loser')
+const twoSec = fall({ sectors: ['sec1', 'sec2'], kinds: ['gainers', 'losers', 'sectors'] }).filter((c) => c.kind !== 'end')
+assert.ok(twoSec.every((c) => c.member ? ['sec1', 'sec2'].includes(c.member.sectorId) : ['sec1', 'sec2'].includes(c.sector.id)))
+assert.equal(twoSec.filter((c) => c.kind === 'sector').length, 2)
+assert.ok(twoSec.slice(0, 3).map((c) => c.member ? (c.member.change_pct > 0 ? 'g' : 'l') : 's').join('') === 'gls', 'kinds do not rotate')
+const big = fall({ caps: ['large'], minMove: 4 }).filter((c) => c.member && c.kind !== 'quiet')
+assert.ok(big.length && big.every((c) => c.member.cap === 'large' && Math.abs(c.member.change_pct) >= 4))
+const onlyNews = fall({ kinds: ['news'] })
+assert.deepEqual(onlyNews.filter((c) => c.kind !== 'end').map((c) => c.id), news.map((n) => n.id))
+const fids = fall({ kinds: ['gainers', 'tide'] }).filter((c) => c.member).map((c) => c.id)
+assert.equal(new Set(fids).size, fids.length, 'filtered feed repeats a stock')
+const ov = L.feedFiltered(npools, 0, new Set(), { kinds: ['overview', 'losers'] }).cards
+assert.deepEqual(ov.slice(0, 3).map((c) => c.kind), ['index', 'breadth', 'size'])
+assert.ok(!L.feedFiltered(npools, 1, new Set(), { kinds: ['overview'] }).cards.length, 'overview repeats after page 1')
+
 // bar facts: 6M-high distance, streak, volume multiple
 const fb = [10, 11, 12, 11, 12, 13, 14].map((c, i) => ({ t: i, o: c, h: c, l: c, c, v: 100 }))
 const facts = L.barFacts(fb, 0.3)
 assert.equal(facts.streak, 3); assert.equal(facts.fromHigh, 0); assert.equal(facts.volX, 3)
 assert.equal(L.barFacts([...fb, { t: 9, o: 13, h: 13, l: 13, c: 13, v: 100 }], 0).streak, -1)
+// fonts: only safe family names reach a URL / CSS; stacks fall back to the same kind
+assert.ok(L.fontNameOk('Space Grotesk') && L.fontNameOk('Inter'))
+for (const bad of ['', ' ', 'Inter"; } body { x', '../x', 'a'.repeat(60), 'Font<script>']) assert.ok(!L.fontNameOk(bad), bad)
+assert.equal(L.fontStack('system-mono'), L.fontStack('nonsense"'))
+assert.ok(L.fontStack('JetBrains Mono').startsWith('"JetBrains Mono", ui-monospace'))
+assert.ok(L.fontStack('Playfair Display').includes('system-ui')); assert.equal(L.fontKind('Noto Serif'), 'serif'); assert.equal(L.fontKind('Ubuntu Mono'), 'mono')
+assert.equal(L.googleFontUrl('Space Grotesk'), 'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700&display=swap')
+assert.equal(L.googleFontUrl('Lobster', false), 'https://fonts.googleapis.com/css2?family=Lobster&display=swap')
+assert.ok(L.FONTS.every(([f]) => f.startsWith('system-') || L.fontNameOk(f)))
 console.log('mobile/check.mjs: all passed')

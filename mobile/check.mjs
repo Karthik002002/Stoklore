@@ -83,6 +83,27 @@ const bad = L.saneSector({ change_pct: -100, members: [{ change_pct: 1, mcap_cr:
 assert.equal(bad.change_pct, 0.5)
 assert.ok(fp.tide.every((x) => Math.abs(x.m.change_pct) >= 1))
 
+// headlines: CDATA, entities, tags stripped, https only, newest first, one per story
+const xml = `<rss><channel><item><title><![CDATA[Nifty &amp; Sensex <b>rise</b>]]></title><link>https://economictimes.indiatimes.com/a.cms</link>
+  <enclosure url="https://img.etimg.com/a.jpg" type="image/jpeg"/><pubDate>Thu, 26 Nov 2026 07:35:38 +0530</pubDate><description><![CDATA[<img src="x"/>Up &#8377;5 &quot;today&quot;]]></description></item>
+  <item><title>Old</title><link>https://economictimes.indiatimes.com/b.cms</link><pubDate>Wed, 25 Nov 2026 07:00:00 +0530</pubDate></item>
+  <item><title>Bad link</title><link>javascript:alert(1)</link></item></channel></rss>`
+const items = L.rssItems(xml, 'Markets')
+assert.equal(items.length, 2)
+assert.equal(items[0].title, 'Nifty & Sensex rise'); assert.equal(items[0].desc, 'Up ₹5 "today"')
+assert.equal(items[0].img, 'https://img.etimg.com/a.jpg'); assert.equal(items[1].img, null)
+assert.equal(items[0].time, Date.UTC(2026, 10, 26, 2, 5, 38))
+const merged = L.mergeNews([[items[1]], items, [{ ...items[0], source: 'Stocks' }]])
+assert.deepEqual(merged.map((n) => n.title), ['Nifty & Sensex rise', 'Old'])
+// a headline after every 5th market card, none twice, the feed's other cards unchanged
+const news = Array.from({ length: 12 }, (_, i) => ({ id: `n:${i}`, title: `H${i}`, link: `https://x/${i}`, time: i }))
+const npools = L.feedPools(fsec, news), nseen = new Set()
+const n1 = L.feedPage(npools, 0, nseen).cards, n2 = L.feedPage(npools, 1, nseen).cards
+assert.deepEqual(n1.map((c, i) => c.kind === 'news' ? i : -1).filter((i) => i >= 0), [5, 11, 17, 23, 29, 35, 41, 47])
+assert.equal(n1.at(-1).news, 8); assert.equal(n1.at(-1).shown, 40)
+assert.deepEqual(n2.filter((c) => c.kind === 'news').map((c) => c.id), ['n:8', 'n:9', 'n:10', 'n:11'])
+assert.deepEqual(n1.filter((c) => c.kind !== 'news').map((c) => c.id), pages[0].cards.map((c) => c.id))
+
 // bar facts: 6M-high distance, streak, volume multiple
 const fb = [10, 11, 12, 11, 12, 13, 14].map((c, i) => ({ t: i, o: c, h: c, l: c, c, v: 100 }))
 const facts = L.barFacts(fb, 0.3)

@@ -62,6 +62,11 @@ const indexQuote = (code, force) => cached(`iq:${code}`, 30e3, async () =>
   mcQuote((await getJson(`https://priceapi.moneycontrol.com/pricefeed/notapplicable/inidicesindia/${encodeURIComponent(code)}`)).data), force)
 const barsFor = (kind, sym, range, force) => cached(`bars:${kind}:${sym}:${range}`, range === '1D' || range === '5D' ? 60e3 : 600e3,
   async () => mcBars(await getJson(mcHistoryUrl(kind, sym, range)), range), force)
+// headlines: the three ET RSS feeds merged; one failing feed just drops out, all failing -> no headlines
+const newsFor = (force) => cached('news', 300e3, async () => mergeNews((await Promise.allSettled(ET_RSS.map(async ([src, url]) => {
+  const r = await nget(url); if (r.status !== 200) throw new Error(`HTTP ${r.status}`); return rssItems(r.body, src)
+}))).filter((x) => x.status === 'fulfilled').map((x) => x.value)), force)
+const ago = (t) => { const m = Math.max(0, Math.round((Date.now() - t) / 60e3)); return !t ? '' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago` }
 const etSearch = (q) => cached(`s:${q.toLowerCase()}`, 600e3, () =>
   getJson(`https://etsearch.indiatimes.com/etspeeds/ethome.ep?ticker=${encodeURIComponent(q)}&matchCompanyName=true&outputtype=json`).then((j) => Array.isArray(j) ? j : []))
 
@@ -619,7 +624,7 @@ async function feedScreen() {
   if (!fd.cards.length) {
     $('feed').innerHTML = '<div class="state">Building your feed…</div>'
     spin(true)
-    try { fd.pools = feedPools((await sectorsFor('NSE')).rows); if (!fd.cards.length) nextPage() }
+    try { const [d, n] = await Promise.all([sectorsFor('NSE'), newsFor().catch(() => [])]); fd.pools = feedPools(d.rows, n); if (!fd.cards.length) nextPage() }
     catch (e) { endIntro(); if (tok === nav) { spin(false); $('feed').innerHTML = errState(`ET sectors: ${e.message}`) } return }
     if (tok !== nav) return
     spin(false)
@@ -651,7 +656,7 @@ function setCurrent(i) {
     else if (d > 5 && el.dataset.on) { el.innerHTML = ''; delete el.dataset.on }
   }
   const c = fd.cards[i]
-  if (/^(s|sec):/.test(c.id) && !fd.viewed.has(c.id)) { fd.viewed.add(c.id); store.set(seenKey(), JSON.stringify([...fd.viewed])) }
+  if (/^(s|sec|n):/.test(c.id) && !fd.viewed.has(c.id)) { fd.viewed.add(c.id); store.set(seenKey(), JSON.stringify([...fd.viewed])) }
   setSmall(`Card ${i + 1} of ${fd.cards.length}${fd.done ? '' : '+'}`)
 }
 const repaintFeed = () => { for (const el of $('feed')?.children || []) if (el.dataset.on) fillCard(el) }
@@ -666,7 +671,8 @@ function feedRestart() {
 }
 async function feedRefresh(force) {
   spin(true)
-  try { fd.pools = feedPools((await sectorsFor('NSE', force)).rows) } catch (e) { toast(`ET sectors: ${e.message}`) }
+  try { const [d, n] = await Promise.all([sectorsFor('NSE', force), newsFor(force).catch(() => fd.pools?.news || [])]); fd.pools = feedPools(d.rows, n) }
+  catch (e) { toast(`ET sectors: ${e.message}`) }
   spin(false)
   if (current.name === 'feed') repaintFeed() // same cards, today's numbers
 }
@@ -760,11 +766,17 @@ function fillCard(el) {
         <div class="changebar" style="height:14px"><div class="mid"></div><div class="fill" style="width:${(Math.abs(x.avg ?? 0) / max) * 50}%;${(x.avg ?? 0) >= 0 ? 'left:50%;background:var(--up)' : 'right:50%;background:var(--down)'}"></div></div>
         <div class="fbig" style="font-size:18px">${pctSpan(x.avg)}</div></div>`).join('')}</div>
       <div class="note" style="padding:0">Large = top 100 by market cap, mid = 101–250, small = the rest (₹500 Cr and up).</div>`)
+  } else if (c.kind === 'news') {
+    const n = c.news, desc = n.desc && n.desc.length > 240 ? `${n.desc.slice(0, 237)}…` : n.desc
+    el.innerHTML = card(` data-ext="${esc(n.link)}" data-pkg=""`, `<div class="fk">Headline · ET ${esc(n.source)}${n.time ? ` · ${ago(n.time)}` : ''}</div>
+      ${n.img ? `<div class="fimg"><img src="${esc(n.img)}" alt="" loading="lazy" onerror="this.parentNode.remove()"></div>` : ''}
+      <div class="fname">${esc(n.title)}</div><div class="fstory mute">${esc(desc || '')}</div>
+      <div class="links fl" style="margin-top:auto"><button class="go primary" style="grid-column:span 2" data-ext="${esc(n.link)}" data-pkg="">Read on ET Markets<span>opens in the browser</span></button></div>`)
   } else if (c.kind === 'end') {
     const s = sectorSummary(fd.pools?.sectors || []), last = +el.dataset.i === fd.cards.length - 1
     el.innerHTML = card(' style="justify-content:center;text-align:center"', `<div class="fk">${c.page === 0 ? 'Caught up' : esc(c.label)}</div>
       <div class="fname" style="font-size:24px">${c.page === 0 ? 'You\'re caught up' : `${esc(c.label)}: done`}</div>
-      <div class="fstory">You saw ${c.shown} cards · <span class="up">${c.up} up</span> · <span class="down">${c.down} down</span>${c.sectors ? ` · ${c.sectors} sectors` : ''}</div>
+      <div class="fstory">You saw ${c.shown} cards${c.news ? ` and ${c.news} headlines` : ''} · <span class="up">${c.up} up</span> · <span class="down">${c.down} down</span>${c.sectors ? ` · ${c.sectors} sectors` : ''}</div>
       <div class="fstory mute">Today: <span class="up">${s.advance} ▲</span> <span class="down">${s.decline} ▼</span> · ${s.up} of ${(fd.pools?.sectors || []).length} sectors up${s.best ? ` · best ${esc(s.best.name)} ${pctSpan(s.best.change_pct)}` : ''}</div>
       <div class="btnrow" style="flex-direction:column;padding:12px 0 0"><button class="btn primary" data-act="feed-top">Back to top</button>
       ${last ? `<button class="btn" data-act="feed-more">Show more: ${esc(c.next)}</button>` : '<div class="mute">More below ↓</div>'}</div>`)

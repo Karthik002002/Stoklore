@@ -1,7 +1,7 @@
 # Stoklore Android app — full context
 
 Everything about the `mobile/` app: what was asked, what was built, how it works, what is left.
-State as of 2026-11-26, app version **1.6** (versionCode 7).
+State as of 2026-11-26, app version **1.7** (versionCode 8).
 
 ---
 

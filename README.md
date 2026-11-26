@@ -252,7 +252,7 @@ to guard rails you can see and control.
   move against the sector; a sector's move, market cap change, the five-way breadth with counts and
   its top 3 leaders and laggards; a breadth bar's bucket counts and shares
   Also as a standalone Android app ([mobile/](mobile/README.md)) with the other no-login screens:
-  a swipe-through Feed of the day's market (one card per screen, 40 per page), index cards and charts, movers by size, all indices, stock search, stock charts + research links,
+  a swipe-through Feed of the day's market with ET headlines (one card per screen, 40 per page), index cards and charts, movers by size, all indices, stock search, stock charts + research links,
   and colour themes (templates incl. monochrome, plus a custom editor).
 - **Save any stock on the home page to a watchlist** — the bookmark is on every stock row: your
   watchlist, Top Gainers / Losers, Recent Events, Unusual Attention and Market Pulse. A stock you

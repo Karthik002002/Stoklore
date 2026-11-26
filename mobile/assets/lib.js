@@ -210,7 +210,7 @@ const researchLinks = (sym, et) => [
 
 // ---- the Feed: 40-card pages picked from the sector feed alone (FEED_PLAN.md §10) ----------------
 // No randomness: the same data + the same `seen` gives the same cards.
-const FEED_PAGE = 40, FEED_MIN_MCAP = 500, FEED_PER_SECTOR = 3, FEED_MIN_SMALLER = 5
+const FEED_PAGE = 40, FEED_MIN_MCAP = 500, FEED_PER_SECTOR = 3, FEED_MIN_SMALLER = 5, NEWS_EVERY = 5
 const FEED_THEMES = [['top', 'Top of the day'], ['sectors', 'Sector deep dive'], ['smaller', 'Mid and small caps'], ['quiet', 'Big and quiet'], ['rest', 'Everything else']]
 // page 1: 2 + 10 movers + sector + 7 + 10 + size + 5 sectors + 3 indices + the biggest surprise left = 40
 const FEED_PAGE1 = ['idx:in;NSX', 'breadth', ...Array(10).fill('mv'), 'sec', 'tide', 'mv', 'tide', 'mv', 'tide', 'mv', 'tide',
@@ -229,7 +229,7 @@ function saneSector(s) {
 }
 
 /** Everything a page draws from, scored once per data load. */
-function feedPools(sectors) {
+function feedPools(sectors, news = []) {
   sectors = sectors.map(saneSector)
   const all = allStocks(sectors)
   const stocks = all.filter((m) => (m.mcap_cr || 0) >= FEED_MIN_MCAP && m.price != null && m.change_pct != null && (m.volume_k || 0) > 0)
@@ -245,7 +245,7 @@ function feedPools(sectors) {
     return { cap, n: g.length, avg: g.length ? g.reduce((t, m) => t + m.change_pct, 0) / g.length : null }
   })
   return {
-    sectors, stocks, byId, best, worst, sizes,
+    sectors, stocks, byId, best, worst, sizes, news,
     movers: stocks.filter((m) => m.change_pct !== 0).map((m) => ({ m, score: Math.abs(m.change_pct) * sizeWeight(m) })).sort(desc),
     tide: stocks.map((m) => ({ m, s: byId.get(m.sectorId) })).filter(({ m, s }) => s?.change_pct != null && s.change_pct * m.change_pct < 0 && Math.abs(m.change_pct) >= TIDE_MIN_MOVE)
       .map((x) => ({ ...x, score: Math.abs(x.m.change_pct - x.s.change_pct) * sizeWeight(x.m) })).sort(desc),
@@ -322,10 +322,40 @@ function feedPage(p, page, seen) {
   } else { while (cards.length < FEED_PAGE && (mover() || tide())); }
   const stockCards = cards.filter((c) => c.member)
   if (!stockCards.length && !cards.some((c) => c.kind === 'sector') && theme !== 'top') return { theme, label, cards: [] }
-  cards.push({ kind: 'end', id: `end:${page}`, page, label, next: FEED_THEMES[Math.min(page + 1, FEED_THEMES.length - 1)][1],
-    shown: cards.length, up: stockCards.filter((c) => c.member.change_pct > 0).length, down: stockCards.filter((c) => c.member.change_pct < 0).length,
-    sectors: cards.filter((c) => c.kind === 'sector').length })
-  return { theme, label, cards }
+  const out = [], heads = (p.news || []).filter((n) => !seen.has(n.id))
+  cards.forEach((c, i) => {
+    out.push(c)
+    if ((i + 1) % NEWS_EVERY === 0 && heads.length) { const n = heads.shift(); seen.add(n.id); out.push({ kind: 'news', id: n.id, news: n }) }
+  })
+  out.push({ kind: 'end', id: `end:${page}`, page, label, next: FEED_THEMES[Math.min(page + 1, FEED_THEMES.length - 1)][1],
+    shown: cards.length, news: out.length - cards.length, up: stockCards.filter((c) => c.member.change_pct > 0).length,
+    down: stockCards.filter((c) => c.member.change_pct < 0).length, sectors: cards.filter((c) => c.kind === 'sector').length })
+  return { theme, label, cards: out }
+}
+
+// ---- headlines: ET Markets' public RSS (phase 2). Title, summary, time and image only; the article
+// itself opens in the browser ----
+const ET_RSS = [
+  ['Markets', 'https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms'],
+  ['Stocks', 'https://economictimes.indiatimes.com/markets/stocks/news/rssfeeds/2146842.cms'],
+  ['Earnings', 'https://economictimes.indiatimes.com/markets/stocks/earnings/rssfeeds/1808152121.cms'],
+]
+const ENT = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' }
+const unxml = (v) => String(v ?? '').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/<[^>]*>/g, ' ')
+  .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => e[0] === '#' ? String.fromCodePoint(e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : +e.slice(1)) : ENT[e.toLowerCase()] ?? m)
+  .replace(/\s+/g, ' ').trim()
+/** RSS 2.0 items -> { id, title, link, time, desc, img, source }. Only https links and images are kept. */
+function rssItems(xml, source) {
+  return [...String(xml || '').matchAll(/<item>([\s\S]*?)<\/item>/g)].map(([, it]) => {
+    const tag = (t) => unxml(it.match(new RegExp(`<${t}>([\\s\\S]*?)</${t}>`))?.[1])
+    const link = tag('link') || tag('guid'), time = Date.parse(tag('pubDate')), img = it.match(/<enclosure[^>]*\surl="([^"]+)"/)?.[1]
+    return { id: `n:${link}`, title: tag('title'), link, time: Number.isNaN(time) ? null : time, desc: tag('description'), img: /^https:\/\//.test(img || '') ? img : null, source }
+  }).filter((n) => n.title && /^https:\/\//.test(n.link))
+}
+/** Several feeds -> one list, newest first, each story once. */
+function mergeNews(lists) {
+  const seen = new Set()
+  return lists.flat().sort((a, b) => (b.time ?? 0) - (a.time ?? 0)).filter((n) => !seen.has(n.link) && seen.add(n.link))
 }
 
 /** What a stock card's 6M bars add: distance from the 6M high, the run of up / down closes, today's
@@ -345,4 +375,4 @@ function barFacts(bars, volumeK) {
   return { fromHigh: hi ? (last.c / hi - 1) * 100 : null, streak, volX: avg && vol ? vol / avg : null }
 }
 
-if (typeof module !== 'undefined') module.exports = { fmt, pctText, croreShort, hexRgb, isHex, luminance, heat, bucketColors, THEMES, THEME_TOKENS, resolveTheme, sectorRow, sectorSummary, sortRows, allStocks, movers, indexRow, mcQuote, mcHistoryUrl, mcBars, barStats, ticks, researchLinks, RANGES, feedPools, feedPage, barFacts, saneSector, FEED_PAGE1, FEED_PAGE, FEED_THEMES }
+if (typeof module !== 'undefined') module.exports = { fmt, pctText, croreShort, hexRgb, isHex, luminance, heat, bucketColors, THEMES, THEME_TOKENS, resolveTheme, sectorRow, sectorSummary, sortRows, allStocks, movers, indexRow, mcQuote, mcHistoryUrl, mcBars, barStats, ticks, researchLinks, RANGES, feedPools, feedPage, barFacts, saneSector, rssItems, mergeNews, NEWS_EVERY, FEED_PAGE1, FEED_PAGE, FEED_THEMES }

@@ -25,7 +25,8 @@ import org.json.JSONObject;
 public class MainActivity extends Activity {
     // the only hosts the page may fetch from
     private static final List<String> HOSTS = Arrays.asList(
-        "etmarketsapis.indiatimes.com", "etsearch.indiatimes.com", "dhan.co", "priceapi.moneycontrol.com");
+        "etmarketsapis.indiatimes.com", "etsearch.indiatimes.com", "dhan.co", "priceapi.moneycontrol.com",
+        "economictimes.indiatimes.com"); // the last one only for the Feed's headline RSS
 
     private WebView web;
 

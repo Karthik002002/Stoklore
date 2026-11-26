@@ -8,7 +8,8 @@ straight from the phone — no login, no Stoklore backend, works anywhere there 
 - **Feed** (the first tab) — today's market one full-screen card at a time, swipe up for the next:
   index cards, market breadth, top gainers/losers (alternating, ranked by move × market cap, at most 3
   per sector, at least 5 mid/small caps), stocks moving against their sector, sector cards, small vs
-  large caps. Stock cards show a 6M chart, distance from the 6M high, the up/down streak and volume vs
+  large caps, and after every 5th card a **headline** from ET Markets' public RSS (Markets, Stocks,
+  Earnings: title, summary, time, image; tap to read it in the browser). Stock cards show a 6M chart, distance from the 6M high, the up/down streak and volume vs
   usual, with **Chart & research**, **TradingView** and **Dhan**. After 40 cards a "You're caught up"
   summary; **Show more** goes on with themed pages (sector deep dive, mid and small caps, big and
   quiet, everything else) until every stock that moved has been shown. Cards that reached the screen
@@ -47,7 +48,7 @@ page. ET's sector feed has no NSE symbol; it is looked up in ET's search, matche
 
 **Data:** ET Markets `ET_Stats/sectorperformance` (sectors, movers, breadth — the feed `/api/sectors`
 uses), `ET_Stats/getAllIndices`, `etsearch` (search, symbols); Moneycontrol `priceapi` (index quotes,
-chart bars for stocks and indices). Requests are made natively in `MainActivity.java` (each site's
+chart bars for stocks and indices); ET Markets RSS on `economictimes.indiatimes.com` (Feed headlines). Requests are made natively in `MainActivity.java` (each site's
 Origin/Referer, no CORS) and only to those hosts. Auto-refresh every 5 minutes on screen, and on coming
 back to the app.
 

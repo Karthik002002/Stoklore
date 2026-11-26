@@ -1,6 +1,6 @@
 # Plan: a "doom scroll" market feed for the Stoklore app
 
-Status: **phase 1 built in v1.6** (Feed as the first tab, 40-card pages with the themed pages after). Phase 2 (headlines) not started.
+Status: **phase 1 built in v1.6** (Feed as the first tab, 40-card pages with the themed pages after). **Phase 2 (headlines) built in v1.7.**
 
 ---
 
@@ -260,3 +260,22 @@ Which apps go on the card is your call. TradingView and Dhan come at no cost.
 - **Against-the-tide cards need the stock itself to move at least 1%.** Without that, a +0.02% stock "against" its sector filled the slots.
 - **Volume standout is a highlighted fact line**, not its own card: "3.2× its usual volume", shown when the multiple is 2× or more.
 - **Seen today** counts only cards that reached the screen (`feed.seen.<IST date>`); older days' keys are removed. The final card has **Start today's feed over**.
+
+---
+
+## 13. Phase 2 as built (v1.7): headlines
+
+- **Source:** ET Markets' public RSS. The three feeds below all return 200 to the app's headers, about 50 items each:
+
+  | Feed | RSS id |
+  |---|---|
+  | Markets | `1977021501` |
+  | Stocks news | `2146842` |
+  | Earnings | `1808152121` |
+
+  The feeds are merged, sorted newest first, and each story appears once (matched by link). One feed failing just drops out; all three failing means a feed with no headlines.
+- **Allowed hosts:** one added to `MainActivity.HOSTS`, `economictimes.indiatimes.com`.
+- **Parsing:** `rssItems` in `lib.js`, using regex rather than `DOMParser`, so `check.mjs` can test it in Node. It handles CDATA, entities and stripped tags. Links and images must be https.
+- **Placement:** a headline goes after every **5th** market card (`NEWS_EVERY`), newest first. A page stays at 40 market cards plus up to 8 headlines. Headlines count as seen for the day like stock cards, and the end card counts them separately.
+- **Card:** source, time ago, image (hidden if it fails to load), title, and the feed's summary (at most 240 characters). Tapping opens the article in the browser. The article text is never shown in the app.
+- **Not done:** linking a headline to a stock it mentions. Matching names in titles gives false hits, e.g. "Tata" or "Reliance".

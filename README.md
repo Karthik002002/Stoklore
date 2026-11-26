@@ -251,7 +251,8 @@ to guard rails you can see and control.
   a company's price, move, market cap and share of its sector, volume, size and move rank and its
   move against the sector; a sector's move, market cap change, the five-way breadth with counts and
   its top 3 leaders and laggards; a breadth bar's bucket counts and shares
-  Also as a standalone Android app ([mobile/](mobile/README.md)) with the other no-login screens:
+  Also as a standalone Android app ([mobile/](mobile/README.md)) with the other no-login screens, plus
+  holdings kept on the phone (CSV/paste import, live P&L, hourly notifications, profit-protect alerts):
   a swipe-through Feed of the day's market with ET headlines and a filter (kinds, size, move, sectors), index cards and charts, movers by size, all indices, stock search, stock charts + research links,
   and a Settings tab: colour themes (templates incl. monochrome, plus a custom editor), fonts from
   Google Fonts (presets or any family by name) and text size.

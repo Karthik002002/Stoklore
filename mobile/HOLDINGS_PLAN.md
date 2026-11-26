@@ -1,6 +1,6 @@
 # Plan: Holdings, live value, hourly updates and alerts (mobile app)
 
-Status: **plan for review**. No code is written yet.
+Status: **phases 1–3 built in v2.0** (holdings, notifications, alerts). Phase 4 (PDFs, mutual funds) not started. See §11 for what changed while building.
 
 **Goal:** you load your holdings into the app once, by typing them in or importing a CSV or PDF. After that the phone:
 - shows their live value;
@@ -200,3 +200,43 @@ Each phase ships on its own as a new APK version.
 4. **Alert timing:** is a check every 15 minutes, sometimes later, acceptable? Real-time would need an always-on notification and costs battery.
 5. **More than one portfolio** (yours and family's), or one?
 6. **Which broker's CSV/PDF first?** Send a sample with the numbers blanked out, so its layout gets matched exactly.
+
+---
+
+## 11. As built (v2.0)
+
+**Decisions taken** (from §10, using the recommended options):
+- Quantity is required.
+- Holdings is the second tab, and Search moved to a magnifier on the top bars.
+- Alerts are checked every 15 minutes.
+- One portfolio.
+- Any broker's CSV is accepted, with columns found by name.
+
+**Changed from the plan:**
+- **JSON files instead of SQLite.** The data is a few hundred rows at most, so two app-private files do the job with less code.
+  - `portfolio.json` (holdings, alerts, notification setting) is written only by the page, through `Native.savePortfolio`.
+  - `portfolio_state.json` (alert states, what was sent today, last values, ~2 months of 15-minute values, last 50 alert messages) is written only by the job.
+  - With one writer per file, no locking is needed between page and job beyond a process-level lock. Writes are atomic: temp file, then rename.
+- **The job's maths lives in `Portfolio.java`** (no Android, no JSON) and is tested on the Mac by `test/check-java.sh`, instead of shared JS/Java test files. The page only does the simple totals; `lib.js valuePortfolio` and `Portfolio.totals` follow the same rules:
+  - unpriced holdings are left out;
+  - P&L counts only holdings that have both a price and a buy price.
+- **Holiday detection** uses ET's sector feed: its newest update must be today (IST). This replaces the "no new bar today" idea and needs no extra request.
+- **Matching:**
+  - ET search doesn't accept ISINs, so ISIN rows ask you to pick.
+  - ETFs aren't companies in ET search, so a symbol-like row with no ET match is accepted when Moneycontrol has daily bars for it.
+- **Backup** (Settings → Data & backup and the Holdings screen) exports holdings, alerts and all settings as one `.json` through Android's save dialog. Restoring cleans every field (`cleanPortfolio`, a key allowlist for settings).
+- **Sending notifications:**
+  - The Android 13+ permission is asked the first time notifications or an alert are turned on. After a refusal, the button opens the app's notification settings.
+  - Tapping a notification opens Holdings.
+  - "Send one now" posts a summary at any time, so you can try it.
+
+**Checked:**
+- `check.mjs`: CSV/paste parsing, broker headers, dates, merging, valuation, holding period, cleaning untrusted data.
+- `check-java.sh`: 47 checks covering ₹ formatting, totals, every alert kind (fire once, re-arm margin, once/every time, new-day reset), "what moved", the summary schedule and the summary text.
+- `test/smoke.cjs`: the real app, headless, against live feeds. Paste import with matching (TCS, Tata Motors, NIFTYBEES, HDFC Bank, an ISIN), saving, live value, two alerts, backup round trip, the Feed's holdings card, every screen, no script errors.
+
+**Not checked on a device:**
+- the background job's timing;
+- notifications arriving;
+- the permission prompt;
+- the file picker and save dialog.

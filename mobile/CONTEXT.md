@@ -1,7 +1,7 @@
 # Stoklore Android app — full context
 
 Everything about the `mobile/` app: what was asked, what was built, how it works, what is left.
-State as of 2026-11-26, app version **1.9** (versionCode 10).
+State as of 2026-11-26, app version **2.0** (versionCode 11).
 
 ---
 
@@ -69,6 +69,7 @@ Routes are hash URLs. The **tabs** use `location.replace`; **stack screens** use
 | Route | Screen |
 |---|---|
 | `#/feed` | **Feed** (first tab, home): one full-screen card per swipe, 40 to a page then "You're caught up", themed pages after. See `FEED_PLAN.md` §10–12. |
+| `#/holdings` | **Holdings** (second tab): holdings kept on the phone (`portfolio.json`), CSV/paste import with review, live value and P&L, alerts and notifications from the 15-minute `PortfolioJob`. See `HOLDINGS_PLAN.md`. |
 | `#/markets` | Four index cards (NIFTY 50, SENSEX, BANK NIFTY, INDIA VIX), each with a quote and a 1D sparkline; tap for the index screen. Market breadth: advances and declines, sectors up, best and worst sector. **Movers**: top 15 gainers or losers, filtered by all, large, mid or small cap. **All indices**: NSE or BSE, with filter and sort. |
 | `#/sectors` | The home page's Sector Performance panel. Summary line; sector map (size = market cap, colour = the day's move); per-sector move bar, five-way breadth bar, member strip and best/worst member. Tap a sector for its member tiles; tap a member for a card with price, change, market cap, share of sector and volume, plus **Chart & research**, **TradingView** and **Dhan**. Filter, NSE/BSE switch, three sort menus. |
 | `#/search` | ET search over NSE companies, debounced at 250 ms. Shows live % where the sector feed has the stock. Recent stocks are remembered (up to 12). |

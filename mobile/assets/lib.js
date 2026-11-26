@@ -403,6 +403,141 @@ function feedFiltered(p, page, seen, f) {
   return { theme: 'filtered', label: 'Your filter', cards }
 }
 
+// ---- holdings: parsing an upload / paste, valuing it, cleaning untrusted JSON -------------------------
+/** "₹1,20,000.50", "Rs. 3450", " 10 " -> number; anything else -> null. */
+function parseNum(v) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : null
+  const t = String(v ?? '').replace(/₹|rs\.?|inr|,|\s/gi, '')
+  return /^-?\d+(\.\d+)?$/.test(t) ? +t : null
+}
+/** CSV / TSV / semicolon text -> rows of cells (quotes, "" escapes and CRLF handled). */
+function splitCsv(text) {
+  const lines = String(text || '').replace(/^﻿/, '').split(/\r?\n/)
+  const sample = lines.filter((l) => l.trim()).slice(0, 5).join('\n')
+  const delim = ['\t', ';', ','].map((d) => [d, sample.split(d).length]).sort((a, b) => b[1] - a[1])[0][0]
+  const rows = []
+  let row = [], cell = '', q = false
+  const src = lines.join('\n')
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i]
+    if (q) { if (c === '"' && src[i + 1] === '"') { cell += '"'; i++ } else if (c === '"') q = false; else cell += c; continue }
+    if (c === '"') q = true
+    else if (c === delim) { row.push(cell.trim()); cell = '' }
+    else if (c === '\n') { row.push(cell.trim()); rows.push(row); row = []; cell = '' }
+    else cell += c
+  }
+  row.push(cell.trim()); rows.push(row)
+  return rows.filter((r) => r.some((x) => x !== ''))
+}
+// header names brokers use (Zerodha, Groww, Dhan, Upstox, Angel, spreadsheets)
+const HOLD_COLS = {
+  sym: /^(symbol|trading ?symbol|tradingsymbol|instrument|scrip( name)?|stock( name)?|company( name)?|security( name)?|name|isin)$/,
+  qty: /^(qty|quantity|quantity available|available qty|units|shares|net qty|holding qty|total qty)$/,
+  avg: /^(avg|avg ?cost|average ?(buy ?)?(price|cost)|avg ?(buy ?)?(price|cost)|buy ?(price|avg|average)|cost ?price|purchase ?price)$/,
+  date: /^(date|buy date|purchase date|trade date)$/,
+}
+const normHead = (h) => String(h).toLowerCase().replace(/[()*:#_.]/g, ' ').replace(/\s+/g, ' ').trim()
+/** Upload or paste -> { rows: [{ name, qty, avg, date, line }], skipped }. With a header row the columns
+ *  are found by name; without one, each line is "<name or symbol> <qty> <avg price>". */
+function parseHoldings(text) {
+  const table = splitCsv(text), rows = []
+  let skipped = 0
+  const hi = table.findIndex((r) => { const h = r.map(normHead); return h.some((x) => HOLD_COLS.sym.test(x)) && h.some((x) => HOLD_COLS.qty.test(x)) })
+  if (hi >= 0) {
+    const h = table[hi].map(normHead), col = {}
+    for (const [k, re] of Object.entries(HOLD_COLS)) col[k] = h.findIndex((x) => re.test(x))
+    // prefer a symbol column over a name column when both exist
+    const symCol = h.findIndex((x) => /^(symbol|trading ?symbol|tradingsymbol|instrument)$/.test(x))
+    if (symCol >= 0) col.sym = symCol
+    table.slice(hi + 1).forEach((r, i) => {
+      const name = (r[col.sym] || '').trim(), qty = parseNum(r[col.qty]), avg = col.avg >= 0 ? parseNum(r[col.avg]) : null
+      if (!name || !(qty > 0) || /^total/i.test(name)) { skipped++; return }
+      rows.push({ name, qty, avg: avg != null && avg >= 0 ? avg : null, date: col.date >= 0 ? normDate(r[col.date]) : null, line: hi + i + 2 })
+    })
+  } else {
+    String(text || '').split(/\r?\n/).forEach((l, i) => {
+      if (!l.trim()) return
+      const toks = l.split(/[,\t;]|\s+/).map((x) => x.trim()).filter(Boolean)
+      const nums = []
+      while (toks.length > 1 && parseNum(toks.at(-1)) != null) nums.unshift(parseNum(toks.pop()))
+      const name = toks.join(' ')
+      if (!name || nums.length < 1 || !(nums[0] > 0)) { skipped++; return }
+      rows.push({ name, qty: nums[0], avg: nums[1] != null && nums[1] >= 0 ? nums[1] : null, date: null, line: i + 1 })
+    })
+  }
+  return { rows, skipped }
+}
+/** "2024-01-10", "10/01/2024", "10-Jan-2024" -> "2024-01-10"; else null. Day-first, as Indian statements are. */
+function normDate(v) {
+  const t = String(v || '').trim()
+  let m = t.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`
+  m = t.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})$/)
+  if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`
+  m = t.match(/^(\d{1,2})[ -]([A-Za-z]{3})[a-z]*[ -](\d{4})$/)
+  const mon = m && ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'].indexOf(m[2].toLowerCase())
+  return m && mon >= 0 ? `${m[3]}-${String(mon + 1).padStart(2, '0')}-${m[1].padStart(2, '0')}` : null
+}
+/** One row per symbol: quantities add, the buy price is the quantity-weighted average, the earliest date stays. */
+function mergeHoldings(list) {
+  const by = new Map()
+  for (const h of list) {
+    const o = by.get(h.sym)
+    if (!o) { by.set(h.sym, { ...h }); continue }
+    const qty = o.qty + h.qty
+    o.avg = o.avg != null && h.avg != null ? (o.avg * o.qty + h.avg * h.qty) / qty : o.avg ?? h.avg
+    o.qty = qty
+    if (h.date && (!o.date || h.date < o.date)) o.date = h.date
+  }
+  return [...by.values()]
+}
+/** Value every holding at { price, prev } from priceOf(h) and total it. Unpriced holdings stay out of the
+ *  totals and are counted as `missing`; P&L only covers holdings with both a price and a buy price. */
+function valuePortfolio(holdings, priceOf) {
+  const rows = holdings.map((h) => {
+    const p = priceOf(h) || {}, price = p.price ?? null, prev = p.prev ?? null
+    const invested = h.avg != null ? h.qty * h.avg : null, value = price != null ? h.qty * price : null
+    const day = price != null && prev != null ? h.qty * (price - prev) : null
+    return { ...h, price, prev, value, invested, pnl: value != null && invested != null ? value - invested : null,
+      pnlPct: value != null && invested ? (value / invested - 1) * 100 : null, day, dayPct: price != null && prev ? (price / prev - 1) * 100 : null,
+      sector: p.sector ?? null }
+  })
+  const sum = (k, rs) => rs.reduce((t, r) => t + (r[k] ?? 0), 0)
+  const priced = rows.filter((r) => r.value != null), both = priced.filter((r) => r.pnl != null), dayRows = priced.filter((r) => r.day != null)
+  const value = sum('value', priced), pnl = sum('pnl', both), base = sum('invested', both), day = sum('day', dayRows)
+  const prevValue = sum('value', dayRows) - day
+  return { rows, total: { value, invested: sum('invested', rows.filter((r) => r.invested != null)), pnl, pnlPct: base ? (pnl / base) * 100 : null,
+    day, dayPct: prevValue ? (day / prevValue) * 100 : null, priced: priced.length, missing: rows.length - priced.length } }
+}
+/** Held since `date` (YYYY-MM-DD): days, long term (> 365 days, the equity LTCG line) and "1y 3m". */
+function heldFor(date, now = Date.now()) {
+  const t = Date.parse(`${date}T00:00:00+05:30`)
+  if (!date || Number.isNaN(t)) return null
+  const days = Math.max(0, Math.floor((now - t) / 864e5)), y = Math.floor(days / 365), m = Math.floor((days % 365) / 30.4)
+  return { days, long: days > 365, text: y ? `${y}y ${m}m` : m ? `${m}m` : `${days}d` }
+}
+const ALERT_KINDS = [
+  ['below', 'Portfolio falls to', '₹', false], ['above', 'Portfolio rises to', '₹', false],
+  ['trail', 'Protect profit: give back no more than', '₹', false], ['dayloss', 'Down today by more than', '₹', false],
+  ['pbelow', 'Stock falls to', '₹', true], ['pabove', 'Stock rises to', '₹', true], ['stockdrop', 'Any holding down today by', '%', false],
+]
+const NOTIFY = [['off', 'Off'], ['openclose', 'Open & close'], ['2h', 'Every 2 hours'], ['hourly', 'Every hour']]
+const SYM_RE = /^[A-Z0-9&.\-]{1,20}$/
+/** portfolio.json from an import or the device file -> only well-formed holdings and alerts. */
+function cleanPortfolio(o) {
+  const ok = (n) => typeof n === 'number' && Number.isFinite(n)
+  const str = (v, n = 80) => typeof v === 'string' ? v.slice(0, n) : null
+  const holdings = (Array.isArray(o?.holdings) ? o.holdings : []).filter((h) => h && SYM_RE.test(h.sym) && ok(h.qty) && h.qty > 0 && (h.avg == null || (ok(h.avg) && h.avg >= 0)))
+    .slice(0, 500).map((h) => ({ id: str(h.id, 40) || `h${h.sym}`, sym: h.sym, name: str(h.name) || h.sym, et: /^\d{1,12}$/.test(h.et || '') ? h.et : null,
+      qty: h.qty, avg: h.avg ?? null, date: normDate(h.date) }))
+  const syms = new Set(holdings.map((h) => h.sym))
+  const alerts = (Array.isArray(o?.alerts) ? o.alerts : []).filter((a) => a && ALERT_KINDS.some(([k]) => k === a.kind) && ok(a.value) && a.value > 0
+    && (!ALERT_KINDS.find(([k]) => k === a.kind)[3] || syms.has(a.sym))).slice(0, 50)
+    .map((a) => ({ id: str(a.id, 40) || `a${Math.round(a.value)}`, kind: a.kind, value: a.value, sym: SYM_RE.test(a.sym || '') ? a.sym : null,
+      repeat: !!a.repeat, start: ok(a.start) ? a.start : null, created: ok(a.created) ? a.created : 0 }))
+  return { v: 1, holdings, alerts, notify: NOTIFY.some(([k]) => k === o?.notify) ? o.notify : 'hourly' }
+}
+
 // ---- headlines: ET Markets' public RSS (phase 2). Title, summary, time and image only; the article
 // itself opens in the browser ----
 const ET_RSS = [
@@ -445,4 +580,4 @@ function barFacts(bars, volumeK) {
   return { fromHigh: hi ? (last.c / hi - 1) * 100 : null, streak, volX: avg && vol ? vol / avg : null }
 }
 
-if (typeof module !== 'undefined') module.exports = { fmt, pctText, croreShort, hexRgb, isHex, luminance, heat, bucketColors, THEMES, THEME_TOKENS, resolveTheme, sectorRow, sectorSummary, sortRows, allStocks, movers, indexRow, mcQuote, mcHistoryUrl, mcBars, barStats, ticks, researchLinks, RANGES, feedPools, feedPage, barFacts, saneSector, rssItems, mergeNews, NEWS_EVERY, feedFiltered, filterOn, FEED_KINDS, FONTS, fontNameOk, fontStack, fontKind, googleFontUrl, FEED_PAGE1, FEED_PAGE, FEED_THEMES }
+if (typeof module !== 'undefined') module.exports = { fmt, pctText, croreShort, hexRgb, isHex, luminance, heat, bucketColors, THEMES, THEME_TOKENS, resolveTheme, sectorRow, sectorSummary, sortRows, allStocks, movers, indexRow, mcQuote, mcHistoryUrl, mcBars, barStats, ticks, researchLinks, RANGES, feedPools, feedPage, barFacts, saneSector, rssItems, mergeNews, NEWS_EVERY, feedFiltered, filterOn, FEED_KINDS, FONTS, fontNameOk, fontStack, fontKind, googleFontUrl, parseNum, splitCsv, parseHoldings, normDate, mergeHoldings, valuePortfolio, heldFor, cleanPortfolio, FEED_PAGE1, FEED_PAGE, FEED_THEMES }

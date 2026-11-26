@@ -10,13 +10,17 @@ export JAVA_HOME="${JAVA_HOME:-/opt/homebrew/opt/openjdk@17}"
 export PATH="$JAVA_HOME/bin:$PATH"
 KS="$HOME/.android/debug.keystore"
 
-rm -rf build && mkdir -p build/classes build/dex
+rm -rf build && mkdir -p build/classes build/dex build/gen
 [ -f "$KS" ] || { mkdir -p "$(dirname "$KS")"; keytool -genkeypair -keystore "$KS" -storepass android -keypass android \
   -alias androiddebugkey -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000; }
 
 "$BT/aapt2" compile --dir res -o build/res.zip
-"$BT/aapt2" link -I "$JAR" --manifest AndroidManifest.xml -A assets -o build/unsigned.apk build/res.zip
-javac --release 8 -classpath "$JAR" -d build/classes $(find src -name '*.java') 2>&1 | grep -v 'warning: \[options\]' || true
+# --java writes R.java (resource ids, e.g. the notification icon)
+"$BT/aapt2" link -I "$JAR" --manifest AndroidManifest.xml -A assets --java build/gen -o build/unsigned.apk build/res.zip
+# a compile error stops the build (javac's own [options] warning about --release 8 is dropped)
+javac --release 8 -encoding UTF-8 -classpath "$JAR" -d build/classes $(find src build/gen -name '*.java') 2> build/javac.log \
+  || { grep -v 'warning: \[options\]' build/javac.log; exit 1; }
+grep -v 'warning: \[options\]' build/javac.log || true
 "$BT/d8" --release --min-api 26 --lib "$JAR" --output build/dex $(find build/classes -name '*.class')
 (cd build/dex && zip -q -j ../unsigned.apk classes.dex)
 "$BT/zipalign" -f 4 build/unsigned.apk build/aligned.apk

@@ -22,6 +22,8 @@ const I = {
   sectors: svg('<rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>'),
   search: svg('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>'),
   gear: svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>'),
+  plus: svg('<path d="M12 5v14M5 12h14"/>'),
+  wallet: svg('<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/>'),
   filter: svg('<path d="M3 5h18l-7 8v6l-4 2v-8z"/>'),
   feed: svg('<rect x="5" y="3" width="14" height="13" rx="2"/><path d="M8 20h8"/><path d="M10 23h4"/>'),
 }
@@ -148,7 +150,8 @@ function applyFonts() {
 }
 
 // ---- shell: top bar, tabs, routing -----------------------------------------------------------------
-const TABS = [['feed', 'Feed', I.feed], ['markets', 'Markets', I.markets], ['sectors', 'Sectors', I.sectors], ['search', 'Search', I.search], ['settings', 'Settings', I.gear]]
+const TABS = [['feed', 'Feed', I.feed], ['holdings', 'Holdings', I.wallet], ['markets', 'Markets', I.markets], ['sectors', 'Sectors', I.sectors], ['settings', 'Settings', I.gear]]
+const searchBtn = `<button class="icon" data-push="search" aria-label="Search">${I.search}</button>`
 const TAB_IDS = TABS.map((t) => t[0])
 $('tabs').innerHTML = TABS.map(([id, label, ic]) => `<button data-tab="${id}">${ic}<span>${label}</span></button>`).join('')
 const refreshBtn = `<button class="icon" id="refresh" data-act="refresh" aria-label="Refresh">${I.refresh}</button>`
@@ -171,7 +174,7 @@ function route() {
   const arg = decodeURIComponent(rest.join('/'))
   const dir = navDir || 'pop'; navDir = null
   nav++; chart = null; closeSheet()
-  current = { name: TAB_IDS.includes(name) || name === 'stock' || name === 'index' ? name : 'feed', refresh: null, at: Date.now() }
+  current = { name: TAB_IDS.includes(name) || ['stock', 'index', 'search'].includes(name) ? name : 'feed', refresh: null, at: Date.now() }
   document.body.classList.toggle('feed-on', current.name === 'feed')
   if (TAB_IDS.includes(current.name)) lastTab = current.name
   for (const b of $('tabs').children) b.classList.toggle('on', b.dataset.tab === lastTab)
@@ -180,6 +183,7 @@ function route() {
   else if (current.name === 'index' && arg) indexScreen(arg)
   else if (current.name === 'sectors') sectorsScreen()
   else if (current.name === 'search') searchScreen()
+  else if (current.name === 'holdings') holdingsScreen()
   else if (current.name === 'settings') settingsScreen()
   else if (current.name === 'markets') marketsScreen()
   else feedScreen()
@@ -192,6 +196,7 @@ window.addEventListener('hashchange', (e) => {
 })
 window.onBack = () => {
   if (sheetOn()) { closeSheet(); return true }
+  if (current.name === 'holdings' && hd.review) { hd.review = null; renderHoldings(); return true }
   if (!TAB_IDS.includes(current.name)) { history.back(); return true }
   if (current.name === 'sectors' && sx.open.size) { sx.open.clear(); renderSectors(); return true }
   if (current.name === 'feed' && fd.idx > 0) { $('feed')?.scrollTo({ top: 0, behavior: 'smooth' }); return true }
@@ -322,7 +327,7 @@ const mk = { dir: 'gainers', cap: 'all', iex: store.get('markets.iex', 'NSE'), i
 const cardId = (code) => `ic-${code.replace(/[^a-z0-9]/gi, '')}`
 const ISORTS = [['change:desc', 'Top gainers'], ['change:asc', 'Top losers'], ['value:desc', 'Value'], ['name:asc', 'Name A → Z']]
 function marketsScreen() {
-  setTop({ title: 'Stoklore', small: 'Markets', right: refreshBtn })
+  setTop({ title: 'Stoklore', small: 'Markets', right: searchBtn + refreshBtn })
   view.innerHTML = `<div class="cards">${MC_INDICES.map((x) => `<button class="icard" id="${cardId(x.code)}" data-push="index/${encodeURIComponent(x.code)}"><div class="n">${esc(x.name)}</div><div class="p">—</div><div class="c mute">…</div><canvas></canvas></button>`).join('')}</div>
     <div class="sec">Market breadth<span class="act mute">NSE · ET sectors</span></div><div class="panel" id="mbreadth"><div class="state">Loading…</div></div>
     <div class="sec">Movers<span class="act"><div class="seg">${[['gainers', 'Gainers'], ['losers', 'Losers']].map(([v, l]) => `<button data-act="mdir" data-v="${v}" class="${v === mk.dir ? 'on' : ''}">${l}</button>`).join('')}</div></span></div>
@@ -414,7 +419,7 @@ const sx = {
 const sortSelect = (name, value, options) => `<select class="sel" data-sort="${name}">${options.map(([v, t]) => `<option value="${v}"${v === value ? ' selected' : ''}>${t}</option>`).join('')}</select>`
 const tileStyle = (pct) => { const h = heat(pct, T); return `background:${h.bg};color:${h.fg}` }
 function sectorsScreen() {
-  setTop({ title: 'Sectors', small: 'ET Markets', right: refreshBtn,
+  setTop({ title: 'Sectors', small: 'ET Markets', right: searchBtn + refreshBtn,
     sub: `<input class="in" id="sfilter" placeholder="Filter sectors or companies" value="${esc(sx.filter)}"><div class="seg">${['NSE', 'BSE'].map((e) => `<button data-act="sex" data-v="${e}" class="${e === sx.exchange ? 'on' : ''}">${e}</button>`).join('')}</div>` })
   renderSectors()
   current.refresh = loadSectors
@@ -527,7 +532,7 @@ function showMember(s, m) {
 // ---- Search ----------------------------------------------------------------------------------------
 const sr = { q: '', hits: null, err: null, timer: 0, seq: 0 }
 function searchScreen() {
-  setTop({ title: 'Search', small: 'NSE stocks by name or symbol', sub: `<input class="in" id="q" type="search" placeholder="Reliance, TCS, HDFC Bank…" value="${esc(sr.q)}" autocomplete="off" spellcheck="false">` })
+  setTop({ title: 'Search', small: 'NSE stocks by name or symbol', back: true, sub: `<input class="in" id="q" type="search" placeholder="Reliance, TCS, HDFC Bank…" value="${esc(sr.q)}" autocomplete="off" spellcheck="false">` })
   renderSearch(); endIntro()
   if (!sr.q) setTimeout(() => { if (current.name === 'search') $('q')?.focus() }, 300)
 }
@@ -653,14 +658,15 @@ function nextPage() { // appends the next page that has anything, or the final c
     return
   }
   for (;;) {
-    const r = feedPage(fd.pools, fd.page++, fd.seen)
+    const first = fd.page === 0, r = feedPage(fd.pools, fd.page++, fd.seen)
+    if (first && portfolio().holdings.length) r.cards.splice(1, 0, { kind: 'holdings', id: 'holdings' })
     if (r.cards.length) { fd.cards.push(...r.cards); return }
     if (r.theme === 'rest') { fd.cards.push({ kind: 'final', id: 'final' }); fd.done = true; return }
   }
 }
 async function feedScreen() {
   const tok = nav
-  setTop({ title: 'Feed', small: 'Today, one card at a time', right: `<button class="icon${filterOn(fd.filter) ? ' on' : ''}" id="ffilter" data-act="feed-filter" aria-label="Filter">${I.filter}</button>${refreshBtn}` })
+  setTop({ title: 'Feed', small: 'Today, one card at a time', right: `<button class="icon${filterOn(fd.filter) ? ' on' : ''}" id="ffilter" data-act="feed-filter" aria-label="Filter">${I.filter}</button>${searchBtn}${refreshBtn}` })
   current.refresh = feedRefresh
   if (fd.day !== todayIST()) feedReset()
   view.innerHTML = '<div id="feed"></div>'
@@ -857,6 +863,15 @@ function fillCard(el) {
         <div class="changebar" style="height:14px"><div class="mid"></div><div class="fill" style="width:${(Math.abs(x.avg ?? 0) / max) * 50}%;${(x.avg ?? 0) >= 0 ? 'left:50%;background:var(--up)' : 'right:50%;background:var(--down)'}"></div></div>
         <div class="fbig" style="font-size:18px">${pctSpan(x.avg)}</div></div>`).join('')}</div>
       <div class="note" style="padding:0">Large = top 100 by market cap, mid = 101–250, small = the rest (₹500 Cr and up).</div>`)
+  } else if (c.kind === 'holdings') {
+    const t = hd.val?.total, rows = (hd.val?.rows || []).filter((r) => r.day != null).sort((a, b) => b.day - a.day)
+    if (!hd.val) priceHoldings().then(() => { if (stillOn(el, c)) fillCard(el) })
+    el.innerHTML = card(' data-tab="holdings"', `<div class="fk">Your holdings · on this phone</div><div class="fname">${t ? inr(t.value) : 'Pricing…'}</div>
+      <div class="fbig">${t ? `<span class="${pctClass(t.day)}">${sinr(t.day)}</span> <span style="font-size:15px">${pctSpan(t.dayPct)} today</span>` : ''}</div>
+      <div class="fstory">${t ? `P&amp;L <span class="${pctClass(t.pnl)}">${sinr(t.pnl)} (${pctText(t.pnlPct)})</span> on ${inr(t.invested)} invested` : ''}</div>
+      <div class="panel flist">${[...rows.slice(0, 2), ...rows.slice(-2).filter((r) => r.day < 0 && !rows.slice(0, 2).includes(r))].map((r) =>
+        `<div class="li"><div class="grow"><div class="t1">${esc(r.sym)}</div><div class="t2">${pctSpan(r.dayPct)}</div></div><div class="r b ${pctClass(r.day)}">${sinr(r.day)}</div></div>`).join('')}</div>
+      <div class="links fl" style="margin-top:auto"><button class="go primary" style="grid-column:span 2" data-tab="holdings">Open Holdings<span>alerts, notifications, every position</span></button></div>`)
   } else if (c.kind === 'news') {
     const n = c.news, desc = n.desc && n.desc.length > 240 ? `${n.desc.slice(0, 237)}…` : n.desc
     el.innerHTML = card(` data-ext="${esc(n.link)}" data-pkg=""`, `<div class="fk">Headline · ET ${esc(n.source)}${n.time ? ` · ${ago(n.time)}` : ''}</div>
@@ -885,9 +900,380 @@ function fillCard(el) {
   }
 }
 
+// ---- Holdings: kept in portfolio.json on the phone (MainActivity / PortfolioJob), valued live --------------
+// The page owns portfolio.json; the background job reads it every 15 minutes for notifications and alerts
+// and keeps its own portfolio_state.json, which the page only reads (alert status, history).
+const hd = { pf: null, val: null, prices: new Map(), review: null, sort: store.get('holdings.sort', 'value:desc'), del: null, form: null, alert: null }
+const inr = (v, d = 0) => v == null || Number.isNaN(v) ? '—' : `${v < 0 ? '−' : ''}₹${fmt(Math.abs(v), d)}`
+const sinr = (v) => v == null ? '—' : `${v >= 0 ? '+' : ''}${inr(v)}`
+const qtyText = (q) => Number.isInteger(q) ? q.toLocaleString('en-IN') : fmt(q, 3)
+function portfolio() {
+  if (!hd.pf) {
+    let raw = null
+    try { raw = JSON.parse(window.Native ? Native.readFile('portfolio.json') : store.get('portfolio.dev', 'null')) } catch {}
+    hd.pf = cleanPortfolio(raw)
+  }
+  return hd.pf
+}
+function savePortfolio(pf) {
+  hd.pf = cleanPortfolio(pf)
+  hd.val = hd.val ? valuePortfolio(hd.pf.holdings, priceOf) : null // revalue from the prices already loaded
+  const text = JSON.stringify(hd.pf)
+  let ok = true
+  try { ok = window.Native ? Native.savePortfolio(text) : (store.set('portfolio.dev', text), true) } catch { ok = false }
+  if (!ok) toast('Could not save on the phone')
+  return ok
+}
+const jobState = () => { try { return JSON.parse(window.Native?.readFile('portfolio_state.json') || '{}') } catch { return {} } }
+/** Live { price, prev, sector } for a holding: ET's sector feed when it carries the company, else the last
+ *  two Moneycontrol daily closes (ETFs, SME stocks). */
+const priceOf = (h) => {
+  const m = h.et && memberIndex.get(String(h.et))
+  if (m && m.price != null) return { price: m.price, prev: m.change_pct != null ? m.price / (1 + m.change_pct / 100) : null, sector: m.sector }
+  return hd.prices.get(h.sym)
+}
+async function priceHoldings(force) {
+  const pf = portfolio()
+  try { await sectorsFor('NSE', force) } catch {}
+  const today = todayIST()
+  await Promise.all(pf.holdings.filter((h) => !(h.et && memberIndex.get(String(h.et)))).map((h) =>
+    queued(() => barsFor('stock', h.sym, '1M', force)).then((bars) => {
+      const last = bars.at(-1), prior = bars.at(-2)
+      if (!last) return
+      const lastDay = new Date((last.t + 19800) * 1000).toISOString().slice(0, 10)
+      hd.prices.set(h.sym, { price: last.c, prev: lastDay === today ? prior?.c ?? null : last.c })
+    }).catch(() => {})))
+  hd.val = valuePortfolio(pf.holdings, priceOf)
+  return hd.val
+}
+
+function holdingsScreen() {
+  setTop({ title: 'Holdings', small: 'On this phone only', right: `<button class="icon" data-push="search" aria-label="Search">${I.search}</button><button class="icon" data-h="add" aria-label="Add a stock">${I.plus}</button>${refreshBtn}` })
+  current.refresh = loadHoldings
+  renderHoldings(); loadHoldings(); endIntro()
+}
+async function loadHoldings(force) {
+  if (!portfolio().holdings.length) return
+  spin(true)
+  await priceHoldings(force)
+  spin(false)
+  if (current.name === 'holdings' && !hd.review) renderHoldings()
+}
+const H_SORTS = [['value:desc', 'Value'], ['pnl:desc', 'P&L ₹'], ['pnlPct:desc', 'P&L %'], ['dayPct:desc', 'Today %'], ['dayPct:asc', 'Today % (losers)'], ['sym:asc', 'Symbol A → Z']]
+const ALERT_TEXT = (a) => {
+  const k = ALERT_KINDS.find(([x]) => x === a.kind)
+  return `${k[1]}${a.sym ? ` · ${a.sym}` : ''} ${k[2] === '%' ? `${a.value}%` : inr(a.value, a.kind.startsWith('p') ? 2 : 0)}`
+}
+function renderHoldings() {
+  if (current.name !== 'holdings') return
+  if (hd.review) return renderReview()
+  const pf = portfolio(), top = window.scrollY
+  setSmall(pf.holdings.length ? `${pf.holdings.length} holdings · on this phone only` : 'On this phone only')
+  if (!pf.holdings.length) {
+    view.innerHTML = `<div class="panel" style="margin-top:12px;padding:14px"><div class="fname">Your holdings, live</div>
+      <div class="fstory" style="margin:6px 0 12px">Add what you hold once - symbol, quantity, buy price. The app values it live, sends an update at the open, every hour and at the close, and warns you when your own limits are hit. Nothing leaves this phone; there is no broker login.</div>
+      <div class="links fl"><button class="go primary" data-h="add">Add a stock<span>search, quantity, price</span></button><button class="go" data-h="upload">Upload a CSV<span>from your broker</span></button>
+      <button class="go" data-h="paste">Paste rows<span>"TCS 10 3450"</span></button><button class="go" data-h="restore">Restore a backup<span>Stoklore .json</span></button></div></div>
+      <div class="note">CSV: any broker's holdings export works when it has a symbol (or name) column and a quantity column; the average / buy price column is used when there. Zerodha: Console → Portfolio → Holdings → Download → CSV. Groww, Dhan, Upstox: Holdings → Download. Excel files: save as CSV first.</div>`
+    return window.scrollTo(0, 0)
+  }
+  const v = hd.val, t = v?.total, st = jobState()
+  const rows = v ? sortRows(v.rows, hd.sort, { value: (r) => r.value, pnl: (r) => r.pnl, pnlPct: (r) => r.pnlPct, dayPct: (r) => r.dayPct, sym: (r) => r.sym }) : pf.holdings
+  const dayRows = (v?.rows || []).filter((r) => r.day != null && Math.abs(r.day) >= 1).sort((a, b) => b.day - a.day)
+  const ups = dayRows.filter((r) => r.day > 0).slice(0, 3), downs = dayRows.filter((r) => r.day < 0).slice(-3).reverse()
+  const bySector = new Map()
+  for (const r of v?.rows || []) if (r.value != null) bySector.set(r.sector || 'Other', (bySector.get(r.sector || 'Other') || 0) + r.value)
+  const alloc = [...bySector].sort((a, b) => b[1] - a[1]), allocTop = alloc.slice(0, 7)
+  if (alloc.length > 7) allocTop.push(['Other', alloc.slice(7).reduce((s, x) => s + x[1], 0)])
+  const palette = [T.accent, T.up, T.warning, T.down, T['muted-foreground'], T.foreground, T.border, T.input]
+  const notify = pf.notify, perm = window.Native ? Native.notifyState() : 'off', astate = st.alerts || {}
+  view.innerHTML = `<div class="panel hsum">
+      <div class="fk">Current value${t?.missing ? ` · ${t.missing} without a price` : ''}</div>
+      <div class="fbig">${t ? inr(t.value) : '…'}</div>
+      <div class="kv">${kvHtml([['Today', t ? `<span class="${pctClass(t.day)}">${sinr(t.day)} (${pctText(t.dayPct)})</span>` : '…'],
+        ['P&L', t ? `<span class="${pctClass(t.pnl)}">${sinr(t.pnl)} (${pctText(t.pnlPct)})</span>` : '…'],
+        ['Invested', t ? inr(t.invested) : '…'], ['Holdings', pf.holdings.length]])}</div></div>
+    ${ups.length || downs.length ? `<div class="sec">Today's movers</div><div class="panel">${[...ups, ...downs].map((r) => `<button class="li" data-push="stock/${encodeURIComponent(r.sym)}"><div class="grow"><div class="t1">${esc(r.sym)}</div><div class="t2">${pctSpan(r.dayPct)}</div></div><div class="r ${pctClass(r.day)} b">${sinr(r.day)}</div></button>`).join('')}</div>` : ''}
+    ${allocTop.length && t?.value ? `<div class="sec">By sector</div><div class="panel" style="padding:10px"><div class="breadthbar" style="height:12px;margin:0">${allocTop.map(([, x], i) => `<div style="width:${(x / t.value) * 100}%;background:${palette[i % palette.length]}"></div>`).join('')}</div>
+      <div class="legend" style="padding:8px 0 0">${allocTop.map(([n, x], i) => `<span><i style="background:${palette[i % palette.length]}"></i>${esc(n)} ${fmt((x / t.value) * 100, 1)}%</span>`).join('')}</div></div>` : ''}
+    <div class="sec">Holdings<span class="act"><select class="sel" data-sort="hsort">${H_SORTS.map(([k, l]) => `<option value="${k}"${k === hd.sort ? ' selected' : ''}>${l}</option>`).join('')}</select></span></div>
+    <div class="panel">${rows.map((r) => {
+      const held = heldFor(r.date)
+      return `<button class="li" data-h="hold:${esc(r.id)}"><div class="grow"><div class="t1">${esc(r.sym)} <span class="mute" style="font-weight:400">${qtyText(r.qty)} × ${r.avg != null ? `₹${fmt(r.avg)}` : '—'}</span></div>
+        <div class="t2">${esc(r.name)}${held ? ` · ${held.text}${held.long ? ' <span class="pill">LT</span>' : ''}` : ''}</div></div>
+        <div class="r"><div class="b">${r.value != null ? inr(r.value) : '—'}</div><div class="t2">${r.pnl != null ? `<span class="${pctClass(r.pnl)}">${sinr(r.pnl)}</span>` : ''}${r.dayPct != null ? ` · ${pctSpan(r.dayPct)}` : ''}</div></div></button>`
+    }).join('')}</div>
+    <div class="sec">Alerts<span class="act"><button class="pill" data-h="alert">+ add</button></span></div>
+    <div class="panel">${pf.alerts.length ? pf.alerts.map((a) => {
+      const s = astate[a.id], status = !s ? 'Watching from the next check' : s.done ? 'Fired · done' : s.armed === false ? 'Fired · re-arms when it moves back' : 'Watching'
+      return `<div class="li"><div class="grow"><div class="t1" style="white-space:normal">${esc(ALERT_TEXT(a))}</div><div class="t2">${status}${s?.last ? ` · last ${ago(s.last)}` : ''} · ${a.repeat ? 'every time' : 'once'}</div></div><button class="pill" data-h="adel:${esc(a.id)}">remove</button></div>`
+    }).join('') : '<div class="state" style="padding:16px">No alerts. Add one: "tell me if my holdings fall to ₹1,08,000", "don\'t let me give back more than ₹10,000 of profit", "any stock down 5% today".</div>'}</div>
+    ${(st.log || []).length ? `<div class="note" style="padding-top:6px">Last alert: ${esc(st.log.at(-1).msg)} (${ago(st.log.at(-1).t)})</div>` : ''}
+    <div class="sec">Notifications</div>
+    <div class="btnrow"><div class="seg full">${NOTIFY.map(([k, l]) => `<button data-h="notify:${k}" class="${notify === k ? 'on' : ''}">${l}</button>`).join('')}</div></div>
+    <div class="panel"><div class="li"><div class="grow"><div class="t1">${perm === 'on' ? 'Notifications are on' : 'Notifications are off for Stoklore'}</div>
+      <div class="t2">${notify === 'off' ? 'Only alerts will notify you' : 'Open (09:20), ' + (notify === 'hourly' ? 'every hour, ' : notify === '2h' ? 'every 2 hours, ' : '') + 'close (15:35), trading days'}</div></div>
+      ${perm === 'on' ? '' : '<button class="pill" data-h="perm">allow</button>'}</div></div>
+    <div class="btnrow" style="padding-top:8px"><button class="btn" data-h="now">Send one now</button><button class="btn" data-h="battery">Run on time</button></div>
+    <div class="note">Android checks every 15 minutes at best and can run late when the phone is idle; "Run on time" opens battery settings - set Stoklore to Unrestricted. Alerts are a nudge to look, not a stop-loss.</div>
+    <div class="sec">Manage</div>
+    <div class="btnrow"><button class="btn" data-h="upload">Upload CSV</button><button class="btn" data-h="paste">Paste rows</button></div>
+    <div class="btnrow"><button class="btn" data-h="export">Export backup</button><button class="btn" data-h="clear">${hd.del === 'all' ? 'Tap again: delete all' : 'Delete all'}</button></div>`
+  window.scrollTo(0, top)
+}
+
+// ---- adding by hand: search ET, then quantity, price, date ----
+function holdForm(h) {
+  hd.form = h ? { ...h } : { sym: null, name: null, et: null, qty: null, avg: null, date: null }
+  renderForm(); $('sheet').classList.add('on', 'big')
+}
+function renderForm() {
+  const f = hd.form
+  $('sheet').innerHTML = `<h3>${f.id ? `Edit ${esc(f.sym)}` : 'Add a stock'}</h3>
+    ${f.id ? `<div class="mute">${esc(f.name)}</div>` : `<div class="fxh">Stock</div>
+    <input class="in hin" id="hq" placeholder="Company name or NSE symbol" autocomplete="off" spellcheck="false" value="${esc(f.sym ? `${f.sym}` : '')}">
+    <div id="hres" class="hres">${f.sym ? `<div class="mute">Picked: <b>${esc(f.sym)}</b> · ${esc(f.name)}</div>` : ''}</div>`}
+    <div class="fxh">Quantity</div><input class="in hin" id="hqty" inputmode="decimal" value="${f.qty ?? ''}" placeholder="e.g. 10">
+    <div class="fxh">Average buy price (₹)</div><input class="in hin" id="havg" inputmode="decimal" value="${f.avg ?? ''}" placeholder="e.g. 3450.50">
+    <div class="fxh">Buy date (optional - for holding period and long-term status)</div><input class="in hin" id="hdate" type="date" value="${f.date || ''}">
+    <div class="btnrow fxbtns"><button class="btn" data-h="close">Cancel</button><button class="btn primary" data-h="save">Save</button></div>`
+}
+let hqTimer = 0
+async function holdSearch(q) {
+  const box = $('hres'); if (!box) return
+  if (!q.trim()) { box.innerHTML = ''; return }
+  try {
+    const hits = (await etSearch(q.trim())).filter((x) => x.entityType === 'company' && x.symbol).slice(0, 6)
+    if ($('hq')?.value !== q) return
+    box.innerHTML = hits.length ? hits.map((x) => `<button class="li" data-h="pick:${esc(x.symbol)}|${esc(x.tagId)}|${esc(x.tagName)}"><div class="grow"><div class="t1">${esc(x.symbol)}</div><div class="t2">${esc(x.tagName)}</div></div></button>`).join('')
+      : '<div class="mute">No NSE company matches.</div>'
+  } catch (e) { box.innerHTML = `<div class="down">${esc(e.message)}</div>` }
+}
+function saveForm() {
+  const f = hd.form, qty = parseNum($('hqty').value), avg = parseNum($('havg').value)
+  if (!f.sym) return toast('Pick a stock from the search results')
+  if (!(qty > 0)) return toast('Quantity must be more than 0')
+  if ($('havg').value.trim() && !(avg >= 0)) return toast('Buy price must be a number')
+  const h = { id: `h${f.sym}`, sym: f.sym, name: f.name, et: f.et, qty, avg: avg ?? null, date: $('hdate').value || null }
+  const pf = portfolio(), others = pf.holdings.filter((x) => x.id !== f.id && x.sym !== f.sym)
+  const same = !f.id && pf.holdings.find((x) => x.sym === f.sym)
+  // adding a stock you already hold adds to it (quantity-weighted price), editing replaces it
+  const list = same ? [...others, ...mergeHoldings([same, h])] : [...others, h]
+  if (!savePortfolio({ ...pf, holdings: list })) return
+  closeSheet(); toast(same ? `Added to your ${f.sym}` : `${f.sym} saved`); loadHoldings(); renderHoldings()
+}
+function holdSheet(id) {
+  const r = (hd.val?.rows || []).find((x) => x.id === id) || portfolio().holdings.find((x) => x.id === id)
+  if (!r) return
+  const held = heldFor(r.date)
+  hd.del = null
+  $('sheet').innerHTML = `<h3>${esc(r.sym)}</h3><div class="mute">${esc(r.name)}</div>
+    <div class="kv2"><span>Quantity</span><span>${qtyText(r.qty)}</span><span>Buy price</span><span>${r.avg != null ? `₹${fmt(r.avg)}` : '—'}</span>
+    <span>Invested</span><span>${inr(r.invested)}</span><span>Price</span><span>${r.price != null ? `₹${fmt(r.price)}` : '—'}</span>
+    <span>Value</span><span>${inr(r.value)}</span><span>P&amp;L</span><span class="${pctClass(r.pnl)}">${r.pnl != null ? `${sinr(r.pnl)} (${pctText(r.pnlPct)})` : '—'}</span>
+    <span>Today</span><span class="${pctClass(r.day)}">${r.day != null ? `${sinr(r.day)} (${pctText(r.dayPct)})` : '—'}</span>
+    ${held ? `<span>Held</span><span>${held.text}${held.long ? ' · long term' : ' · short term'}</span>` : ''}</div>
+    <div class="links"><button class="go primary" style="grid-column:span 2" data-push="stock/${encodeURIComponent(r.sym)}">Chart &amp; research<span>NSE:${esc(r.sym)}</span></button>
+    <button class="go" data-h="edit:${esc(r.id)}">Edit<span>quantity, price, date</span></button><button class="go" data-h="del:${esc(r.id)}" id="hdel">Delete<span>from this phone</span></button></div>`
+  $('sheet').classList.add('on')
+}
+
+// ---- import: CSV upload or paste -> review (match each row to an NSE symbol) -> save ----
+function pickFile(accept, onText) {
+  const inp = document.createElement('input')
+  inp.type = 'file'; inp.accept = accept
+  inp.onchange = () => {
+    const f = inp.files?.[0]; if (!f) return
+    if (f.size > 2e6) return toast('That file is too big for a holdings list')
+    const rd = new FileReader(); rd.onload = () => onText(String(rd.result || ''), f.name); rd.onerror = () => toast('Could not read the file'); rd.readAsText(f)
+  }
+  inp.click()
+}
+function pasteSheet() {
+  $('sheet').innerHTML = `<h3>Paste rows</h3><div class="mute" style="font-size:11px">One stock per line: symbol or name, quantity, buy price. Or paste straight from a spreadsheet with its header row.</div>
+    <textarea class="in hin" id="hpaste" rows="8" placeholder="TCS 10 3450&#10;Tata Motors, 20, 712.40&#10;INFY 5 1480" style="height:auto;padding:8px;font:inherit"></textarea>
+    <div class="btnrow fxbtns"><button class="btn" data-h="close">Cancel</button><button class="btn primary" data-h="pasted">Check rows</button></div>`
+  $('sheet').classList.add('on', 'big')
+}
+const ISIN_RE = /^IN[A-Z0-9]{10}$/
+const squash = (s) => String(s || '').toLowerCase().replace(/\b(ltd|limited|the|inc|co)\b|[^a-z0-9]/g, '')
+async function startReview(text, from) {
+  const { rows, skipped } = parseHoldings(text)
+  if (!rows.length) return toast('No rows found - each needs a symbol or name and a quantity')
+  closeSheet()
+  hd.review = { from, skipped, mode: portfolio().holdings.length ? 'add' : 'replace', rows: rows.map((r, i) => ({ ...r, i, status: 'wait' })) }
+  renderReview()
+  let next = 0
+  const work = async () => {
+    while (next < hd.review?.rows.length) {
+      const r = hd.review.rows[next++]
+      if (ISIN_RE.test(r.name.toUpperCase())) { r.status = 'pick'; continue } // ET search can't look up ISINs
+      try {
+        const hits = (await etSearch(r.name)).filter((x) => x.entityType === 'company' && x.symbol)
+        const exact = hits.find((x) => x.symbol.toUpperCase() === r.name.toUpperCase())
+        const byName = hits.find((x) => squash(x.tagName) === squash(r.name) || squash(x.tagName).startsWith(squash(r.name)))
+        const hit = exact || byName || hits[0]
+        const asSym = r.name.toUpperCase().replace(/\s+/g, '')
+        if (hit && (exact || byName || !SYM_RE.test(asSym))) Object.assign(r, { sym: hit.symbol.toUpperCase(), et: String(hit.tagId), label: hit.tagName, status: exact || byName ? 'ok' : 'guess' })
+        // not an ET company (ETFs, some SME stocks): a symbol Moneycontrol has prices for is good enough
+        else if (SYM_RE.test(asSym) && (await barsFor('stock', asSym, '1M').catch(() => [])).length) Object.assign(r, { sym: asSym, et: null, label: 'ETF / priced from Moneycontrol', status: 'ok' })
+        else if (hit) Object.assign(r, { sym: hit.symbol.toUpperCase(), et: String(hit.tagId), label: hit.tagName, status: 'guess' })
+        else r.status = 'pick'
+      } catch { r.status = 'pick' }
+      if (current.name === 'holdings' && hd.review) renderReview()
+    }
+  }
+  await Promise.all([work(), work(), work()])
+}
+function renderReview() {
+  const rv = hd.review, top = window.scrollY
+  const ready = rv.rows.filter((r) => r.sym && r.status !== 'drop').length, waiting = rv.rows.some((r) => r.status === 'wait')
+  const icon = { ok: '<span class="up">✓</span>', guess: '<span class="acc">?</span>', pick: '<span class="down">✕</span>', wait: '<span class="mute">…</span>', drop: '<span class="mute">–</span>' }
+  view.innerHTML = `<div class="sec">Review ${rv.rows.length} rows${rv.from ? ` · ${esc(rv.from)}` : ''}</div>
+    <div class="note" style="padding-bottom:6px">✓ matched · <span class="acc">?</span> best guess - tap to check · <span class="down">✕</span> tap to pick the stock${rv.skipped ? ` · ${rv.skipped} lines skipped (no name or quantity)` : ''}</div>
+    ${portfolio().holdings.length ? `<div class="btnrow"><div class="seg full"><button data-h="rmode:add" class="${rv.mode === 'add' ? 'on' : ''}">Add to my holdings</button><button data-h="rmode:replace" class="${rv.mode === 'replace' ? 'on' : ''}">Replace all</button></div></div>` : ''}
+    <div class="panel">${rv.rows.map((r) => `<button class="li" data-h="rrow:${r.i}"${r.status === 'drop' ? ' style="opacity:.45"' : ''}>${icon[r.status]}
+      <div class="grow"><div class="t1">${esc(r.name)} <span class="mute" style="font-weight:400">${qtyText(r.qty)} × ${r.avg != null ? `₹${fmt(r.avg)}` : '—'}</span></div>
+      <div class="t2">${r.sym ? `${esc(r.sym)} · ${esc(r.label || '')}` : r.status === 'wait' ? 'matching…' : 'no match - tap to pick'}</div></div>
+      <span class="pill" data-h="rdrop:${r.i}">${r.status === 'drop' ? 'keep' : 'skip'}</span></button>`).join('')}</div>
+    <div class="btnrow" style="padding-top:10px"><button class="btn" data-h="rcancel">Cancel</button><button class="btn primary" data-h="rsave"${!ready || waiting ? ' disabled' : ''}>${waiting ? 'Matching…' : `Save ${ready} holdings`}</button></div>`
+  setSmall('Review before saving')
+  window.scrollTo(0, top)
+}
+function pickSheet(i) {
+  const r = hd.review.rows[i]
+  hd.form = { review: i, sym: r.sym, name: r.label }
+  $('sheet').innerHTML = `<h3>Which stock is "${esc(r.name)}"?</h3>
+    <input class="in hin" id="hq" placeholder="Company name or NSE symbol" autocomplete="off" spellcheck="false" value="${esc(ISIN_RE.test(r.name) ? '' : r.name)}">
+    <div id="hres" class="hres"></div><div class="btnrow fxbtns"><button class="btn" data-h="close">Cancel</button></div>`
+  $('sheet').classList.add('on', 'big')
+  holdSearch($('hq').value)
+}
+function saveReview() {
+  const rv = hd.review, pf = portfolio()
+  const rows = rv.rows.filter((r) => r.sym && r.status !== 'drop').map((r) => ({ id: `h${r.sym}`, sym: r.sym, name: r.label || r.name, et: r.et, qty: r.qty, avg: r.avg, date: r.date }))
+  const list = mergeHoldings(rv.mode === 'add' ? [...pf.holdings, ...rows] : rows)
+  if (!savePortfolio({ ...pf, holdings: list, alerts: rv.mode === 'add' ? pf.alerts : pf.alerts.filter((a) => !a.sym || list.some((h) => h.sym === a.sym)) })) return
+  hd.review = null; toast(`Saved ${rows.length} rows · ${list.length} holdings`); renderHoldings(); loadHoldings()
+}
+
+// ---- alerts ----
+function alertSheet() {
+  const t = hd.val?.total
+  if (!hd.alert) hd.alert = { kind: 'below', sym: portfolio().holdings[0]?.sym || null, repeat: true, value: null }
+  const a = hd.alert, k = ALERT_KINDS.find(([x]) => x === a.kind), r = (hd.val?.rows || []).find((x) => x.sym === a.sym)
+  const round = (v) => v >= 1000 ? Math.round(v / 100) * 100 : Math.round(v * 100) / 100
+  const sugg = !t ? null : { below: t.value * 0.9, above: t.value * 1.1, trail: Math.max(t.pnl * 0.25, t.value * 0.05), dayloss: t.value * 0.02,
+    pbelow: r?.price * 0.95, pabove: r?.price * 1.05, stockdrop: 5 }[a.kind]
+  const hint = { below: `Now ${inr(t?.value)}`, above: `Now ${inr(t?.value)}`, trail: `Watches the highest value from now (${inr(t?.value)}) and tells you once it falls this much below it`,
+    dayloss: `Today ${sinr(t?.day)}`, pbelow: r ? `${a.sym} now ₹${fmt(r.price)}` : '', pabove: r ? `${a.sym} now ₹${fmt(r.price)}` : '', stockdrop: 'Each holding is reported once a day' }[a.kind]
+  $('sheet').innerHTML = `<h3>New alert</h3>
+    <div class="fchips">${ALERT_KINDS.map(([x, l]) => `<button data-h="akind:${x}" class="${a.kind === x ? 'on' : ''}">${l.replace(': give back no more than', '')}</button>`).join('')}</div>
+    ${k[3] ? `<div class="fxh">Stock</div><div class="fchips">${portfolio().holdings.map((h) => `<button data-h="asym:${esc(h.sym)}" class="${a.sym === h.sym ? 'on' : ''}">${esc(h.sym)}</button>`).join('')}</div>` : ''}
+    <div class="fxh">${esc(k[1])} (${k[2]})</div><input class="in hin" id="aval" inputmode="decimal" value="${a.value ?? (sugg != null && Number.isFinite(sugg) ? round(sugg) : '')}">
+    <div class="mute" style="font-size:11px;margin-top:4px">${esc(hint || '')}</div>
+    <div class="fxh">Notify</div><div class="seg full"><button data-h="arep:0" class="${!a.repeat ? 'on' : ''}">Once</button><button data-h="arep:1" class="${a.repeat ? 'on' : ''}">Every time it crosses</button></div>
+    <div class="btnrow fxbtns"><button class="btn" data-h="close">Cancel</button><button class="btn primary" data-h="asave">Save alert</button></div>`
+  $('sheet').classList.add('on', 'big')
+}
+function saveAlert() {
+  const a = hd.alert, value = parseNum($('aval').value), pf = portfolio()
+  if (!(value > 0)) return toast('Enter an amount above 0')
+  if (ALERT_KINDS.find(([x]) => x === a.kind)[3] && !a.sym) return toast('Pick the stock')
+  const alert = { id: `a${Date.now().toString(36)}`, kind: a.kind, value, sym: ALERT_KINDS.find(([x]) => x === a.kind)[3] ? a.sym : null,
+    repeat: a.repeat, start: hd.val?.total.value ?? null, created: Date.now() }
+  if (!savePortfolio({ ...pf, alerts: [...pf.alerts, alert] })) return
+  hd.alert = null; closeSheet(); renderHoldings(); toast('Alert saved - checked every 15 minutes in market hours')
+  if (window.Native && Native.notifyState() !== 'on') Native.requestNotify()
+}
+
+// ---- backup: holdings, alerts and settings in one file ----
+const BACKUP_KEYS = /^(theme\.|font\.|chart\.|sectors\.|markets\.|search\.recent$|feed\.filter$|holdings\.sort$)/
+function exportBackup() {
+  const settings = {}
+  try { for (let i = 0; i < localStorage.length; i++) { const k = localStorage.key(i); if (BACKUP_KEYS.test(k)) settings[k] = localStorage.getItem(k) } } catch {}
+  const text = JSON.stringify({ app: 'stoklore', kind: 'backup', v: 1, exported: new Date().toISOString(), settings, portfolio: portfolio() }, null, 1)
+  if (window.Native) Native.exportFile(`stoklore-backup-${todayIST()}.json`, text)
+  else toast('Export works inside the app')
+}
+window.onExported = (ok) => toast(ok ? 'Backup saved' : 'Backup not saved')
+function importBackup(text) {
+  let o
+  try { o = JSON.parse(text) } catch { return toast('That file is not a Stoklore backup') }
+  if (o?.app !== 'stoklore' || o.kind !== 'backup') return toast('That file is not a Stoklore backup')
+  let n = 0
+  for (const [k, v] of Object.entries(o.settings || {})) if (BACKUP_KEYS.test(k) && typeof v === 'string' && v.length < 20000) { store.set(k, v); n++ }
+  const pf = cleanPortfolio(o.portfolio)
+  if (pf.holdings.length && !savePortfolio(pf)) return
+  fd.filter = store.json('feed.filter', null); hd.sort = store.get('holdings.sort', 'value:desc')
+  applyTheme(); applyFonts()
+  toast(`Restored ${pf.holdings.length} holdings, ${pf.alerts.length} alerts and ${n} settings`)
+  route()
+}
+
+window.onNotifyState = () => { if (current.name === 'holdings' && !hd.review && !sheetOn()) renderHoldings() }
+window.onCheckNow = (r) => toast(r === 'ok' ? 'Sent - check your notifications' : `Not sent: ${r}`)
+
+/** Every data-h tap (Holdings screen and its cards). */
+function holdTap(el) {
+  const [k, v] = el.dataset.h.split(/:(.*)/s)
+  const pf = portfolio()
+  switch (k) {
+    case 'add': return holdForm(null)
+    case 'edit': return holdForm(pf.holdings.find((h) => h.id === v))
+    case 'close': hd.alert = null; return closeSheet()
+    case 'save': return saveForm()
+    case 'pick': {
+      const [sym, et, ...name] = v.split('|')
+      if (hd.form?.review != null) {
+        Object.assign(hd.review.rows[hd.form.review], { sym: sym.toUpperCase(), et, label: name.join('|'), status: 'ok' })
+        closeSheet(); return renderReview()
+      }
+      Object.assign(hd.form, { sym: sym.toUpperCase(), et, name: name.join('|') })
+      $('hq').value = hd.form.sym
+      $('hres').innerHTML = `<div class="mute">Picked: <b>${esc(hd.form.sym)}</b> · ${esc(hd.form.name)}</div>`
+      return $('hqty').focus()
+    }
+    case 'hold': return holdSheet(v)
+    case 'del':
+      if (hd.del !== v) { hd.del = v; const b = $('hdel'); if (b) b.innerHTML = 'Tap again to delete<span>can\'t be undone</span>'; return }
+      savePortfolio({ ...pf, holdings: pf.holdings.filter((h) => h.id !== v), alerts: pf.alerts.filter((a) => !a.sym || a.sym !== pf.holdings.find((h) => h.id === v)?.sym) })
+      hd.del = null; closeSheet(); return renderHoldings()
+    case 'clear':
+      if (hd.del !== 'all') { hd.del = 'all'; return renderHoldings() }
+      hd.del = null; savePortfolio({ ...pf, holdings: [], alerts: [] }); return renderHoldings()
+    case 'upload': return pickFile('.csv,.txt,.tsv,text/*', (text, name) => startReview(text, name))
+    case 'paste': return pasteSheet()
+    case 'pasted': return startReview($('hpaste').value, 'pasted')
+    case 'restore': return pickFile('.json,application/json', importBackup)
+    case 'export': return exportBackup()
+    case 'rmode': hd.review.mode = v; return renderReview()
+    case 'rrow': return pickSheet(+v)
+    case 'rdrop': { const r = hd.review.rows[+v]; r.status = r.status === 'drop' ? (r.sym ? 'ok' : 'pick') : 'drop'; return renderReview() }
+    case 'rcancel': hd.review = null; return renderHoldings()
+    case 'rsave': return saveReview()
+    case 'alert': hd.alert = null; return alertSheet()
+    case 'akind': hd.alert.kind = v; hd.alert.value = null; return alertSheet()
+    case 'asym': hd.alert.sym = v; hd.alert.value = null; return alertSheet()
+    case 'arep': hd.alert.repeat = v === '1'; hd.alert.value = parseNum($('aval').value); return alertSheet()
+    case 'asave': return saveAlert()
+    case 'adel': savePortfolio({ ...pf, alerts: pf.alerts.filter((a) => a.id !== v) }); return renderHoldings()
+    case 'notify':
+      savePortfolio({ ...pf, notify: v }); renderHoldings()
+      if (v !== 'off' && window.Native && Native.notifyState() !== 'on') Native.requestNotify()
+      return
+    case 'perm': return window.Native?.requestNotify()
+    case 'now':
+      if (!pf.holdings.length) return toast('Add holdings first')
+      if (window.Native && Native.notifyState() !== 'on') { toast('Allow notifications first'); return Native.requestNotify() }
+      toast('Pricing your holdings…'); return window.Native?.checkNow()
+    case 'battery': return window.Native?.openBattery()
+  }
+}
+
 // ---- Settings: appearance, fonts, chart, feed, data, about -------------------------------------------------
 let selTok = 'up'
-const SET_SECTIONS = [['appearance', 'Appearance'], ['fonts', 'Fonts'], ['chart', 'Chart'], ['feed', 'Feed'], ['data', 'Data'], ['about', 'About']]
+const SET_SECTIONS = [['appearance', 'Appearance'], ['fonts', 'Fonts'], ['chart', 'Chart'], ['feed', 'Feed'], ['data', 'Data & backup'], ['about', 'About']]
 function settingsScreen() {
   setTop({ title: 'Settings', small: 'Theme, fonts, chart, feed',
     sub: `<div class="chips setnav">${SET_SECTIONS.map(([id, l]) => `<button data-act="set-jump" data-v="${id}">${l}</button>`).join('')}</div>` })
@@ -938,8 +1324,10 @@ function renderSettings() {
     <div class="btnrow"><button class="btn" data-act="feed-unsee">Show today's seen cards again</button></div>
 
     <div class="sec" id="set-data">Data</div>
+    <div class="btnrow"><button class="btn" data-h="export">Export backup</button><button class="btn" data-h="restore">Restore backup</button></div>
+    <div class="note" style="padding-bottom:8px">One .json file with your holdings, alerts and every setting here - keep it in Drive or send it to yourself, and restore it on a new phone.</div>
     <div class="btnrow"><button class="btn" data-act="clear-recent">Clear recent searches</button><button class="btn" data-act="clear-cache">Reload all data</button></div>
-    <div class="note">Feeds refresh every 5 minutes on screen. Nothing you do here leaves the phone.</div>
+    <div class="note">Feeds refresh every 5 minutes on screen. Holdings and settings stay on this phone; only stock symbols go to ET and Moneycontrol for prices.</div>
 
     <div class="sec" id="set-about">About</div>
     <div class="note">Stoklore ${esc(appVersion())} · public market screens: index quotes and charts from Moneycontrol; sectors, movers, indices, search and headlines from ET Markets. Screens that need a login or Stoklore's own server (journal, watchlists, earnings, events, scans, shareholding) stay on the web app; NSE's and BSE's own feeds refuse apps outside a browser.</div>`
@@ -960,6 +1348,7 @@ document.addEventListener('click', (e) => {
   if (q('[data-back]')) return history.back()
   if ((el = q('[data-tab]'))) return goTab(el.dataset.tab)
   if ((el = q('[data-fx]'))) return filterTap(el)
+  if ((el = q('[data-h]')) && !el.disabled) return holdTap(el)
   if (q('#sheet')) return // taps inside the card keep it open
   if (sheetOn()) { closeSheet(); if (!q('[data-m]')) return }
   if ((el = q('[data-member]'))) return openMember(el.dataset.member, el)
@@ -1053,6 +1442,7 @@ document.addEventListener('click', (e) => {
 })
 document.addEventListener('change', (e) => {
   const t = e.target, d = t.dataset || {}
+  if (d.sort === 'hsort') { hd.sort = t.value; store.set('holdings.sort', t.value); return renderHoldings() }
   if (d.sort === 'isort') { mk.isort = t.value; store.set('markets.isort', t.value); return renderIndices() }
   if (d.sort) {
     const key = { map: 'mapSort', list: 'listSort', member: 'memberSort' }[d.sort]
@@ -1064,6 +1454,7 @@ document.addEventListener('input', (e) => {
   const t = e.target
   if (t.id === 'sfilter') { sx.filter = t.value; return renderSectors() }
   if (t.id === 'ifilter') { mk.ifilter = t.value; return renderIndices() }
+  if (t.id === 'hq') { clearTimeout(hqTimer); hqTimer = setTimeout(() => holdSearch(t.value), 250); return }
   if (t.id === 'q') { sr.q = t.value; clearTimeout(sr.timer); sr.timer = setTimeout(runSearch, 250); return }
   if (t.dataset?.color && setColor(t.dataset.color, t.value)) { // live while the picker is open
     const row = t.closest('.tok'); row.querySelector('.cur').style.background = t.value; row.querySelector('.hex').value = t.value

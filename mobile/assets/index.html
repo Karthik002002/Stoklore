@@ -230,6 +230,16 @@
   .fsizes { display: flex; flex-direction: column; gap: 14px; flex: 1; justify-content: center; }
   .fsz { display: grid; gap: 5px; }
   .note { padding: 0 10px 12px; font-size: 11px; color: var(--muted-foreground); line-height: 1.5; }
+  /* ---- holdings ---- */
+  .hsum { padding: 12px; display: grid; gap: 6px; margin-top: 10px; }
+  .hsum .kv { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; margin-top: 4px; }
+  .hsum .kv div:nth-last-child(-n+2) { border-bottom: 0; }
+  .hin { width: 100%; margin-top: 6px; display: block; }
+  textarea.hin { resize: vertical; min-height: 120px; }
+  .hres { margin-top: 6px; max-height: 38vh; overflow-y: auto; }
+  .hres .li { padding: 8px 4px; }
+  .btn:disabled { opacity: .5; }
+  #sheet .seg.full { margin-top: 6px; }
   /* ---- settings: section jump chips, fonts ---- */
   .setnav { padding: 0; flex: 1; }
   .setnav button { height: 26px; padding: 0 10px; }

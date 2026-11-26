@@ -138,4 +138,28 @@ assert.ok(L.fontStack('Playfair Display').includes('system-ui')); assert.equal(L
 assert.equal(L.googleFontUrl('Space Grotesk'), 'https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700&display=swap')
 assert.equal(L.googleFontUrl('Lobster', false), 'https://fonts.googleapis.com/css2?family=Lobster&display=swap')
 assert.ok(L.FONTS.every(([f]) => f.startsWith('system-') || L.fontNameOk(f)))
+// holdings: numbers, CSV with headers (broker style), headerless paste, merge, value, held-for, cleaning
+assert.equal(L.parseNum('₹1,20,000.50'), 120000.5); assert.equal(L.parseNum('Rs. 3450'), 3450); assert.equal(L.parseNum('abc'), null); assert.equal(L.parseNum(''), null)
+const zer = 'Instrument,Qty.,Avg. cost,LTP,Cur. val,P&L\nTCS,10,"3,450.50",3600,36000,1495\n"M&M",5,2800,2900,14500,500\nTotal,,,,50500,1995\n'
+const pz = L.parseHoldings(zer)
+assert.deepEqual(pz.rows.map((r) => [r.name, r.qty, r.avg]), [['TCS', 10, 3450.5], ['M&M', 5, 2800]]); assert.equal(pz.skipped, 1)
+const groww = 'Stock Name\tISIN\tQuantity\tAverage buy price\tBuy date\nTata Motors\tINE155A01022\t20\t712.4\t10/01/2024\n'
+const pg = L.parseHoldings(groww)
+assert.deepEqual(pg.rows[0], { name: 'Tata Motors', qty: 20, avg: 712.4, date: '2024-01-10', line: 2 })
+const paste = L.parseHoldings('TCS 10 3450\nTata Motors, 20, 712.40\nINFY 3\n\nnonsense\n')
+assert.deepEqual(paste.rows.map((r) => [r.name, r.qty, r.avg]), [['TCS', 10, 3450], ['Tata Motors', 20, 712.4], ['INFY', 3, null]]); assert.equal(paste.skipped, 1)
+assert.equal(L.normDate('10-Jan-2024'), '2024-01-10'); assert.equal(L.normDate('2024-01-10T00:00'), '2024-01-10'); assert.equal(L.normDate('soon'), null)
+const mh = L.mergeHoldings([{ sym: 'TCS', qty: 10, avg: 100, date: '2024-02-01' }, { sym: 'TCS', qty: 30, avg: 200, date: '2023-05-01' }, { sym: 'INFY', qty: 1, avg: 5 }])
+assert.deepEqual(mh[0], { sym: 'TCS', qty: 40, avg: 175, date: '2023-05-01' }); assert.equal(mh.length, 2)
+const pv = L.valuePortfolio([{ sym: 'A', qty: 10, avg: 100 }, { sym: 'B', qty: 5, avg: null }, { sym: 'C', qty: 1, avg: 50 }],
+  (h) => ({ A: { price: 120, prev: 110 }, B: { price: 40, prev: 50 } })[h.sym])
+assert.deepEqual([pv.total.value, pv.total.pnl, pv.total.day, pv.total.priced, pv.total.missing], [1400, 200, 50, 2, 1])
+assert.equal(pv.total.pnlPct, 20); assert.equal(+pv.total.dayPct.toFixed(4), +(50 / 1350 * 100).toFixed(4)); assert.equal(pv.total.invested, 1050)
+assert.equal(pv.rows[0].dayPct.toFixed(4), (120 / 110 * 100 - 100).toFixed(4))
+const hf = L.heldFor('2024-01-10', Date.parse('2025-04-20T12:00:00+05:30')); assert.ok(hf.long && hf.text === '1y 3m', JSON.stringify(hf))
+assert.equal(L.heldFor('2026-11-01', Date.parse('2026-11-26T12:00:00+05:30')).long, false); assert.equal(L.heldFor(null), null)
+const cp = L.cleanPortfolio({ holdings: [{ sym: 'TCS', qty: 10, avg: 1, et: '8345' }, { sym: 'bad sym!', qty: 1 }, { sym: 'X', qty: -1 }, { sym: 'Y', qty: 1, avg: 'x' }],
+  alerts: [{ kind: 'below', value: 1000 }, { kind: 'pbelow', value: 5, sym: 'NOPE' }, { kind: 'pabove', value: 5, sym: 'TCS' }, { kind: 'rm -rf', value: 1 }, { kind: 'above', value: NaN }], notify: 'spam' })
+assert.deepEqual(cp.holdings.map((h) => h.sym), ['TCS']); assert.deepEqual(cp.alerts.map((a) => a.kind), ['below', 'pabove']); assert.equal(cp.notify, 'hourly')
+assert.deepEqual(L.cleanPortfolio(null), { v: 1, holdings: [], alerts: [], notify: 'hourly' })
 console.log('mobile/check.mjs: all passed')

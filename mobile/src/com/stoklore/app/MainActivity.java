@@ -1,34 +1,37 @@
 package com.stoklore.app;
 
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
-import android.content.ActivityNotFoundException;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.provider.Settings;
 import android.webkit.JavascriptInterface;
+import android.webkit.ValueCallback;
+import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.widget.Toast;
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
+import java.io.OutputStream;
 import java.util.Arrays;
 import java.util.List;
 import org.json.JSONObject;
 
-/** One WebView showing assets/index.html. The page asks Java for HTTP (a native request carries
- *  ET's Origin/Referer headers and sidesteps CORS, which a page fetch can't) and to open links in
- *  the Dhan / TradingView apps. */
+/** One WebView showing assets/index.html. The page asks Java for HTTP (a native request carries each site's
+ *  Origin/Referer and sidesteps CORS), to open links in the Dhan / TradingView apps, to keep the holdings
+ *  file the background job (PortfolioJob) reads, and for files, notifications and system settings. */
 public class MainActivity extends Activity {
-    // the only hosts the page may fetch from
-    private static final List<String> HOSTS = Arrays.asList(
-        "etmarketsapis.indiatimes.com", "etsearch.indiatimes.com", "dhan.co", "priceapi.moneycontrol.com",
-        "economictimes.indiatimes.com"); // the last one only for the Feed's headline RSS
+    private static final int REQ_FILE = 1, REQ_EXPORT = 2, REQ_NOTIFY = 3;
+    private static final String NOTIFY_PERM = "android.permission.POST_NOTIFICATIONS"; // API 33+
+    private static final List<String> READABLE = Arrays.asList(PortfolioJob.PORTFOLIO, PortfolioJob.STATE);
 
     private WebView web;
+    private ValueCallback<Uri[]> fileCallback;
+    private String exportText;
 
     @Override
     protected void onCreate(Bundle state) {
@@ -39,50 +42,50 @@ public class MainActivity extends Activity {
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         web.addJavascriptInterface(this, "Native");
+        // <input type=file> (holdings CSV, backup JSON) opens Android's file picker
+        web.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> cb, FileChooserParams params) {
+                if (fileCallback != null) fileCallback.onReceiveValue(null);
+                fileCallback = cb;
+                Intent i = new Intent(Intent.ACTION_GET_CONTENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
+                try {
+                    startActivityForResult(Intent.createChooser(i, "Choose a file"), REQ_FILE);
+                } catch (ActivityNotFoundException e) {
+                    fileCallback = null;
+                    return false;
+                }
+                return true;
+            }
+        });
         setContentView(web);
-        web.loadUrl("file:///android_asset/index.html");
+        web.loadUrl("file:///android_asset/index.html" + routeOf(getIntent()));
+        PortfolioJob.schedule(this); // keeps the background job in step after an update
     }
 
-    /** GETs `url` on a background thread, then calls window.onNative(id, status, body).
-     *  status is the HTTP code, or 0 when the request failed (body is then the error). */
+    /** A notification tap opens the app on Holdings. */
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        String r = routeOf(intent);
+        if (!r.isEmpty()) web.evaluateJavascript("location.hash=" + JSONObject.quote(r), null);
+    }
+
+    private static String routeOf(Intent i) {
+        return i != null && "holdings".equals(i.getStringExtra("route")) ? "#/holdings" : "";
+    }
+
+    /** GETs `url` on a background thread, then calls window.onNative(id, status, body). */
     @JavascriptInterface
     public void get(final String id, final String url) {
         new Thread(() -> {
-            int status = 0;
-            String body = "";
-            try {
-                URL u = new URL(url);
-                if (!"https".equals(u.getProtocol()) || !HOSTS.contains(u.getHost())) throw new Exception("host not allowed: " + u.getHost());
-                HttpURLConnection c = (HttpURLConnection) u.openConnection();
-                c.setConnectTimeout(15000);
-                c.setReadTimeout(20000);
-                c.setRequestProperty("Accept", "application/json, text/javascript, */*; q=0.01");
-                // each feed is the one its own site's pages call, so send that site as the referrer
-                String site = u.getHost().endsWith("moneycontrol.com") ? "https://www.moneycontrol.com" : "https://economictimes.indiatimes.com";
-                c.setRequestProperty("Origin", site);
-                c.setRequestProperty("Referer", site + "/");
-                c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36");
-                status = c.getResponseCode();
-                if (status == 200) {
-                    try (InputStream in = c.getInputStream()) {
-                        ByteArrayOutputStream out = new ByteArrayOutputStream();
-                        byte[] buf = new byte[16384];
-                        for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
-                        body = out.toString("UTF-8");
-                    }
-                }
-                c.disconnect();
-            } catch (Exception e) {
-                status = 0;
-                body = String.valueOf(e.getMessage());
-            }
-            final String js = "window.onNative(" + JSONObject.quote(id) + "," + status + "," + JSONObject.quote(body) + ")";
+            Http.Res r = Http.get(url);
+            final String js = "window.onNative(" + JSONObject.quote(id) + "," + r.status + "," + JSONObject.quote(r.body) + ")";
             runOnUiThread(() -> web.evaluateJavascript(js, null));
         }).start();
     }
 
-    /** Opens `url` in the app `pkg` when it's installed and handles the link, else (or with no pkg) in
-     *  the browser. */
+    /** Opens `url` in the app `pkg` when it's installed and handles the link, else (or with no pkg) in the browser. */
     @JavascriptInterface
     public void open(final String pkg, final String url) {
         runOnUiThread(() -> {
@@ -149,6 +152,116 @@ public class MainActivity extends Activity {
     public String version() {
         try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionName; }
         catch (Exception e) { return ""; }
+    }
+
+    // ---- holdings: the page's portfolio.json, which the background job reads ----
+
+    /** portfolio.json or portfolio_state.json as text ("{}" when there is none). */
+    @JavascriptInterface
+    public String readFile(String name) {
+        return READABLE.contains(name) ? PortfolioJob.read(this, name).toString() : "{}";
+    }
+
+    /** Saves portfolio.json (the only file the page may write) and starts / stops the job to match. */
+    @JavascriptInterface
+    public boolean savePortfolio(String json) {
+        try {
+            new JSONObject(json); // refuse anything that isn't JSON
+            PortfolioJob.write(this, PortfolioJob.PORTFOLIO, json);
+            PortfolioJob.schedule(this);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** "Send one now": prices the holdings and posts a summary notification; answers window.onCheckNow(result). */
+    @JavascriptInterface
+    public void checkNow() {
+        new Thread(() -> {
+            String r;
+            try { r = PortfolioJob.run(this, true); } catch (Exception e) { r = String.valueOf(e.getMessage()); }
+            final String js = "window.onCheckNow && window.onCheckNow(" + JSONObject.quote(r) + ")";
+            runOnUiThread(() -> web.evaluateJavascript(js, null));
+        }).start();
+    }
+
+    /** "on" when notifications can be shown, else "off". */
+    @JavascriptInterface
+    public String notifyState() {
+        boolean perm = Build.VERSION.SDK_INT < 33 || checkSelfPermission(NOTIFY_PERM) == PackageManager.PERMISSION_GRANTED;
+        return perm && getSystemService(android.app.NotificationManager.class).areNotificationsEnabled() ? "on" : "off";
+    }
+
+    /** Asks for the notification permission (Android 13+), or opens the app's notification settings when it
+     *  was refused before. The page hears back through window.onNotifyState(). */
+    @JavascriptInterface
+    public void requestNotify() {
+        runOnUiThread(() -> {
+            if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(NOTIFY_PERM) != PackageManager.PERMISSION_GRANTED
+                && !getSharedPreferences("ask", MODE_PRIVATE).getBoolean("notifyAsked", false)) {
+                getSharedPreferences("ask", MODE_PRIVATE).edit().putBoolean("notifyAsked", true).apply();
+                requestPermissions(new String[]{NOTIFY_PERM}, REQ_NOTIFY);
+                return;
+            }
+            startActivity(new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, getPackageName()));
+        });
+    }
+
+    /** The phone's battery-optimisation list, where Stoklore can be set to "unrestricted" so the job runs on time. */
+    @JavascriptInterface
+    public void openBattery() {
+        runOnUiThread(() -> {
+            try { startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)); }
+            catch (ActivityNotFoundException e) { startActivity(new Intent(Settings.ACTION_SETTINGS)); }
+        });
+    }
+
+    /** Saves `text` to a file the user picks (backup export); answers window.onExported(ok). */
+    @JavascriptInterface
+    public void exportFile(final String fileName, final String text) {
+        runOnUiThread(() -> {
+            exportText = text;
+            Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                .setType("application/json").putExtra(Intent.EXTRA_TITLE, fileName);
+            try { startActivityForResult(i, REQ_EXPORT); } catch (ActivityNotFoundException e) { exported(false); }
+        });
+    }
+
+    private void exported(boolean ok) {
+        exportText = null;
+        web.evaluateJavascript("window.onExported && window.onExported(" + ok + ")", null);
+    }
+
+    @Override
+    protected void onActivityResult(int req, int res, Intent data) {
+        super.onActivityResult(req, res, data);
+        Uri uri = res == RESULT_OK && data != null ? data.getData() : null;
+        if (req == REQ_FILE && fileCallback != null) {
+            fileCallback.onReceiveValue(uri == null ? null : new Uri[]{uri});
+            fileCallback = null;
+        } else if (req == REQ_EXPORT) {
+            if (uri == null || exportText == null) { exported(false); return; }
+            try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+                out.write(exportText.getBytes("UTF-8"));
+                exported(true);
+            } catch (Exception e) {
+                exported(false);
+            }
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int req, String[] perms, int[] results) {
+        super.onRequestPermissionsResult(req, perms, results);
+        if (req == REQ_NOTIFY) web.evaluateJavascript("window.onNotifyState && window.onNotifyState()", null);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // back from the system's notification / battery settings: let the page re-read the state
+        if (web != null) web.evaluateJavascript("window.onNotifyState && window.onNotifyState()", null);
     }
 
     @Override

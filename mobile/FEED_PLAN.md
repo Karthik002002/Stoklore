@@ -1,6 +1,6 @@
 # Plan: a "doom scroll" market feed for the Stoklore app
 
-Status: **plan for review**. No code is written yet.
+Status: **phase 1 built in v1.6** (Feed as the first tab, 40-card pages with the themed pages after). Phase 2 (headlines) not started.
 
 ---
 
@@ -250,3 +250,13 @@ Optional extra apps, which each need a check on a phone first:
 - **Zerodha Kite:** its chart links need Zerodha's internal instrument id, which the app doesn't have. It can only get "copy symbol and open Kite", the same as Dhan.
 
 Which apps go on the card is your call. TradingView and Dhan come at no cost.
+
+---
+
+## 12. As built (v1.6), where it differs from the plan
+
+- **Mover weight is `abs(change%) × log10(mcap + 10)²`.** With plain `log10`, a 9% move in a ₹600 Cr stock outranked a 4% move in a ₹5L Cr one, the opposite of §10. Squaring the log fixes that.
+- **ET's sector % is sometimes nonsense** (REITs and InvITs at −100%, "General" at −65%). Any sector move past ±20% is replaced by its members' mcap-weighted move (`saneSector`).
+- **Against-the-tide cards need the stock itself to move at least 1%.** Without that, a +0.02% stock "against" its sector filled the slots.
+- **Volume standout is a highlighted fact line**, not its own card: "3.2× its usual volume", shown when the multiple is 2× or more.
+- **Seen today** counts only cards that reached the screen (`feed.seen.<IST date>`); older days' keys are removed. The final card has **Start today's feed over**.

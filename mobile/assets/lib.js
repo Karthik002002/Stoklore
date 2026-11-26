@@ -208,4 +208,141 @@ const researchLinks = (sym, et) => [
   { name: 'Google Finance', hint: 'Quick quote', url: `https://www.google.com/finance/quote/${encodeURIComponent(sym)}:NSE` },
 ]
 
-if (typeof module !== 'undefined') module.exports = { fmt, pctText, croreShort, hexRgb, isHex, luminance, heat, bucketColors, THEMES, THEME_TOKENS, resolveTheme, sectorRow, sectorSummary, sortRows, allStocks, movers, indexRow, mcQuote, mcHistoryUrl, mcBars, barStats, ticks, researchLinks, RANGES }
+// ---- the Feed: 40-card pages picked from the sector feed alone (FEED_PLAN.md §10) ----------------
+// No randomness: the same data + the same `seen` gives the same cards.
+const FEED_PAGE = 40, FEED_MIN_MCAP = 500, FEED_PER_SECTOR = 3, FEED_MIN_SMALLER = 5
+const FEED_THEMES = [['top', 'Top of the day'], ['sectors', 'Sector deep dive'], ['smaller', 'Mid and small caps'], ['quiet', 'Big and quiet'], ['rest', 'Everything else']]
+// page 1: 2 + 10 movers + sector + 7 + 10 + size + 5 sectors + 3 indices + the biggest surprise left = 40
+const FEED_PAGE1 = ['idx:in;NSX', 'breadth', ...Array(10).fill('mv'), 'sec', 'tide', 'mv', 'tide', 'mv', 'tide', 'mv', 'tide',
+  ...Array(5).fill(['mv', 'tide']).flat(), 'size', 'sec', 'sec', 'sec', 'sec', 'sec', 'idx:in;SEN', 'idx:in;nbx', 'idx:in;IDXN', 'tide']
+const capWord = { large: 'Large cap', mid: 'Mid cap', small: 'Small cap' }
+// squared log: a 4% move in a 5L Cr company (130) outranks a 9% move in a 600 Cr one (70)
+const sizeWeight = (m) => Math.log10((m.mcap_cr || 0) + 10) ** 2
+const TIDE_MIN_MOVE = 1
+/** ET's sector % is its market-cap change, which breaks for some sectors (REITs, InvITs show -100%).
+ *  A move past ±20% is replaced by the members' mcap-weighted move. */
+function saneSector(s) {
+  if (s.change_pct != null && Math.abs(s.change_pct) <= 20) return s
+  const ms = s.members.filter((m) => m.change_pct != null && m.mcap_cr > 0)
+  const w = ms.reduce((t, m) => t + m.mcap_cr, 0)
+  return { ...s, change_pct: w ? ms.reduce((t, m) => t + m.change_pct * m.mcap_cr, 0) / w : null, mcap_change_cr: null }
+}
+
+/** Everything a page draws from, scored once per data load. */
+function feedPools(sectors) {
+  sectors = sectors.map(saneSector)
+  const all = allStocks(sectors)
+  const stocks = all.filter((m) => (m.mcap_cr || 0) >= FEED_MIN_MCAP && m.price != null && m.change_pct != null && (m.volume_k || 0) > 0)
+  const byId = new Map(sectors.map((s) => [s.id, s]))
+  const desc = (a, b) => b.score - a.score
+  const best = new Set(), worst = new Set()
+  for (const s of sectors) {
+    const r = s.members.filter((m) => m.change_pct != null).sort((a, b) => b.change_pct - a.change_pct)
+    if (r.length > 1) { best.add(r[0].id); worst.add(r.at(-1).id) }
+  }
+  const sizes = ['large', 'mid', 'small'].map((cap) => {
+    const g = stocks.filter((m) => m.cap === cap)
+    return { cap, n: g.length, avg: g.length ? g.reduce((t, m) => t + m.change_pct, 0) / g.length : null }
+  })
+  return {
+    sectors, stocks, byId, best, worst, sizes,
+    movers: stocks.filter((m) => m.change_pct !== 0).map((m) => ({ m, score: Math.abs(m.change_pct) * sizeWeight(m) })).sort(desc),
+    tide: stocks.map((m) => ({ m, s: byId.get(m.sectorId) })).filter(({ m, s }) => s?.change_pct != null && s.change_pct * m.change_pct < 0 && Math.abs(m.change_pct) >= TIDE_MIN_MOVE)
+      .map((x) => ({ ...x, score: Math.abs(x.m.change_pct - x.s.change_pct) * sizeWeight(x.m) })).sort(desc),
+    secs: sectors.filter((s) => s.change_pct != null).map((s) => {
+      const n = (s.advance ?? 0) + (s.decline ?? 0)
+      return { s, score: Math.abs(s.change_pct) + (n ? Math.abs((s.advance ?? 0) - (s.decline ?? 0)) / n : 0) }
+    }).sort(desc),
+    quiet: stocks.filter((m) => m.cap === 'large' && Math.abs(m.change_pct) <= 0.3).sort((a, b) => (b.mcap_cr || 0) - (a.mcap_cr || 0)),
+  }
+}
+const dirWord = (v) => (v >= 0 ? 'up' : 'down')
+function moverStory(p, m) {
+  const where = `${capWord[m.cap] || 'Stock'} · ${m.sector}`
+  if (p.best.has(m.id)) return `Best in ${m.sector} today · ${capWord[m.cap] || ''}`.trim()
+  if (p.worst.has(m.id)) return `Worst in ${m.sector} today · ${capWord[m.cap] || ''}`.trim()
+  return `${m.change_pct > 0 ? 'Among the day\'s biggest gainers' : 'Among the day\'s biggest losers'} · ${where}`
+}
+const tideStory = (m, s) => `${dirWord(m.change_pct) === 'up' ? 'Up' : 'Down'} ${fmt(Math.abs(m.change_pct))}% while ${s.name} is ${dirWord(s.change_pct)} ${fmt(Math.abs(s.change_pct))}%`
+function sectorStory(s) {
+  const r = s.members.filter((m) => m.change_pct != null).sort((a, b) => b.change_pct - a.change_pct)
+  const lead = (s.change_pct ?? 0) >= 0 ? r[0] : r.at(-1)
+  const n = (s.advance ?? 0) + (s.decline ?? 0)
+  return `${s.advance ?? 0} of ${n} up${lead ? ` · ${(s.change_pct ?? 0) >= 0 ? 'led' : 'dragged'} by ${lead.name} ${pctText(lead.change_pct)}` : ''}`
+}
+
+/** Page `page` (0-based) of the feed. Adds what it picks to `seen` ('s:<company id>', 'sec:<sector id>').
+ *  Returns { theme, label, cards } - cards end with an 'end' card, or are [] when the theme had nothing left. */
+function feedPage(p, page, seen) {
+  const [theme, label] = FEED_THEMES[Math.min(page, FEED_THEMES.length - 1)]
+  const cards = [], perSector = new Map()
+  let wantUp = true, smaller = 0
+  const free = (m) => !seen.has(`s:${m.id}`) && (perSector.get(m.sectorId) || 0) < FEED_PER_SECTOR
+  const take = (card) => {
+    const m = card.member
+    seen.add(`s:${m.id}`); perSector.set(m.sectorId, (perSector.get(m.sectorId) || 0) + 1)
+    if (card.kind === 'mover' && m.cap !== 'large') smaller++
+    cards.push({ id: `s:${m.id}`, ...card }); return true
+  }
+  const mover = (ok = () => true) => {
+    const pool = p.movers.filter((x) => free(x.m) && ok(x.m))
+    const hit = pool.find((x) => x.m.change_pct > 0 === wantUp) || pool[0] // alternate gain / loss while both last
+    if (!hit) return false
+    wantUp = !(hit.m.change_pct > 0)
+    return take({ kind: 'mover', member: hit.m, story: moverStory(p, hit.m) })
+  }
+  const tide = () => {
+    const hit = p.tide.find((x) => free(x.m))
+    return hit ? take({ kind: 'tide', member: hit.m, sector: hit.s, story: tideStory(hit.m, hit.s) }) : false
+  }
+  const sec = () => {
+    const hit = p.secs.find((x) => !seen.has(`sec:${x.s.id}`))
+    if (!hit) return false
+    seen.add(`sec:${hit.s.id}`); cards.push({ kind: 'sector', id: `sec:${hit.s.id}`, sector: hit.s, story: sectorStory(hit.s) }); return true
+  }
+  if (theme === 'top') {
+    FEED_PAGE1.forEach((slot, i) => {
+      if (slot.startsWith('idx:')) return cards.push({ kind: 'index', id: `idx:${slot.slice(4)}`, code: slot.slice(4) })
+      if (slot === 'breadth') return cards.push({ kind: 'breadth', id: 'breadth', summary: sectorSummary(p.sectors) })
+      if (slot === 'size') return cards.push({ kind: 'size', id: 'size', sizes: p.sizes })
+      if (slot === 'tide') return tide() || mover()
+      if (slot === 'sec') return sec() || mover()
+      // keep enough mid / small caps: once the mover slots left only just cover the shortfall, take those only
+      const moverSlotsLeft = FEED_PAGE1.slice(i).filter((s) => s === 'mv').length
+      if (FEED_MIN_SMALLER - smaller >= moverSlotsLeft && mover((m) => m.cap !== 'large')) return
+      mover()
+    })
+  } else if (theme === 'sectors') { while (cards.length < FEED_PAGE && sec());
+  } else if (theme === 'smaller') { while (cards.length < FEED_PAGE && mover((m) => m.cap !== 'large'));
+  } else if (theme === 'quiet') {
+    for (const m of p.quiet) {
+      if (cards.length >= FEED_PAGE) break
+      if (free(m)) take({ kind: 'quiet', member: m, story: `Barely moved (${pctText(m.change_pct)}) · ${croreShort(m.mcap_cr)} · ${m.sector}` })
+    }
+  } else { while (cards.length < FEED_PAGE && (mover() || tide())); }
+  const stockCards = cards.filter((c) => c.member)
+  if (!stockCards.length && !cards.some((c) => c.kind === 'sector') && theme !== 'top') return { theme, label, cards: [] }
+  cards.push({ kind: 'end', id: `end:${page}`, page, label, next: FEED_THEMES[Math.min(page + 1, FEED_THEMES.length - 1)][1],
+    shown: cards.length, up: stockCards.filter((c) => c.member.change_pct > 0).length, down: stockCards.filter((c) => c.member.change_pct < 0).length,
+    sectors: cards.filter((c) => c.kind === 'sector').length })
+  return { theme, label, cards }
+}
+
+/** What a stock card's 6M bars add: distance from the 6M high, the run of up / down closes, today's
+ *  volume against the 20 sessions before it (volume_k is ET's, in thousands of shares). */
+function barFacts(bars, volumeK) {
+  if (!bars?.length) return null
+  const last = bars.at(-1), hi = Math.max(...bars.map((b) => b.h))
+  let streak = 0
+  for (let i = bars.length - 1; i > 0; i--) {
+    const d = Math.sign(bars[i].c - bars[i - 1].c)
+    if (!d || (streak && Math.sign(streak) !== d)) break
+    streak += d
+  }
+  const prior = bars.slice(-21, -1).filter((b) => b.v > 0)
+  const avg = prior.length ? prior.reduce((t, b) => t + b.v, 0) / prior.length : 0
+  const vol = volumeK ? volumeK * 1000 : last.v
+  return { fromHigh: hi ? (last.c / hi - 1) * 100 : null, streak, volX: avg && vol ? vol / avg : null }
+}
+
+if (typeof module !== 'undefined') module.exports = { fmt, pctText, croreShort, hexRgb, isHex, luminance, heat, bucketColors, THEMES, THEME_TOKENS, resolveTheme, sectorRow, sectorSummary, sortRows, allStocks, movers, indexRow, mcQuote, mcHistoryUrl, mcBars, barStats, ticks, researchLinks, RANGES, feedPools, feedPage, barFacts, saneSector, FEED_PAGE1, FEED_PAGE, FEED_THEMES }

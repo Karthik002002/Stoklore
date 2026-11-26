@@ -22,6 +22,7 @@ const I = {
   sectors: svg('<rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>'),
   search: svg('<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>'),
   theme: svg('<circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor"/>'),
+  feed: svg('<rect x="5" y="3" width="14" height="13" rx="2"/><path d="M8 20h8"/><path d="M10 23h4"/>'),
 }
 function toast(msg) {
   const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg
@@ -106,7 +107,7 @@ function setColor(k, v) {
 }
 
 // ---- shell: top bar, tabs, routing -----------------------------------------------------------------
-const TABS = [['markets', 'Markets', I.markets], ['sectors', 'Sectors', I.sectors], ['search', 'Search', I.search], ['settings', 'Theme', I.theme]]
+const TABS = [['feed', 'Feed', I.feed], ['markets', 'Markets', I.markets], ['sectors', 'Sectors', I.sectors], ['search', 'Search', I.search], ['settings', 'Theme', I.theme]]
 const TAB_IDS = TABS.map((t) => t[0])
 $('tabs').innerHTML = TABS.map(([id, label, ic]) => `<button data-tab="${id}">${ic}<span>${label}</span></button>`).join('')
 const refreshBtn = `<button class="icon" id="refresh" data-act="refresh" aria-label="Refresh">${I.refresh}</button>`
@@ -117,7 +118,7 @@ function setTop({ title, small = '', back = false, right = '', sub = '' }) {
 }
 const setSmall = (html) => { const s = $('top-small'); if (s) s.innerHTML = html }
 
-let nav = 0, navDir = null, current = { name: '' }, lastTab = 'markets', chart = null
+let nav = 0, navDir = null, current = { name: '' }, lastTab = 'feed', chart = null
 const scrollMem = {}
 function goTab(t) {
   if (location.hash === `#/${t}`) { window.scrollTo({ top: 0, behavior: 'smooth' }); return }
@@ -125,11 +126,12 @@ function goTab(t) {
 }
 function push(path) { navDir = 'push'; location.hash = `#/${path}` }
 function route() {
-  const [name, ...rest] = (location.hash.replace(/^#\/?/, '') || 'markets').split('/')
+  const [name, ...rest] = (location.hash.replace(/^#\/?/, '') || 'feed').split('/')
   const arg = decodeURIComponent(rest.join('/'))
   const dir = navDir || 'pop'; navDir = null
   nav++; chart = null; closeSheet()
-  current = { name: TAB_IDS.includes(name) || name === 'stock' || name === 'index' ? name : 'markets', refresh: null, at: Date.now() }
+  current = { name: TAB_IDS.includes(name) || name === 'stock' || name === 'index' ? name : 'feed', refresh: null, at: Date.now() }
+  document.body.classList.toggle('feed-on', current.name === 'feed')
   if (TAB_IDS.includes(current.name)) lastTab = current.name
   for (const b of $('tabs').children) b.classList.toggle('on', b.dataset.tab === lastTab)
   view.className = ''; void view.offsetWidth; view.className = dir
@@ -138,15 +140,21 @@ function route() {
   else if (current.name === 'sectors') sectorsScreen()
   else if (current.name === 'search') searchScreen()
   else if (current.name === 'settings') settingsScreen()
-  else marketsScreen()
-  window.scrollTo(0, dir === 'pop' ? scrollMem[location.hash || '#/markets'] || 0 : 0)
+  else if (current.name === 'markets') marketsScreen()
+  else feedScreen()
+  window.scrollTo(0, dir === 'pop' ? scrollMem[location.hash || '#/feed'] || 0 : 0)
 }
-window.addEventListener('hashchange', (e) => { scrollMem[new URL(e.oldURL).hash || '#/markets'] = window.scrollY; route() })
+window.addEventListener('hashchange', (e) => {
+  scrollMem[new URL(e.oldURL).hash || '#/feed'] = window.scrollY
+  if (current.name === 'feed' && $('feed')) fd.scrollTop = $('feed').scrollTop
+  route()
+})
 window.onBack = () => {
   if (sheetOn()) { closeSheet(); return true }
   if (!TAB_IDS.includes(current.name)) { history.back(); return true }
   if (current.name === 'sectors' && sx.open.size) { sx.open.clear(); renderSectors(); return true }
-  if (current.name !== 'markets') { goTab('markets'); return true }
+  if (current.name === 'feed' && fd.idx > 0) { $('feed')?.scrollTo({ top: 0, behavior: 'smooth' }); return true }
+  if (current.name !== 'feed') { goTab('feed'); return true }
   return false
 }
 
@@ -256,7 +264,7 @@ function mountChart(kind, sym) {
   chart = c; c.load()
   return c
 }
-window.addEventListener('resize', () => { chart?.draw(); if (current.name === 'markets') paintSparks() })
+window.addEventListener('resize', () => { chart?.draw(); if (current.name === 'markets') paintSparks(); if (current.name === 'feed') repaintFeed() })
 function spark(cv, bars, up) {
   const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight
   if (!W || bars.length < 2) return
@@ -584,6 +592,190 @@ async function indexScreen(code) {
   paint()
 }
 
+// ---- Feed: one card per screen, 40 to a page, picked by lib.js feedPage from the sector feed --------------
+// Only cards within 3 of the one on screen have content; the rest are empty, same-height slots.
+const todayIST = () => new Date(Date.now() + 19800e3).toISOString().slice(0, 10)
+const seenKey = () => `feed.seen.${todayIST()}`
+const fd = { day: null, cards: [], page: 0, pools: null, seen: null, viewed: null, idx: 0, scrollTop: 0, done: false }
+let feedObs = null
+function feedReset() {
+  try { for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k?.startsWith('feed.seen.') && k !== seenKey()) localStorage.removeItem(k) } } catch {}
+  Object.assign(fd, { day: todayIST(), cards: [], page: 0, idx: 0, scrollTop: 0, done: false, viewed: new Set(store.json(seenKey(), [])) })
+  fd.seen = new Set(fd.viewed) // what reached the screen earlier today is skipped
+}
+function nextPage() { // appends the next page that has anything, or the final card
+  for (;;) {
+    const r = feedPage(fd.pools, fd.page++, fd.seen)
+    if (r.cards.length) { fd.cards.push(...r.cards); return }
+    if (r.theme === 'rest') { fd.cards.push({ kind: 'final', id: 'final' }); fd.done = true; return }
+  }
+}
+async function feedScreen() {
+  const tok = nav
+  setTop({ title: 'Feed', small: 'Today, one card at a time', right: refreshBtn })
+  current.refresh = feedRefresh
+  if (fd.day !== todayIST()) feedReset()
+  view.innerHTML = '<div id="feed"></div>'
+  if (!fd.cards.length) {
+    $('feed').innerHTML = '<div class="state">Building your feed…</div>'
+    spin(true)
+    try { fd.pools = feedPools((await sectorsFor('NSE')).rows); if (!fd.cards.length) nextPage() }
+    catch (e) { endIntro(); if (tok === nav) { spin(false); $('feed').innerHTML = errState(`ET sectors: ${e.message}`) } return }
+    if (tok !== nav) return
+    spin(false)
+  }
+  mountFeed(); endIntro()
+}
+function mountFeed() {
+  const box = $('feed'); if (!box) return
+  box.innerHTML = ''
+  feedObs?.disconnect()
+  feedObs = new IntersectionObserver((es) => { for (const e of es) if (e.isIntersecting) setCurrent(+e.target.dataset.i) }, { root: box, threshold: 0.6 })
+  addSlots(0)
+  box.scrollTop = fd.scrollTop
+  setCurrent(Math.round(fd.scrollTop / (box.clientHeight || 1)))
+}
+function addSlots(from) {
+  const box = $('feed')
+  for (let i = from; i < fd.cards.length; i++) {
+    const el = document.createElement('section'); el.className = 'fcard'; el.dataset.i = i
+    box.appendChild(el); feedObs.observe(el)
+  }
+}
+function setCurrent(i) {
+  const box = $('feed'); if (!box || !fd.cards[i]) return
+  fd.idx = i
+  for (const el of box.children) {
+    const d = Math.abs(+el.dataset.i - i)
+    if (d <= 3 && !el.dataset.on) fillCard(el)
+    else if (d > 5 && el.dataset.on) { el.innerHTML = ''; delete el.dataset.on }
+  }
+  const c = fd.cards[i]
+  if (/^(s|sec):/.test(c.id) && !fd.viewed.has(c.id)) { fd.viewed.add(c.id); store.set(seenKey(), JSON.stringify([...fd.viewed])) }
+  setSmall(`Card ${i + 1} of ${fd.cards.length}${fd.done ? '' : '+'}`)
+}
+const repaintFeed = () => { for (const el of $('feed')?.children || []) if (el.dataset.on) fillCard(el) }
+function feedMore() {
+  const from = fd.cards.length
+  nextPage(); addSlots(from)
+  const box = $('feed'); box.scrollTo({ top: from * box.clientHeight, behavior: 'smooth' })
+  repaintFeed() // the end card's button changes to "more below"
+}
+function feedRestart() {
+  store.del(seenKey()); feedReset(); nextPage(); mountFeed()
+}
+async function feedRefresh(force) {
+  spin(true)
+  try { fd.pools = feedPools((await sectorsFor('NSE', force)).rows) } catch (e) { toast(`ET sectors: ${e.message}`) }
+  spin(false)
+  if (current.name === 'feed') repaintFeed() // same cards, today's numbers
+}
+
+// charts: at most 2 requests in flight, so a fast swipe doesn't fire twenty
+const chartQueue = []; let chartsActive = 0
+function queued(fn) {
+  return new Promise((res, rej) => { chartQueue.push([fn, res, rej]); pumpCharts() })
+}
+function pumpCharts() {
+  while (chartsActive < 2 && chartQueue.length) {
+    const [fn, res, rej] = chartQueue.shift(); chartsActive++
+    fn().then(res, rej).finally(() => { chartsActive--; pumpCharts() })
+  }
+}
+const live = (m) => memberIndex.get(String(m.id)) || m
+const liveSector = (s) => fd.pools?.byId.get(s.id) || s
+const stillOn = (el, c) => el.dataset.on && fd.cards[+el.dataset.i] === c
+function drawCardChart(el, c, kind, sym, range) {
+  queued(() => barsFor(kind, sym, range)).then((bars) => {
+    if (!stillOn(el, c)) return
+    const cv = el.querySelector('.fchart canvas'); if (!cv) return
+    drawChart(cv, bars, { range, type: chartType(), msg: 'No chart data' })
+    const f = el.querySelector('[data-facts]')
+    if (f && c.member) {
+      const x = barFacts(bars, live(c.member).volume_k)
+      f.innerHTML = x ? [
+        x.fromHigh > -0.5 ? 'At its 6M high' : `${fmt(-x.fromHigh, 1)}% below its 6M high`,
+        x.streak > 1 ? `${x.streak} up days in a row` : x.streak < -1 ? `${-x.streak} down days in a row` : '',
+        x.volX >= 2 ? `<span class="acc b">${fmt(x.volX, 1)}× its usual volume</span>` : x.volX ? `${fmt(x.volX, 1)}× usual volume` : '',
+      ].filter(Boolean).join(' · ') : ''
+    }
+  }).catch(() => { if (stillOn(el, c)) { const cv = el.querySelector('.fchart canvas'); if (cv) drawChart(cv, [], { msg: 'Chart unavailable' }) } })
+}
+const KICKER = { mover: (m) => (m.change_pct > 0 ? 'Top gainer' : 'Top loser'), tide: () => 'Against the tide', quiet: () => 'Big and quiet' }
+function fillCard(el) {
+  const c = fd.cards[+el.dataset.i]; if (!c) return
+  el.dataset.on = '1'
+  const card = (attrs, body) => `<div class="fin"${attrs}>${body}</div>`
+  if (c.member) {
+    const m = live(c.member), s = c.sector ? liveSector(c.sector) : fd.pools?.byId.get(m.sectorId)
+    el.innerHTML = card(` data-member="${esc(m.id)}"`, `<div class="fk">${KICKER[c.kind](m)} · ${esc(m.sector)}</div>
+      <div class="fname">${esc(m.name)}</div>
+      <div class="fbig">₹${fmt(m.price)} ${pctSpan(m.change_pct)}</div>
+      <div class="fstory">${esc(c.story)}</div>
+      <div class="fchart"><canvas></canvas></div><div class="ffacts" data-facts>6M chart loading…</div>
+      <div class="kv fkv">${kvHtml([['Market cap', croreShort(m.mcap_cr)], ['Size', `${capWord[m.cap] || '—'}${m.capRank ? ` · #${m.capRank}` : ''}`],
+        ['Volume', m.volume_k == null ? '—' : `${compact(m.volume_k * 1000)}`], ['Sector today', s ? pctSpan(s.change_pct) : '—']])}</div>
+      <div class="links fl" data-links>${memberLinks(m, null, 'Finding NSE symbol…')}</div>`)
+    symFor(m).then((sym) => {
+      if (!stillOn(el, c)) return
+      el.querySelector('[data-links]').innerHTML = memberLinks(m, sym, 'No NSE symbol found')
+      if (sym) drawCardChart(el, c, 'stock', sym, '6M')
+      else el.querySelector('[data-facts]').textContent = ''
+    })
+  } else if (c.kind === 'index') {
+    const name = MC_INDICES.find((x) => x.code === c.code)?.name || c.code
+    el.innerHTML = card(` data-push="index/${encodeURIComponent(c.code)}"`, `<div class="fk">Index · today</div><div class="fname">${esc(name)}</div>
+      <div class="fbig" data-q>—</div><div class="fstory" data-s>Loading…</div><div class="fchart"><canvas></canvas></div>
+      <div class="kv fkv" data-kv></div><div class="links fl"><button class="go primary" style="grid-column:span 2" data-push="index/${encodeURIComponent(c.code)}">Open ${esc(name)}<span>chart, stats, returns</span></button></div>`)
+    indexQuote(c.code).then((q) => {
+      if (!stillOn(el, c)) return
+      el.querySelector('[data-q]').innerHTML = `${fmt(q.price)} ${pctSpan(q.change_pct)}`
+      el.querySelector('[data-s]').innerHTML = `${q.change >= 0 ? '+' : ''}${fmt(q.change)} today${q.advance != null ? ` · <span class="up">${q.advance} up</span> / <span class="down">${q.decline} down</span>` : ''} · ${esc((q.state || '').toLowerCase())}`
+      el.querySelector('[data-kv]').innerHTML = kvHtml([['Day range', `${fmt(q.low)} – ${fmt(q.high)}`], ['52W range', `${fmt(q.lo52)} – ${fmt(q.hi52)}`], ...q.returns.filter(([k]) => k === '1M' || k === '1Y').map(([k, v]) => [`${k} return`, pctSpan(v)])])
+    }).catch((e) => { if (stillOn(el, c)) el.querySelector('[data-s]').textContent = e.message })
+    drawCardChart(el, c, 'index', c.code, '1D')
+  } else if (c.kind === 'breadth') {
+    const ss = fd.pools?.sectors || [], s = sectorSummary(ss), tot = s.advance + s.decline || 1
+    el.innerHTML = card('', `<div class="fk">Market breadth · NSE</div><div class="fname">${s.up} of ${ss.length} sectors up</div>
+      <div class="fbig"><span class="up">${s.advance.toLocaleString('en-IN')} ▲</span> <span class="down">${s.decline.toLocaleString('en-IN')} ▼</span></div>
+      <div class="breadthbar" style="height:12px"><div style="width:${(s.advance / tot) * 100}%;background:var(--up)"></div><div style="width:${(s.decline / tot) * 100}%;background:var(--down)"></div></div>
+      <div class="fstory">${s.best ? `Best: ${esc(s.best.name)} ${pctSpan(s.best.change_pct)}` : ''}${s.worst ? ` · Worst: ${esc(s.worst.name)} ${pctSpan(s.worst.change_pct)}` : ''}</div>
+      <div class="tiles ftiles">${sortRows(ss, 'mcap:desc', SECTOR_FIELDS).map((x) => `<button class="tile" data-act="opensector" data-v="${esc(x.id)}" style="flex-grow:${Math.sqrt(Math.max(x.mcap_cr ?? 1, 1))};${tileStyle(x.change_pct)}"><p>${esc(x.name)}</p><p>${pctText(x.change_pct)}</p></button>`).join('')}</div>`)
+  } else if (c.kind === 'sector') {
+    const s = liveSector(c.sector), bc = bucketColors(T)
+    const r = s.members.filter((m) => m.change_pct != null).sort((a, b) => b.change_pct - a.change_pct)
+    const row = (m) => stockRow(live(m))
+    el.innerHTML = card('', `<div class="fk">Sector · ${s.members.length} stocks</div><div class="fname">${esc(s.name)}</div>
+      <div class="fbig">${pctSpan(s.change_pct)}</div><div class="fstory">${esc(c.story)}</div>
+      <div class="breadth">${bucketShares(s.buckets || [0, 0, 0, 0, 0]).map((x, i) => x > 0 ? `<div style="width:${x}%;background:${bc[i]}"></div>` : '').join('')}</div>
+      <div class="tiles ftiles">${s.members.slice(0, 30).map((m) => `<button class="tile" data-member="${esc(m.id)}" style="flex-grow:${Math.sqrt(Math.max(m.mcap_cr ?? 1, 1))};${tileStyle(m.change_pct)}"><p>${esc(m.name)}</p><p>${pctText(m.change_pct)}</p></button>`).join('')}</div>
+      <div class="panel flist">${r.slice(0, 2).map(row).join('')}${r.length > 3 ? r.slice(-2).map(row).join('') : ''}</div>
+      <div class="links fl"><button class="go primary" style="grid-column:span 2" data-act="opensector" data-v="${esc(s.id)}">Open in Sectors<span>every member, sorts, breadth</span></button></div>`)
+  } else if (c.kind === 'size') {
+    const max = Math.max(0.5, ...c.sizes.map((x) => Math.abs(x.avg ?? 0)))
+    const small = c.sizes.find((x) => x.cap === 'small'), large = c.sizes.find((x) => x.cap === 'large')
+    el.innerHTML = card('', `<div class="fk">By size · average move</div><div class="fname">Small vs large caps</div>
+      <div class="fstory">Small caps ${pctSpan(small?.avg)} vs large caps ${pctSpan(large?.avg)} on average</div>
+      <div class="fsizes">${c.sizes.map((x) => `<div class="fsz"><div class="b">${capWord[x.cap]}<span class="mute"> · ${x.n} stocks</span></div>
+        <div class="changebar" style="height:14px"><div class="mid"></div><div class="fill" style="width:${(Math.abs(x.avg ?? 0) / max) * 50}%;${(x.avg ?? 0) >= 0 ? 'left:50%;background:var(--up)' : 'right:50%;background:var(--down)'}"></div></div>
+        <div class="fbig" style="font-size:18px">${pctSpan(x.avg)}</div></div>`).join('')}</div>
+      <div class="note" style="padding:0">Large = top 100 by market cap, mid = 101–250, small = the rest (₹500 Cr and up).</div>`)
+  } else if (c.kind === 'end') {
+    const s = sectorSummary(fd.pools?.sectors || []), last = +el.dataset.i === fd.cards.length - 1
+    el.innerHTML = card(' style="justify-content:center;text-align:center"', `<div class="fk">${c.page === 0 ? 'Caught up' : esc(c.label)}</div>
+      <div class="fname" style="font-size:24px">${c.page === 0 ? 'You\'re caught up' : `${esc(c.label)}: done`}</div>
+      <div class="fstory">You saw ${c.shown} cards · <span class="up">${c.up} up</span> · <span class="down">${c.down} down</span>${c.sectors ? ` · ${c.sectors} sectors` : ''}</div>
+      <div class="fstory mute">Today: <span class="up">${s.advance} ▲</span> <span class="down">${s.decline} ▼</span> · ${s.up} of ${(fd.pools?.sectors || []).length} sectors up${s.best ? ` · best ${esc(s.best.name)} ${pctSpan(s.best.change_pct)}` : ''}</div>
+      <div class="btnrow" style="flex-direction:column;padding:12px 0 0"><button class="btn primary" data-act="feed-top">Back to top</button>
+      ${last ? `<button class="btn" data-act="feed-more">Show more: ${esc(c.next)}</button>` : '<div class="mute">More below ↓</div>'}</div>`)
+  } else if (c.kind === 'final') {
+    el.innerHTML = card(' style="justify-content:center;text-align:center"', `<div class="fk">End of today</div>
+      <div class="fname" style="font-size:22px">That's every stock that moved today</div>
+      <div class="fstory mute">${fd.viewed.size} cards seen. Tomorrow's feed starts fresh.</div>
+      <div class="btnrow" style="flex-direction:column;padding:12px 0 0"><button class="btn primary" data-act="feed-top">Back to top</button><button class="btn" data-act="feed-restart">Start today's feed over</button></div>`)
+  }
+}
+
 // ---- Theme (Settings) ------------------------------------------------------------------------------------
 let selTok = 'up'
 function settingsScreen() {
@@ -670,6 +862,9 @@ document.addEventListener('click', (e) => {
       case 'opensector':
         sx.exchange = 'NSE'; store.set('sectors.exchange', 'NSE'); sx.filter = ''; sx.open.add(v); sx.focus = v
         return goTab('sectors')
+      case 'feed-top': return $('feed')?.scrollTo({ top: 0, behavior: 'smooth' })
+      case 'feed-more': return feedMore()
+      case 'feed-restart': return feedRestart()
       case 'clear-recent': store.del('search.recent'); return renderSearch()
       case 'custom-reset': {
         const base = customTheme()?.base || 'terminal-dark'

@@ -1,7 +1,7 @@
 # Stoklore Android app — full context
 
 Everything about the `mobile/` app: what was asked, what was built, how it works, what is left.
-State as of 2026-11-26, app version **1.5** (versionCode 6).
+State as of 2026-11-26, app version **1.6** (versionCode 7).
 
 ---
 
@@ -68,6 +68,7 @@ Routes are hash URLs. The **tabs** use `location.replace`; **stack screens** use
 
 | Route | Screen |
 |---|---|
+| `#/feed` | **Feed** (first tab, home): one full-screen card per swipe, 40 to a page then "You're caught up", themed pages after. See `FEED_PLAN.md` §10–12. |
 | `#/markets` | Four index cards (NIFTY 50, SENSEX, BANK NIFTY, INDIA VIX), each with a quote and a 1D sparkline; tap for the index screen. Market breadth: advances and declines, sectors up, best and worst sector. **Movers**: top 15 gainers or losers, filtered by all, large, mid or small cap. **All indices**: NSE or BSE, with filter and sort. |
 | `#/sectors` | The home page's Sector Performance panel. Summary line; sector map (size = market cap, colour = the day's move); per-sector move bar, five-way breadth bar, member strip and best/worst member. Tap a sector for its member tiles; tap a member for a card with price, change, market cap, share of sector and volume, plus **Chart & research**, **TradingView** and **Dhan**. Filter, NSE/BSE switch, three sort menus. |
 | `#/search` | ET search over NSE companies, debounced at 250 ms. Shows live % where the sector feed has the stock. Recent stocks are remembered (up to 12). |
@@ -79,8 +80,9 @@ Routes are hash URLs. The **tabs** use `location.replace`; **stack screens** use
 1. Close the open card.
 2. Go back from a stock or index screen.
 3. Fold open sectors.
-4. Switch to the Markets tab.
-5. Exit.
+4. On Feed past the first card, scroll to the top.
+5. Switch to the Feed tab.
+6. Exit.
 
 **Refresh:** every 5 minutes while the screen is on, plus when the app returns from more than a minute in the background. Every screen except Theme and Search also has a refresh button.
 

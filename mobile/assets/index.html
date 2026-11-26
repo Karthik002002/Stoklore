@@ -197,6 +197,28 @@
   .btn { flex: 1; height: 38px; border-radius: var(--radius); border: 1px solid var(--input); background: var(--card); font-weight: 600; }
   .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--background); }
   .toast { position: fixed; left: 50%; bottom: calc(var(--tabbar) + 16px); transform: translateX(-50%); z-index: 30; max-width: 86%; background: var(--foreground); color: var(--background); padding: 8px 12px; border-radius: 6px; font-size: 11px; animation: fade .18s ease-out; }
+  /* ---- feed: one card per screen, snap scrolling ---- */
+  body.feed-on { overflow: hidden; }
+  body.feed-on #view { padding-bottom: 0; min-height: 0; }
+  #feed { height: calc(100vh - 49px - var(--tabbar)); overflow-y: auto; scroll-snap-type: y mandatory; overscroll-behavior: contain; }
+  .fcard { height: 100%; scroll-snap-align: start; scroll-snap-stop: always; padding: 8px 10px; }
+  .fin { height: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 7px; overflow: hidden; animation: fade .2s ease-out; }
+  .fk { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fname { font: 600 19px/1.2 system-ui, sans-serif; }
+  .fbig { font-size: 24px; font-weight: 600; }
+  .fstory { font-size: 13px; line-height: 1.4; }
+  .ffacts { font-size: 11px; color: var(--muted-foreground); min-height: 15px; }
+  .fchart { flex: 1; min-height: 110px; position: relative; }
+  .fchart canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .fkv { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .fkv div:nth-last-child(-n+2) { border-bottom: 0; }
+  .fl { padding: 0; }
+  .ftiles { padding: 0; flex: 1; min-height: 0; overflow: hidden; align-content: flex-start; }
+  .ftiles .tile { min-width: 3.6rem; }
+  .flist { margin: 0; }
+  .flist .li { padding: 7px 8px; }
+  .fsizes { display: flex; flex-direction: column; gap: 14px; flex: 1; justify-content: center; }
+  .fsz { display: grid; gap: 5px; }
   .note { padding: 0 10px 12px; font-size: 11px; color: var(--muted-foreground); line-height: 1.5; }
 </style>
 </head>

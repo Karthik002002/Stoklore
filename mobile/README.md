@@ -5,6 +5,15 @@ straight from the phone — no login, no Stoklore backend, works anywhere there 
 
 **Screens** (bottom tabs; stock and index screens slide in on top, Android back goes back):
 
+- **Feed** (the first tab) — today's market one full-screen card at a time, swipe up for the next:
+  index cards, market breadth, top gainers/losers (alternating, ranked by move × market cap, at most 3
+  per sector, at least 5 mid/small caps), stocks moving against their sector, sector cards, small vs
+  large caps. Stock cards show a 6M chart, distance from the 6M high, the up/down streak and volume vs
+  usual, with **Chart & research**, **TradingView** and **Dhan**. After 40 cards a "You're caught up"
+  summary; **Show more** goes on with themed pages (sector deep dive, mid and small caps, big and
+  quiet, everything else) until every stock that moved has been shown. Cards that reached the screen
+  are skipped for the rest of the day. Picked in `lib.js` (`feedPools`, `feedPage`) from the ET
+  sector feed alone — no randomness, no tracking; design in [FEED_PLAN.md](FEED_PLAN.md).
 - **Markets** — NIFTY 50, SENSEX, BANK NIFTY and INDIA VIX cards (quote + today's sparkline; tap for the
   index screen); market breadth (advances/declines, sectors up, best/worst sector); **movers** — top 15
   gainers/losers, all or by size (large = top 100 by market cap, mid = 101–250, small = the rest, the

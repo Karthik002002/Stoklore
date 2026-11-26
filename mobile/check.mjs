@@ -35,4 +35,57 @@ assert.deepEqual(L.mcBars({ s: 'no_data' }, '1D'), [])
 // axis ticks: round steps inside the range
 assert.deepEqual(L.ticks(101, 139, 4), [110, 120, 130])
 assert.deepEqual(L.ticks(5, 5), [5])
+// feed: 30 sectors x 40 stocks, moves spread both ways, sectors alternating up / down
+const fsec = Array.from({ length: 30 }, (_, s) => {
+  const members = Array.from({ length: 40 }, (_, i) => ({
+    id: s * 100 + i, name: `S${s}M${i}`, sector: `Sec${s}`, sectorId: `sec${s}`, price: 100 + i,
+    mcap_cr: 400 + ((s * 37 + i * 101) % 997) * 600, volume_k: i === 7 ? 0 : 50, change_pct: (((s * 13 + i * 7) % 21) - 10) / 2,
+  }))
+  const adv = members.filter((m) => m.change_pct > 0).length, dec = members.filter((m) => m.change_pct < 0).length
+  return { id: `sec${s}`, name: `Sec${s}`, change_pct: s % 2 ? -0.6 - s / 50 : 0.4 + s / 40, advance: adv, decline: dec, members, mcap_cr: 1e5, mcap_change_cr: 1 }
+})
+assert.equal(L.FEED_PAGE1.length, 40)
+const run = () => {
+  const p = L.feedPools(fsec), seen = new Set(), pages = []
+  for (let pg = 0; pg < 60; pg++) { const r = L.feedPage(p, pg, seen); pages.push(r); if (!r.cards.length && r.theme === 'rest') break }
+  return { p, pages }
+}
+const { p: fp, pages } = run()
+const ids = pages.flatMap((r) => r.cards.filter((c) => c.member).map((c) => c.id))
+assert.equal(new Set(ids).size, ids.length, 'a stock repeats in the feed')
+assert.ok(pages.at(-1).cards.length === 0 && pages.at(-1).theme === 'rest', 'feed never runs dry')
+assert.equal(ids.length, fp.stocks.filter((m) => m.change_pct !== 0).length + fp.quiet.filter((m) => m.change_pct === 0).length, 'every moving stock is shown once')
+assert.ok(fp.stocks.every((m) => m.mcap_cr >= 500 && m.volume_k > 0), 'pool not cleaned')
+const p1 = pages[0].cards
+assert.equal(p1.length, 41); assert.equal(p1.at(-1).kind, 'end'); assert.equal(p1[0].kind, 'index'); assert.equal(p1[1].kind, 'breadth')
+for (const r of pages) {
+  const per = {}
+  for (const c of r.cards) if (c.member) per[c.member.sectorId] = (per[c.member.sectorId] || 0) + 1
+  assert.ok(Object.values(per).every((n) => n <= 3), `page ${r.theme}: >3 from one sector`)
+  for (const c of r.cards) if (c.kind === 'tide') assert.ok(c.member.change_pct * c.sector.change_pct < 0, 'tide card moves with its sector')
+}
+const mv1 = p1.filter((c) => c.kind === 'mover')
+assert.ok(mv1.filter((c) => c.member.cap !== 'large').length >= 5, 'too few mid / small caps on page 1')
+assert.ok(mv1.slice(0, 10).every((c, i) => (c.member.change_pct > 0) === (i % 2 === 0)), 'page 1 movers do not alternate gain / loss')
+assert.equal(JSON.stringify(run().pages.map((r) => r.cards.map((c) => c.id))), JSON.stringify(pages.map((r) => r.cards.map((c) => c.id))), 'feed not deterministic')
+const large = fp.stocks.filter((m) => m.cap === 'large')
+assert.ok(Math.abs(fp.sizes[0].avg - large.reduce((t, m) => t + m.change_pct, 0) / large.length) < 1e-9)
+// seen from earlier today is skipped
+const seen2 = new Set(ids.slice(0, 20)), again = L.feedPage(L.feedPools(fsec), 0, seen2).cards
+assert.ok(again.every((c) => !c.member || !ids.slice(0, 20).includes(c.id)))
+
+// mover weight: a big company's smaller move outranks a small one's bigger move
+const wp = L.feedPools([{ id: 'x', name: 'X', change_pct: 1, members: [
+  { id: 1, sectorId: 'x', mcap_cr: 5e5, price: 1, volume_k: 1, change_pct: 4 }, { id: 2, sectorId: 'x', mcap_cr: 600, price: 1, volume_k: 1, change_pct: 9 }] }])
+assert.equal(wp.movers[0].m.id, 1)
+// a broken ET sector move (-100%) becomes the members' weighted move; tide needs a real stock move
+const bad = L.saneSector({ change_pct: -100, members: [{ change_pct: 1, mcap_cr: 3 }, { change_pct: -1, mcap_cr: 1 }] })
+assert.equal(bad.change_pct, 0.5)
+assert.ok(fp.tide.every((x) => Math.abs(x.m.change_pct) >= 1))
+
+// bar facts: 6M-high distance, streak, volume multiple
+const fb = [10, 11, 12, 11, 12, 13, 14].map((c, i) => ({ t: i, o: c, h: c, l: c, c, v: 100 }))
+const facts = L.barFacts(fb, 0.3)
+assert.equal(facts.streak, 3); assert.equal(facts.fromHigh, 0); assert.equal(facts.volX, 3)
+assert.equal(L.barFacts([...fb, { t: 9, o: 13, h: 13, l: 13, c: 13, v: 100 }], 0).streak, -1)
 console.log('mobile/check.mjs: all passed')

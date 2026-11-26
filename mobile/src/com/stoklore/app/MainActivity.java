@@ -25,7 +25,7 @@ import org.json.JSONObject;
 public class MainActivity extends Activity {
     // the only hosts the page may fetch from
     private static final List<String> HOSTS = Arrays.asList(
-        "etmarketsapis.indiatimes.com", "etsearch.indiatimes.com", "dhan.co");
+        "etmarketsapis.indiatimes.com", "etsearch.indiatimes.com", "dhan.co", "priceapi.moneycontrol.com");
 
     private WebView web;
 
@@ -56,8 +56,10 @@ public class MainActivity extends Activity {
                 c.setConnectTimeout(15000);
                 c.setReadTimeout(20000);
                 c.setRequestProperty("Accept", "application/json, text/javascript, */*; q=0.01");
-                c.setRequestProperty("Origin", "https://economictimes.indiatimes.com");
-                c.setRequestProperty("Referer", "https://economictimes.indiatimes.com/");
+                // each feed is the one its own site's pages call, so send that site as the referrer
+                String site = u.getHost().endsWith("moneycontrol.com") ? "https://www.moneycontrol.com" : "https://economictimes.indiatimes.com";
+                c.setRequestProperty("Origin", site);
+                c.setRequestProperty("Referer", site + "/");
                 c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36");
                 status = c.getResponseCode();
                 if (status == 200) {
@@ -117,9 +119,27 @@ public class MainActivity extends Activity {
         });
     }
 
+    /** Status / navigation bar colours follow the page's theme (#rrggbb), light icons on a light bar. */
+    @JavascriptInterface
+    public void setBars(final String bar, final boolean light) {
+        runOnUiThread(() -> {
+            try {
+                int c = android.graphics.Color.parseColor(bar);
+                getWindow().setStatusBarColor(c);
+                getWindow().setNavigationBarColor(c);
+                int f = getWindow().getDecorView().getSystemUiVisibility();
+                int both = android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
+                getWindow().getDecorView().setSystemUiVisibility(light ? f | both : f & ~both);
+                web.setBackgroundColor(c);
+            } catch (IllegalArgumentException ignored) {
+                // not a colour: keep the bars as they are
+            }
+        });
+    }
+
     @Override
     public void onBackPressed() {
-        // back closes the stock card / an opened sector first; the page answers "true" when it did
+        // back closes a card, then goes back a screen; the page answers "true" when it handled it
         web.evaluateJavascript("window.onBack && window.onBack()", v -> {
             if (!"true".equals(v)) super.onBackPressed();
         });

@@ -251,7 +251,9 @@ to guard rails you can see and control.
   a company's price, move, market cap and share of its sector, volume, size and move rank and its
   move against the sector; a sector's move, market cap change, the five-way breadth with counts and
   its top 3 leaders and laggards; a breadth bar's bucket counts and shares
-  Also as a standalone Android app: [mobile/](mobile/README.md).
+  Also as a standalone Android app ([mobile/](mobile/README.md)) with the other no-login screens:
+  index cards and charts, movers by size, all indices, stock search, stock charts + research links,
+  and colour themes (templates incl. monochrome, plus a custom editor).
 - **Save any stock on the home page to a watchlist** — the bookmark is on every stock row: your
   watchlist, Top Gainers / Losers, Recent Events, Unusual Attention and Market Pulse. A stock you
   don't track yet (most of NSE's movers) is tracked first, so it shows up in the list you picked

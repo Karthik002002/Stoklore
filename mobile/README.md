@@ -1,18 +1,50 @@
 # Stoklore — Android app
 
-Stoklore's home-page **Sector Performance** panel as its own phone app: summary line, sector map
-(size = market cap, colour = the day's move), every sector with its move bar, five-way breadth bar,
-cap-weighted member strip and best/worst member; tap a sector for its member tiles, tap a member for
-its price, change, mcap, share of sector and volume.
-The stock card has **TradingView** and **Dhan** buttons. TradingView opens in its app when it is installed
-(`com.tradingview.tradingviewapp`), else in the browser. Dhan has no link that opens one stock in its
-app (its site's own "open app" link is `dhan://Login`, and `dhan.co/stocks/...` inside the app is a
-404), so the Dhan button copies the NSE symbol and opens the Dhan app - paste it in Dhan's search.
-Without the app it opens the stock's dhan.co page. TradingView
-needs the NSE symbol, which ET's sector feed lacks: it is looked up in ET's search, matched on ET's
-company id. Dhan's page is `dhan.co/stocks/<ET slug>-share-price/`, checked before it is offered;
-a company ET still lists under an old name (e.g. Century Textiles, now ABREL) falls back to web.dhan.co. Filter, NSE/BSE, three sort menus (remembered),
-refresh button, auto-refresh every 5 minutes. Back closes an opened sector first.
+Stoklore's public market screens on the phone. Everything reads public feeds (ET Markets, Moneycontrol)
+straight from the phone — no login, no Stoklore backend, works anywhere there is internet.
+
+**Screens** (bottom tabs; stock and index screens slide in on top, Android back goes back):
+
+- **Markets** — NIFTY 50, SENSEX, BANK NIFTY and INDIA VIX cards (quote + today's sparkline; tap for the
+  index screen); market breadth (advances/declines, sectors up, best/worst sector); **movers** — top 15
+  gainers/losers, all or by size (large = top 100 by market cap, mid = 101–250, small = the rest, the
+  SEBI cut over every stock in ET's NSE sector feed); **all indices** for NSE or BSE with filter and sort.
+- **Sectors** — the home page's Sector Performance panel: summary line, sector map (size = mcap, colour
+  = the day's move), each sector's move bar, five-way breadth bar, member strip and best/worst; tap a
+  sector for member tiles, tap a member for its card (price, change, mcap, share of sector, volume) with
+  **Chart & research**, **TradingView** and **Dhan**. Filter, NSE/BSE, three sort menus (remembered).
+- **Search** — NSE companies by name or symbol (ET search), with live % where the sector feed has it;
+  recent stocks are remembered.
+- **Stock** (`#/stock/<NSE symbol>`) — quote, chart (1D 5D 1M 6M 1Y 5Y, line or candles, volume, drag
+  for the crosshair's OHLC), key stats (prev close, day range, 52W range, volume, 20-day average,
+  market cap, 1Y change), its sector and peers, and research links: Screener, TradingView, ET Markets,
+  Moneycontrol, NSE, Google Finance, Dhan.
+- **Index** (`#/index/<code>`) — the four card indices: quote, the same chart, day stats, returns 1W–5Y.
+- **Theme** — templates: the web app's Terminal Dark / Terminal Light / Midnight / Amber Terminal,
+  plus Monochrome Black, Monochrome White, Ocean (blue up / orange down, colour-blind safe), Dusk and
+  Paper. **Custom**: edit any of the 12 colours (hex, the colour picker, or a quick swatch); the first
+  edit starts a custom theme from the template in use. Up/down colours drive every chart, heat tile,
+  breadth bar and price change; the status and navigation bars follow the theme. Default chart type.
+
+**Not on the phone:** journal, watchlists, alerts and anything else behind a login; earnings, events,
+news, leaders, microcaps, scans and shareholding (they need Stoklore's own server or NSE/BSE's feeds,
+which refuse apps outside a browser).
+
+**Dhan / TradingView:** TradingView opens in its app (`com.tradingview.tradingviewapp`) when installed,
+else in the browser. Dhan has no link that opens one stock in its app (its site's own "open app" link
+is `dhan://Login`; `dhan.co/stocks/...` inside the app is a 404), so the Dhan button copies the NSE
+symbol and opens the Dhan app — paste it in Dhan's search. Without the app it opens the stock's dhan.co
+page. ET's sector feed has no NSE symbol; it is looked up in ET's search, matched on ET's company id.
+
+**Data:** ET Markets `ET_Stats/sectorperformance` (sectors, movers, breadth — the feed `/api/sectors`
+uses), `ET_Stats/getAllIndices`, `etsearch` (search, symbols); Moneycontrol `priceapi` (index quotes,
+chart bars for stocks and indices). Requests are made natively in `MainActivity.java` (each site's
+Origin/Referer, no CORS) and only to those hosts. Auto-refresh every 5 minutes on screen, and on coming
+back to the app.
+
+**Code:** `assets/index.html` (shell + CSS, colours are CSS variables), `assets/lib.js` (pure data,
+maths, themes — `node check.mjs` asserts on it), `assets/app.js` (routing, screens, canvas chart, theme
+editor), `src/.../MainActivity.java` (WebView + bridge: `get`, `open`, `openDhan`, `setBars`, back).
 
 **Branding:** named Stoklore, with the website's logo (`frontend/public/favicon.svg`, copied to
 `assets/logo.svg`) on the sidebar's drifting purple → blue tile. The launcher icon is
@@ -20,12 +52,6 @@ refresh button, auto-refresh every 5 minutes. Back closes an opened sector first
 `qlmanage -t -s 432 -o . icon/launcher.svg` (macOS). On open: the system splash, then an intro
 (logo pops in, wordmark rises, loading bar) that lifts away once the first data arrives — at least
 1.3 s, at most 8 s.
-
-**Data:** straight from ET Markets (`etmarketsapis.indiatimes.com/ET_Stats/sectorperformance`), the
-same feed `/api/sectors` uses — no Stoklore backend, so it works anywhere the phone has internet.
-The request is made natively in `MainActivity.java` (ET's Origin/Referer headers, no CORS); the page
-maps it the way `app/core/scraper.py::_sector_row` does. No member → NSE symbol mapping (that needs
-Stoklore's stocks master), so tiles show price instead of symbol and there is no chart.
 
 **Build:** `./build.sh` → `build/stoklore.apk`. SDK command-line tools only (aapt2, javac,
 d8, zipalign, apksigner) — no Gradle, no Android Studio. Needs JDK 17 (`brew install openjdk@17`)

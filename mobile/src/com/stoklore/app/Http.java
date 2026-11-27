@@ -16,7 +16,8 @@ final class Http {
         "etmarketsapis.indiatimes.com", "etsearch.indiatimes.com", "dhan.co", "priceapi.moneycontrol.com",
         "economictimes.indiatimes.com", // the Feed's headline RSS
         "www.screener.in", // the stock screen's fundamentals and filings; holdings' filing alerts
-        "portal.amfiindia.com", "api.mfapi.in"); // mutual fund NAVs (ISIN -> scheme, today's and yesterday's NAV)
+        "portal.amfiindia.com", "api.mfapi.in", // mutual fund NAVs (ISIN -> scheme, today's and yesterday's NAV)
+        "api.github.com"); // the app's own releases: is there a newer version?
 
     static final class Res {
         final int status; // HTTP status, or 0 when the request failed (body is then the error)

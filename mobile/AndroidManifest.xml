@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- versionName / versionCode = the MAIN version, the last (or the one being) released on GitHub: major.minor or
+     major.minor.patch, code = major*1000000 + minor*10000 + patch*100. Local builds never change these: build.sh
+     stamps them <main>-dev.<n> / code + n at build time. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.stoklore.app"
-    android:versionCode="24"
-    android:versionName="3.3">
+    android:versionCode="3030100"
+    android:versionName="3.3.1">
 
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
     <uses-permission android:name="android.permission.INTERNET" />

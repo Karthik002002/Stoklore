@@ -717,7 +717,32 @@ function cleanPortfolio(o) {
     .map((a) => ({ id: str(a.id, 40) || `a${Math.round(a.value)}`, kind: a.kind, value: a.value, sym: SYM_RE.test(a.sym || '') ? a.sym : null,
       repeat: !!a.repeat, start: ok(a.start) ? a.start : null, created: ok(a.created) ? a.created : 0,
       pf: a.pf && a.pf !== 'all' && pfs.some((x) => x.id === a.pf) ? a.pf : null })) // a portfolio alert on one portfolio, or (null) on all
-  return { v: 1, portfolios: pfs, holdings, watch, alerts, notify: NOTIFY.some(([k]) => k === o?.notify) ? o.notify : 'hourly', filings: o?.filings !== false }
+  return { v: 1, updates: o?.updates !== false, portfolios: pfs, holdings, watch, alerts, notify: NOTIFY.some(([k]) => k === o?.notify) ? o.notify : 'hourly', filings: o?.filings !== false }
+}
+
+// ---- app updates: the newest published "mobile-vX.Y" release of this repo vs the installed version. Only
+// main versions compare: a dev build (3.3-dev.2) is never told to "update" to 3.3, only to 3.4 and later. ----
+const UPDATE_REPO = 'Karthik002002/Stoklore'
+const RELEASES_API = `https://api.github.com/repos/${UPDATE_REPO}/releases?per_page=20`
+// main versions are major.minor or major.minor.patch (a missing patch is 0); a "-dev.N" suffix is ignored
+const verParts = (v) => { const m = String(v || '').match(/^v?(\d+)\.(\d+)(?:\.(\d+))?/); return m ? [+m[1], +m[2], +(m[3] || 0)] : [] }
+/** Is main version `latest` newer than the installed `installed` ("3.3.1" vs "3.3-dev.2" -> true)? */
+function newerVersion(latest, installed) {
+  const a = verParts(latest), b = verParts(installed)
+  if (!a.length) return false
+  if (!b.length) return true
+  for (let i = 0; i < 3; i++) if (a[i] !== b[i]) return a[i] > b[i]
+  return false
+}
+/** GitHub's releases JSON -> the newest published mobile release { version, url, apk, notes }, or null. Only
+ *  this repo's own release pages and downloads are accepted. */
+function latestRelease(list) {
+  const page = new RegExp(`^https://github\\.com/${UPDATE_REPO}/releases/`)
+  return (Array.isArray(list) ? list : [])
+    .filter((r) => r && !r.draft && !r.prerelease && /^mobile-v\d+\.\d+(\.\d+)?$/.test(r.tag_name || '') && page.test(r.html_url || ''))
+    .map((r) => ({ version: r.tag_name.slice(8), url: r.html_url, notes: String(r.body || ''), published: r.published_at || null,
+      apk: (r.assets || []).map((a) => a?.browser_download_url || '').find((u) => /\.apk$/i.test(u) && page.test(u)) || null }))
+    .sort((a, b) => newerVersion(a.version, b.version) ? -1 : newerVersion(b.version, a.version) ? 1 : 0)[0] || null
 }
 
 // ---- treemap: squarified layout (Bruls, Huizing & van Wijk) - rectangles close to square, biggest first ----
@@ -931,4 +956,4 @@ function barFacts(bars, volumeK) {
   return { fromHigh: hi ? (last.c / hi - 1) * 100 : null, streak, volX: avg && vol ? vol / avg : null }
 }
 
-if (typeof module !== 'undefined') module.exports = { fmt, pctText, croreShort, hexRgb, isHex, luminance, heat, bucketColors, THEMES, THEME_TOKENS, resolveTheme, sectorRow, sectorSummary, sortRows, allStocks, movers, indexRow, mcQuote, mcHistoryUrl, mcBars, barStats, ticks, researchLinks, RANGES, feedPools, feedPage, barFacts, saneSector, rssItems, mergeNews, NEWS_EVERY, feedFiltered, filterOn, FEED_KINDS, FONTS, fontNameOk, fontStack, fontKind, googleFontUrl, squarify, pdfLines, casHoldings, parseAmfiNav, filingKind, parseScreener, resultsSummary, screenerUrl, cleanFilter, sameFilter, FEED_TEMPLATES, cleanTemplates, saveTemplate, marketOpen, parseNum, splitCsv, parseHoldings, decodeText, bracketSymbol, fileKind, xlsxSheets, htmlTableCsv, cleanSymbol, inPortfolio, holdingId, normDate, mergeHoldings, valuePortfolio, heldFor, cleanPortfolio, FEED_PAGE1, FEED_PAGE, FEED_THEMES }
+if (typeof module !== 'undefined') module.exports = { fmt, pctText, croreShort, hexRgb, isHex, luminance, heat, bucketColors, THEMES, THEME_TOKENS, resolveTheme, sectorRow, sectorSummary, sortRows, allStocks, movers, indexRow, mcQuote, mcHistoryUrl, mcBars, barStats, ticks, researchLinks, RANGES, feedPools, feedPage, barFacts, saneSector, rssItems, mergeNews, NEWS_EVERY, feedFiltered, filterOn, FEED_KINDS, FONTS, fontNameOk, fontStack, fontKind, googleFontUrl, newerVersion, latestRelease, RELEASES_API, squarify, pdfLines, casHoldings, parseAmfiNav, filingKind, parseScreener, resultsSummary, screenerUrl, cleanFilter, sameFilter, FEED_TEMPLATES, cleanTemplates, saveTemplate, marketOpen, parseNum, splitCsv, parseHoldings, decodeText, bracketSymbol, fileKind, xlsxSheets, htmlTableCsv, cleanSymbol, inPortfolio, holdingId, normDate, mergeHoldings, valuePortfolio, heldFor, cleanPortfolio, FEED_PAGE1, FEED_PAGE, FEED_THEMES }

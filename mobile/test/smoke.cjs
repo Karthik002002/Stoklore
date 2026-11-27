@@ -21,6 +21,7 @@ const UA = 'Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 Chrome/120 Mobile Sa
     runScripts: 'dangerously', resources: new Local(), pretendToBeVisual: true, virtualConsole: vc,
     beforeParse(w) {
       w.IntersectionObserver = class { observe() {} disconnect() {} }
+      try { w.localStorage.setItem('update.checked', String(Date.now())) } catch {} // no update card over the other steps
       w.ReadableStream = require('stream/web').ReadableStream // pdf.js streams text; WebView has it, jsdom doesn't
       w.TextDecoder = TextDecoder
       w.DecompressionStream = DecompressionStream // .xlsx unzipping; WebView has it
@@ -50,6 +51,12 @@ const UA = 'Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 Chrome/120 Mobile Sa
   const step = (name, ok, extra = '') => console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${extra ? '  · ' + extra : ''}`)
 
   await sleep(6000)
+  // app updates: the real releases list (the stand-in bridge reports version 2.0, so the published 3.x is newer)
+  await go('#/settings', 600)
+  click('[data-act="upd-check"]'); await sleep(6000)
+  step('update check offers the newer release', /Stoklore \d+\.\d+ is available/.test($('#sheet').textContent) && !!$('#sheet [data-ext*="github.com/Karthik002002/Stoklore/releases/"]'), $('#sheet h3')?.textContent)
+  const offered = $('#sheet [data-act="upd-later"]')?.dataset.v; click('[data-act="upd-later"]'); await sleep(100)
+  step('"Later" skips that version', w.localStorage.getItem('update.skip') === offered && !$('#sheet').classList.contains('on'))
   // the author's credit on Settings → About (ONLY=about runs just this)
   await go('#/settings', 800)
   const sigOk = $('.signame')?.textContent === 'Karthik' && !!$('[data-ext="https://github.com/Karthik002002/Stoklore"]')

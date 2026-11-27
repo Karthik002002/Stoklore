@@ -162,7 +162,20 @@ JDK), and `mobile/test/smoke.cjs` (the real app headless against live feeds; nee
 writes `R.java` — javac, d8, zipalign, apksigner; a compile error stops the build) — no Gradle, no Android Studio. Needs JDK 17 (`brew install openjdk@17`)
 and the SDK at `$ANDROID_HOME` (default `~/Library/Android/sdk`). Signed with `~/.android/debug.keystore`
 (created on first build). With a phone connected over USB, every build also copies the APK to the phone's
-**Stoklore** folder (`/sdcard/Stoklore/stoklore-v<name>-<code>.apk`) and keeps the newest 5 there.
+**Stoklore** folder (`/sdcard/Stoklore/stoklore-v<version>.apk`, e.g. `stoklore-v3.3-dev.2.apk`) and keeps the newest 5 there.
+**Update notifications:** the app checks the newest published `mobile-vX.Y` release of this repo (`api.github.com`)
+and offers it when its main version is newer than the one installed: an in-app card (at most every 12 hours,
+"Later" hides that version) and a daily notification from the background job (each version once). Download opens
+the release APK in the browser; installing it over the app keeps all data. Settings → About: "Check for
+updates" and an automatic on/off switch. A `3.3-dev.N` build is never offered `3.3`, only `3.4` and later.
+**Versions — two tracks that never mix:** `AndroidManifest.xml` holds the **main** version, the one GitHub releases
+carry: `major.minor` or `major.minor.patch`, with `versionCode` = major×1000000 + minor×10000 + patch×100 (3.3 =
+3030000, 3.3.1 = 3030100; `build.sh` refuses a code that doesn't match the name). **Fixes and small changes are
+patch releases** (3.3 → 3.3.1 → 3.3.2); **new features or big updates move the second number** (3.3.x → 3.4).
+Every local `./build.sh` is stamped `<main>-dev.<n>` with code main + n (3.3-dev.4 = 3030004 …), counted in the
+untracked `.devbuild` and restarted when the main version changes. So dev builds sit between releases, and any
+next release installs over them. To release: set the manifest to the new main version, add its changelog section
+(`## 3.3.1`), commit, push, run `./release.sh`.
 **Release:** `./release.sh` publishes the current version as a GitHub release (`mobile-v<versionName>`, the APK
 attached, notes from [CHANGELOG.md](CHANGELOG.md)); only when you run it - most builds aren't released.
 Install: `adb install -r build/stoklore.apk`, or send the APK

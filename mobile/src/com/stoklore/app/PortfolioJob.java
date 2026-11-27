@@ -54,7 +54,8 @@ public class PortfolioJob extends JobService {
         JobScheduler js = c.getSystemService(JobScheduler.class);
         JSONObject pf = read(c, PORTFOLIO);
         boolean has = len(pf, "holdings") > 0 || len(pf, "watch") > 0;
-        boolean want = has && (!"off".equals(pf.optString("notify", "hourly")) || len(pf, "alerts") > 0 || pf.optBoolean("filings", true));
+        boolean want = (has && (!"off".equals(pf.optString("notify", "hourly")) || len(pf, "alerts") > 0 || pf.optBoolean("filings", true)))
+            || pf.optBoolean("updates", true); // the daily update check runs for everyone who leaves it on
         if (!want) { js.cancel(JOB_ID); return; }
         if (js.getPendingJob(JOB_ID) != null) return;
         JobInfo.Builder b = new JobInfo.Builder(JOB_ID, new ComponentName(c, PortfolioJob.class))
@@ -78,6 +79,9 @@ public class PortfolioJob extends JobService {
         int min = t.getHour() * 60 + t.getMinute(), dow = t.getDayOfWeek().getValue();
         JSONObject pf = read(c, PORTFOLIO);
         JSONArray hs = pf.optJSONArray("holdings");
+        if (!now && pf.optBoolean("updates", true) && min >= 8 * 60 && min <= 22 * 60) {
+            try { updates(c); } catch (Exception ignored) { /* tomorrow */ }
+        }
         if (!now && pf.optBoolean("filings", true) && min >= 7 * 60 && min <= 23 * 60) {
             try { filings(c, pf); } catch (Exception ignored) { /* next pass */ }
         }
@@ -214,6 +218,40 @@ public class PortfolioJob extends JobService {
         } catch (Exception ignored) { /* stays unpriced */ }
     }
 
+    private static final String RELEASES = "https://api.github.com/repos/Karthik002002/Stoklore/releases?per_page=20";
+    private static final String RELEASE_PAGE = "https://github.com/Karthik002002/Stoklore/releases/";
+
+    /** Once a day: the newest published mobile-vX.Y release of this repo; a notification when it's a newer main
+     *  version than the one installed (each version announced once). A tap opens its release page. */
+    static void updates(Context c) throws Exception {
+        long nowMs = System.currentTimeMillis();
+        JSONObject st0 = read(c, STATE);
+        if (nowMs - st0.optLong("updateAt", 0) < 20 * 3600 * 1000L) return;
+        Http.Res r = Http.get(RELEASES);
+        if (r.status != 200) return;
+        JSONArray list = new JSONArray(r.body);
+        String best = null, page = null;
+        for (int i = 0; i < list.length(); i++) {
+            JSONObject rel = list.getJSONObject(i);
+            String tag = rel.optString("tag_name"), url = rel.optString("html_url");
+            if (rel.optBoolean("draft") || rel.optBoolean("prerelease") || !tag.matches("mobile-v\\d+\\.\\d+(\\.\\d+)?") || !url.startsWith(RELEASE_PAGE)) continue;
+            String v = tag.substring(8);
+            if (best == null || Portfolio.newerVersion(v, best)) { best = v; page = url; }
+        }
+        String installed = c.getPackageManager().getPackageInfo(c.getPackageName(), 0).versionName;
+        synchronized (LOCK) {
+            JSONObject st = read(c, STATE);
+            st.put("updateAt", nowMs);
+            boolean tell = best != null && Portfolio.newerVersion(best, installed) && !best.equals(st.optString("updateNotified"));
+            if (tell) st.put("updateNotified", best);
+            write(c, STATE, st.toString());
+            if (tell) {
+                Intent open = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(page)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                post(c, "updates", 3, "Stoklore " + best + " is available", "You have " + installed + ". Tap to open the download page.", open);
+            }
+        }
+    }
+
     /** New filings worth knowing (results, board meetings, dividends, splits, ...) for the stocks you hold
      *  or watch, from Screener's per-company "recent announcements" snippet; every 2 hours at most. The first
      *  pass only remembers what's already there, so turning this on doesn't flood you with old filings. */
@@ -306,16 +344,19 @@ public class PortfolioJob extends JobService {
     }
 
     static void post(Context c, String channel, int id, String title, String text) {
+        post(c, channel, id, title, text, new Intent(c, MainActivity.class).putExtra("route", "holdings").addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP));
+    }
+
+    static void post(Context c, String channel, int id, String title, String text, Intent open) {
         NotificationManager nm = c.getSystemService(NotificationManager.class);
         if (nm.getNotificationChannel(channel) == null) {
-            boolean alerts = "alerts".equals(channel), filings = "filings".equals(channel);
-            NotificationChannel ch = new NotificationChannel(channel, alerts ? "Holding alerts" : filings ? "Filings & results" : "Holdings updates",
+            boolean alerts = "alerts".equals(channel), filings = "filings".equals(channel), updates = "updates".equals(channel);
+            NotificationChannel ch = new NotificationChannel(channel, alerts ? "Holding alerts" : filings ? "Filings & results" : updates ? "App updates" : "Holdings updates",
                 alerts ? NotificationManager.IMPORTANCE_HIGH : NotificationManager.IMPORTANCE_DEFAULT);
             ch.setDescription(alerts ? "Your price and portfolio alerts" : filings ? "Results, board meetings, dividends and other filings for stocks you hold or watch"
-                : "Open, hourly and close summaries of your holdings");
+                : updates ? "A new version of Stoklore is out" : "Open, hourly and close summaries of your holdings");
             nm.createNotificationChannel(ch);
         }
-        Intent open = new Intent(c, MainActivity.class).putExtra("route", "holdings").addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent pi = PendingIntent.getActivity(c, id, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Notification n = new Notification.Builder(c, channel)
             .setSmallIcon(R.drawable.ic_stat)

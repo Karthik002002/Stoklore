@@ -121,6 +121,13 @@ public class PortfolioCheck {
         eq(fl.size(), 1, "filings parsed"); eq(fl.get(0).url, "https://www.bseindia.com/a.pdf?x=1&y=2", "filing url");
         eq(fl.get(0).date, "2026-11-19T17:39:33+05:30", "filing date"); ok(fl.get(0).title.startsWith("Board Meeting Intimation 19 Nov"), "filing title: " + fl.get(0).title);
 
+        // app updates: main versions only
+        ok(Portfolio.newerVersion("3.4", "3.3-dev.2"), "3.4 is newer than 3.3-dev.2");
+        ok(!Portfolio.newerVersion("3.3", "3.3-dev.2"), "a dev build isn't told to update to its own main version");
+        ok(Portfolio.newerVersion("3.10", "3.9") && !Portfolio.newerVersion("3.3", "3.4") && !Portfolio.newerVersion("x", "3.3"), "numeric compare");
+        ok(Portfolio.newerVersion("3.3.1", "3.3-dev.4") && !Portfolio.newerVersion("3.3.1", "3.3.1") && Portfolio.newerVersion("3.4", "3.3.9")
+            && !Portfolio.newerVersion("3.3.2", "3.3.10"), "patch releases");
+
         System.out.println("PortfolioCheck: " + n + " checks passed");
     }
 }

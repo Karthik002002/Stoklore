@@ -180,7 +180,7 @@ assert.equal(L.heldFor('2026-11-01', Date.parse('2026-11-26T12:00:00+05:30')).lo
 const cp = L.cleanPortfolio({ holdings: [{ sym: 'TCS', qty: 10, avg: 1, et: '8345' }, { sym: 'bad sym!', qty: 1 }, { sym: 'X', qty: -1 }, { sym: 'Y', qty: 1, avg: 'x' }],
   alerts: [{ kind: 'below', value: 1000 }, { kind: 'pbelow', value: 5, sym: 'NOPE' }, { kind: 'pabove', value: 5, sym: 'TCS' }, { kind: 'rm -rf', value: 1 }, { kind: 'above', value: NaN }], notify: 'spam' })
 assert.deepEqual(cp.holdings.map((h) => h.sym), ['TCS']); assert.deepEqual(cp.alerts.map((a) => a.kind), ['below', 'pabove']); assert.equal(cp.notify, 'hourly')
-assert.deepEqual(L.cleanPortfolio(null), { v: 1, portfolios: [{ id: 'main', name: 'My portfolio' }], holdings: [], watch: [], alerts: [], notify: 'hourly', filings: true })
+assert.deepEqual(L.cleanPortfolio(null), { v: 1, updates: true, portfolios: [{ id: 'main', name: 'My portfolio' }], holdings: [], watch: [], alerts: [], notify: 'hourly', filings: true })
 // portfolios: main always there, unknown / bad ids fold into main, same stock in two portfolios kept apart
 const mp = L.cleanPortfolio({ portfolios: [{ id: 'fam', name: 'Family' }, { id: 'BAD ID', name: 'x' }, { id: 'main', name: 'Mine' }],
   holdings: [{ sym: 'TCS', qty: 1, pf: 'fam' }, { sym: 'TCS', qty: 2 }, { sym: 'INFY', qty: 3, pf: 'gone' }],
@@ -285,4 +285,17 @@ assert.ok(sq.filter((r) => r.i < 4).every((r) => Math.max(r.w / r.h, r.h / r.w) 
 assert.deepEqual(L.squarify([0, 0], 0, 0, 10, 10), [])
 const ko = L.squarify([1, 5, 2], 0, 0, 90, 30, true)
 assert.deepEqual(ko.map((r) => r.i), [0, 1, 2], 'keepOrder lays out in the given order'); assert.ok(Math.abs(ko.reduce((t, r) => t + r.w * r.h, 0) - 2700) < 1e-6)
+// app updates: main versions only, dev builds don't "update" to their own main version, only this repo's releases
+assert.equal(L.newerVersion('3.4', '3.3-dev.2'), true); assert.equal(L.newerVersion('3.3', '3.3-dev.2'), false); assert.equal(L.newerVersion('3.10', '3.9'), true)
+assert.equal(L.newerVersion('3.3.1', '3.3-dev.4'), true); assert.equal(L.newerVersion('3.3.1', '3.3.1'), false); assert.equal(L.newerVersion('3.4', '3.3.9'), true)
+assert.equal(L.newerVersion('3.3.2', '3.3.10'), false)
+assert.equal(L.newerVersion('4.0', '3.12'), true); assert.equal(L.newerVersion('3.3', '3.4'), false); assert.equal(L.newerVersion('x', '3.3'), false); assert.equal(L.newerVersion('3.4', ''), true)
+const rel = (tag, extra = {}) => ({ tag_name: tag, draft: false, prerelease: false, html_url: `https://github.com/Karthik002002/Stoklore/releases/tag/${tag}`, body: 'notes',
+  assets: [{ browser_download_url: `https://github.com/Karthik002002/Stoklore/releases/download/${tag}/stoklore.apk` }], ...extra })
+const lr = L.latestRelease([rel('mobile-v3.3'), rel('mobile-v3.10'), rel('mobile-v3.9'), rel('v9.9'), rel('mobile-v9.0', { draft: true }), rel('mobile-v8.0', { prerelease: true }),
+  rel('mobile-v7.0', { html_url: 'https://evil.example/releases/tag/mobile-v7.0' })])
+assert.equal(L.latestRelease([rel('mobile-v3.3'), rel('mobile-v3.3.1')]).version, '3.3.1', 'patch releases count')
+assert.equal(lr.version, '3.10'); assert.ok(lr.apk.endsWith('/mobile-v3.10/stoklore.apk'))
+assert.equal(L.latestRelease([rel('mobile-v3.4', { assets: [{ browser_download_url: 'https://evil.example/x.apk' }] })]).apk, null, 'downloads only from this repo')
+assert.equal(L.latestRelease(null), null); assert.equal(L.cleanPortfolio({ updates: false }).updates, false)
 console.log('mobile/check.mjs: all passed')

@@ -324,6 +324,19 @@ function drawChart(cv, bars, o) {
     const b = bars[o.hover], x = X(o.hover)
     g.strokeStyle = T['muted-foreground']; g.setLineDash([2, 3]); g.beginPath(); g.moveTo(x, top); g.lineTo(x, top + ph + volH); g.stroke(); g.setLineDash([])
     g.fillStyle = T.foreground; g.beginPath(); g.arc(x, Y(b.c), 3, 0, 7); g.fill()
+    // the bar's values as a tooltip beside the crosshair (flips side near the right edge)
+    const rows = [[fullDate(b.t, o.range), T['muted-foreground']], [`O ${fmt(b.o)}   H ${fmt(b.h)}`, T.foreground],
+      [`L ${fmt(b.l)}   C ${fmt(b.c)}`, b.c >= b.o ? T.up : T.down], ...(b.v ? [[`Vol ${compact(b.v)}`, T['muted-foreground']]] : [])]
+    g.font = `11px ${canvasFont}`; g.textAlign = 'left'; g.textBaseline = 'top'
+    const tw = Math.max(...rows.map(([t]) => g.measureText(t).width)) + 16, th = rows.length * 15 + 9
+    let tx = x + 12
+    if (tx + tw > pw - 2) tx = x - 12 - tw
+    tx = Math.max(2, tx)
+    const ty = top + 4
+    g.fillStyle = rgba(T['panel-head'], 0.94); g.strokeStyle = T.border; g.lineWidth = 1
+    g.beginPath(); if (g.roundRect) g.roundRect(tx, ty, tw, th, 6); else g.rect(tx, ty, tw, th); g.fill(); g.stroke()
+    rows.forEach(([t, c], i) => { g.fillStyle = c; g.fillText(t, tx + 8, ty + 6 + i * 15) })
+    g.textBaseline = 'middle'
   }
 }
 const chartRange = () => RANGES[store.get('chart.range', '6M')] ? store.get('chart.range', '6M') : '6M'
@@ -347,9 +360,7 @@ function mountChart(kind, sym) {
     if (!c.bars.length) return
     const r = cv.getBoundingClientRect()
     c.hover = Math.max(0, Math.min(c.bars.length - 1, Math.floor((e.clientX - r.left) / ((r.width - AXIS) / c.bars.length))))
-    c.draw()
-    const b = c.bars[c.hover]
-    info.innerHTML = `${esc(fullDate(b.t, c.range))} · O ${fmt(b.o)} H ${fmt(b.h)} L ${fmt(b.l)} C <b>${fmt(b.c)}</b>${b.v ? ` · V ${compact(b.v)}` : ''}`
+    c.draw() // the bar's OHLC is drawn as a tooltip on the chart; the line below keeps the range summary
   }
   const end = () => { if (c.hover == null) return; c.hover = null; c.draw(); summary() }
   cv.addEventListener('pointerdown', pick)
@@ -2014,11 +2025,31 @@ function renderSettings() {
         <button class="go primary" style="grid-column:span 2" data-ext="${CREDIT.repo}" data-pkg="">GitHub · Karthik002002/Stoklore<span>the source, issues, releases</span></button>
       </div>
     </div>
+    <div class="panel"><div class="li"><div class="grow"><div class="t1">Updates</div><div class="t2" style="white-space:normal">${portfolio().updates ? 'Checks GitHub for a new release daily and tells you (in the app and as a notification)' : 'Automatic checks are off'}</div></div>
+      <button class="pill" data-act="upd-auto">${portfolio().updates ? 'on' : 'off'}</button></div></div>
+    <div class="btnrow"><button class="btn" data-act="upd-check">Check for updates</button></div>
     <div class="note">Stoklore ${esc(appVersion())} · public market screens: index quotes and charts from Moneycontrol; sectors, movers, indices, search and headlines from ET Markets. Screens that need a login or Stoklore's own server (journal, watchlists, earnings, events, scans, shareholding) stay on the web app; NSE's and BSE's own feeds refuse apps outside a browser.</div>`
   window.scrollTo(0, top)
 }
 // the author's credit on Settings → About: the GitHub repo only, no personal details
 const CREDIT = { repo: 'https://github.com/Karthik002002/Stoklore' }
+// ---- app updates: GitHub's newest published release of this app (lib.js latestRelease / newerVersion) ----
+const installedVersion = () => { try { return window.Native?.version?.() || '' } catch { return '' } }
+async function checkUpdate(manual) {
+  const installed = installedVersion()
+  let rel
+  try { rel = latestRelease(await getJson(RELEASES_API)) } catch (e) { if (manual) toast(`Couldn't check for updates: ${e.message}`); return }
+  store.set('update.checked', String(Date.now()))
+  if (!rel || !newerVersion(rel.version, installed)) { if (manual) toast(`You're on the latest version${installed ? ` (${installed})` : ''}`); return }
+  if (!manual && store.get('update.skip', '') === rel.version) return
+  // release notes as plain text: markdown marks and links stripped, the install / checksum footer left out
+  const notes = rel.notes.split(/\n---\n/)[0].replace(/\*\*|`|#+ /g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').trim().slice(0, 1200)
+  $('sheet').innerHTML = `<h3>Stoklore ${esc(rel.version)} is available</h3><div class="mute" style="font-size:11px">You have ${esc(installed || 'an older version')}.</div>
+    ${notes ? `<pre class="prose panel" style="margin:8px 0;max-height:38vh;overflow:auto;white-space:pre-wrap;font-size:11px">${esc(notes)}</pre>` : ''}
+    <div class="note" style="padding:0 0 8px">Download opens in your browser - open the file to install it over this version; your holdings and settings stay.</div>
+    <div class="btnrow fxbtns"><button class="btn" data-act="upd-later" data-v="${esc(rel.version)}">Later</button><button class="btn primary" data-ext="${esc(rel.apk || rel.url)}" data-pkg="">Download ${esc(rel.version)}</button></div>`
+  $('sheet').classList.add('on', 'big')
+}
 const appVersion = () => { try { return `v${window.Native?.version() || ''}` } catch { return '' } }
 
 // ---- taps and inputs ----------------------------------------------------------------------------------
@@ -2036,6 +2067,7 @@ document.addEventListener('click', (e) => {
   if ((el = q('[data-fx]'))) return filterTap(el)
   if ((el = q('[data-beat]'))) return beatTap(el)
   if ((el = q('[data-z]'))) return zoomTap(el)
+  if ((el = q('[data-act="upd-later"]'))) { store.set('update.skip', el.dataset.v); return closeSheet() } // inside the card
   if ((el = q('[data-h]')) && !el.disabled) return holdTap(el)
   if (q('#sheet')) return // taps inside the card keep it open
   if (sheetOn()) { closeSheet(); if (!q('[data-m]')) return }
@@ -2083,6 +2115,8 @@ document.addEventListener('click', (e) => {
         return
       }
       case 'lock': return window.Native?.setLock(v === '1')
+      case 'upd-check': toast('Checking for updates…'); return checkUpdate(true)
+      case 'upd-auto': { const pf = portfolio(); savePortfolio({ ...pf, updates: !pf.updates }); return renderSettings() }
       case 'mdir': mk.dir = v; for (const b of el.parentNode.children) b.classList.toggle('on', b === el); return renderMovers()
       case 'mcap': mk.cap = v; for (const b of el.parentNode.children) b.classList.toggle('on', b === el); return renderMovers()
       case 'iex':
@@ -2196,6 +2230,10 @@ if (!location.hash) {
   lastTab = TAB_IDS.includes(tab) ? tab : 'feed'
 }
 route()
+// a newer release on GitHub? checked at most every 12 hours (the background job also checks daily and notifies)
+try {
+  if (portfolio().updates && Date.now() - +store.get('update.checked', '0') > 12 * 3600e3) setTimeout(() => { if (!sheetOn()) checkUpdate(false) }, 5000)
+} catch {}
 // the last crash (MainActivity records it): shown once, so it can be screenshotted and fixed
 try {
   const crash = window.Native?.lastCrash?.()

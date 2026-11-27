@@ -1,5 +1,5 @@
 #!/bin/sh
-# Publishes the current mobile build as a GitHub release: tag mobile-v<versionName>, the APK attached,
+# Publishes the MAIN version (AndroidManifest.xml) as a GitHub release: tag mobile-v<versionName>, the APK attached,
 # notes from CHANGELOG.md's section for that version. Only when you run this - builds alone never release.
 # Needs: mobile/ committed and pushed (the release points at that commit), the gh CLI logged in as
 # Karthik002002, and the same debug keystore as earlier releases (a different key can't update the app).
@@ -17,7 +17,7 @@ git merge-base --is-ancestor "$HEAD" "$REMOTE" 2>/dev/null || { echo "HEAD $HEAD
 if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then echo "$TAG is already released - bump versionName"; exit 1; fi
 grep -q "^## $NAME\$" CHANGELOG.md || { echo "CHANGELOG.md has no '## $NAME' section"; exit 1; }
 
-./build.sh
+RELEASE=1 ./build.sh # the main version itself (local builds are <main>-dev.<n> and never released)
 APK="build/stoklore-v$NAME.apk"
 cp build/stoklore.apk "$APK"
 NOTES=$(mktemp)

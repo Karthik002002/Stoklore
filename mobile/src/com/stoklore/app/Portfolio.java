@@ -237,6 +237,21 @@ final class Portfolio {
         return out;
     }
 
+    // ---- app updates (lib.js newerVersion keeps the same rule): main versions only ----
+    private static int[] ver(String v) { // major.minor or major.minor.patch (patch 0 when missing); "-dev.N" ignored
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("^v?(\\d+)\\.(\\d+)(?:\\.(\\d+))?").matcher(v == null ? "" : v);
+        return m.find() ? new int[]{Integer.parseInt(m.group(1)), Integer.parseInt(m.group(2)), m.group(3) == null ? 0 : Integer.parseInt(m.group(3))} : null;
+    }
+
+    /** Is main version `latest` newer than `installed` ("3.3.1" vs "3.3-dev.2" -> true; "3.3" vs "3.3-dev.2" -> false)? */
+    static boolean newerVersion(String latest, String installed) {
+        int[] a = ver(latest), b = ver(installed);
+        if (a == null) return false;
+        if (b == null) return true;
+        for (int i = 0; i < 3; i++) if (a[i] != b[i]) return a[i] > b[i];
+        return false;
+    }
+
     static Pos find(List<Pos> ps, String sym) {
         for (Pos p : ps) if (p.sym.equals(sym)) return p;
         return null;

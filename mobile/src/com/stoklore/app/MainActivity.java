@@ -5,11 +5,24 @@ import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
+import android.app.KeyguardManager;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.hardware.biometrics.BiometricManager;
+import android.hardware.biometrics.BiometricPrompt;
+import android.os.CancellationSignal;
+import android.os.SystemClock;
+import android.view.View;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.database.Cursor;
+import android.provider.OpenableColumns;
 import android.provider.Settings;
+import android.util.Base64;
+import android.webkit.WebViewClient;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import android.webkit.JavascriptInterface;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -25,17 +38,64 @@ import org.json.JSONObject;
  *  Origin/Referer and sidesteps CORS), to open links in the Dhan / TradingView apps, to keep the holdings
  *  file the background job (PortfolioJob) reads, and for files, notifications and system settings. */
 public class MainActivity extends Activity {
-    private static final int REQ_FILE = 1, REQ_EXPORT = 2, REQ_NOTIFY = 3;
+    private static final int REQ_FILE = 1, REQ_EXPORT = 2, REQ_NOTIFY = 3, REQ_UNLOCK = 4, REQ_PICK = 5;
+    private static final int MAX_FILE = 25 * 1024 * 1024;
+    private String pickId;           // the page's pending Native.pickFile call
+    private Uri sharedUri;           // a file opened with / shared to Stoklore, handed over once the page is up
+    private boolean pageReady;
+    private static final long RELOCK_AFTER_MS = 30_000; // back within 30s of leaving: no prompt
     private static final String NOTIFY_PERM = "android.permission.POST_NOTIFICATIONS"; // API 33+
     private static final List<String> READABLE = Arrays.asList(PortfolioJob.PORTFOLIO, PortfolioJob.STATE);
 
     private WebView web;
     private ValueCallback<Uri[]> fileCallback;
     private String exportText;
+    // app lock (Settings): the page stays hidden until fingerprint / face / screen lock says yes
+    private boolean locked, authenticating;
+    private long stoppedAt;
+    private Runnable unlockOk, unlockFail;
+
+    /** Any crash is written to files/crash.txt; the next launch shows it (window.onCrash) and runs in safe mode -
+     *  no background job - so the same fault can't crash the app in a loop. */
+    private static final String CRASH = "crash.txt";
+    private boolean safeMode;
+
+    private void recordCrashes() {
+        final Thread.UncaughtExceptionHandler prev = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((t, e) -> {
+            try {
+                java.io.StringWriter w = new java.io.StringWriter();
+                e.printStackTrace(new java.io.PrintWriter(w));
+                String info = "Stoklore " + version() + " · Android " + Build.VERSION.RELEASE + " (" + Build.VERSION.SDK_INT + ") · " + Build.MANUFACTURER + " " + Build.MODEL
+                    + " · thread " + t.getName() + "\n" + w;
+                try (java.io.FileOutputStream out = new java.io.FileOutputStream(new java.io.File(getFilesDir(), CRASH))) { out.write(info.getBytes("UTF-8")); }
+            } catch (Throwable ignored) { /* nothing more to do */ }
+            if (prev != null) prev.uncaughtException(t, e);
+        });
+    }
+
+    /** The last crash's report (and clears it), or "". */
+    @JavascriptInterface
+    public String lastCrash() {
+        java.io.File f = new java.io.File(getFilesDir(), CRASH);
+        if (!f.exists()) return "";
+        try (InputStream in = new java.io.FileInputStream(f)) {
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            for (int n; (n = in.read(buf)) > 0; ) out.write(buf, 0, n);
+            return out.toString("UTF-8");
+        } catch (Exception e) {
+            return "crash report unreadable: " + e;
+        } finally {
+            f.delete();
+        }
+    }
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
+        recordCrashes();
+        safeMode = new java.io.File(getFilesDir(), CRASH).exists();
         web = new WebView(this);
         web.setBackgroundColor(0xff0a0c0f);
         WebSettings s = web.getSettings();
@@ -58,17 +118,141 @@ public class MainActivity extends Activity {
                 return true;
             }
         });
+        web.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                pageReady = true;
+                if (sharedUri != null) { Uri u = sharedUri; sharedUri = null; readInto("window.onSharedFile", null, u); }
+            }
+        });
+        sharedUri = incomingFile(getIntent());
         setContentView(web);
+        if (lockOn()) { locked = true; web.setVisibility(View.INVISIBLE); hideFromRecents(true); }
         web.loadUrl("file:///android_asset/index.html" + routeOf(getIntent()));
-        PortfolioJob.schedule(this); // keeps the background job in step after an update
+        if (!safeMode) { // keeps the background job in step after an update; never allowed to stop the app opening
+            try { PortfolioJob.schedule(this); } catch (Throwable e) { android.util.Log.w("Stoklore", "job not scheduled", e); }
+        }
+    }
+
+    // ---- app lock ----
+    private SharedPreferences prefs() { return getSharedPreferences("app", MODE_PRIVATE); }
+    private boolean lockOn() { return prefs().getBoolean("lock", false) && keyguard().isDeviceSecure(); }
+    private KeyguardManager keyguard() { return getSystemService(KeyguardManager.class); }
+
+    private void hideFromRecents(boolean hide) {
+        if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(!hide); // no holdings in the app switcher's preview
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        if (authenticating || !lockOn()) return;
+        if (locked || (stoppedAt > 0 && SystemClock.elapsedRealtime() - stoppedAt > RELOCK_AFTER_MS)) {
+            locked = true;
+            web.setVisibility(View.INVISIBLE);
+            authenticate(() -> { locked = false; stoppedAt = 0; web.setVisibility(View.VISIBLE); }, () -> moveTaskToBack(true));
+        }
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        if (!authenticating) stoppedAt = SystemClock.elapsedRealtime();
+    }
+
+    /** Fingerprint / face with the screen lock as the fallback (Android 10+), the screen lock alone before. */
+    private void authenticate(Runnable ok, Runnable fail) {
+        if (!keyguard().isDeviceSecure()) { ok.run(); return; } // no screen lock set: nothing to check against
+        authenticating = true;
+        Runnable done = () -> authenticating = false;
+        if (Build.VERSION.SDK_INT >= 29) {
+            BiometricPrompt.Builder b = new BiometricPrompt.Builder(this).setTitle("Unlock Stoklore").setSubtitle("Your holdings are on this phone");
+            if (Build.VERSION.SDK_INT >= 30) b.setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_WEAK | BiometricManager.Authenticators.DEVICE_CREDENTIAL);
+            else b.setDeviceCredentialAllowed(true);
+            b.build().authenticate(new CancellationSignal(), getMainExecutor(), new BiometricPrompt.AuthenticationCallback() {
+                @Override public void onAuthenticationSucceeded(BiometricPrompt.AuthenticationResult r) { done.run(); ok.run(); }
+                @Override public void onAuthenticationError(int code, CharSequence msg) { done.run(); fail.run(); }
+            });
+        } else {
+            unlockOk = () -> { done.run(); ok.run(); };
+            unlockFail = () -> { done.run(); fail.run(); };
+            startActivityForResult(keyguard().createConfirmDeviceCredentialIntent("Unlock Stoklore", "Your holdings are on this phone"), REQ_UNLOCK);
+        }
+    }
+
+    /** "on", "off", or "unavailable" when the phone has no screen lock to unlock with. */
+    @JavascriptInterface
+    public String lockState() {
+        return !keyguard().isDeviceSecure() ? "unavailable" : prefs().getBoolean("lock", false) ? "on" : "off";
+    }
+
+    /** Turns the app lock on or off - either way only after unlocking; answers window.onLockState(). */
+    @JavascriptInterface
+    public void setLock(final boolean on) {
+        runOnUiThread(() -> authenticate(() -> {
+            prefs().edit().putBoolean("lock", on).apply();
+            hideFromRecents(on);
+            web.evaluateJavascript("window.onLockState && window.onLockState()", null);
+        }, () -> web.evaluateJavascript("window.onLockState && window.onLockState()", null)));
     }
 
     /** A notification tap opens the app on Holdings. */
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        Uri shared = incomingFile(intent);
+        if (shared != null) { if (pageReady) readInto("window.onSharedFile", null, shared); else sharedUri = shared; }
         String r = routeOf(intent);
         if (!r.isEmpty()) web.evaluateJavascript("location.hash=" + JSONObject.quote(r), null);
+    }
+
+    /** A file opened with Stoklore (VIEW) or shared to it (SEND): CSV, PDF statements, backups. */
+    private static Uri incomingFile(Intent i) {
+        if (i == null) return null;
+        if (Intent.ACTION_VIEW.equals(i.getAction()) && i.getData() != null && "content".equals(i.getData().getScheme())) return i.getData();
+        if (Intent.ACTION_SEND.equals(i.getAction())) { Object u = i.getParcelableExtra(Intent.EXTRA_STREAM); if (u instanceof Uri) return (Uri) u; }
+        return null;
+    }
+
+    /** Reads a picked / shared file natively (the WebView's own file input isn't reliable on every phone) and
+     *  hands it to the page as base64: fn(id, name, base64, error) or, for a shared file, fn(name, base64, error). */
+    private void readInto(final String fn, final String id, final Uri uri) {
+        new Thread(() -> {
+            String name = "file", b64 = null, err = null;
+            try {
+                try (Cursor c = getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+                    if (c != null && c.moveToFirst() && c.getString(0) != null) name = c.getString(0);
+                } catch (Exception ignored) { /* keep "file" */ }
+                try (InputStream in = getContentResolver().openInputStream(uri)) {
+                    ByteArrayOutputStream out = new ByteArrayOutputStream();
+                    byte[] buf = new byte[65536];
+                    for (int n; (n = in.read(buf)) > 0; ) {
+                        out.write(buf, 0, n);
+                        if (out.size() > MAX_FILE) throw new Exception("That file is larger than 25 MB");
+                    }
+                    b64 = Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP);
+                }
+            } catch (Exception e) {
+                err = "Couldn't read the file: " + e.getMessage();
+            }
+            final String js = fn + " && " + fn + "(" + (id != null ? JSONObject.quote(id) + "," : "") + JSONObject.quote(name) + ","
+                + (b64 == null ? "null" : JSONObject.quote(b64)) + "," + (err == null ? "null" : JSONObject.quote(err)) + ")";
+            runOnUiThread(() -> web.evaluateJavascript(js, null));
+        }).start();
+    }
+
+    /** The page's file picker: Android's own picker, the file read natively; answers window.onPicked. */
+    @JavascriptInterface
+    public void pickFile(final String id) {
+        runOnUiThread(() -> {
+            pickId = id;
+            Intent i = new Intent(Intent.ACTION_GET_CONTENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
+            try {
+                startActivityForResult(Intent.createChooser(i, "Choose a file"), REQ_PICK);
+            } catch (ActivityNotFoundException e) {
+                web.evaluateJavascript("window.onPicked && window.onPicked(" + JSONObject.quote(id) + ",null,null,\"No file picker on this phone\")", null);
+            }
+        });
     }
 
     private static String routeOf(Intent i) {
@@ -162,17 +346,21 @@ public class MainActivity extends Activity {
         return READABLE.contains(name) ? PortfolioJob.read(this, name).toString() : "{}";
     }
 
-    /** Saves portfolio.json (the only file the page may write) and starts / stops the job to match. */
+    /** Saves portfolio.json (the only file the page may write), then starts / stops the job and refreshes the
+     *  widget. Returns "" when saved, else the reason. The job and the widget can't undo a save: their errors
+     *  only go to the log (some phones refuse background jobs; the holdings are still saved). */
     @JavascriptInterface
-    public boolean savePortfolio(String json) {
+    public String savePortfolio(String json) {
         try {
             new JSONObject(json); // refuse anything that isn't JSON
             PortfolioJob.write(this, PortfolioJob.PORTFOLIO, json);
-            PortfolioJob.schedule(this);
-            return true;
         } catch (Exception e) {
-            return false;
+            android.util.Log.e("Stoklore", "save failed", e);
+            return e.getClass().getSimpleName() + ": " + e.getMessage();
         }
+        try { PortfolioJob.schedule(this); } catch (Throwable e) { android.util.Log.w("Stoklore", "job not scheduled", e); }
+        try { HoldingsWidget.update(this); } catch (Throwable e) { android.util.Log.w("Stoklore", "widget not updated", e); }
+        return "";
     }
 
     /** "Send one now": prices the holdings and posts a summary notification; answers window.onCheckNow(result). */
@@ -236,7 +424,22 @@ public class MainActivity extends Activity {
     @Override
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
+        if (req == REQ_UNLOCK) {
+            Runnable r = res == RESULT_OK ? unlockOk : unlockFail;
+            unlockOk = unlockFail = null;
+            if (r != null) r.run();
+            return;
+        }
         Uri uri = res == RESULT_OK && data != null ? data.getData() : null;
+        if (uri == null && res == RESULT_OK && data != null && data.getClipData() != null && data.getClipData().getItemCount() > 0) uri = data.getClipData().getItemAt(0).getUri();
+        if (req == REQ_PICK) {
+            String id = pickId;
+            pickId = null;
+            if (id == null) return;
+            if (uri == null) web.evaluateJavascript("window.onPicked && window.onPicked(" + JSONObject.quote(id) + ",null,null,null)", null); // cancelled
+            else readInto("window.onPicked", id, uri);
+            return;
+        }
         if (req == REQ_FILE && fileCallback != null) {
             fileCallback.onReceiveValue(uri == null ? null : new Uri[]{uri});
             fileCallback = null;

@@ -1,14 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.stoklore.app"
-    android:versionCode="11"
-    android:versionName="2.0">
+    android:versionCode="24"
+    android:versionName="3.3">
 
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- the background job waits for a network (JobInfo.NETWORK_TYPE_ANY): Android requires this to schedule it -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- holdings: notifications (Android 13+ asks), and the 15-minute job surviving a reboot -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- app lock: fingerprint / face, or the screen lock -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <!-- Android 11+: lets getLaunchIntentForPackage see the Dhan app -->
     <queries>
         <package android:name="com.dhan.live" />
@@ -31,7 +35,28 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- "Open with" / "Share to" Stoklore: holdings CSVs, CAS PDFs, backups -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/csv" />
+                <data android:mimeType="text/comma-separated-values" />
+                <data android:mimeType="text/tab-separated-values" />
+                <data android:mimeType="text/plain" />
+                <data android:mimeType="application/csv" />
+                <data android:mimeType="application/vnd.ms-excel" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="application/json" />
+                <data android:mimeType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+            </intent-filter>
         </activity>
+        <receiver android:name=".HoldingsWidget" android:exported="false" android:label="Stoklore holdings">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_info" />
+        </receiver>
         <service
             android:name=".PortfolioJob"
             android:exported="false"

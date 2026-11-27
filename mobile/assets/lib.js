@@ -364,6 +364,40 @@ const FEED_KINDS = [['overview', 'Indices & breadth'], ['gainers', 'Gainers'], [
   ['sectors', 'Sector cards'], ['quiet', 'Big and quiet'], ['news', 'Headlines']]
 const FEED_MOVES = [[0, 'Any move'], [2, '2%+'], [5, '5%+'], [10, '10%+']]
 const filterOn = (f) => !!(f && (f.kinds?.length || f.caps?.length || f.sectors?.length || f.minMove))
+/** A filter from storage, a template or a backup -> only known kinds / sizes / moves, kinds in the feed's
+ *  own order (the order a filtered feed rotates through them), sectors as short strings. */
+function cleanFilter(f) {
+  const has = (arr, v) => Array.isArray(arr) && arr.includes(v)
+  return {
+    kinds: FEED_KINDS.map(([k]) => k).filter((k) => has(f?.kinds, k)),
+    caps: ['large', 'mid', 'small'].filter((c) => has(f?.caps, c)),
+    sectors: [...new Set((Array.isArray(f?.sectors) ? f.sectors : []).filter((x) => typeof x === 'string' && x && x.length <= 40))].sort().slice(0, 60),
+    minMove: FEED_MOVES.some(([v]) => v === f?.minMove) ? f.minMove : 0,
+  }
+}
+const sameFilter = (a, b) => JSON.stringify(cleanFilter(a)) === JSON.stringify(cleanFilter(b))
+// ready-made filter templates; the user's own are saved next to them (feed.templates)
+const FEED_TEMPLATES = [
+  ['Gainers only', { kinds: ['gainers'] }], ['Losers only', { kinds: ['losers'] }], ['Big moves 5%+', { kinds: ['gainers', 'losers'], minMove: 5 }],
+  ['Headlines', { kinds: ['news'] }], ['Against the tide', { kinds: ['tide'] }], ['Large caps', { caps: ['large'] }],
+  ['Small-cap movers', { kinds: ['gainers', 'losers'], caps: ['small'] }],
+].map(([name, f]) => ({ id: `b:${name}`, name, builtin: true, filter: cleanFilter(f) }))
+/** The user's saved templates (from storage or a backup) -> well-formed ones, at most 20. */
+const cleanTemplates = (list) => (Array.isArray(list) ? list : []).filter((t) => t && typeof t.name === 'string' && t.name.trim())
+  .slice(0, 20).map((t, i) => ({ id: typeof t.id === 'string' && /^u:[\w-]{1,30}$/.test(t.id) ? t.id : `u:${i}`, name: t.name.trim().slice(0, 30), filter: cleanFilter(t.filter) }))
+/** Adds (or, with the same name, replaces) a template; newest first. */
+function saveTemplate(list, name, filter, id) {
+  const n = String(name || '').trim().slice(0, 30)
+  if (!n || !filterOn(filter)) return cleanTemplates(list)
+  const rest = cleanTemplates(list).filter((t) => t.name.toLowerCase() !== n.toLowerCase())
+  return cleanTemplates([{ id, name: n, filter }, ...rest])
+}
+
+/** NSE's regular session, Mon-Fri 09:15-15:30 IST (holidays aside), at time `now` (ms). */
+function marketOpen(now = Date.now()) {
+  const d = new Date(now + 19800e3), m = d.getUTCHours() * 60 + d.getUTCMinutes(), day = d.getUTCDay()
+  return day >= 1 && day <= 5 && m >= 9 * 60 + 15 && m <= 15 * 60 + 30
+}
 /** Page `page` of a filtered feed: { theme: 'filtered', label, cards } - [] when nothing (more) matches. */
 function feedFiltered(p, page, seen, f) {
   const kinds = f.kinds?.length ? f.kinds : FEED_KINDS.map(([k]) => k)
@@ -412,7 +446,7 @@ function parseNum(v) {
 }
 /** CSV / TSV / semicolon text -> rows of cells (quotes, "" escapes and CRLF handled). */
 function splitCsv(text) {
-  const lines = String(text || '').replace(/^﻿/, '').split(/\r?\n/)
+  const lines = String(text || '').replace(/^\uFEFF/, '').split(/\r\n|\r|\n/)
   const sample = lines.filter((l) => l.trim()).slice(0, 5).join('\n')
   const delim = ['\t', ';', ','].map((d) => [d, sample.split(d).length]).sort((a, b) => b[1] - a[1])[0][0]
   const rows = []
@@ -430,16 +464,125 @@ function splitCsv(text) {
   return rows.filter((r) => r.some((x) => x !== ''))
 }
 // header names brokers use (Zerodha, Groww, Dhan, Upstox, Angel, spreadsheets)
+// column names across Indian brokers' holdings exports: Zerodha (Kite, Console), Groww, Dhan, Upstox, Angel
+// One, ICICI Direct, HDFC Securities, Kotak, Motilal Oswal, 5paisa, Fyers, Paytm Money, IIFL, Sharekhan, and
+// CDSL / NSDL demat statements (test/fixtures + check.mjs cover each shape)
 const HOLD_COLS = {
-  sym: /^(symbol|trading ?symbol|tradingsymbol|instrument|scrip( name)?|stock( name)?|company( name)?|security( name)?|name|isin)$/,
-  qty: /^(qty|quantity|quantity available|available qty|units|shares|net qty|holding qty|total qty)$/,
-  avg: /^(avg|avg ?cost|average ?(buy ?)?(price|cost)|avg ?(buy ?)?(price|cost)|buy ?(price|avg|average)|cost ?price|purchase ?price)$/,
-  date: /^(date|buy date|purchase date|trade date)$/,
+  sym: /^(symbol|stock symbol|trading ?symbol|tradingsymbol|instrument( name)?|scrip( name| code)?|stock( name)?|company( name)?|security( name)?|name|scheme( name)?|fund name|isin( code)?)$/,
+  qty: /^(qty|quantity|quantity available|available qty|units|units held|balance units|shares|shares held|no of shares|net qty|net quantity|holding qty|holding quantity|holdings|total qty|total quantity|current qty|free qty|demat qty|(current|free|total|closing) bal(ance)?|balance)$/,
+  avg: /^(avg|avg ?cost|average ?(buy ?|cost ?)?(price|cost|rate|nav)|avg ?(buy ?|cost ?)?(price|cost|rate|nav)|buy ?(price|avg|average|rate)|cost ?price|purchase ?(price|rate|nav)|avg ?purchase ?price)$/,
+  value: /^(buy value|invested value|investment value|invested amount|amount invested|invested|cost value|total cost|purchase value|investment)$/,
+  date: /^(date|buy date|purchase date|trade date|date of purchase)$/,
 }
-const normHead = (h) => String(h).toLowerCase().replace(/[()*:#_.]/g, ' ').replace(/\s+/g, ' ').trim()
+/** "NSE:TCS-EQ" (Fyers), "TCS-BE", "BSE:500570" -> "TCS": exchange prefixes and series suffixes off a symbol. */
+const cleanSymbol = (v) => String(v || '').trim().replace(/^(NSE|BSE|NFO|MCX)[:_ ]\s*/i, '').replace(/-(EQ|BE|BZ|SM|ST|E1|IL|BL)$/i, '')
+const SUMMARY_ROW = /^(total|grand total|investment|invested|current value|overall|net|summary|note|portfolio value)\b/i
+/** "Nippon Nifty 50 ETF (NIFTYBEES)" -> "NIFTYBEES": a symbol a broker puts in brackets after the name. */
+const bracketSymbol = (name) => (String(name || '').match(/\(([A-Z0-9&.\-]{2,20})\)\s*$/) || [])[1] || null
+// headings carry units and footnotes: "Avg. Price (₹)", "Qty (Nos.)", "Average Price (Rs.)"
+const normHead = (h) => String(h).toLowerCase().replace(/₹|\(rs\.?\)|\(inr\)|\(nos\.?\)|\bin rs\.?|\binr\b/g, ' ').replace(/[()*:#_.\[\]]/g, ' ').replace(/\s+/g, ' ').trim()
+// ---- .xlsx: a zip of XML parts. Unzipped with the platform's DecompressionStream (Android WebView, Node
+// 18+) and read with regexes - only cell values are taken. A password-protected workbook is an encrypted
+// OLE file, not a zip: fileKind says so, and the user is asked to save it without the password. ----
+const fileKind = (bytes) => {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
+  if (b[0] === 0x50 && b[1] === 0x4b) return 'zip'
+  if (b[0] === 0xd0 && b[1] === 0xcf && b[2] === 0x11 && b[3] === 0xe0) return 'ole' // encrypted .xlsx, or an old .xls
+  if (b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) return 'pdf'
+  return 'text'
+}
+async function inflateRaw(u8) {
+  const stream = new ReadableStream({ start(c) { c.enqueue(u8); c.close() } }).pipeThrough(new DecompressionStream('deflate-raw'))
+  const reader = stream.getReader(), parts = []
+  let n = 0
+  for (;;) { const { done, value } = await reader.read(); if (done) break; parts.push(value); n += value.length }
+  const out = new Uint8Array(n); let o = 0
+  for (const p of parts) { out.set(p, o); o += p.length }
+  return out
+}
+/** The named entries of a zip (stored or deflated), as text. */
+async function unzipText(bytes, want) {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), dv = new DataView(b.buffer, b.byteOffset, b.byteLength), out = new Map()
+  let eocd = -1
+  for (let i = b.length - 22; i >= Math.max(0, b.length - 66000); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break }
+  if (eocd < 0) throw new Error('not a zip file')
+  let p = dv.getUint32(eocd + 16, true)
+  const count = dv.getUint16(eocd + 10, true), dec = new TextDecoder('utf-8')
+  for (let k = 0; k < count && dv.getUint32(p, true) === 0x02014b50; k++) {
+    const method = dv.getUint16(p + 10, true), size = dv.getUint32(p + 20, true), nl = dv.getUint16(p + 28, true)
+    const xl = dv.getUint16(p + 30, true), cl = dv.getUint16(p + 32, true), local = dv.getUint32(p + 42, true)
+    const name = dec.decode(b.subarray(p + 46, p + 46 + nl))
+    if (want(name)) {
+      const start = local + 30 + dv.getUint16(local + 26, true) + dv.getUint16(local + 28, true), raw = b.subarray(start, start + size)
+      out.set(name, dec.decode(method === 0 ? raw : await inflateRaw(raw)))
+    }
+    p += 46 + nl + xl + cl
+  }
+  return out
+}
+const xmlText = (s) => String(s || '').replace(/<[^>]+>/g, '').replace(/&(lt|gt|amp|quot|apos|#\d+|#x[0-9a-f]+);/gi, (m, e) =>
+  e[0] === '#' ? String.fromCodePoint(e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : +e.slice(1)) : ({ lt: '<', gt: '>', amp: '&', quot: '"', apos: "'" })[e.toLowerCase()])
+/** Every sheet of an .xlsx -> CSV text, in workbook order: [{ name, csv }]. */
+async function xlsxSheets(bytes) {
+  const files = await unzipText(bytes, (n) => /^xl\/(workbook\.xml|_rels\/workbook\.xml\.rels|sharedStrings\.xml|worksheets\/[^/]+\.xml)$/.test(n))
+  const shared = [...(files.get('xl/sharedStrings.xml') || '').matchAll(/<si>([\s\S]*?)<\/si>/g)].map((m) => [...m[1].matchAll(/<t[^>]*>([\s\S]*?)<\/t>/g)].map((t) => xmlText(t[1])).join(''))
+  const attr = (tag, a) => (tag.match(new RegExp(`\\s${a}="([^"]*)"`)) || [])[1] // attribute order differs between writers
+  const rels = new Map([...(files.get('xl/_rels/workbook.xml.rels') || '').matchAll(/<Relationship\b[^>]*>/g)].map((m) => [attr(m[0], 'Id'), attr(m[0], 'Target')]))
+  const sheets = [...(files.get('xl/workbook.xml') || '').matchAll(/<sheet\b[^>]*>/g)]
+    .map((m) => ({ name: xmlText(attr(m[0], 'name')), path: `xl/${(rels.get(attr(m[0], 'r:id')) || '').replace(/^\/?xl\//, '')}` }))
+  const list = sheets.length ? sheets : [...files.keys()].filter((n) => n.startsWith('xl/worksheets/')).sort().map((path) => ({ name: path, path }))
+  const col = (ref) => [...ref.replace(/\d+/g, '')].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0) - 1
+  const q = (v) => /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
+  return list.map(({ name, path }) => {
+    const rows = [...(files.get(path) || '').matchAll(/<row[^>]*>([\s\S]*?)<\/row>/g)].map((r) => {
+      const cells = []
+      for (const c of r[1].matchAll(/<c ([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+        const ref = (c[1].match(/r="([A-Z]+\d+)"/) || [])[1], type = (c[1].match(/t="([^"]+)"/) || [])[1], body = c[2] || ''
+        const v = (body.match(/<v>([\s\S]*?)<\/v>/) || [])[1]
+        const val = type === 's' ? shared[+v] ?? '' : type === 'inlineStr' ? xmlText((body.match(/<is>([\s\S]*?)<\/is>/) || [])[1]) : xmlText(v ?? '')
+        cells[ref ? col(ref) : cells.length] = val
+      }
+      return [...cells].map((x) => q(x ?? '')).join(',')
+    })
+    return { name, csv: rows.join('\n') }
+  }).filter((s) => s.csv.trim())
+}
+
+/** An HTML table (the ".xls" some brokers send is a web page) -> CSV text. */
+function htmlTableCsv(html) {
+  const q = (v) => /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v
+  return [...String(html || '').matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].map((tr) =>
+    [...tr[1].matchAll(/<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi)].map((c) => q(xmlText(c[1].replace(/<br\s*\/?>/gi, ' ')).replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim())).join(',')).join('\n')
+}
+
+/** File bytes -> text: UTF-8 (with or without BOM), or UTF-16 as spreadsheet "Unicode text" exports write it. */
+function decodeText(bytes) {
+  const b = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
+  if (b[0] === 0xff && b[1] === 0xfe) return new TextDecoder('utf-16le').decode(b.subarray(2))
+  if (b[0] === 0xfe && b[1] === 0xff) return new TextDecoder('utf-16be').decode(b.subarray(2))
+  const sample = b.subarray(0, 200), zeros = sample.filter((x) => x === 0).length
+  if (zeros > sample.length / 4) return new TextDecoder(sample[0] === 0 ? 'utf-16be' : 'utf-16le').decode(b)
+  return new TextDecoder('utf-8').decode(b).replace(/^\uFEFF/, '')
+}
 /** Upload or paste -> { rows: [{ name, qty, avg, date, line }], skipped }. With a header row the columns
  *  are found by name; without one, each line is "<name or symbol> <qty> <avg price>". */
 function parseHoldings(text) {
+  // JSON too: [{ "symbol": "TCS", "quantity": 10, "avg": 3450 }, …] (or { "holdings": [...] })
+  const t = String(text || '').trim()
+  if (/^[[{]/.test(t)) {
+    try {
+      const j = JSON.parse(t), list = Array.isArray(j) ? j : Array.isArray(j?.holdings) ? j.holdings : []
+      const pick = (o, ks) => { for (const k of ks) if (o?.[k] != null && o[k] !== '') return o[k] }
+      const rows = list.map((o, i) => {
+        const name = String(pick(o, ['symbol', 'sym', 'tradingsymbol', 'name', 'isin']) ?? '').trim(), qty = parseNum(pick(o, ['quantity', 'qty', 'units', 'shares']))
+        const avg = parseNum(pick(o, ['avg', 'average', 'averagePrice', 'average_price', 'avgPrice', 'buyPrice', 'price', 'cost']))
+        const isin = String(o?.isin || '').toUpperCase(), hint = typeof o?.name === 'string' && o.name !== name ? o.name : null
+        return name && qty > 0 ? { name, qty, avg: avg != null && avg >= 0 ? avg : null, date: normDate(pick(o, ['date', 'buyDate', 'buy_date'])), line: i + 1,
+          ...(/^IN[A-Z0-9]{10}$/.test(isin) ? { isin } : {}), ...(hint ? { hint } : {}) } : null
+      })
+      return { rows: rows.filter(Boolean), skipped: rows.filter((r) => !r).length }
+    } catch { /* not JSON after all: read it as rows */ }
+  }
   const table = splitCsv(text), rows = []
   let skipped = 0
   const hi = table.findIndex((r) => { const h = r.map(normHead); return h.some((x) => HOLD_COLS.sym.test(x)) && h.some((x) => HOLD_COLS.qty.test(x)) })
@@ -447,16 +590,38 @@ function parseHoldings(text) {
     const h = table[hi].map(normHead), col = {}
     for (const [k, re] of Object.entries(HOLD_COLS)) col[k] = h.findIndex((x) => re.test(x))
     // prefer a symbol column over a name column when both exist
-    const symCol = h.findIndex((x) => /^(symbol|trading ?symbol|tradingsymbol|instrument)$/.test(x))
+    const symCol = h.findIndex((x) => /^(symbol|stock symbol|trading ?symbol|tradingsymbol|instrument( name)?)$/.test(x))
     if (symCol >= 0) col.sym = symCol
+    // an ISIN column first (CDSL / NSDL) is not the name: use the security / company name, keep the ISIN aside
+    else if (/^isin/.test(h[col.sym] || '')) { const alt = h.findIndex((x) => HOLD_COLS.sym.test(x) && !/^isin/.test(x)); if (alt >= 0) col.sym = alt }
+    // a blank symbol falls back to the name, then the ISIN column (a fund or ETF a statement only knows by ISIN)
+    const nameCol = h.findIndex((x, i) => i !== col.sym && /^(name|company( name)?|stock name|security( name)?|scheme( name)?|scrip name)$/.test(x))
+    const isinCol = h.findIndex((x) => /^isin( code)?$/.test(x))
     table.slice(hi + 1).forEach((r, i) => {
-      const name = (r[col.sym] || '').trim(), qty = parseNum(r[col.qty]), avg = col.avg >= 0 ? parseNum(r[col.avg]) : null
-      if (!name || !(qty > 0) || /^total/i.test(name)) { skipped++; return }
-      rows.push({ name, qty, avg: avg != null && avg >= 0 ? avg : null, date: col.date >= 0 ? normDate(r[col.date]) : null, line: hi + i + 2 })
+      const hint = nameCol >= 0 ? (r[nameCol] || '').trim() : '', isinV = isinCol >= 0 ? (r[isinCol] || '').trim().toUpperCase() : ''
+      const symV = col.sym === symCol ? cleanSymbol(r[col.sym]) : (r[col.sym] || '').trim()
+      const name = symV || hint || isinV, qty = parseNum(r[col.qty])
+      // no average column (Groww's mutual funds): the amount invested over the quantity
+      const avg = col.avg >= 0 ? parseNum(r[col.avg]) : col.value >= 0 && qty > 0 && parseNum(r[col.value]) > 0 ? parseNum(r[col.value]) / qty : null
+      // brokers end the table with totals ("Investment,3053.45,Current Value,…" in Dhan's export): not holdings
+      if (!name || !(qty > 0) || SUMMARY_ROW.test(name)) { skipped++; return }
+      rows.push({ name, qty, avg: avg != null && avg >= 0 ? avg : null, date: col.date >= 0 ? normDate(r[col.date]) : null, line: hi + i + 2,
+        ...(/^IN[A-Z0-9]{10}$/.test(isinV) ? { isin: isinV } : {}), ...(hint && hint !== name ? { hint } : {}) })
     })
   } else {
-    String(text || '').split(/\r?\n/).forEach((l, i) => {
+    String(text || '').replace(/^\uFEFF/, '').split(/\r\n|\r|\n/).forEach((l, i) => {
       if (!l.trim()) return
+      // a delimited line with headers we don't know ("GINNIFILA,22,,Ginni Filaments"): name first, then numbers
+      const cells = l.split(/[,\t;]/).map((x) => x.replace(/^"|"$/g, '').trim())
+      if (cells.length >= 2 && cells[0] && parseNum(cells[0]) == null) {
+        const nums = cells.slice(1).map(parseNum)
+        const qi = nums.findIndex((v) => v != null && v > 0)
+        if (qi >= 0) {
+          const avg = nums[qi + 1]
+          rows.push({ name: cells[0], qty: nums[qi], avg: avg != null && avg >= 0 ? avg : null, date: null, line: i + 1 })
+          return
+        }
+      }
       const toks = l.split(/[,\t;]|\s+/).map((x) => x.trim()).filter(Boolean)
       const nums = []
       while (toks.length > 1 && parseNum(toks.at(-1)) != null) nums.unshift(parseNum(toks.pop()))
@@ -478,12 +643,13 @@ function normDate(v) {
   const mon = m && ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'].indexOf(m[2].toLowerCase())
   return m && mon >= 0 ? `${m[3]}-${String(mon + 1).padStart(2, '0')}-${m[1].padStart(2, '0')}` : null
 }
-/** One row per symbol: quantities add, the buy price is the quantity-weighted average, the earliest date stays. */
+/** One row per symbol per portfolio: quantities add, the buy price is the quantity-weighted average, the
+ *  earliest date stays. */
 function mergeHoldings(list) {
   const by = new Map()
   for (const h of list) {
-    const o = by.get(h.sym)
-    if (!o) { by.set(h.sym, { ...h }); continue }
+    const key = `${h.pf || 'main'}|${h.sym}`, o = by.get(key)
+    if (!o) { by.set(key, { ...h }); continue }
     const qty = o.qty + h.qty
     o.avg = o.avg != null && h.avg != null ? (o.avg * o.qty + h.avg * h.qty) / qty : o.avg ?? h.avg
     o.qty = qty
@@ -491,6 +657,9 @@ function mergeHoldings(list) {
   }
   return [...by.values()]
 }
+/** Holdings of one portfolio ('all' = every one). */
+const inPortfolio = (holdings, pf) => pf === 'all' ? holdings : holdings.filter((h) => (h.pf || 'main') === pf)
+const holdingId = (pf, sym) => `h${pf === 'main' || !pf ? '' : `${pf}-`}${sym}`
 /** Value every holding at { price, prev } from priceOf(h) and total it. Unpriced holdings stay out of the
  *  totals and are counted as `missing`; P&L only covers holdings with both a price and a buy price. */
 function valuePortfolio(holdings, priceOf) {
@@ -527,15 +696,197 @@ const SYM_RE = /^[A-Z0-9&.\-]{1,20}$/
 function cleanPortfolio(o) {
   const ok = (n) => typeof n === 'number' && Number.isFinite(n)
   const str = (v, n = 80) => typeof v === 'string' ? v.slice(0, n) : null
+  const extra = (h) => ({ et: /^\d{1,12}$/.test(h.et || '') ? h.et : null, scr: /^\d{1,10}$/.test(String(h.scr ?? '')) ? String(h.scr) : null,
+    isin: /^IN[A-Z0-9]{10}$/.test(h.isin || '') ? h.isin : null, kind: h.kind === 'mf' && /^\d{1,8}$/.test(String(h.code ?? '')) ? 'mf' : 'stock',
+    code: h.kind === 'mf' && /^\d{1,8}$/.test(String(h.code ?? '')) ? String(h.code) : null })
+  // portfolios: "main" always exists (everything from before portfolios lands there)
+  const pfs = [{ id: 'main', name: 'My portfolio' }]
+  for (const p of Array.isArray(o?.portfolios) ? o.portfolios : []) {
+    const id = String(p?.id ?? ''), name = str(p?.name, 30)?.trim()
+    if (id === 'main' && name) pfs[0].name = name
+    else if (/^[a-z0-9]{1,12}$/.test(id) && name && !pfs.some((x) => x.id === id) && pfs.length < 20) pfs.push({ id, name })
+  }
+  const pfOf = (v) => pfs.some((x) => x.id === v) ? v : 'main'
   const holdings = (Array.isArray(o?.holdings) ? o.holdings : []).filter((h) => h && SYM_RE.test(h.sym) && ok(h.qty) && h.qty > 0 && (h.avg == null || (ok(h.avg) && h.avg >= 0)))
-    .slice(0, 500).map((h) => ({ id: str(h.id, 40) || `h${h.sym}`, sym: h.sym, name: str(h.name) || h.sym, et: /^\d{1,12}$/.test(h.et || '') ? h.et : null,
-      qty: h.qty, avg: h.avg ?? null, date: normDate(h.date) }))
-  const syms = new Set(holdings.map((h) => h.sym))
+    .slice(0, 500).map((h) => { const pf = pfOf(h.pf); return { id: holdingId(pf, h.sym), pf, sym: h.sym, name: str(h.name) || h.sym, ...extra(h), qty: h.qty, avg: h.avg ?? null, date: normDate(h.date) } })
+  const watch = (Array.isArray(o?.watch) ? o.watch : []).filter((w) => w && SYM_RE.test(w.sym) && !w.sym.startsWith('MF')).slice(0, 100)
+    .map((w) => ({ sym: w.sym, name: str(w.name) || w.sym, ...extra({ ...w, kind: 'stock' }) })).filter((w, i, a) => a.findIndex((x) => x.sym === w.sym) === i)
+  const syms = new Set([...holdings.map((h) => h.sym), ...watch.map((w) => w.sym)])
   const alerts = (Array.isArray(o?.alerts) ? o.alerts : []).filter((a) => a && ALERT_KINDS.some(([k]) => k === a.kind) && ok(a.value) && a.value > 0
     && (!ALERT_KINDS.find(([k]) => k === a.kind)[3] || syms.has(a.sym))).slice(0, 50)
     .map((a) => ({ id: str(a.id, 40) || `a${Math.round(a.value)}`, kind: a.kind, value: a.value, sym: SYM_RE.test(a.sym || '') ? a.sym : null,
-      repeat: !!a.repeat, start: ok(a.start) ? a.start : null, created: ok(a.created) ? a.created : 0 }))
-  return { v: 1, holdings, alerts, notify: NOTIFY.some(([k]) => k === o?.notify) ? o.notify : 'hourly' }
+      repeat: !!a.repeat, start: ok(a.start) ? a.start : null, created: ok(a.created) ? a.created : 0,
+      pf: a.pf && a.pf !== 'all' && pfs.some((x) => x.id === a.pf) ? a.pf : null })) // a portfolio alert on one portfolio, or (null) on all
+  return { v: 1, portfolios: pfs, holdings, watch, alerts, notify: NOTIFY.some(([k]) => k === o?.notify) ? o.notify : 'hourly', filings: o?.filings !== false }
+}
+
+// ---- treemap: squarified layout (Bruls, Huizing & van Wijk) - rectangles close to square, biggest first ----
+/** values -> [{ i, x, y, w, h }] filling the w x h box at (x, y), area proportional to value (<= 0 left out).
+ *  Biggest first unless keepOrder (a sorted heatmap: the given order runs top-left to bottom-right). */
+function squarify(values, x, y, w, h, keepOrder = false) {
+  const items = values.map((v, i) => ({ v: Math.max(+v || 0, 0), i })).filter((d) => d.v > 0)
+  if (!keepOrder) items.sort((a, b) => b.v - a.v)
+  const total = items.reduce((s, d) => s + d.v, 0)
+  if (!total || w <= 0 || h <= 0) return []
+  for (const d of items) d.a = (d.v * w * h) / total
+  const out = []
+  let row = []
+  const worst = (r, side) => {
+    const s = r.reduce((t, d) => t + d.a, 0), mx = Math.max(...r.map((d) => d.a)), mn = Math.min(...r.map((d) => d.a))
+    return Math.max((side * side * mx) / (s * s), (s * s) / (side * side * mn))
+  }
+  const layout = (r) => {
+    const s = r.reduce((t, d) => t + d.a, 0)
+    if (w >= h) { const cw = s / h; let cy = y; for (const d of r) { const ch = d.a / cw; out.push({ i: d.i, x, y: cy, w: cw, h: ch }); cy += ch } x += cw; w -= cw }
+    else { const ch = s / w; let cx = x; for (const d of r) { const cw = d.a / ch; out.push({ i: d.i, x: cx, y, w: cw, h: ch }); cx += cw } y += ch; h -= ch }
+  }
+  for (const d of items) {
+    const side = Math.min(w, h)
+    if (!row.length || worst([...row, d], side) <= worst(row, side)) row.push(d)
+    else { layout(row); row = [d] }
+  }
+  if (row.length) layout(row)
+  return out
+}
+
+// ---- statements: a CAS PDF's text -> holdings. Works on the text, not a layout: every ISIN starts a
+// block that runs to the next ISIN, and the block's holding is the first three numbers in it where
+// units x price = value (within 0.5%) - true in CDSL, NSDL and CAMS / KFintech statements alike,
+// whatever columns sit between (face value, free / lent balance, dates). A zero balance has no such
+// triple and drops out. CAMS' "Total Cost Value" gives the average cost; demat statements carry none. ----
+const ISIN_G = /\b(IN[EF][A-Z0-9]{8}\d)\b/g
+/** pdf.js text items per page -> lines, top to bottom, left to right. */
+function pdfLines(pages) {
+  const out = []
+  for (const items of pages) {
+    const rows = [] // items on one baseline differ by a point or two: join neighbours within 2.5pt
+    for (const it of items.filter((i) => i.str && i.str.trim()).sort((a, b) => b.y - a.y)) {
+      const row = rows.at(-1)
+      if (row && row.y - it.y <= 2.5) row.items.push(it); else rows.push({ y: it.y, items: [it] })
+    }
+    for (const r of rows) out.push(r.items.sort((a, b) => a.x - b.x).map((i) => i.str.trim()).join(' '))
+  }
+  return out
+}
+const numTokens = (t) => [...t.matchAll(/(?<![\w./-])-?\d[\d,]*(?:\.\d+)?(?![\w/-])/g)].map((m) => parseNum(m[0])).filter((v) => v != null)
+function casHoldings(lines) {
+  const marks = []
+  lines.forEach((l, i) => { for (const m of l.matchAll(ISIN_G)) marks.push({ i, isin: m[1] }) })
+  const by = new Map()
+  marks.forEach((mk, k) => {
+    const end = Math.min(marks[k + 1]?.i ?? lines.length, mk.i + 8)
+    const first = lines[mk.i].slice(lines[mk.i].indexOf(mk.isin) + mk.isin.length)
+    const block = [first, ...lines.slice(mk.i + 1, Math.max(end, mk.i + 1))].join(' ').replace(/(?:ISIN|Folio)\s*(?:No\.?)?\s*:?/gi, ' ')
+    const nums = numTokens(block)
+    let hit = null
+    for (let a = 0; a < nums.length && !hit; a++) for (let b = a + 1; b < nums.length && !hit; b++) for (let c = b + 1; c < nums.length && !hit; c++) {
+      const [u, p, v] = [nums[a], nums[b], nums[c]]
+      if (u > 0 && p > 0 && v > 0 && Math.abs(u * p - v) <= Math.max(1, v * 0.005)) hit = { units: u, price: p, value: v }
+    }
+    if (!hit) return
+    const cost = parseNum((block.match(/cost\s*value\s*:?\s*(?:INR|Rs\.?|₹)?\s*([\d,]+(?:\.\d+)?)/i) || [])[1])
+    // the name: the ISIN line before / after the ISIN, without numbers and statement furniture
+    const line = lines[mk.i].replace(mk.isin, ' ')
+    const name = line.replace(/(\s+-?[\d,]+(?:\.\d+)?)+\s*$/, ' ') // the row's numeric columns, keeping "NIFTY 50"
+      .replace(/\(Advisor[^)]*\)|Registrar\s*:.*$|\bISIN\s*:?|-\s*EQUITY SHARES?|\bNEW\b/gi, ' ')
+      .replace(/\s+-\s*$|^\s*-\s+/g, ' ').replace(/\s+/g, ' ').trim().replace(/\s*-$/, '')
+    const o = by.get(mk.isin)
+    if (o) { o.units += hit.units; o.value += hit.value; o.cost = o.cost != null && cost != null ? o.cost + cost : null }
+    else by.set(mk.isin, { isin: mk.isin, name, units: hit.units, price: hit.price, value: hit.value, cost: cost ?? null })
+  })
+  return [...by.values()].map((h) => ({ ...h, avg: h.cost != null && h.units ? h.cost / h.units : null, kind: h.isin.startsWith('INF') ? 'mf' : 'stock' }))
+}
+/** AMFI's NAVAll.txt -> Map(ISIN -> { code, name, nav, date }), both ISIN columns. */
+function parseAmfiNav(text) {
+  const out = new Map()
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const f = line.split(';')
+    if (f.length < 6 || !/^\d+$/.test(f[0].trim())) continue
+    const nav = parseNum(f.at(-2)), name = [f[3], f.length >= 8 ? f[4] : ''].map((x) => (x || '').trim()).filter(Boolean).join(' - ')
+    for (const isin of [f[1], f[2]]) if (/^INF[A-Z0-9]{9}$/.test((isin || '').trim())) out.set(isin.trim(), { code: f[0].trim(), name, nav, date: f.at(-1).trim() })
+  }
+  return out
+}
+// ---- filings that matter to a holder (the job notifies on these; Portfolio.java keeps the same list) ----
+const FILING_KINDS = [
+  [/financial results|\bresults?\b/i, 'Results'], [/board meeting/i, 'Board meeting'], [/dividend/i, 'Dividend'], [/record date/i, 'Record date'],
+  [/bonus/i, 'Bonus'], [/split|sub-?division/i, 'Split'], [/buy ?back/i, 'Buyback'], [/rights issue/i, 'Rights issue'],
+  [/annual general meeting|\bagm\b/i, 'AGM'], [/merger|amalgamation|acquisition|demerger/i, 'Merger / acquisition'], [/credit rating/i, 'Credit rating'],
+]
+const FILING_NOISE = /newspaper|trading window|74\s*\(5\)|loss of share|duplicate share|compliances?-certificate|investor (meet|presentation)|analyst/i
+const filingKind = (text) => FILING_NOISE.test(text || '') ? null : FILING_KINDS.find(([re]) => re.test(text || ''))?.[1] || null
+
+// ---- fundamentals: screener.in's public company page (the web app's Fundamentals / Financials /
+// Shareholding / Filings come from the same page). Parsed from a DOM Document, so DOMParser in the
+// app and jsdom in test/smoke.cjs; only text and https links come out - nothing of the page is rendered.
+const SCREENER = 'https://www.screener.in'
+const screenerUrl = (sym) => `${SCREENER}/company/${encodeURIComponent(sym)}/consolidated/`
+function parseScreener(doc) {
+  const txt = (el) => (el?.textContent || '').replace(/ /g, ' ').replace(/\s+/g, ' ').trim()
+  const link = (h) => { try { const u = new URL(h, SCREENER); return u.protocol === 'https:' ? u.href : null } catch { return null } }
+  const lines = (el) => { // text keeping the page's line breaks, footnote markers dropped
+    if (!el) return ''
+    const c = el.cloneNode(true)
+    c.querySelectorAll('sup').forEach((x) => x.remove())
+    c.querySelectorAll('br').forEach((x) => x.replaceWith('\n'))
+    c.querySelectorAll('p, li').forEach((x) => x.append('\n'))
+    return (c.textContent || '').replace(/ /g, ' ').replace(/[ \t]+/g, ' ').replace(/ *\n */g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+  }
+  const table = (sel) => {
+    const t = doc.querySelector(sel)
+    if (!t) return null
+    const periods = [...t.querySelectorAll('thead th')].slice(1).map(txt)
+    const rows = [...t.querySelectorAll('tbody tr')].map((tr) => {
+      const td = [...tr.querySelectorAll('td')], head = td[0]?.cloneNode(true)
+      head?.querySelectorAll('.tooltip').forEach((x) => x.remove()) // "CFO/EBITDA" carries its explanation inline
+      return { label: txt(head).replace(/\s*\+$/, ''), values: td.slice(1).map(txt) }
+    }).filter((r) => r.label && r.values.some((v) => v) && !/^raw pdf$/i.test(r.label))
+    return periods.length && rows.length ? { periods, rows } : null
+  }
+  const docsIn = (cls) => [...doc.querySelectorAll(`#documents .documents.${cls} li`)]
+  const name = txt(doc.querySelector('h1'))
+  return {
+    name,
+    ratios: [...doc.querySelectorAll('#top-ratios li')].map((li) => [txt(li.querySelector('.name')), txt(li.querySelector('.value'))]).filter(([n, v]) => n && v),
+    about: lines(doc.querySelector('.company-profile .about')),
+    keyPoints: lines(doc.querySelector('.company-profile .commentary')),
+    pros: [...doc.querySelectorAll('#analysis .pros li')].map(txt).filter(Boolean),
+    cons: [...doc.querySelectorAll('#analysis .cons li')].map(txt).filter(Boolean),
+    quarters: table('#quarters table.data-table'), annual: table('#profit-loss table.data-table'),
+    balance: table('#balance-sheet table.data-table'), cashflow: table('#cash-flow table.data-table'),
+    ratiosTable: table('#ratios table.data-table'), shareholding: table('#quarterly-shp table'),
+    growth: [...doc.querySelectorAll('#profit-loss table.ranges-table')].map((t) => ({
+      title: txt(t.querySelector('th')), rows: [...t.querySelectorAll('tr')].map((tr) => [...tr.querySelectorAll('td')].map(txt)).filter((r) => r.length === 2),
+    })).filter((g) => g.title && g.rows.length),
+    announcements: [...doc.querySelectorAll('#company-announcements-tab li')].map((li) => {
+      const a = li.querySelector('a'), d = a?.querySelector('div'), title = a ? txt(a.cloneNode(true).childNodes[0]) || txt(a).replace(txt(d), '').trim() : ''
+      return { title, detail: txt(d).replace(/^[^-]*-\s*/, ''), date: li.querySelector('time')?.getAttribute('datetime') || null, url: link(a?.getAttribute('href')) }
+    }).filter((x) => x.title && x.url).slice(0, 25),
+    allAnnouncements: link(doc.querySelector('#company-announcements-tab a.button')?.getAttribute('href')),
+    reports: docsIn('annual-reports').map((li) => { const a = li.querySelector('a'); return { title: txt(a), url: link(a?.getAttribute('href')) } }).filter((x) => x.title && x.url),
+    ratings: docsIn('credit-ratings').map((li) => { const a = li.querySelector('a'); return { title: txt(a), detail: txt(li).replace(txt(a), '').trim(), url: link(a?.getAttribute('href')) } }).filter((x) => x.title && x.url),
+    concalls: docsIn('concalls').map((li) => ({
+      when: txt(li.querySelector('div')), links: [...li.querySelectorAll('a')].map((a) => ({ title: txt(a), url: link(a.getAttribute('href')) })).filter((x) => x.title && x.url),
+    })).filter((x) => x.when && x.links.length),
+    standalone: [...doc.querySelectorAll('#quarters thead th')].some((th) => /\(S\)/.test(th.textContent || '')),
+  }
+}
+/** The latest quarter against a year before and the quarter before: Sales / Revenue, Operating profit,
+ *  Net profit, EPS, OPM (banks report Revenue and Financing profit). */
+function resultsSummary(q) {
+  if (!q?.periods?.length) return null
+  const n = q.periods.length - 1, num = (v) => parseNum(String(v ?? '').replace('%', ''))
+  const pick = (re) => q.rows.find((r) => re.test(r.label))
+  const items = [[/^(sales|revenue)/i, 'Sales'], [/^(operating|financing) profit/i, 'Operating profit'], [/^net profit/i, 'Net profit'], [/^eps/i, 'EPS (₹)'], [/^(opm|financing margin)/i, 'OPM %']]
+    .map(([re, label]) => {
+      const r = pick(re); if (!r) return null
+      const now = num(r.values[n]), yr = num(r.values[n - 4]), qt = num(r.values[n - 1]), pct = label.endsWith('%')
+      const g = (a, b) => a == null || b == null || b === 0 ? null : pct ? a - b : ((a - b) / Math.abs(b)) * 100
+      return { label, value: now, yoy: g(now, yr), qoq: g(now, qt), points: pct }
+    }).filter((x) => x && x.value != null)
+  const sa = (i) => /\(S\)/.test(q.periods[i] || '')
+  // a YoY / QoQ across a switch to consolidated accounts compares two different bases
+  return items.length ? { period: q.periods[n].replace(/\s*\(S\)$/, ''), standalone: sa(n), mixed: n >= 4 && (sa(n) !== sa(n - 4) || sa(n) !== sa(n - 1)), items } : null
 }
 
 // ---- headlines: ET Markets' public RSS (phase 2). Title, summary, time and image only; the article
@@ -580,4 +931,4 @@ function barFacts(bars, volumeK) {
   return { fromHigh: hi ? (last.c / hi - 1) * 100 : null, streak, volX: avg && vol ? vol / avg : null }
 }
 
-if (typeof module !== 'undefined') module.exports = { fmt, pctText, croreShort, hexRgb, isHex, luminance, heat, bucketColors, THEMES, THEME_TOKENS, resolveTheme, sectorRow, sectorSummary, sortRows, allStocks, movers, indexRow, mcQuote, mcHistoryUrl, mcBars, barStats, ticks, researchLinks, RANGES, feedPools, feedPage, barFacts, saneSector, rssItems, mergeNews, NEWS_EVERY, feedFiltered, filterOn, FEED_KINDS, FONTS, fontNameOk, fontStack, fontKind, googleFontUrl, parseNum, splitCsv, parseHoldings, normDate, mergeHoldings, valuePortfolio, heldFor, cleanPortfolio, FEED_PAGE1, FEED_PAGE, FEED_THEMES }
+if (typeof module !== 'undefined') module.exports = { fmt, pctText, croreShort, hexRgb, isHex, luminance, heat, bucketColors, THEMES, THEME_TOKENS, resolveTheme, sectorRow, sectorSummary, sortRows, allStocks, movers, indexRow, mcQuote, mcHistoryUrl, mcBars, barStats, ticks, researchLinks, RANGES, feedPools, feedPage, barFacts, saneSector, rssItems, mergeNews, NEWS_EVERY, feedFiltered, filterOn, FEED_KINDS, FONTS, fontNameOk, fontStack, fontKind, googleFontUrl, squarify, pdfLines, casHoldings, parseAmfiNav, filingKind, parseScreener, resultsSummary, screenerUrl, cleanFilter, sameFilter, FEED_TEMPLATES, cleanTemplates, saveTemplate, marketOpen, parseNum, splitCsv, parseHoldings, decodeText, bracketSymbol, fileKind, xlsxSheets, htmlTableCsv, cleanSymbol, inPortfolio, holdingId, normDate, mergeHoldings, valuePortfolio, heldFor, cleanPortfolio, FEED_PAGE1, FEED_PAGE, FEED_THEMES }

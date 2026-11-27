@@ -69,10 +69,16 @@ final class Portfolio {
      *  null. Fires once per crossing: after firing it stays quiet until the number is back past the line by
      *  MARGIN (or, for the day-based kinds, until the next trading day); a one-time alert is then done. */
     static String check(Alert a, State st, List<Pos> ps, String today, long now) {
+        return check(a, st, ps, Collections.<Pos>emptyList(), today, now);
+    }
+
+    /** `watch`: watchlist stocks (priced, never in the totals) - a stock price alert may be on one. */
+    static String check(Alert a, State st, List<Pos> ps, List<Pos> watch, String today, long now) {
         Totals t = totals(ps);
         boolean daily = "dayloss".equals(a.kind) || "stockdrop".equals(a.kind);
+        boolean price = "pbelow".equals(a.kind) || "pabove".equals(a.kind);
         if (!today.equals(st.day)) { st.day = today; if (daily && !st.done) { st.armed = true; st.syms.clear(); } }
-        if (st.done || t.priced == 0) return null;
+        if (st.done || (t.priced == 0 && !price)) return null;
         double v = t.value;
         boolean hit, clear;
         String msg;
@@ -100,6 +106,7 @@ final class Portfolio {
             case "pbelow":
             case "pabove": {
                 Pos p = find(ps, a.sym);
+                if (p == null) p = find(watch, a.sym);
                 if (p == null || !p.priced()) return null;
                 boolean below = "pbelow".equals(a.kind);
                 hit = below ? p.price <= a.value : p.price >= a.value;
@@ -193,6 +200,41 @@ final class Portfolio {
         if (min % 60 < 15 || h < 10 || h > 15) return null;
         if ("2h".equals(freq) && h % 2 != 0) return null;
         return (today + "T" + h).equals(sentHour) ? null : "hour:" + h;
+    }
+
+    // ---- filings a holder cares about (lib.js filingKind keeps the same list) ----
+    private static final String[][] FILING_KINDS = {
+        {"financial results|\\bresults?\\b", "Results"}, {"board meeting", "Board meeting"}, {"dividend", "Dividend"}, {"record date", "Record date"},
+        {"bonus", "Bonus"}, {"split|sub-?division", "Split"}, {"buy ?back", "Buyback"}, {"rights issue", "Rights issue"},
+        {"annual general meeting|\\bagm\\b", "AGM"}, {"merger|amalgamation|acquisition|demerger", "Merger / acquisition"}, {"credit rating", "Credit rating"},
+    };
+    private static final java.util.regex.Pattern NOISE = java.util.regex.Pattern.compile(
+        "newspaper|trading window|74\\s*\\(5\\)|loss of share|duplicate share|compliances?-certificate|investor (meet|presentation)|analyst", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    static String filingKind(String text) {
+        if (text == null || NOISE.matcher(text).find()) return null;
+        for (String[] k : FILING_KINDS) if (java.util.regex.Pattern.compile(k[0], java.util.regex.Pattern.CASE_INSENSITIVE).matcher(text).find()) return k[1];
+        return null;
+    }
+
+    static final class Filing {
+        final String title, url, date; // date: ISO datetime from the page, or ""
+        Filing(String title, String url, String date) { this.title = title; this.url = url; this.date = date; }
+    }
+
+    /** Screener's /announcements/recent/<id>/ snippet -> filings (https links only). */
+    static List<Filing> parseFilings(String html) {
+        List<Filing> out = new ArrayList<>();
+        java.util.regex.Matcher li = java.util.regex.Pattern.compile("<li[^>]*>(.*?)</li>", java.util.regex.Pattern.DOTALL).matcher(html == null ? "" : html);
+        while (li.find()) {
+            String item = li.group(1);
+            java.util.regex.Matcher a = java.util.regex.Pattern.compile("<a[^>]*href=\"(https://[^\"]+)\"[^>]*>(.*?)</a>", java.util.regex.Pattern.DOTALL).matcher(item);
+            if (!a.find()) continue;
+            java.util.regex.Matcher time = java.util.regex.Pattern.compile("datetime=\"([^\"]+)\"").matcher(item);
+            String text = a.group(2).replaceAll("<[^>]+>", " ").replace("&amp;", "&").replace("&nbsp;", " ").replaceAll("\\s+", " ").trim();
+            if (!text.isEmpty()) out.add(new Filing(text, a.group(1).replace("&amp;", "&"), time.find() ? time.group(1) : ""));
+        }
+        return out;
     }
 
     static Pos find(List<Pos> ps, String sym) {

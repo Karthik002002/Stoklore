@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="bg">#0a0c0f</color>
+    <string name="widget_desc">Your holdings\' value and today\'s change</string>
     <color name="panel">#101316</color>
     <style name="AppTheme" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/bg</item>

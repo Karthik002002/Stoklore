@@ -40,8 +40,8 @@ public class PortfolioJob extends JobService {
     @Override
     public boolean onStartJob(final JobParameters params) {
         new Thread(() -> {
-            try { run(this, false); } catch (Exception ignored) { /* next run tries again */ }
-            jobFinished(params, false);
+            try { run(this, false); } catch (Throwable e) { android.util.Log.w("Stoklore", "job pass failed", e); } // next pass tries again
+            try { jobFinished(params, false); } catch (Throwable ignored) { /* already stopped */ }
         }).start();
         return true;
     }
@@ -53,39 +53,66 @@ public class PortfolioJob extends JobService {
     static void schedule(Context c) {
         JobScheduler js = c.getSystemService(JobScheduler.class);
         JSONObject pf = read(c, PORTFOLIO);
-        boolean want = pf.optJSONArray("holdings") != null && pf.optJSONArray("holdings").length() > 0
-            && (!"off".equals(pf.optString("notify", "hourly")) || (pf.optJSONArray("alerts") != null && pf.optJSONArray("alerts").length() > 0));
+        boolean has = len(pf, "holdings") > 0 || len(pf, "watch") > 0;
+        boolean want = has && (!"off".equals(pf.optString("notify", "hourly")) || len(pf, "alerts") > 0 || pf.optBoolean("filings", true));
         if (!want) { js.cancel(JOB_ID); return; }
         if (js.getPendingJob(JOB_ID) != null) return;
-        js.schedule(new JobInfo.Builder(JOB_ID, new ComponentName(c, PortfolioJob.class))
+        JobInfo.Builder b = new JobInfo.Builder(JOB_ID, new ComponentName(c, PortfolioJob.class))
             .setPeriodic(15 * 60 * 1000L)
-            .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
-            .setPersisted(true)
-            .build());
+            .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY);
+        try {
+            js.schedule(b.setPersisted(true).build());
+        } catch (RuntimeException notAllowed) { // some phones refuse a job that survives a reboot: run until the next one
+            js.schedule(b.setPersisted(false).build());
+        }
     }
 
+    private static int len(JSONObject o, String k) { JSONArray a = o.optJSONArray(k); return a == null ? 0 : a.length(); }
+
     /** One pass. `now` = the "Send one now" button: price and post a summary whatever the time, touching
-     *  no alert. Returns a short result for the page. */
+     *  no alert. Returns a short result for the page. Filings are checked every 2 hours, 07:00-23:00, any
+     *  day (results land in the evening); prices, alerts and summaries only in NSE hours on trading days. */
     static String run(Context c, boolean now) throws Exception {
         ZonedDateTime t = ZonedDateTime.now(IST);
         String today = t.toLocalDate().toString();
         int min = t.getHour() * 60 + t.getMinute(), dow = t.getDayOfWeek().getValue();
         JSONObject pf = read(c, PORTFOLIO);
         JSONArray hs = pf.optJSONArray("holdings");
+        if (!now && pf.optBoolean("filings", true) && min >= 7 * 60 && min <= 23 * 60) {
+            try { filings(c, pf); } catch (Exception ignored) { /* next pass */ }
+        }
         if (hs == null || hs.length() == 0) return "no holdings";
         if (!now && (dow >= 6 || min < 9 * 60 + 20 || min > 16 * 60 + 30)) return "market closed";
 
-        // prices: ET's sector feed (one request, ~1,600 NSE stocks), Moneycontrol daily bars for the rest
+        // prices: ET's sector feed (one request, ~1,600 NSE stocks), Moneycontrol daily bars for the rest,
+        // funds at NAV (mfapi, once a day per scheme - a NAV moves once a day)
         Map<String, double[]> et = new HashMap<>();
         String feedDay = etPrices(et);
         if (!now && !today.equals(feedDay)) return "no trading today"; // weekday holiday: the feed didn't move
+        JSONObject mf = obj(read(c, STATE), "mf");
         List<Portfolio.Pos> ps = new ArrayList<>();
+        Map<String, List<Portfolio.Pos>> byPf = new HashMap<>(); // a portfolio alert can be on one portfolio
         for (int i = 0; i < hs.length(); i++) {
             JSONObject h = hs.getJSONObject(i);
             Portfolio.Pos p = new Portfolio.Pos(h.getString("sym"), h.getDouble("qty"), h.isNull("avg") ? Double.NaN : h.optDouble("avg", Double.NaN));
-            double[] q = et.get(h.optString("et", ""));
-            if (q != null) { p.price = q[0]; p.prev = q[1]; } else mcDaily(p, today);
+            if ("mf".equals(h.optString("kind"))) mfNav(p, h.optString("code"), mf, today);
+            else price(p, h.optString("et", ""), et, today);
             ps.add(p);
+            String pfId = h.optString("pf", "main");
+            if (!byPf.containsKey(pfId)) byPf.put(pfId, new ArrayList<>());
+            byPf.get(pfId).add(p);
+        }
+        // watchlist stocks a price alert points at (priced for the alert only, never in the totals)
+        List<Portfolio.Pos> wl = new ArrayList<>();
+        JSONArray as = pf.optJSONArray("alerts"), ws = pf.optJSONArray("watch");
+        for (int i = 0; ws != null && i < ws.length(); i++) {
+            JSONObject w = ws.getJSONObject(i);
+            boolean alerted = false;
+            for (int j = 0; as != null && j < as.length(); j++) alerted |= w.getString("sym").equals(as.getJSONObject(j).optString("sym"));
+            if (!alerted || Portfolio.find(ps, w.getString("sym")) != null) continue;
+            Portfolio.Pos p = new Portfolio.Pos(w.getString("sym"), 0, Double.NaN);
+            price(p, w.optString("et", ""), et, today);
+            wl.add(p);
         }
         Portfolio.Totals tot = Portfolio.totals(ps);
         if (tot.priced == 0) return "no prices (offline?)";
@@ -104,7 +131,6 @@ public class PortfolioJob extends JobService {
             } else {
                 // alerts: during the session and a few minutes after the close
                 if (min <= 15 * 60 + 40) {
-                    JSONArray as = pf.optJSONArray("alerts");
                     JSONObject keep = new JSONObject();
                     for (int i = 0; as != null && i < as.length(); i++) {
                         JSONObject a = as.getJSONObject(i);
@@ -112,7 +138,10 @@ public class PortfolioJob extends JobService {
                         Portfolio.Alert al = new Portfolio.Alert(id, a.getString("kind"), a.isNull("sym") ? null : a.optString("sym", null),
                             a.getDouble("value"), a.optBoolean("repeat"), a.isNull("start") ? Double.NaN : a.optDouble("start", Double.NaN));
                         Portfolio.State s = state(astates.optJSONObject(id));
-                        String title = Portfolio.check(al, s, ps, today, nowMs);
+                        String pfId = a.isNull("pf") ? "" : a.optString("pf", "");
+                        List<Portfolio.Pos> scope = pfId.isEmpty() ? ps : byPf.containsKey(pfId) ? byPf.get(pfId) : new ArrayList<>();
+                        String title = Portfolio.check(al, s, scope, wl, today, nowMs);
+                        if (title != null && !pfId.isEmpty()) title = name(pf, pfId) + ": " + title;
                         if (title != null) {
                             post(c, "alerts", 100 + (id.hashCode() & 0xffff), title, Portfolio.moved(ps, last));
                             JSONArray lg = st.optJSONArray("log") == null ? new JSONArray() : st.getJSONArray("log");
@@ -136,14 +165,107 @@ public class PortfolioJob extends JobService {
             }
             JSONObject vals = new JSONObject();
             for (Portfolio.Pos p : ps) if (p.priced()) vals.put(p.sym, p.value());
-            st.put("lastVals", vals).put("lastValue", tot.value).put("lastAt", nowMs);
+            st.put("lastVals", vals).put("lastValue", tot.value).put("lastAt", nowMs).put("mf", mf)
+                .put("lastDay", tot.day).put("lastDayPct", nan0(tot.dayPct())).put("lastPnl", tot.pnl).put("lastPnlPct", nan0(tot.pnlPct()))
+                .put("lastMissing", tot.missing);
             JSONArray snaps = st.optJSONArray("snaps") == null ? new JSONArray() : st.getJSONArray("snaps");
             snaps.put(new JSONArray().put(nowMs).put(Math.round(tot.value)));
             while (snaps.length() > 800) snaps.remove(0); // ~2 months of 15-minute points in market hours
             st.put("snaps", snaps);
             write(c, STATE, st.toString());
         }
+        HoldingsWidget.update(c);
         return "ok";
+    }
+
+    private static double nan0(double v) { return Double.isNaN(v) ? 0 : v; }
+
+    /** A portfolio's name from portfolio.json, for an alert's title. */
+    private static String name(JSONObject pf, String id) {
+        JSONArray ps = pf.optJSONArray("portfolios");
+        for (int i = 0; ps != null && i < ps.length(); i++) {
+            JSONObject p = ps.optJSONObject(i);
+            if (p != null && id.equals(p.optString("id"))) return p.optString("name", id);
+        }
+        return id;
+    }
+
+    private static void price(Portfolio.Pos p, String etId, Map<String, double[]> et, String today) {
+        double[] q = et.get(etId);
+        if (q != null) { p.price = q[0]; p.prev = q[1]; } else mcDaily(p, today);
+    }
+
+    /** A fund's last two NAVs from mfapi, fetched once per scheme per day and kept in the state's "mf". */
+    private static void mfNav(Portfolio.Pos p, String code, JSONObject cache, String today) {
+        try {
+            JSONObject e = cache.optJSONObject(code);
+            if (e == null || !today.equals(e.optString("day"))) {
+                Http.Res r = Http.get("https://api.mfapi.in/mf/" + java.net.URLEncoder.encode(code, "UTF-8"));
+                if (r.status != 200) { if (e == null) return; } else {
+                    JSONArray d = new JSONObject(r.body).optJSONArray("data");
+                    if (d == null || d.length() == 0) return;
+                    e = new JSONObject().put("day", today).put("nav", d.getJSONObject(0).getDouble("nav"))
+                        .put("prev", d.length() > 1 ? d.getJSONObject(1).getDouble("nav") : d.getJSONObject(0).getDouble("nav"));
+                    cache.put(code, e);
+                }
+            }
+            p.price = e.getDouble("nav");
+            p.prev = e.optDouble("prev", Double.NaN);
+        } catch (Exception ignored) { /* stays unpriced */ }
+    }
+
+    /** New filings worth knowing (results, board meetings, dividends, splits, ...) for the stocks you hold
+     *  or watch, from Screener's per-company "recent announcements" snippet; every 2 hours at most. The first
+     *  pass only remembers what's already there, so turning this on doesn't flood you with old filings. */
+    static void filings(Context c, JSONObject pf) throws Exception {
+        long nowMs = System.currentTimeMillis();
+        JSONObject st0 = read(c, STATE);
+        if (nowMs - st0.optLong("filingsAt", 0) < 2 * 3600 * 1000L) return;
+        Map<String, String> targets = new java.util.LinkedHashMap<>(); // screener id -> symbol
+        for (String list : new String[]{"holdings", "watch"}) {
+            JSONArray a = pf.optJSONArray(list);
+            for (int i = 0; a != null && i < a.length(); i++) {
+                JSONObject h = a.getJSONObject(i);
+                if (!h.isNull("scr") && !h.optString("scr").isEmpty() && !"mf".equals(h.optString("kind"))) targets.put(h.optString("scr"), h.getString("sym"));
+            }
+        }
+        List<String> lines = new ArrayList<>();
+        List<String> fresh = new ArrayList<>();
+        for (Map.Entry<String, String> e : targets.entrySet()) {
+            Http.Res r = Http.get("https://www.screener.in/announcements/recent/" + e.getKey() + "/");
+            if (r.status != 200) continue;
+            for (Portfolio.Filing f : Portfolio.parseFilings(r.body)) {
+                fresh.add(f.url);
+                String kind = Portfolio.filingKind(f.title);
+                if (kind != null) lines.add(e.getValue() + " · " + kind + " — " + f.title + "\t" + f.url);
+            }
+        }
+        synchronized (LOCK) {
+            JSONObject st = read(c, STATE);
+            JSONArray seen = st.optJSONArray("filingsSeen");
+            boolean seed = seen == null;
+            java.util.Set<String> known = new java.util.HashSet<>();
+            for (int i = 0; seen != null && i < seen.length(); i++) known.add(seen.optString(i));
+            List<String> news = new ArrayList<>();
+            for (String l : lines) { String url = l.substring(l.lastIndexOf('\t') + 1); if (!known.contains(url)) news.add(l.substring(0, l.lastIndexOf('\t'))); }
+            JSONArray keep = new JSONArray();
+            for (String u : fresh) if (keep.length() < 400) keep.put(u);
+            for (String u : known) if (keep.length() < 400 && !fresh.contains(u)) keep.put(u);
+            st.put("filingsSeen", keep).put("filingsAt", nowMs);
+            if (!seed && !news.isEmpty()) {
+                JSONArray lg = st.optJSONArray("filingsLog") == null ? new JSONArray() : st.getJSONArray("filingsLog");
+                for (String n : news) lg.put(new JSONObject().put("t", nowMs).put("msg", n));
+                while (lg.length() > 40) lg.remove(0);
+                st.put("filingsLog", lg);
+            }
+            write(c, STATE, st.toString());
+            if (!seed && !news.isEmpty()) {
+                String title = news.size() == 1 ? news.get(0).split(" — ")[0] : news.size() + " new filings for your stocks";
+                StringBuilder body = new StringBuilder();
+                for (int i = 0; i < news.size() && i < 6; i++) body.append(i > 0 ? "\n" : "").append(news.get(i));
+                post(c, "filings", 2, title, body.toString());
+            }
+        }
     }
 
     /** ET sector feed -> companyId -> {price, previous close}; returns the IST date of its newest update. */
@@ -186,10 +308,11 @@ public class PortfolioJob extends JobService {
     static void post(Context c, String channel, int id, String title, String text) {
         NotificationManager nm = c.getSystemService(NotificationManager.class);
         if (nm.getNotificationChannel(channel) == null) {
-            boolean alerts = "alerts".equals(channel);
-            NotificationChannel ch = new NotificationChannel(channel, alerts ? "Holding alerts" : "Holdings updates",
+            boolean alerts = "alerts".equals(channel), filings = "filings".equals(channel);
+            NotificationChannel ch = new NotificationChannel(channel, alerts ? "Holding alerts" : filings ? "Filings & results" : "Holdings updates",
                 alerts ? NotificationManager.IMPORTANCE_HIGH : NotificationManager.IMPORTANCE_DEFAULT);
-            ch.setDescription(alerts ? "Your price and portfolio alerts" : "Open, hourly and close summaries of your holdings");
+            ch.setDescription(alerts ? "Your price and portfolio alerts" : filings ? "Results, board meetings, dividends and other filings for stocks you hold or watch"
+                : "Open, hourly and close summaries of your holdings");
             nm.createNotificationChannel(ch);
         }
         Intent open = new Intent(c, MainActivity.class).putExtra("route", "holdings").addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -225,7 +348,10 @@ public class PortfolioJob extends JobService {
         synchronized (LOCK) {
             File tmp = new File(c.getFilesDir(), name + ".tmp");
             try (FileOutputStream out = new FileOutputStream(tmp)) { out.write(text.getBytes("UTF-8")); out.getFD().sync(); }
-            if (!tmp.renameTo(new File(c.getFilesDir(), name))) throw new Exception("could not save " + name);
+            File dest = new File(c.getFilesDir(), name);
+            if (!tmp.renameTo(dest)) { // some file systems won't rename over an existing file: replace it
+                if (!dest.delete() || !tmp.renameTo(dest)) throw new Exception("could not save " + name);
+            }
         }
     }
 

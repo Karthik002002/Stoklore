@@ -27,3 +27,19 @@ grep -v 'warning: \[options\]' build/javac.log || true
 "$BT/apksigner" sign --ks "$KS" --ks-pass pass:android --out build/stoklore.apk build/aligned.apk
 rm build/unsigned.apk build/aligned.apk build/aligned.apk.idsig 2>/dev/null || true
 echo "built $(pwd)/build/stoklore.apk"
+
+# Every build also lands on a connected phone: /sdcard/Stoklore/stoklore-v<name>-<code>.apk, newest 5 kept.
+# No phone (or no adb) -> skipped; the build itself never fails over it.
+ADB="$SDK/platform-tools/adb"
+if [ -x "$ADB" ] && [ "$("$ADB" get-state 2>/dev/null)" = "device" ]; then
+  NAME=$(sed -n 's/.*android:versionName="\([^"]*\)".*/\1/p' AndroidManifest.xml | head -1)
+  CODE=$(sed -n 's/.*android:versionCode="\([^"]*\)".*/\1/p' AndroidManifest.xml | head -1)
+  DEST="/sdcard/Stoklore/stoklore-v$NAME-$CODE.apk"
+  if "$ADB" shell mkdir -p /sdcard/Stoklore && "$ADB" push build/stoklore.apk "$DEST" >/dev/null 2>&1; then
+    "$ADB" shell 'cd /sdcard/Stoklore && ls -t stoklore-*.apk | tail -n +6 | while read f; do rm -f "$f"; done'
+    echo "copied to phone: $DEST (keeping the newest 5)"
+    "$ADB" shell ls -t /sdcard/Stoklore | sed 's/^/  /'
+  else
+    echo "phone copy skipped: adb push failed"
+  fi
+fi

@@ -105,6 +105,22 @@ public class PortfolioCheck {
         eq(s[0], "Market closed · holdings ₹6,095", "summary title");
         ok(s[1].startsWith("Today −₹305 (−4.8%) · P&L +₹95 (+1.6%)"), "summary body: " + s[1]);
 
+        // a price alert on a watchlist stock fires with no holdings at all; totals ignore the watchlist
+        List<Portfolio.Pos> none = new java.util.ArrayList<>(), watch = Arrays.asList(pos("INFY", 0, Double.NaN, 1390, 1400));
+        eq(Portfolio.check(new Portfolio.Alert("w", "pbelow", "INFY", 1400, true, Double.NaN), new Portfolio.State(), none, watch, "d1", 1),
+            "INFY ₹1,390.00 — below your ₹1,400.00", "watchlist price alert");
+        ok(Portfolio.check(new Portfolio.Alert("w2", "below", null, 5, true, Double.NaN), new Portfolio.State(), none, watch, "d1", 1) == null, "no holdings: no portfolio alert");
+
+        // filings: which ones are worth a notification, and the snippet's parts
+        eq(Portfolio.filingKind("Board Meeting Intimation for Financial Results for Q3"), "Results", "results");
+        eq(Portfolio.filingKind("Corporate Action-Board approves Dividend"), "Dividend", "dividend");
+        eq(Portfolio.filingKind("Announcement under Regulation 30 (LODR)-Newspaper Publication of results"), null, "newspaper noise");
+        eq(Portfolio.filingKind("Change in Director"), null, "not interesting");
+        List<Portfolio.Filing> fl = Portfolio.parseFilings("<ul><li class=\"x\"><a href=\"https://www.bseindia.com/a.pdf?x=1&amp;y=2\" target=\"_blank\"> Board Meeting Intimation <div class=\"ink\"><time datetime=\"2026-11-19T17:39:33+05:30\">19 Nov</time> - for results</div></a></li>"
+            + "<li><a href=\"http://insecure/x.pdf\">Dropped</a></li><li><span>no link</span></li></ul>");
+        eq(fl.size(), 1, "filings parsed"); eq(fl.get(0).url, "https://www.bseindia.com/a.pdf?x=1&y=2", "filing url");
+        eq(fl.get(0).date, "2026-11-19T17:39:33+05:30", "filing date"); ok(fl.get(0).title.startsWith("Board Meeting Intimation 19 Nov"), "filing title: " + fl.get(0).title);
+
         System.out.println("PortfolioCheck: " + n + " checks passed");
     }
 }

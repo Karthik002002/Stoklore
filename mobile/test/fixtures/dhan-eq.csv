@@ -1,0 +1,14 @@
+EQ,For 27-11-2026
+Name,TEST USER
+UCC,XXXX00000X
+Mobile,0000000000
+Email ID,test@example.com
+
+Scrip Name,Quantity,Avg. Buy Rate,Buy Value,LTP,Current Value,P&L,P&L%
+"KRBL","3","400.40","1201.20","417.30","1251.90","50.70","4.22"
+"Marico","1","874.35","874.35","939.10","939.10","64.75","7.41"
+"Ginni Filaments","22","44.45","977.90","37.27","819.94","-157.96","-16.15"
+
+Investment,3053.45,Current Value,3010.94,Overall P&L,-42.50999999999976,Overall P&L%,-1.39,Today's P&L,0,Today's P&L%,0
+
+NOTE : This sheet was downloaded at 11/27/2026 07:52 AM

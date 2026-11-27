@@ -315,3 +315,29 @@ There is a funnel button on the Feed's top bar. It opens a panel of options; **A
 - no repeats;
 - headlines only;
 - indices & breadth only on page 1.
+
+---
+
+## 15. Filter templates and auto-refresh (v2.1)
+
+**Templates:**
+- There are 7 ready-made templates: Gainers only, Losers only, Big moves 5%+, Headlines, Against the tide, Large caps, Small-cap movers.
+- Your own are saved from the filter panel with "Save these choices as a template", up to 20. Saving under an existing name replaces it.
+- Template chips at the top of the filter panel load one in a tap.
+- Settings → Feed lists every template with **use** and **remove**, and marks the one **in use**.
+- The Feed's top bar shows the template's name when the filter matches one.
+- Saved filters are cleaned on load (`cleanFilter`): only known kinds, sizes and moves are kept, and kinds go in the feed's own order (the order a filtered feed takes them in). Templates and the filter are part of the backup.
+
+**Auto-refresh** (Settings → Data & backup):
+
+| Option | Runs |
+|---|---|
+| Off | Never |
+| 15s, 30s, 1m | Only while NSE is open, Mon–Fri 09:15–15:30 IST (`marketOpen`) |
+| 5m (default, as before) | All day |
+| 15m | All day |
+
+- Nothing reloads while a card is open (so a form you're typing in is safe) or while the app is in the background.
+- On an auto-refresh, charts keep the old bars on screen until the new ones arrive, and headlines aren't re-fetched; they have their own 5-minute cache.
+- The refresh button still forces everything.
+- **On every top bar** (Feed, Holdings, Markets, Sectors, stock, index): the refresh control is ⟳ (reload now) plus the beat label (`Off`, `15s`, … `15m`). Tapping the label opens a picker with the six options and "Refresh now". A short beat waiting for NSE to open shows dimmed and struck through, and updates on each tick. Settings → Data & backup has the same switch, and the two stay in step.

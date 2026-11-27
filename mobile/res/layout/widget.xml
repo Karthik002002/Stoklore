@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/w_root" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:gravity="center_vertical" android:padding="14dp"
+    android:background="@drawable/widget_bg">
+    <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="STOKLORE · HOLDINGS" android:textColor="#FF5B9CF5" android:textSize="10sp" android:letterSpacing="0.1" />
+    <TextView android:id="@+id/w_value" android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_marginTop="2dp" android:text="—" android:textColor="#FFD5D9DE" android:textSize="22sp" android:textStyle="bold" />
+    <TextView android:id="@+id/w_day" android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:text="" android:textColor="#FF7D848D" android:textSize="13sp" android:maxLines="1" />
+    <TextView android:id="@+id/w_meta" android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_marginTop="2dp" android:text="" android:textColor="#FF7D848D" android:textSize="10sp" android:maxLines="1" />
+</LinearLayout>

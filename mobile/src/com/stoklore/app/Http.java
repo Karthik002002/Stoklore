@@ -14,7 +14,9 @@ final class Http {
     // the only hosts anything may fetch from
     static final List<String> HOSTS = Arrays.asList(
         "etmarketsapis.indiatimes.com", "etsearch.indiatimes.com", "dhan.co", "priceapi.moneycontrol.com",
-        "economictimes.indiatimes.com"); // the last one only for the Feed's headline RSS
+        "economictimes.indiatimes.com", // the Feed's headline RSS
+        "www.screener.in", // the stock screen's fundamentals and filings; holdings' filing alerts
+        "portal.amfiindia.com", "api.mfapi.in"); // mutual fund NAVs (ISIN -> scheme, today's and yesterday's NAV)
 
     static final class Res {
         final int status; // HTTP status, or 0 when the request failed (body is then the error)
@@ -31,9 +33,14 @@ final class Http {
             c.setReadTimeout(20000);
             c.setRequestProperty("Accept", "application/json, text/javascript, */*; q=0.01");
             // each feed is the one its own site's pages call, so send that site as the referrer
-            String site = u.getHost().endsWith("moneycontrol.com") ? "https://www.moneycontrol.com" : "https://economictimes.indiatimes.com";
-            c.setRequestProperty("Origin", site);
-            c.setRequestProperty("Referer", site + "/");
+            String host = u.getHost();
+            String site = host.endsWith("moneycontrol.com") ? "https://www.moneycontrol.com"
+                : host.endsWith("screener.in") ? "https://www.screener.in"
+                : host.endsWith("indiatimes.com") ? "https://economictimes.indiatimes.com" : null; // AMFI, mfapi: plain public files
+            if (site != null) {
+                c.setRequestProperty("Origin", site);
+                c.setRequestProperty("Referer", site + "/");
+            }
             c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36");
             int status = c.getResponseCode();
             String body = "";

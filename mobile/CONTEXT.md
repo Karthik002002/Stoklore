@@ -1,7 +1,7 @@
 # Stoklore Android app — full context
 
 Everything about the `mobile/` app: what was asked, what was built, how it works, what is left.
-State as of 2026-11-26, app version **2.0** (versionCode 11).
+State as of 2026-11-27, app version **3.3** (versionCode 24): author signature card on Settings → About. 3.2: TradingView-style heatmap, full-screen zoomable sectors, reopen last screen, job permission fix. 3.0: Excel import, every broker's export format, sector map charts. 2.9: multiple portfolios, broker CSV fixes (Dhan), native file reading / share-to-app, crash recorder. Before that 2.3: CAS PDF import (password-protected, on the phone), mutual funds, ETFs by symbol, watchlist, filings alerts, app lock, home-screen widget.
 
 ---
 
@@ -73,7 +73,7 @@ Routes are hash URLs. The **tabs** use `location.replace`; **stack screens** use
 | `#/markets` | Four index cards (NIFTY 50, SENSEX, BANK NIFTY, INDIA VIX), each with a quote and a 1D sparkline; tap for the index screen. Market breadth: advances and declines, sectors up, best and worst sector. **Movers**: top 15 gainers or losers, filtered by all, large, mid or small cap. **All indices**: NSE or BSE, with filter and sort. |
 | `#/sectors` | The home page's Sector Performance panel. Summary line; sector map (size = market cap, colour = the day's move); per-sector move bar, five-way breadth bar, member strip and best/worst member. Tap a sector for its member tiles; tap a member for a card with price, change, market cap, share of sector and volume, plus **Chart & research**, **TradingView** and **Dhan**. Filter, NSE/BSE switch, three sort menus. |
 | `#/search` | ET search over NSE companies, debounced at 250 ms. Shows live % where the sector feed has the stock. Recent stocks are remembered (up to 12). |
-| `#/stock/<SYM>` | Quote, then the chart: 1D/5D/1M/6M/1Y/5Y ranges, line or candles, volume, and a drag crosshair showing OHLC and volume. Key stats: prev close, open, day high/low, 52W high/low, volume, 20-day average volume, market cap, 1Y change. The stock's sector and up to 8 peers; tapping the sector opens the Sectors tab with that sector expanded. Research links: Screener, TradingView (its app), ET Markets, Moneycontrol, NSE, Google Finance, Dhan. |
+| `#/stock/<SYM>` | Quote, then the chart: 1D/5D/1M/6M/1Y/5Y ranges, line or candles, volume, and a drag crosshair showing OHLC and volume. Key stats: prev close, open, day high/low, 52W high/low, volume, 20-day average volume, market cap, 1Y change. The stock's sector and up to 8 peers; tapping the sector opens the Sectors tab with that sector expanded. Research links: Screener, TradingView (its app), ET Markets, Moneycontrol, NSE, Google Finance, Dhan. Fundamentals tabs (v2.2), from screener.in's public page: Overview (latest results YoY/QoQ, key ratios, growth, pros/cons), Financials (quarterly, annual, balance sheet, cash flow, ratios), Shareholding, Filings (announcements, concalls, annual reports, credit ratings), About. |
 | `#/index/<code>` | The four card indices only: quote, chart, today's stats (open, prev close, high, low, 52W range, advances/declines) and returns (1W, 1M, 3M, YTD, 1Y, 3Y, 5Y). |
 | `#/settings` | **Settings**: appearance (themes, section 4), fonts (system or Google Fonts, body and headings, any family by name, text size), chart defaults, feed filter, data, about. |
 

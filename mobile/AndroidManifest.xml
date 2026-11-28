@@ -4,8 +4,8 @@
      stamps them <main>-dev.<n> / code + n at build time. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.stoklore.app"
-    android:versionCode="3030100"
-    android:versionName="3.3.1">
+    android:versionCode="3030200"
+    android:versionName="3.3.2">
 
     <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="34" />
     <uses-permission android:name="android.permission.INTERNET" />

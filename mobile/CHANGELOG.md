@@ -3,6 +3,10 @@
 `release.sh` uses the section for the version being released as the GitHub release notes.
 Not every build is released: builds go to the phone; a release is a deliberate `./release.sh`.
 
+## 3.3.2
+- Tapping the update notification opens the update card in the app (what's new, Later or Download) instead of going straight to the download page.
+- Download on the update card now uses the phone's download manager: no more downloads stuck at "Download pending" in the browser. Tap the "download complete" notification to install.
+
 ## 3.3.1
 - **Update notifications:** the app checks the project's GitHub releases. A newer version shows an update card in the app (at most every 12 hours) and a phone notification (once a day, even with the app closed). Download opens in the browser; open the file to install over the current version, and your data stays. Settings → About has "Check for updates" and an on/off switch. Dev builds aren't offered their own version.
 - Stock and index charts: dragging shows the bar's date, open / high / low / close and volume as a tooltip on the chart, next to the crosshair (it moves to the other side near the edge), instead of a line under the chart that was cut off on narrow screens.

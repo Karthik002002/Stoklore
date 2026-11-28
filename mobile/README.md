@@ -165,8 +165,11 @@ and the SDK at `$ANDROID_HOME` (default `~/Library/Android/sdk`). Signed with `~
 **Stoklore** folder (`/sdcard/Stoklore/stoklore-v<version>.apk`, e.g. `stoklore-v3.3-dev.2.apk`) and keeps the newest 5 there.
 **Update notifications:** the app checks the newest published `mobile-vX.Y` release of this repo (`api.github.com`)
 and offers it when its main version is newer than the one installed: an in-app card (at most every 12 hours,
-"Later" hides that version) and a daily notification from the background job (each version once). Download opens
-the release APK in the browser; installing it over the app keeps all data. Settings → About: "Check for
+"Later" hides that version) and a daily notification from the background job (each version once; a tap opens the card). Download hands
+the release APK to Android's download manager (the browser only as a fallback; Chrome's custom tabs could sit at
+"Download pending"); tapping its "download complete" notification opens Android's installer, and installing over the
+app keeps all data. The app never installs anything itself: an in-app installer (`REQUEST_INSTALL_PACKAGES`) was
+tried and Play Protect blocked the build as harmful, so it was taken out. Settings → About: "Check for
 updates" and an automatic on/off switch. A `3.3-dev.N` build is never offered `3.3`, only `3.4` and later.
 **Versions — two tracks that never mix:** `AndroidManifest.xml` holds the **main** version, the one GitHub releases
 carry: `major.minor` or `major.minor.patch`, with `versionCode` = major×1000000 + minor×10000 + patch×100 (3.3 =

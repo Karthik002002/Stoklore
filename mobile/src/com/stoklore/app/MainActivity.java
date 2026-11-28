@@ -123,9 +123,11 @@ public class MainActivity extends Activity {
             public void onPageFinished(WebView view, String url) {
                 pageReady = true;
                 if (sharedUri != null) { Uri u = sharedUri; sharedUri = null; readInto("window.onSharedFile", null, u); }
+                if (updateTap) { updateTap = false; web.evaluateJavascript("window.onUpdateTap && window.onUpdateTap()", null); }
             }
         });
         sharedUri = incomingFile(getIntent());
+        updateTap = isUpdateTap(getIntent());
         setContentView(web);
         if (lockOn()) { locked = true; web.setVisibility(View.INVISIBLE); hideFromRecents(true); }
         web.loadUrl("file:///android_asset/index.html" + routeOf(getIntent()));
@@ -200,6 +202,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        if (isUpdateTap(intent) && pageReady) web.evaluateJavascript("window.onUpdateTap && window.onUpdateTap()", null);
         Uri shared = incomingFile(intent);
         if (shared != null) { if (pageReady) readInto("window.onSharedFile", null, shared); else sharedUri = shared; }
         String r = routeOf(intent);
@@ -254,6 +257,33 @@ public class MainActivity extends Activity {
             }
         });
     }
+
+    private boolean updateTap; // opened from the update notification: show the update card once the page is up
+
+    /** The update card's Download: the release APK fetched by Android's download manager (Chrome's custom tabs can
+     *  sit at "Download pending"). When it's done, tapping its notification opens Android's installer; the app itself
+     *  never installs anything. Only this repo's release downloads. Returns "" or an error. */
+    @JavascriptInterface
+    public String downloadUpdate(String url, String name) {
+        if (url == null || !url.startsWith("https://github.com/Karthik002002/Stoklore/releases/download/") || !url.endsWith(".apk")) return "not this app's release download";
+        String file = name != null && name.matches("[A-Za-z0-9._-]+\\.apk") ? name : "stoklore-update.apk";
+        try {
+            android.app.DownloadManager.Request r = new android.app.DownloadManager.Request(Uri.parse(url))
+                .setTitle("Stoklore update")
+                .setDescription(file)
+                .setMimeType("application/vnd.android.package-archive")
+                .setNotificationVisibility(android.app.DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            // the public Downloads folder needs no permission from Android 10; before that, the app's own folder
+            if (Build.VERSION.SDK_INT >= 29) r.setDestinationInExternalPublicDir(android.os.Environment.DIRECTORY_DOWNLOADS, file);
+            else r.setDestinationInExternalFilesDir(this, android.os.Environment.DIRECTORY_DOWNLOADS, file);
+            getSystemService(android.app.DownloadManager.class).enqueue(r);
+            return "";
+        } catch (Exception e) {
+            return String.valueOf(e.getMessage());
+        }
+    }
+
+    private static boolean isUpdateTap(Intent i) { return i != null && "update".equals(i.getStringExtra("route")); }
 
     private static String routeOf(Intent i) {
         return i != null && "holdings".equals(i.getStringExtra("route")) ? "#/holdings" : "";

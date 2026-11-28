@@ -222,7 +222,7 @@ public class PortfolioJob extends JobService {
     private static final String RELEASE_PAGE = "https://github.com/Karthik002002/Stoklore/releases/";
 
     /** Once a day: the newest published mobile-vX.Y release of this repo; a notification when it's a newer main
-     *  version than the one installed (each version announced once). A tap opens its release page. */
+     *  version than the one installed (each version announced once). A tap opens the app's update card. */
     static void updates(Context c) throws Exception {
         long nowMs = System.currentTimeMillis();
         JSONObject st0 = read(c, STATE);
@@ -246,8 +246,8 @@ public class PortfolioJob extends JobService {
             if (tell) st.put("updateNotified", best);
             write(c, STATE, st.toString());
             if (tell) {
-                Intent open = new Intent(Intent.ACTION_VIEW, android.net.Uri.parse(page)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                post(c, "updates", 3, "Stoklore " + best + " is available", "You have " + installed + ". Tap to open the download page.", open);
+                Intent open = new Intent(c, MainActivity.class).putExtra("route", "update").addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                post(c, "updates", 3, "Stoklore " + best + " is available", "You have " + installed + ". Tap to update.", open);
             }
         }
     }

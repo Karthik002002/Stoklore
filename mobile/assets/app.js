@@ -2046,10 +2046,13 @@ async function checkUpdate(manual) {
   const notes = rel.notes.split(/\n---\n/)[0].replace(/\*\*|`|#+ /g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').trim().slice(0, 1200)
   $('sheet').innerHTML = `<h3>Stoklore ${esc(rel.version)} is available</h3><div class="mute" style="font-size:11px">You have ${esc(installed || 'an older version')}.</div>
     ${notes ? `<pre class="prose panel" style="margin:8px 0;max-height:38vh;overflow:auto;white-space:pre-wrap;font-size:11px">${esc(notes)}</pre>` : ''}
-    <div class="note" style="padding:0 0 8px">Download opens in your browser - open the file to install it over this version; your holdings and settings stay.</div>
-    <div class="btnrow fxbtns"><button class="btn" data-act="upd-later" data-v="${esc(rel.version)}">Later</button><button class="btn primary" data-ext="${esc(rel.apk || rel.url)}" data-pkg="">Download ${esc(rel.version)}</button></div>`
+    <div class="note" style="padding:0 0 8px">Downloads in the background - tap the "download complete" notification to install it over this version; your holdings and settings stay.</div>
+    <div class="btnrow fxbtns"><button class="btn" data-act="upd-later" data-v="${esc(rel.version)}">Later</button>${rel.apk && window.Native?.downloadUpdate
+      ? `<button class="btn primary" data-act="upd-dl" data-url="${esc(rel.apk)}" data-v="${esc(rel.version)}">Download ${esc(rel.version)}</button>`
+      : `<button class="btn primary" data-ext="${esc(rel.apk || rel.url)}" data-pkg="">Download ${esc(rel.version)}</button>`}</div>`
   $('sheet').classList.add('on', 'big')
 }
+window.onUpdateTap = () => checkUpdate(true) // the update notification was tapped
 const appVersion = () => { try { return `v${window.Native?.version() || ''}` } catch { return '' } }
 
 // ---- taps and inputs ----------------------------------------------------------------------------------
@@ -2068,6 +2071,11 @@ document.addEventListener('click', (e) => {
   if ((el = q('[data-beat]'))) return beatTap(el)
   if ((el = q('[data-z]'))) return zoomTap(el)
   if ((el = q('[data-act="upd-later"]'))) { store.set('update.skip', el.dataset.v); return closeSheet() } // inside the card
+  if ((el = q('[data-act="upd-dl"]'))) { // inside the card; the browser if the download manager refuses
+    const err = Native.downloadUpdate(el.dataset.url, `stoklore-v${el.dataset.v}.apk`)
+    if (err) { toast(`Opening in the browser (${err})`); extOpen('', el.dataset.url) } else toast('Downloading - tap the notification when it finishes to install')
+    return closeSheet()
+  }
   if ((el = q('[data-h]')) && !el.disabled) return holdTap(el)
   if (q('#sheet')) return // taps inside the card keep it open
   if (sheetOn()) { closeSheet(); if (!q('[data-m]')) return }
